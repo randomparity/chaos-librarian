@@ -91,6 +91,17 @@ class TestPlanPathValidation:
             f"--out with missing parent should exit 2, got {result.exit_code}"
         )
 
+    def test_rejects_out_when_parent_is_file(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        parent_as_file = tmp_path / "a-file"
+        parent_as_file.write_text("")
+        out = parent_as_file / "run-001"
+        result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out whose parent is a regular file should exit 2, got {result.exit_code}"
+        )
+
     def test_rejects_out_when_path_already_exists(self, tmp_path: Path) -> None:
         scenario = tmp_path / "scenario.yaml"
         scenario.write_text("")
