@@ -73,8 +73,8 @@ def materialize(
 
 @app.command()
 def run(
-    scenario: Annotated[Path, typer.Argument(exists=False, dir_okay=False)],
-    out: Annotated[Path, typer.Option("--out")],
+    scenario: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    out: Annotated[Path, typer.Option("--out", callback=_validate_new_out_path)],
     duration: Annotated[str, typer.Option("--duration")],
     speed: Annotated[str, typer.Option("--speed")] = "1x",
     json_output: Annotated[bool, typer.Option("--json")] = False,
