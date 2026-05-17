@@ -5,7 +5,8 @@
 Chaos Librarian is a separate test-tool development track for generating and
 mutating synthetic media libraries. Its goal is to provide a fast, replayable,
 high-signal test surface for scanners, watchers, media probes, durable identity,
-bundle tracking, reconciliation, and daemon behavior.
+bundle tracking, reconciliation, and daemon behavior in
+[voom-v2](https://github.com/randomparity/voom-v2).
 
 Testing against real personal libraries is slow, hard to reproduce, and often
 does not contain the edge cases needed for regression testing. Chaos Librarian
@@ -16,27 +17,33 @@ database schema and does not decide expected media-policy outcomes. It emits a
 neutral oracle journal and manifests that the application under test can compare
 against its own observed state.
 
+Most of the tool is about deterministic, reproducible mutation timelines. The
+"chaos" framing applies only to opt-in fuzz and corruption profiles introduced
+in later sprints; fuzz runs must still emit replay bundles.
+
 ## Selected Approach
 
 Use a scenario-driven library simulator.
 
-The tool has a library core plus a CLI frontend. The implementation language is
-not fixed by this spec. Python is a strong early candidate because it is quick
-to iterate and has mature orchestration, YAML, subprocess, and media-adjacent
-libraries. Rust remains a valid future option if shared binaries or workspace
-integration become more valuable.
+The tool has a library core plus a CLI frontend. Implementation language is
+**Python 3.13**, with `uv` for environments, `ruff` for lint/format, `ty` for
+type checking, and `pytest` for tests, matching the project's global standards.
 
 The stable contract is:
 
-- scenario file format
-- manifest schema
-- oracle journal schema
-- CLI commands
-- exit codes
+- scenario file format (YAML, schema-validated)
+- manifest schema (JSON)
+- oracle journal schema (JSONL)
+- replay bundle schema (JSON)
+- validation report schema (JSON)
+- materialization report schema (JSON)
+- CLI commands and exit codes
 - fixture directory layout
 
-The main application consumes the outputs. It should not depend on internal
-Chaos Librarian types or implementation language.
+The main application consumes the outputs as JSON via the exported JSON Schema
+artifacts shipped alongside the tool. It should not depend on internal
+Chaos Librarian Python types, although a Python adapter convenience package is
+shipped in a later sprint.
 
 ## Design Principles
 
@@ -115,6 +122,11 @@ Uses:
 - scanner and watcher tests
 - daemon churn tests
 
+If required tools (FFmpeg, ffprobe, MKVToolNix) are missing or below minimum
+versions, `materialize` exits non-zero with a structured diagnostic and does
+not auto-downgrade to plan-only. Use `chaos-librarian plan` explicitly when
+media tools are unavailable.
+
 ### Step Mode
 
 Step mode applies timeline events only when the test asks for the next step.
@@ -140,7 +152,32 @@ chaos-librarian run scenario.yaml --out fixtures/run-001 --duration 90s --speed 
 
 Wall-clock mode is useful for daemon, watcher, and reconciliation tests.
 
-The journal records both logical time and wall-clock time.
+Step mode and wall-clock mode advance the same logical clock and must produce
+identical journals (apart from `wall_clock_time` fields) for the same scenario
+and seed.
+
+## Time Model
+
+Time is tracked internally as a 64-bit signed integer of nanoseconds since
+scenario start (`t=0`). All durations and timestamps share this representation
+in both step mode and wall-clock mode.
+
+Scenario authoring uses duration strings parsed into nanoseconds:
+
+| string    | meaning              |
+|-----------|----------------------|
+| `500ms`   | 500 milliseconds     |
+| `2s`      | 2 seconds            |
+| `1m30s`   | 90 seconds           |
+| `0`       | t=0 (start)          |
+
+Timeline event `at:` values are offsets from scenario start, not from the
+previous event. Events with the same `at:` value are applied in declared order.
+
+The journal records both `logical_time_ns` (integer) and, in wall-clock and
+materialize modes, `wall_clock_time` (RFC 3339 string). JSON output always
+includes precise integer nanoseconds for agent consumers; human-readable
+output formats the same value as `1m30.250s`.
 
 ## CLI Contract
 
@@ -154,11 +191,25 @@ chaos-librarian run scenario.yaml --out fixtures/run-001 --duration 90s --json
 chaos-librarian step fixtures/run-001 --next --json
 chaos-librarian replay fixtures/run-001/replay.json --out fixtures/replay-001 --json
 chaos-librarian inspect fixtures/run-001 --json
+chaos-librarian capabilities --json
 chaos-librarian clean fixtures/run-001 --json
 ```
 
-All commands must support JSON output. Human-readable output can be added, but
-JSON is the stable contract for agents and tests.
+All commands must support `--json` output. Human-readable output may be added,
+but JSON is the stable contract for agents and tests.
+
+Exit codes:
+
+| code | meaning                                                |
+|------|--------------------------------------------------------|
+| `0`  | success                                                |
+| `1`  | generic failure                                        |
+| `2`  | usage error (bad arguments)                            |
+| `3`  | scenario validation failed                             |
+| `4`  | required external tool missing or version too low      |
+| `5`  | materialization failed (tool ran but produced an error)|
+| `6`  | replay diverged from recorded execution                |
+| `7`  | filesystem safety violation (containment or sentinel fail) |
 
 ## Fixture Directory Layout
 
@@ -193,10 +244,96 @@ run/
 derived convenience snapshot. Reports are derived artifacts for humans and
 agents.
 
+## Filesystem Safety
+
+Chaos Librarian writes, mutates, and deletes files inside its run directories.
+Two contracts protect real user data from being touched by a misconfigured
+scenario, a stray symlink, or a wrong `clean` argument.
+
+### Run-Directory Sentinel
+
+Every run directory created by chaos-librarian contains a top-level
+`.chaos-librarian-run` JSON file. Its fields:
+
+- `run_id` — matches the `run_id` recorded in the replay bundle
+- `schema_version` — sentinel schema version (a separate integer from
+  `replay-bundle.schema.json`)
+- `created_by` — chaos-librarian version string
+- `created_at` — RFC 3339 timestamp; **omitted in plan-only mode**
+
+`plan`, `materialize`, `run`, and `replay` create the sentinel atomically as
+part of run-directory creation. These commands refuse to write into a
+pre-existing directory unless its sentinel is present and parseable; this
+prevents accidental mutation of any directory the tool did not itself create.
+
+### Path Containment
+
+Every path that appears in a scenario — `library.roots[].path`, every
+mutation `to:`, every `target:` value that resolves to a path, every sidecar
+path — is resolved relative to `<run-dir>/library/`. After `realpath`-style
+normalization, the resolved path MUST be a strict subpath of
+`<run-dir>/library/`. The tool rejects:
+
+- absolute paths (e.g., `/etc`, `/Users/...`)
+- `..` segments that escape `library/`
+- symlinks whose targets escape `library/` (resolved at access time, not
+  just at scenario load)
+
+Violations fail scenario validation when statically detectable, or fail at
+event-execution time for cases like a runtime symlink target. Either way
+the command exits with code `7` (see "CLI Contract").
+
+### `clean` Refusal
+
+`chaos-librarian clean <dir>` refuses any directory whose sentinel is
+missing, malformed, or whose recorded `run_id` does not match the sentinel
+on disk. V1 ships no `--force` flag; recovering from a broken sentinel
+requires manual inspection.
+
+### Materializer Boundary
+
+External tool invocations (ffmpeg, ffprobe, mkvtoolnix) only ever receive
+paths resolved under `<run-dir>/library/`. The materializer never executes
+a scenario step whose resolved path violates containment, even if validation
+somehow let it through; this is a defense-in-depth check against scenarios
+synthesized at runtime by future profiles.
+
+## Schema Contract
+
+### Source Of Truth
+
+Schemas are authored as Pydantic v2 models under
+`src/chaos_librarian/contract/`. A CI job exports them to language-neutral
+JSON Schema (draft 2020-12) artifacts under `schemas/*.schema.json`, which is
+the public contract consumed by voom-v2 and any other external consumer. CI
+fails if a committed JSON Schema artifact does not match what the current
+Pydantic models would emit.
+
+### Versioning
+
+Every artifact carries a top-level `schema_version` field (positive integer).
+
+- Version bumps are always breaking; there are no minor versions.
+- Readers MUST reject unknown versions with exit code `3`.
+- A given chaos-librarian release supports exactly one schema version per
+  artifact. Multi-version compatibility shims are explicit non-goals.
+
+### Schemas Defined In Sprint 0
+
+- `scenario.schema.json` — input scenario format
+- `manifest.schema.json` — initial and current library state
+- `journal.schema.json` — append-only event stream (one entry per JSONL line)
+- `replay-bundle.schema.json` — see "Replay Bundle"
+- `validation.schema.json` — output of `validate`
+- `materialization.schema.json` — materialization diagnostics
+
+Later sprints add `divergence.schema.json` (Sprint 9) and any schemas required
+by extended profiles (Sprint 10).
+
 ## Scenario Format
 
-The scenario format should be a compact YAML or TOML document. YAML is a good
-default for readability, but the spec does not require a final choice yet.
+The scenario format is YAML, parsed with `ruamel.yaml` for line-number-aware
+error reporting and validated against `scenario.schema.json`.
 
 Example shape:
 
@@ -292,8 +429,8 @@ The oracle journal is append-only JSONL. Each event records:
 - event ID
 - scenario ID
 - run ID
-- logical time
-- wall-clock time
+- logical time (integer nanoseconds)
+- wall-clock time (RFC 3339, omitted in plan-only mode)
 - action
 - target IDs
 - input versions
@@ -301,9 +438,20 @@ The oracle journal is append-only JSONL. Each event records:
 - affected locations
 - expected current state delta
 - toolchain information when materialized
+- `phase` (optional; one of `started` | `progressed` | `committed` |
+  `aborted`; absent for atomic mutations, semantically equivalent to
+  `committed`)
+- `temp_path` (optional; present on `phase: started` entries for multi-phase
+  events that stage to a temporary path)
+- `related_event_id` (optional; on commit and abort entries, points to the
+  start event's ID)
 
-The journal should be enough to reconstruct the expected state at any logical
-time.
+Sprint 0 defines all three optional fields in `journal.schema.json` even
+though only slow-copy uses them in V1. Stabilizing the shape on day one keeps
+later multi-phase mutations from forcing a schema version bump.
+
+The journal must be sufficient to reconstruct the expected state at any
+logical time.
 
 ## Manifest Model
 
@@ -321,8 +469,73 @@ The manifest describes current expected library state. It includes:
 - media facts when known
 - mutation history references
 
-The manifest does not describe expected application policy outcomes. It describes
-external library reality.
+The manifest does not describe expected application policy outcomes. It
+describes external library reality.
+
+## Replay Bundle
+
+The replay bundle is a single JSON file (`replay.json`) sufficient to reproduce
+a run. Plan-only replays must be bit-identical; materialize replays must be
+logically identical (same journal modulo `wall_clock_time` and content hashes
+that depend on tool versions).
+
+Contents (fields vary by execution mode so plan-only bundles remain
+bit-identical):
+
+- **scenario** (all modes) — verbatim copy of the source scenario YAML
+  (string)
+- **schema_version** (all modes) — replay-bundle schema version (integer)
+- **chaos_librarian_version** (all modes) — tool version string
+- **run_id** —
+  - *Plan-only:* deterministic UUIDv5 derived from
+    `(scenario_content_hash, resolved_seed)` under a fixed chaos-librarian
+    namespace UUID. The namespace UUID is a module-level constant in
+    `chaos_librarian.contract` and never changes across releases.
+  - *Materialize / Run:* random UUIDv4 assigned at run start.
+- **created_at** —
+  - *Plan-only:* **omitted entirely** (field absent from the JSON; readers
+    must treat missing-equals-omitted, not null).
+  - *Materialize / Run:* RFC 3339 timestamp of run start.
+- **resolved_seed** (all modes) — concrete integer seed, even when scenario
+  used `seed: random`
+- **execution_trace** (all modes) — ordered list of:
+  - every RNG draw (stream name + drawn value)
+  - every ID allocation (kind + allocated ID)
+  - every materializer invocation when applicable (command line + tool
+    version + exit code)
+- **toolchain** (materialize only) — versions of ffmpeg, ffprobe,
+  mkvtoolnix; platform string
+
+## Reproducibility Guarantees
+
+### Plan-Only
+
+The replay bundle, manifests, and journal are **bit-identical** for the same
+scenario + seed across runs and platforms. There are no volatile fields in
+plan-only output. This is achievable because `run_id` is a deterministic
+UUIDv5 derived from `(scenario_content_hash, resolved_seed)` and `created_at`
+is omitted from the serialized JSON (see "Replay Bundle").
+
+### Materialize / Run
+
+The oracle journal and manifest are **logically identical** for the same
+scenario + seed on any platform with compatible tool versions. The following
+fields are volatile and MUST be excluded from any equivalence comparison:
+
+- `created_at` and any `wall_clock_time` fields on journal entries
+- `run_id` (UUIDv4 in these modes)
+- content hashes and probed media facts (depend on FFmpeg / codec library
+  versions; recorded as descriptive evidence, not as a contract)
+- the `toolchain` block
+
+Materialized file bytes and content hashes are descriptive, not contractual.
+The manifest records the actual hash produced; replay verifies the hash
+against the recorded toolchain, not against an absolute reference.
+
+Adapters and equivalence tests MUST canonicalize artifacts by stripping
+these fields before comparison. The canonicalization rule is part of the
+public contract and is implemented once in `chaos_librarian.contract` so
+external consumers do not re-derive it.
 
 ## Reports
 
@@ -427,17 +640,43 @@ Generated corpora should cover:
 - sidecar metadata
 - primary media plus bundle sidecars
 
-Short clips should dominate to keep tests fast. Longer clips can be opt-in for
+Short clips should dominate to keep tests fast. The default first scenario pack
+must stay under a 50 MB total materialized size. Longer clips are opt-in for
 performance and progress tests.
 
 ## Mutation Model
 
 Mutations are explicit timeline actions.
 
+Most mutations are **atomic**: a single timeline event produces a single
+journal entry and an immediate state transition. The timeline is a strict
+sequence; events with the same `at:` value are applied in declared order.
+External observers (scanners, watchers) may interleave freely with timeline
+events.
+
+A small set of mutations are explicitly **multi-phase** — they take real
+wall-clock time and expose intermediate filesystem state (temporary paths,
+partial bytes) that external observers can see. Multi-phase mutations are
+decomposed at the scenario level into a `*_start` event and a `*_commit`
+event with stable IDs that reference each other. Each phase emits its own
+journal entry. Between start and commit, the manifest records the
+in-flight state: the temp path, the bytes written so far when known, and
+the eventual final path.
+
+In plan-only mode both phase events fire at their declared `at:` times and
+the in-flight manifest snapshot is computed deterministically. In wall-clock
+mode, the temporary file is grown over the declared `duration:` between the
+two events so watchers can observe a real partial file.
+
 Filesystem mutations:
 
 - add file
-- slow copy file
+- `slow_copy_start` — begins a slow copy. Required fields: `target`, `to:`
+  (final path), `temp_path`, `duration:` (wall-clock duration string).
+  Emits a journal entry with `phase: started`.
+- `slow_copy_commit` — completes a slow copy. Required fields: `for:` (the
+  start event's `id`). At `at:` time, atomically renames `temp_path` to the
+  final path. Emits a journal entry with `phase: committed`.
 - move file
 - rename file
 - delete file
@@ -504,24 +743,25 @@ Future bump-in-the-wire interceptors:
 - simulate network filesystem lag
 - produce intentionally wrong oracle hash for negative adapter tests
 
-Corruption and malformed-media scenarios are not V1 defaults. They should be
-explicit profiles so early failures remain easy to interpret.
+Corruption and malformed-media scenarios are not V1 defaults. They are explicit
+opt-in profiles so early failures remain easy to interpret.
 
 ## Materializer Backends
 
-The first materializer should use local command-line tools when available:
+The first materializer uses local command-line tools when available:
 
 - FFmpeg / ffprobe
 - MKVToolNix when needed for track and metadata operations
 
-The tool should expose capability detection:
+Minimum tool versions are recorded in the materialization report and enforced
+by `capabilities`. The tool exposes capability detection:
 
 ```text
-chaos-librarian inspect-tools --json
+chaos-librarian capabilities --json
 ```
 
-Scenarios should be validated against available capabilities before
-materialization. Plan-only mode should not require media tools.
+Scenarios are validated against available capabilities before materialization.
+Plan-only mode does not require media tools.
 
 ## First Scenario Pack
 
@@ -542,126 +782,215 @@ them together. This targets bundle membership and sidecar reconciliation.
 
 ### Duplicate/Variant
 
-Create one work with HD and 4K variants plus a duplicate HD encode. This targets
-variant modeling and duplicate-candidate evidence without expecting app policy
-outcomes.
+Create one work with HD and 4K variants plus a duplicate HD encode. This
+targets variant modeling and duplicate-candidate evidence without expecting
+app policy outcomes.
 
 ### Active Library Churn
 
-Run timed adds, slow copy, modify, delete, move, and sidecar creation over 60 to
-90 seconds. This targets daemon watching, file stability, and reconciliation.
+Run timed adds, slow copy, modify, delete, move, and sidecar creation over
+60 to 90 seconds. This targets daemon watching, file stability, and
+reconciliation. Wall-clock scenario; lands in Sprint 8.
 
 ## Development Track
 
-This track should run alongside the main control-plane implementation.
+This track should run alongside the main voom-v2 implementation. Sprints are
+sized to land as single PRs.
 
-### CL Sprint 0: Scenario Contract
+### Sprint 0 — Repo Skeleton, Schemas, CLI Contract
+
+Contract-only sprint. No runtime behavior.
 
 Deliverables:
 
-- scenario schema draft
-- oracle journal schema
-- manifest schema
-- fixture directory layout
-- CLI command contract
-- plan-only validator
-- sample first scenario pack in plan-only mode
+- `pyproject.toml` (uv, Python 3.13, ruff, ty, pytest), pre-commit (`prek`)
+  config, GitHub Actions CI, `.gitignore`, license headers
+- Pydantic v2 models for scenario, journal, manifest, replay bundle,
+  validation report, materialization report
+- Run-directory sentinel schema (`run-sentinel.schema.json`) authored as a
+  Pydantic model and exported as JSON Schema alongside the other artifacts
+- Journal schema includes the multi-phase fields (`phase`, `temp_path`,
+  `related_event_id`) from day one, even though no V1 mutation other than
+  slow-copy uses them
+- Path-resolution helper module (`chaos_librarian.contract.paths`)
+  implementing the path-containment rules from "Filesystem Safety", with
+  unit tests for absolute-path rejection, `..`-escape rejection, and a
+  symlink-escape test fixture. Pure function plus tests; no runtime
+  materialize wiring in Sprint 0.
+- CI job that exports JSON Schema artifacts to `schemas/*.schema.json` and
+  fails if committed artifacts diverge from current models
+- CLI surface frozen as a Typer app with stub commands that print usage and
+  exit non-zero with exit code `1`
+- `docs/contract/` containing schema reference, fixture directory layout,
+  CLI reference, replay bundle spec, time model
+- 3–4 hand-authored sample scenarios under `tests/fixtures/scenarios/`
 
 Exit criteria:
 
-- Scenarios validate without media tools.
-- Plan-only output is deterministic for a fixed seed.
-- Replaying a plan-only scenario produces identical manifests and journal.
+- `pytest` passes (Pydantic round-trip, sample scenario validation,
+  Pydantic-to-JSON-Schema equivalence)
+- `ty check` is clean
+- `ruff check` and `ruff format --check` are clean
+- CI is green on a fresh clone
 
-### CL Sprint 1: Core Library And CLI
+### Sprint 1 — Scenario Parser And `validate` Command
 
 Deliverables:
 
-- library core
-- CLI frontend
-- deterministic RNG and ID allocation
-- scenario parser
-- timeline engine
-- step mode
-- inspect command
-- clean command
-- JSON output and exit codes
+- YAML loader (`ruamel.yaml`) with line-number-aware errors
+- Pydantic-based validation pipeline
+- `chaos-librarian validate scenario.yaml --json` produces a validation report
+  matching `validation.schema.json`
 
 Exit criteria:
 
-- Tests can advance scenario steps manually.
-- The oracle journal records each step.
-- Per-asset reports are generated from journal state.
+- Every sample scenario from Sprint 0 validates with exit code `0`
+- A bank of malformed sample scenarios produces structured errors with exit
+  code `3`
 
-### CL Sprint 2: Real Media Materialization
+### Sprint 2 — Deterministic Core
 
 Deliverables:
 
-- tool capability detection
-- FFmpeg materializer for simple valid clips
-- ffprobe-based fact verification
-- video sources: Mandelbrot or test pattern, color bars, solid color
-- audio sources: sine, silence, channel identity tones
-- generated SRT sidecars
-- materialization diagnostics
+- Seeded RNG with per-stream sub-seeds so independent subsystems do not
+  interfere
+- ID allocator producing stable `work_id`, `variant_id`, `bundle_id`,
+  `asset_id`, `version_id`, `location_id`, `sidecar_id`, `mutation_id`
+- Logical clock (nanosecond integer), duration string parser, human/JSON
+  formatters
+- Property tests covering determinism guarantees
 
 Exit criteria:
 
-- Materialized files probe successfully.
-- Manifests include hashes and probed facts.
-- Plan-only and materialized runs share the same logical oracle IDs.
+- Same seed produces identical RNG draws and ID sequences across runs
+- Determinism contract is exercised in isolation; downstream sprints consume
+  this module
 
-### CL Sprint 3: Mutation Materialization
+### Sprint 3 — Plan-Only Timeline Engine And `plan` Command
 
 Deliverables:
 
-- move/rename/delete/slow-copy mutations
-- container remux mutation
-- video reencode mutation
-- audio reencode/downmix mutation
-- metadata edit mutation
-- sidecar add/remove/update mutation
-- wall-clock run mode
+- Timeline event resolution (validate targets, sort by `at:`, detect ordering
+  collisions)
+- Plan-only execution: emits initial manifest, planned current manifest,
+  planned journal, replay bundle, validation report
+- `chaos-librarian plan scenario.yaml --out fixtures/run-001 --json`
 
 Exit criteria:
 
-- The first scenario pack can run against a real directory.
-- Step and wall-clock modes produce equivalent logical journals for the same
-  scenario.
-- A replay bundle reproduces the same mutation sequence.
+- Plan-only output is bit-identical for a fixed seed across runs
+- Replay of a plan-only bundle reproduces the same artifacts byte-for-byte
+- First scenario pack (excluding Active Library Churn) executes successfully
 
-### CL Sprint 4: Integration Harness
+### Sprint 4 — Step Mode, Inspect, Clean, Replay
 
 Deliverables:
 
-- adapter contract for applications under test
-- comparison report format
-- examples for scanner/prober/watcher tests
-- daemon churn test recipe
+- `chaos-librarian step` advances N events from a prepared fixture
+- `chaos-librarian inspect` reads a run directory and prints JSON
+- `chaos-librarian clean` removes a run directory safely
+- `chaos-librarian replay` re-runs from a replay bundle
+- Per-asset, per-work, per-variant, per-bundle reports under `reports/`
+
+Exit criteria:
+
+- Step mode and plan mode produce identical journals for the same scenario
+- Replay reproduces a prior run; divergence exits `6` with a structured diff
+
+### Sprint 5 — Materializer Capability Detection And Simple Sources
+
+Deliverables:
+
+- `chaos-librarian capabilities` detects ffmpeg, ffprobe, mkvtoolnix versions
+- Content sources: Mandelbrot, color bars, solid color, sine, silence,
+  channel-identity tones, generated SRT
+- Materializer for short valid clips without mutations
+
+Exit criteria:
+
+- Materialized files probe successfully with ffprobe
+- Manifest includes content hashes and probed media facts
+- Plan-only and materialized runs share the same logical oracle IDs
+
+### Sprint 6 — Filesystem Mutations
+
+Deliverables:
+
+- Mutations: add, move, rename, delete, slow copy, archive, move between roots
+- Sidecar mutations: create, remove, update
+- Per-asset report includes path history
+
+Exit criteria:
+
+- Identity Move/Rename scenario runs end-to-end on a real directory
+
+### Sprint 7 — Media Mutations
+
+Deliverables:
+
+- Mutations: container remux, video reencode, audio reencode, downmix,
+  resolution downscale, codec change, bitrate change, track add/remove/reorder,
+  metadata edits, default/forced flag edits, commentary edits, subtitle convert,
+  subtitle embed/extract
+
+Exit criteria:
+
+- Version Evolution and Bundle Sidecars scenarios run end-to-end
+
+### Sprint 8 — Wall-Clock Mode
+
+Deliverables:
+
+- `chaos-librarian run` with `--duration` and `--speed`
+- Daemon-friendly scheduling that shares the Sprint 2 clock with step mode
+
+Exit criteria:
+
+- Active Library Churn scenario runs end-to-end
+- Step-mode and wall-clock-mode journals are logically identical for the same
+  scenario apart from `wall_clock_time` fields
+- A replay bundle reproduces a wall-clock run
+
+### Sprint 9 — Integration Harness And voom-v2 Adapter
+
+Deliverables:
+
+- `chaos_librarian.adapter` Python package for consumers
+- Comparison report format (`divergence.schema.json`)
+- Example test recipes for scanner, prober, watcher
+- Daemon churn test recipe
 - CI guidance for short and extended runs
 
 Exit criteria:
 
-- A test adapter can compare app-observed state against oracle state.
-- Divergence reports identify asset, mutation, and expected/current state.
-- Short runs complete quickly enough for regular development.
+- voom-v2 can compare its observed state against oracle state
+- Divergence reports identify asset, mutation, and expected vs. current state
+- Short runs complete quickly enough for regular development
 
-### CL Sprint 5: Extended Profiles
+### Sprint 10 — Extended Profiles
 
-Deliverables:
+Deliverables (may split into multiple PRs):
 
-- corruption interceptor framework
-- malformed-media profiles
-- public-domain/TTS content source hooks
-- larger performance profiles
-- network filesystem lag profile
-- duplicate/variant expansion pack
+- Corruption interceptor framework
+- First malformed-media profile
+- Public-domain / TTS content source hooks
+- Larger performance profiles
+- Network filesystem lag profile
+- Duplicate/variant expansion pack
 
 Exit criteria:
 
-- Corruption remains opt-in.
-- Every fuzz or randomized run emits a replay bundle.
-- Extended profiles can be excluded from fast CI.
+- Corruption remains opt-in and clearly labeled
+- Every fuzz or randomized run emits a replay bundle
+- Extended profiles can be excluded from fast CI
+
+## Mitigations For Late voom-v2 Integration
+
+The formal adapter contract lands in Sprint 9. To catch schema-shape mistakes
+earlier, Sprints 1 and 3 ship internal round-trip tests that load emitted
+journals and manifests through the Pydantic models and re-serialize them.
+These tests do not replace voom-v2 integration; they reduce the risk that
+Sprint 9 surfaces structural surprises.
 
 ## Non-Goals For V1
 
@@ -672,14 +1001,42 @@ Exit criteria:
 - Generating corrupt media by default.
 - Open-ended randomness without replay.
 - Full replacement for real-world library testing.
+- Byte-identical materialized files across platforms or tool versions.
+- Concurrent / overlapping mutations within the timeline beyond the explicit
+  multi-phase pairs (`*_start` / `*_commit`) defined in the Mutation Model.
+- Mid-copy renames or other interleaved multi-phase mutations targeting the
+  same asset.
+- Multi-version schema compatibility within a single chaos-librarian release.
 
-## Open Decisions For Implementation Planning
+## Resolved Decisions
 
-- Final implementation language.
-- YAML versus TOML for scenario files.
-- Exact JSON schemas.
-- Minimum external tool versions.
-- Whether materialized media should use only FFmpeg in early versions or also
-  require MKVToolNix.
-- Packaging and distribution strategy.
+- Implementation language: **Python 3.13**
+- Scenario file format: **YAML** (`ruamel.yaml`)
+- Schema source-of-truth: **Pydantic v2** with exported JSON Schema artifacts
+- Time model: nanosecond integer internal, duration-string scenario syntax,
+  offsets from scenario start, shared clock across modes
+- Schema versioning: monotonic integer, breaking bumps, no compatibility shims
+- Replay bundle: minimal metadata plus full execution trace
+- `inspect-tools` renamed to `capabilities`
+- Filesystem safety: run-directory sentinel (`.chaos-librarian-run`) plus
+  path containment under `<run-dir>/library/`; exit code `7` on violation
+- Plan-only determinism preserved via deterministic UUIDv5 `run_id`
+  (namespace UUID is a fixed constant in `chaos_librarian.contract`) and
+  omitted `created_at`; bit-identical plan-only output is back on the table
+- Multi-phase mutations modeled as paired `*_start` / `*_commit` events
+  with a shared journal schema (`phase`, `temp_path`, `related_event_id`)
+  defined in Sprint 0
+- voom-v2 adapter remains at Sprint 9; the existing Sprint-1/Sprint-3
+  internal Pydantic round-trip mitigation is retained without
+  strengthening. Rationale: chaos-librarian is expected to reach maturity
+  before voom-v2 needs it, and the tool's value as a user-behavior
+  simulator does not depend on the integration timing.
 
+## Open Decisions
+
+- Minimum external tool versions (FFmpeg, ffprobe, MKVToolNix); decide in
+  Sprint 5
+- Whether MKVToolNix is required for any V1 mutation or remains optional;
+  decide in Sprint 7
+- Packaging and distribution strategy (PyPI vs. internal index vs. uvx-only);
+  decide before Sprint 9
