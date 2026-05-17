@@ -44,7 +44,7 @@ def _validate_new_out_path(value: Path) -> Path:
 
 @app.command()
 def validate(
-    scenario: Annotated[Path, typer.Argument(exists=False, dir_okay=False)],
+    scenario: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Validate a scenario file."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 from typer.testing import CliRunner
 
@@ -34,7 +36,6 @@ def test_command_exists_and_exits_one(command: str) -> None:
 @pytest.mark.parametrize(
     "command_args",
     [
-        ["validate", "scenario.yaml"],
         ["plan", "scenario.yaml", "--out", "fixtures/run-001"],
         ["materialize", "scenario.yaml", "--out", "fixtures/run-001"],
         ["run", "scenario.yaml", "--out", "fixtures/run-001", "--duration", "10s"],
@@ -48,6 +49,32 @@ def test_command_exists_and_exits_one(command: str) -> None:
 def test_stub_command_exits_one(command_args: list[str]) -> None:
     result = runner.invoke(app, command_args)
     assert result.exit_code == 1, f"Stub {command_args[0]} should exit 1"
+
+
+class TestValidatePathValidation:
+    def test_rejects_missing_scenario(self, tmp_path: Path) -> None:
+        missing = tmp_path / "does-not-exist.yaml"
+        result = runner.invoke(app, ["validate", str(missing)])
+        assert result.exit_code == 2, (
+            f"missing scenario should exit 2 (BadParameter), got {result.exit_code}"
+        )
+
+    def test_rejects_directory_as_scenario(self, tmp_path: Path) -> None:
+        a_dir = tmp_path / "a-dir"
+        a_dir.mkdir()
+        result = runner.invoke(app, ["validate", str(a_dir)])
+        assert result.exit_code == 2, (
+            f"directory passed as scenario should exit 2, got {result.exit_code}"
+        )
+
+
+def test_validate_stub_with_valid_scenario_exits_one(tmp_path: Path) -> None:
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text("")
+    result = runner.invoke(app, ["validate", str(scenario)])
+    assert result.exit_code == 1, (
+        f"validate stub with valid path should exit 1, got {result.exit_code}"
+    )
 
 
 def test_top_level_help_lists_all_commands() -> None:
