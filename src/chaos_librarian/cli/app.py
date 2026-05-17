@@ -53,8 +53,8 @@ def validate(
 
 @app.command()
 def plan(
-    scenario: Annotated[Path, typer.Argument(exists=False, dir_okay=False)],
-    out: Annotated[Path, typer.Option("--out")],
+    scenario: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    out: Annotated[Path, typer.Option("--out", callback=_validate_new_out_path)],
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Plan a scenario without creating media."""

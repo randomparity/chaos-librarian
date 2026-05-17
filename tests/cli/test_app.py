@@ -36,7 +36,6 @@ def test_command_exists_and_exits_one(command: str) -> None:
 @pytest.mark.parametrize(
     "command_args",
     [
-        ["plan", "scenario.yaml", "--out", "fixtures/run-001"],
         ["materialize", "scenario.yaml", "--out", "fixtures/run-001"],
         ["run", "scenario.yaml", "--out", "fixtures/run-001", "--duration", "10s"],
         ["step", "fixtures/run-001", "--next"],
@@ -75,6 +74,44 @@ def test_validate_stub_with_valid_scenario_exits_one(tmp_path: Path) -> None:
     assert result.exit_code == 1, (
         f"validate stub with valid path should exit 1, got {result.exit_code}"
     )
+
+
+class TestPlanPathValidation:
+    def test_rejects_missing_scenario(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.yaml"
+        out = tmp_path / "run-001"
+        result = runner.invoke(app, ["plan", str(missing), "--out", str(out)])
+        assert result.exit_code == 2
+
+    def test_rejects_directory_as_scenario(self, tmp_path: Path) -> None:
+        a_dir = tmp_path / "a-dir"
+        a_dir.mkdir()
+        out = tmp_path / "run-001"
+        result = runner.invoke(app, ["plan", str(a_dir), "--out", str(out)])
+        assert result.exit_code == 2
+
+    def test_rejects_out_when_parent_missing(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        out = tmp_path / "nonexistent-parent" / "run-001"
+        result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2
+
+    def test_rejects_out_when_path_already_exists(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        out = tmp_path / "run-001"
+        out.mkdir()
+        result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2
+
+
+def test_plan_stub_with_valid_paths_exits_one(tmp_path: Path) -> None:
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text("")
+    out = tmp_path / "run-001"
+    result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
+    assert result.exit_code == 1
 
 
 def test_top_level_help_lists_all_commands() -> None:
