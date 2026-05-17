@@ -85,7 +85,7 @@ def run(
 
 @app.command()
 def step(
-    run_dir: Annotated[Path, typer.Argument(exists=False)],
+    run_dir: Annotated[Path, typer.Argument(exists=True, dir_okay=True, file_okay=False)],
     next_: Annotated[bool, typer.Option("--next")] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
