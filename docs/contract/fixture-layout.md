@@ -1,0 +1,31 @@
+# Fixture Directory Layout
+
+Each chaos-librarian run writes a self-contained fixture directory protected
+by a `.chaos-librarian-run` sentinel file. See
+[`chaos-librarian-design.md` "Fixture Directory Layout"](../specs/chaos-librarian-design.md)
+and "Filesystem Safety" for the full contract.
+
+```text
+run/
+  .chaos-librarian-run        # sentinel — REQUIRED, validated by `clean`
+  scenario.yaml
+  replay.json
+  manifest.initial.json
+  manifest.current.json
+  journal.jsonl
+  validation.json
+  materialization.json
+  reports/
+    assets/
+    works/
+    variants/
+    bundles/
+  library/                    # all scenario paths resolve under here
+    movies-hd/
+    movies-4k/
+    archive/
+    staging/
+```
+
+Path-containment rules: every scenario path resolves under `<run-dir>/library/`
+after symlink/`..` normalization. Violations fail with exit code `7`.
