@@ -48,27 +48,32 @@ def test_plan_only_sentinel_roundtrip_without_created_at() -> None:
 
 
 def test_rejects_missing_run_id() -> None:
+    payload = {
+        "schema_version": RUN_SENTINEL_SCHEMA_VERSION,
+        "created_by": "chaos-librarian 0.0.0",
+    }
     with pytest.raises(ValidationError):
-        RunSentinel(
-            schema_version=RUN_SENTINEL_SCHEMA_VERSION,
-            created_by="chaos-librarian 0.0.0",
-        )  # type: ignore[call-arg]  # ty:ignore[missing-argument]
+        RunSentinel.model_validate(payload)
 
 
 def test_rejects_unknown_schema_version() -> None:
+    # Build via dict so static type checkers don't flag the intentionally
+    # invalid version; Pydantic must catch it at runtime.
+    payload = {
+        "run_id": str(uuid.uuid4()),
+        "schema_version": 999,
+        "created_by": "chaos-librarian 0.0.0",
+    }
     with pytest.raises(ValidationError):
-        RunSentinel(
-            run_id=uuid.uuid4(),
-            schema_version=999,
-            created_by="chaos-librarian 0.0.0",
-        )
+        RunSentinel.model_validate(payload)
 
 
 def test_rejects_extra_fields() -> None:
+    payload = {
+        "run_id": str(uuid.uuid4()),
+        "schema_version": RUN_SENTINEL_SCHEMA_VERSION,
+        "created_by": "chaos-librarian 0.0.0",
+        "bogus": "x",
+    }
     with pytest.raises(ValidationError):
-        RunSentinel(
-            run_id=uuid.uuid4(),
-            schema_version=RUN_SENTINEL_SCHEMA_VERSION,
-            created_by="chaos-librarian 0.0.0",
-            bogus="x",  # type: ignore[call-arg]  # ty:ignore[unknown-argument]
-        )
+        RunSentinel.model_validate(payload)

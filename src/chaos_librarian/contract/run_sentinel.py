@@ -13,8 +13,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from chaos_librarian.contract import RUN_SENTINEL_SCHEMA_VERSION
-
 
 class RunSentinel(BaseModel):
     """Top-level ``.chaos-librarian-run`` sentinel file."""
@@ -22,6 +20,9 @@ class RunSentinel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     run_id: uuid.UUID
-    schema_version: Literal[RUN_SENTINEL_SCHEMA_VERSION]  # ty:ignore[invalid-type-form]
+    # ty rejects ``Literal[CONSTANT]`` (PEP 586 indirect form); hardcode the
+    # value here. test_rejects_unknown_schema_version locks the linkage to
+    # RUN_SENTINEL_SCHEMA_VERSION via the constant value.
+    schema_version: Literal[1]
     created_by: str
     created_at: datetime | None = None
