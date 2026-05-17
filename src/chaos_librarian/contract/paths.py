@@ -38,9 +38,10 @@ def resolve_under_library(candidate: Path, library_root: Path) -> Path:
             ``library_root``, or follows a symlink whose target is outside
             ``library_root``.
     """
-    # Reject empty paths and bare-dot paths up front. pathlib normalizes
-    # Path("") to Path(".") with parts == (".",) on POSIX, so the string
-    # check from the original draft does not fire.
+    # Reject empty paths, bare-dot paths, and paths whose only segments are
+    # "." or empty up front. On Python 3.13, Path("") and Path(".") both have
+    # parts == (); on earlier Pythons they have ("",) or (".",). Filtering
+    # those segments handles every version and also rejects Path("./.").
     parts = tuple(p for p in candidate.parts if p not in ("", "."))
     if not parts:
         raise PathContainmentError(

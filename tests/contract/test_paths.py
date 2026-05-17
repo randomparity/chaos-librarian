@@ -88,8 +88,9 @@ def test_empty_path_rejected(library_root: Path) -> None:
 
 
 def test_dot_path_rejected(library_root: Path) -> None:
-    # Path(".") has parts ("",) on some platforms; either way it resolves to
-    # the library root, which violates the strict-subpath rule.
+    # Path(".") has parts == () on Python 3.13 (older Pythons: (".",)); the
+    # parts-filter in resolve_under_library treats both as "no real
+    # components" and rejects with the message that mentions "library root".
     with pytest.raises(PathContainmentError, match="library root"):
         resolve_under_library(Path("."), library_root)
 
