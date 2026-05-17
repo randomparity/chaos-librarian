@@ -122,7 +122,7 @@ def capabilities(
 
 @app.command()
 def clean(
-    run_dir: Annotated[Path, typer.Argument(exists=False)],
+    run_dir: Annotated[Path, typer.Argument(exists=True, dir_okay=True, file_okay=False)],
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
