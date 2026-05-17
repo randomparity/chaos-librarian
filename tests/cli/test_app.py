@@ -80,21 +80,27 @@ class TestPlanPathValidation:
         missing = tmp_path / "missing.yaml"
         out = tmp_path / "run-001"
         result = runner.invoke(app, ["plan", str(missing), "--out", str(out)])
-        assert result.exit_code == 2
+        assert result.exit_code == 2, (
+            f"missing scenario should exit 2 (BadParameter), got {result.exit_code}"
+        )
 
     def test_rejects_directory_as_scenario(self, tmp_path: Path) -> None:
         a_dir = tmp_path / "a-dir"
         a_dir.mkdir()
         out = tmp_path / "run-001"
         result = runner.invoke(app, ["plan", str(a_dir), "--out", str(out)])
-        assert result.exit_code == 2
+        assert result.exit_code == 2, (
+            f"directory passed as scenario should exit 2, got {result.exit_code}"
+        )
 
     def test_rejects_out_when_parent_missing(self, tmp_path: Path) -> None:
         scenario = tmp_path / "scenario.yaml"
         scenario.write_text("")
         out = tmp_path / "nonexistent-parent" / "run-001"
         result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
-        assert result.exit_code == 2
+        assert result.exit_code == 2, (
+            f"--out with missing parent should exit 2, got {result.exit_code}"
+        )
 
     def test_rejects_out_when_path_already_exists(self, tmp_path: Path) -> None:
         scenario = tmp_path / "scenario.yaml"
@@ -102,7 +108,9 @@ class TestPlanPathValidation:
         out = tmp_path / "run-001"
         out.mkdir()
         result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
-        assert result.exit_code == 2
+        assert result.exit_code == 2, (
+            f"--out path that already exists should exit 2, got {result.exit_code}"
+        )
 
 
 def test_plan_stub_with_valid_paths_exits_one(tmp_path: Path) -> None:
