@@ -36,7 +36,6 @@ def test_command_exists_and_exits_one(command: str) -> None:
 @pytest.mark.parametrize(
     "command_args",
     [
-        ["replay", "fixtures/run-001/replay.json", "--out", "fixtures/replay-001"],
         ["capabilities"],
     ],
 )
@@ -318,6 +317,63 @@ def test_clean_stub_with_valid_run_dir_exits_one(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
     result = runner.invoke(app, ["clean", str(run_dir)])
+    assert result.exit_code == 1
+
+
+class TestReplayPathValidation:
+    def test_rejects_missing_bundle(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing-replay.json"
+        out = tmp_path / "replay-out"
+        result = runner.invoke(app, ["replay", str(missing), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"missing bundle should exit 2 (BadParameter), got {result.exit_code}"
+        )
+
+    def test_rejects_directory_as_bundle(self, tmp_path: Path) -> None:
+        a_dir = tmp_path / "a-dir"
+        a_dir.mkdir()
+        out = tmp_path / "replay-out"
+        result = runner.invoke(app, ["replay", str(a_dir), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"directory passed as bundle should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_parent_missing(self, tmp_path: Path) -> None:
+        bundle = tmp_path / "replay.json"
+        bundle.write_text("")
+        out = tmp_path / "nonexistent-parent" / "replay-out"
+        result = runner.invoke(app, ["replay", str(bundle), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out with missing parent should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_parent_is_file(self, tmp_path: Path) -> None:
+        bundle = tmp_path / "replay.json"
+        bundle.write_text("")
+        parent_as_file = tmp_path / "a-file"
+        parent_as_file.write_text("")
+        out = parent_as_file / "replay-out"
+        result = runner.invoke(app, ["replay", str(bundle), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out whose parent is a regular file should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_path_already_exists(self, tmp_path: Path) -> None:
+        bundle = tmp_path / "replay.json"
+        bundle.write_text("")
+        out = tmp_path / "replay-out"
+        out.mkdir()
+        result = runner.invoke(app, ["replay", str(bundle), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out path that already exists should exit 2, got {result.exit_code}"
+        )
+
+
+def test_replay_stub_with_valid_paths_exits_one(tmp_path: Path) -> None:
+    bundle = tmp_path / "replay.json"
+    bundle.write_text("")
+    out = tmp_path / "replay-out"
+    result = runner.invoke(app, ["replay", str(bundle), "--out", str(out)])
     assert result.exit_code == 1
 
 
