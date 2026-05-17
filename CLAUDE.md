@@ -80,14 +80,14 @@ Seven contract modules, one model file each:
 - `scenario.py` — input YAML; timeline is a discriminated union on `action` (9 event variants)
 - `manifest.py` — current expected library state
 - `journal.py` — JSONL events; **discriminated union on `phase`** (atomic / started / progressed / committed / aborted)
-- `replay_bundle.py` — `replay.json`; **discriminated union on `execution_mode`** (plan_only vs materialize/run)
+- `replay_bundle.py` — `replay.json`; **discriminated union on `execution_mode`** (plan_only vs materialize/run). Embeds a second union: `ExecutionTraceEntry` is a discriminated union on `kind` (rng / alloc / materializer; `exit_code` required iff materializer).
 - `validation.py`, `materialization.py`, `run_sentinel.py` — flat report schemas
 
 `contract/paths.py` (security-critical) enforces `<run-dir>/library/` containment for every scenario path — strict subpath, rejects symlink escapes.
 
 ### Discriminated unions export as `oneOf`
 
-`JournalEntry` and `ReplayBundle` are `Annotated[<union>, Field(discriminator=...)]`. `schema_export.py` wraps them in `TypeAdapter(...)` so the exported JSON Schema includes `oneOf` + `discriminator`. External consumers (voom-v2) see the mode-split contracts natively rather than relying on Python-side validation. This pattern resolves the three high-severity findings from the Codex adversarial review of the Sprint 0 plan (commits `283b0a3`, `91964ea`).
+`JournalEntry`, `ReplayBundle`, and `ExecutionTraceEntry` are `Annotated[<union>, Field(discriminator=...)]`. The two top-level unions are wrapped in `TypeAdapter(...)` in `schema_export.py` so the exported JSON Schema includes `oneOf` + `discriminator`; `ExecutionTraceEntry` is reached transitively through `ReplayBundle` and gets the same `oneOf` + `discriminator` treatment inside `$defs`. External consumers (voom-v2) see every mode-split contract natively rather than relying on Python-side validation. This pattern resolves the three high-severity findings from the Codex adversarial review of the Sprint 0 plan (commits `283b0a3`, `91964ea`) and the equivalent follow-up for `execution_trace` (issue #1).
 
 ### CLI
 
