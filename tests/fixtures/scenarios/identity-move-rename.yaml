@@ -1,0 +1,45 @@
+schema_version: 1
+scenario_id: identity-move-rename
+seed: 42
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+    - id: movies_4k
+      path: movies-4k
+
+works:
+  - id: work_blazar
+    title: Synthetic Blazar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_hd_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 12
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: move_001
+    at: 2s
+    action: move_asset
+    target: asset_hd_main
+    to: movies-hd/Synthetic Blazar (HD).mkv
+  - id: rename_001
+    at: 4s
+    action: rename_file
+    target: asset_hd_main
+    to: movies-hd/Blazar.mkv
