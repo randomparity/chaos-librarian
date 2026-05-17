@@ -36,7 +36,6 @@ def test_command_exists_and_exits_one(command: str) -> None:
 @pytest.mark.parametrize(
     "command_args",
     [
-        ["materialize", "scenario.yaml", "--out", "fixtures/run-001"],
         ["run", "scenario.yaml", "--out", "fixtures/run-001", "--duration", "10s"],
         ["step", "fixtures/run-001", "--next"],
         ["replay", "fixtures/run-001/replay.json", "--out", "fixtures/replay-001"],
@@ -111,6 +110,63 @@ def test_plan_stub_with_valid_paths_exits_one(tmp_path: Path) -> None:
     scenario.write_text("")
     out = tmp_path / "run-001"
     result = runner.invoke(app, ["plan", str(scenario), "--out", str(out)])
+    assert result.exit_code == 1
+
+
+class TestMaterializePathValidation:
+    def test_rejects_missing_scenario(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing.yaml"
+        out = tmp_path / "run-001"
+        result = runner.invoke(app, ["materialize", str(missing), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"missing scenario should exit 2 (BadParameter), got {result.exit_code}"
+        )
+
+    def test_rejects_directory_as_scenario(self, tmp_path: Path) -> None:
+        a_dir = tmp_path / "a-dir"
+        a_dir.mkdir()
+        out = tmp_path / "run-001"
+        result = runner.invoke(app, ["materialize", str(a_dir), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"directory passed as scenario should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_parent_missing(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        out = tmp_path / "nonexistent-parent" / "run-001"
+        result = runner.invoke(app, ["materialize", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out with missing parent should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_parent_is_file(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        parent_as_file = tmp_path / "a-file"
+        parent_as_file.write_text("")
+        out = parent_as_file / "run-001"
+        result = runner.invoke(app, ["materialize", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out whose parent is a regular file should exit 2, got {result.exit_code}"
+        )
+
+    def test_rejects_out_when_path_already_exists(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "scenario.yaml"
+        scenario.write_text("")
+        out = tmp_path / "run-001"
+        out.mkdir()
+        result = runner.invoke(app, ["materialize", str(scenario), "--out", str(out)])
+        assert result.exit_code == 2, (
+            f"--out path that already exists should exit 2, got {result.exit_code}"
+        )
+
+
+def test_materialize_stub_with_valid_paths_exits_one(tmp_path: Path) -> None:
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text("")
+    out = tmp_path / "run-001"
+    result = runner.invoke(app, ["materialize", str(scenario), "--out", str(out)])
     assert result.exit_code == 1
 
 
