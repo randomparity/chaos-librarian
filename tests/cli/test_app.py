@@ -33,15 +33,9 @@ def test_command_exists_and_exits_one(command: str) -> None:
     assert result.exit_code == 0, f"--help should always succeed for {command}"
 
 
-@pytest.mark.parametrize(
-    "command_args",
-    [
-        ["capabilities"],
-    ],
-)
-def test_stub_command_exits_one(command_args: list[str]) -> None:
-    result = runner.invoke(app, command_args)
-    assert result.exit_code == 1, f"Stub {command_args[0]} should exit 1"
+def test_capabilities_stub_exits_one() -> None:
+    result = runner.invoke(app, ["capabilities"])
+    assert result.exit_code == 1
 
 
 class TestValidatePathValidation:
