@@ -1,26 +1,11 @@
 {
   "$defs": {
-    "ExecutionTraceEntry": {
+    "AllocTraceEntry": {
       "additionalProperties": false,
+      "description": "Trace entry for an identifier/seed allocation. No ``exit_code``.",
       "properties": {
-        "exit_code": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Exit Code"
-        },
         "kind": {
-          "enum": [
-            "rng",
-            "alloc",
-            "materializer"
-          ],
+          "const": "alloc",
           "title": "Kind",
           "type": "string"
         },
@@ -34,11 +19,11 @@
         }
       },
       "required": [
-        "kind",
         "stream",
-        "value"
+        "value",
+        "kind"
       ],
-      "title": "ExecutionTraceEntry",
+      "title": "AllocTraceEntry",
       "type": "object"
     },
     "MaterializeReplayBundle": {
@@ -64,7 +49,25 @@
         },
         "execution_trace": {
           "items": {
-            "$ref": "#/$defs/ExecutionTraceEntry"
+            "discriminator": {
+              "mapping": {
+                "alloc": "#/$defs/AllocTraceEntry",
+                "materializer": "#/$defs/MaterializerTraceEntry",
+                "rng": "#/$defs/RngTraceEntry"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/RngTraceEntry"
+              },
+              {
+                "$ref": "#/$defs/AllocTraceEntry"
+              },
+              {
+                "$ref": "#/$defs/MaterializerTraceEntry"
+              }
+            ]
           },
           "title": "Execution Trace",
           "type": "array"
@@ -108,6 +111,37 @@
       "title": "MaterializeReplayBundle",
       "type": "object"
     },
+    "MaterializerTraceEntry": {
+      "additionalProperties": false,
+      "description": "Trace entry for a materializer subprocess. ``exit_code`` is required.",
+      "properties": {
+        "exit_code": {
+          "title": "Exit Code",
+          "type": "integer"
+        },
+        "kind": {
+          "const": "materializer",
+          "title": "Kind",
+          "type": "string"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream",
+        "value",
+        "kind",
+        "exit_code"
+      ],
+      "title": "MaterializerTraceEntry",
+      "type": "object"
+    },
     "PlanOnlyReplayBundle": {
       "additionalProperties": false,
       "description": "Replay bundle in plan-only mode. No ``created_at`` or ``toolchain``.",
@@ -124,7 +158,25 @@
         },
         "execution_trace": {
           "items": {
-            "$ref": "#/$defs/ExecutionTraceEntry"
+            "discriminator": {
+              "mapping": {
+                "alloc": "#/$defs/AllocTraceEntry",
+                "materializer": "#/$defs/MaterializerTraceEntry",
+                "rng": "#/$defs/RngTraceEntry"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/RngTraceEntry"
+              },
+              {
+                "$ref": "#/$defs/AllocTraceEntry"
+              },
+              {
+                "$ref": "#/$defs/MaterializerTraceEntry"
+              }
+            ]
           },
           "title": "Execution Trace",
           "type": "array"
@@ -156,6 +208,32 @@
         "resolved_seed"
       ],
       "title": "PlanOnlyReplayBundle",
+      "type": "object"
+    },
+    "RngTraceEntry": {
+      "additionalProperties": false,
+      "description": "Trace entry for an RNG draw. No ``exit_code``.",
+      "properties": {
+        "kind": {
+          "const": "rng",
+          "title": "Kind",
+          "type": "string"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "stream",
+        "value",
+        "kind"
+      ],
+      "title": "RngTraceEntry",
       "type": "object"
     }
   },
