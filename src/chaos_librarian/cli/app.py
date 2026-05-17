@@ -24,6 +24,24 @@ def _stub(command: str) -> None:
     raise typer.Exit(code=1)
 
 
+def _validate_new_out_path(value: Path) -> Path:
+    """Reject --out paths whose parent is missing or that already exist.
+
+    The CLI never overwrites an existing output directory and requires
+    the caller to have prepared a writable parent. This runs as a Typer
+    callback so failures surface as exit-code 2 BadParameter errors
+    before any command body executes.
+    """
+    if value.exists():
+        raise typer.BadParameter(f"--out path already exists: {value}")
+    parent = value.parent
+    if not parent.exists():
+        raise typer.BadParameter(f"--out parent directory does not exist: {parent}")
+    if not parent.is_dir():
+        raise typer.BadParameter(f"--out parent is not a directory: {parent}")
+    return value
+
+
 @app.command()
 def validate(
     scenario: Annotated[Path, typer.Argument(exists=False, dir_okay=False)],
