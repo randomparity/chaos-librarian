@@ -35,12 +35,36 @@ def compute_plan_only_run_id(scenario_content_hash: str, resolved_seed: int) -> 
     return uuid.uuid5(CHAOS_LIBRARIAN_NAMESPACE_UUID, f"{scenario_content_hash}:{resolved_seed}")
 
 
-class ExecutionTraceEntry(BaseModel):
+class _TraceBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    kind: Literal["rng", "alloc", "materializer"]
+
     stream: str
     value: str
-    exit_code: int | None = None  # only set on `materializer` entries
+
+
+class RngTraceEntry(_TraceBase):
+    """Trace entry for an RNG draw. No ``exit_code``."""
+
+    kind: Literal["rng"]
+
+
+class AllocTraceEntry(_TraceBase):
+    """Trace entry for an identifier/seed allocation. No ``exit_code``."""
+
+    kind: Literal["alloc"]
+
+
+class MaterializerTraceEntry(_TraceBase):
+    """Trace entry for a materializer subprocess. ``exit_code`` is required."""
+
+    kind: Literal["materializer"]
+    exit_code: int
+
+
+ExecutionTraceEntry = Annotated[
+    RngTraceEntry | AllocTraceEntry | MaterializerTraceEntry,
+    Field(discriminator="kind"),
+]
 
 
 class _ReplayBundleBase(BaseModel):

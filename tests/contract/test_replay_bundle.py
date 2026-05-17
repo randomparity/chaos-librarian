@@ -15,10 +15,13 @@ from chaos_librarian.contract import (
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
 from chaos_librarian.contract.replay_bundle import (
+    AllocTraceEntry,
     ExecutionTraceEntry,
     MaterializeReplayBundle,
+    MaterializerTraceEntry,  # noqa: F401  -- verifies public re-export of materializer variant
     PlanOnlyReplayBundle,
     ReplayBundle,
+    RngTraceEntry,
     compute_plan_only_run_id,
 )
 
@@ -95,8 +98,8 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
         run_id=compute_plan_only_run_id(h, 1),
         resolved_seed=1,
         execution_trace=[
-            ExecutionTraceEntry(kind="rng", stream="ids", value="1"),
-            ExecutionTraceEntry(kind="alloc", stream="work_id", value="w1"),
+            RngTraceEntry(kind="rng", stream="ids", value="1"),
+            AllocTraceEntry(kind="alloc", stream="work_id", value="w1"),
         ],
     )
     blob_a = json.dumps(json.loads(b.model_dump_json()), sort_keys=True)
@@ -161,3 +164,37 @@ def test_materialize_rejects_null_toolchain() -> None:
     }
     with pytest.raises(ValidationError):
         TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def _trace_base(kind: str) -> dict[str, object]:
+    return {"kind": kind, "stream": "ids", "value": "1"}
+
+
+def test_rng_trace_entry_rejects_exit_code() -> None:
+    bad = {**_trace_base("rng"), "exit_code": 0}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionTraceEntry).validate_python(bad)
+
+
+def test_alloc_trace_entry_rejects_exit_code() -> None:
+    bad = {**_trace_base("alloc"), "exit_code": 0}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionTraceEntry).validate_python(bad)
+
+
+def test_materializer_trace_entry_requires_exit_code() -> None:
+    bad = _trace_base("materializer")
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionTraceEntry).validate_python(bad)
+
+
+def test_materializer_trace_entry_rejects_null_exit_code() -> None:
+    bad = {**_trace_base("materializer"), "exit_code": None}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionTraceEntry).validate_python(bad)
+
+
+def test_trace_entry_rejects_unknown_kind() -> None:
+    bad = _trace_base("io")
+    with pytest.raises(ValidationError):
+        TypeAdapter(ExecutionTraceEntry).validate_python(bad)
