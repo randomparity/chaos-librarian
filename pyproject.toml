@@ -37,3 +37,38 @@ testpaths = ["tests"]
 [tool.coverage.run]
 source = ["chaos_librarian"]
 branch = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "W",       # pycodestyle
+    "F",            # pyflakes
+    "I",            # isort
+    "B",            # bugbear
+    "UP",           # pyupgrade
+    "SIM",          # simplify
+    "RUF",          # ruff-specific
+    "TID",          # tidy imports
+    "PL",           # pylint
+    "PT",           # pytest style
+]
+ignore = [
+    "PLR0913",      # too many args — Pydantic models exceed this naturally
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["PLR2004"]   # magic numbers fine in tests
+
+[tool.ruff.lint.flake8-tidy-imports]
+ban-relative-imports = "all"   # absolute imports only — matches global standards
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.ty.rules]
+unresolved-import = "error"
+possibly-unresolved-reference = "error"
