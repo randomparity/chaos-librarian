@@ -438,13 +438,15 @@ The oracle journal is append-only JSONL. Each event records:
 - affected locations
 - expected current state delta
 - toolchain information when materialized
-- `phase` (optional; one of `started` | `progressed` | `committed` |
-  `aborted`; absent for atomic mutations, semantically equivalent to
-  `committed`)
-- `temp_path` (optional; present on `phase: started` entries for multi-phase
-  events that stage to a temporary path)
-- `related_event_id` (optional; on commit and abort entries, points to the
-  start event's ID)
+- `phase` (required; one of `atomic` | `started` | `progressed` | `committed`
+  | `aborted`). Atomic mutations are the default for all single-event
+  actions; multi-phase mutations use the other values. The journal schema
+  is a discriminated union on `phase` so `temp_path` and `related_event_id`
+  are required or forbidden per phase rather than free-floating optionals.
+- `temp_path` (required on `started` and `progressed`; forbidden on
+  `atomic`, `committed`, `aborted`)
+- `related_event_id` (required on `progressed`, `committed`, `aborted`;
+  forbidden on `atomic` and `started`)
 
 Sprint 0 defines all three optional fields in `journal.schema.json` even
 though only slow-copy uses them in V1. Stabilizing the shape on day one keeps

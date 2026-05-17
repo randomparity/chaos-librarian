@@ -590,8 +590,25 @@ def test_symlink_target_inside_library_allowed(library_root: Path) -> None:
 
 
 def test_empty_path_rejected(library_root: Path) -> None:
-    with pytest.raises(PathContainmentError):
+    with pytest.raises(PathContainmentError, match="empty"):
         resolve_under_library(Path(""), library_root)
+
+
+def test_dot_path_rejected(library_root: Path) -> None:
+    # Path(".") has parts ("",) on some platforms; either way it resolves to
+    # the library root, which violates the strict-subpath rule.
+    with pytest.raises(PathContainmentError, match="library root"):
+        resolve_under_library(Path("."), library_root)
+
+
+def test_path_that_resolves_to_library_root_rejected(library_root: Path) -> None:
+    with pytest.raises(PathContainmentError, match="library root"):
+        resolve_under_library(Path("movies-hd/.."), library_root)
+
+
+def test_deep_path_that_resolves_to_library_root_rejected(library_root: Path) -> None:
+    with pytest.raises(PathContainmentError, match="library root"):
+        resolve_under_library(Path("a/b/c/../../.."), library_root)
 ```
 
 - [ ] **Step 2: Run the tests and confirm they fail**
@@ -628,21 +645,34 @@ class PathContainmentError(ValueError):
 def resolve_under_library(candidate: Path, library_root: Path) -> Path:
     """Resolve a scenario path under the library root, rejecting any escape.
 
+    Scenario paths MUST resolve to a strict subpath of ``library_root``; a
+    path that resolves exactly to the library root is rejected because
+    later cleanup and materializer code receives it as an asset target.
+
     Args:
-        candidate: Path from a scenario field (e.g. ``movies-hd/A.mkv``).
-            MUST be relative.
+        candidate: Path from a scenario field. MUST be relative.
         library_root: Absolute path to ``<run-dir>/library/``.
 
     Returns:
-        The resolved absolute path, guaranteed to be inside ``library_root``.
+        The resolved absolute path, guaranteed to be a strict subpath of
+        ``library_root``.
 
     Raises:
-        PathContainmentError: If ``candidate`` is absolute, empty, contains
-            ``..`` segments that escape ``library_root``, or follows a
-            symlink whose target is outside ``library_root``.
+        PathContainmentError: If ``candidate`` is absolute, empty, resolves
+            to the library root itself, contains ``..`` segments that escape
+            ``library_root``, or follows a symlink whose target is outside
+            ``library_root``.
     """
-    if str(candidate) == "":
-        raise PathContainmentError("scenario path is empty")
+    # Reject empty paths and bare-dot paths up front. pathlib normalizes
+    # Path("") to Path(".") with parts == (".",) on POSIX, so the string
+    # check from the original draft does not fire.
+    parts = tuple(p for p in candidate.parts if p not in ("", "."))
+    if not parts:
+        raise PathContainmentError(
+            f"scenario path is empty or resolves to library root (no real components): "
+            f"{candidate!r}"
+        )
+
     if candidate.is_absolute():
         raise PathContainmentError(
             f"scenario path must be relative, got absolute: {candidate}"
@@ -652,7 +682,13 @@ def resolve_under_library(candidate: Path, library_root: Path) -> Path:
     joined = library_root_resolved / candidate
     resolved = joined.resolve(strict=False)
 
-    if resolved != library_root_resolved and library_root_resolved not in resolved.parents:
+    # Strict subpath: must NOT equal the library root itself.
+    if resolved == library_root_resolved:
+        raise PathContainmentError(
+            f"scenario path resolves to library root (must be strict subpath): "
+            f"{candidate} -> {resolved}"
+        )
+    if library_root_resolved not in resolved.parents:
         raise PathContainmentError(
             f"scenario path resolves outside library (escape): "
             f"{candidate} -> {resolved} (library: {library_root_resolved})"
@@ -665,7 +701,7 @@ def resolve_under_library(candidate: Path, library_root: Path) -> Path:
 ```bash
 uv run pytest tests/contract/test_paths.py -v
 ```
-Expected: 10 PASS.
+Expected: 13 PASS.
 
 - [ ] **Step 5: Run ruff and ty**
 
@@ -1391,14 +1427,22 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from chaos_librarian.contract import JOURNAL_SCHEMA_VERSION
-from chaos_librarian.contract.journal import JournalEntry, JournalPhase
+from chaos_librarian.contract.journal import (
+    AbortedJournalEntry,
+    AtomicJournalEntry,
+    CommittedJournalEntry,
+    JournalEntry,
+    JournalPhase,
+    ProgressedJournalEntry,
+    StartedJournalEntry,
+)
 
 
-def _atomic_entry() -> JournalEntry:
-    return JournalEntry(
+def _atomic_entry() -> AtomicJournalEntry:
+    return AtomicJournalEntry(
         schema_version=JOURNAL_SCHEMA_VERSION,
         event_id="e1",
         scenario_id="s1",
@@ -1409,22 +1453,25 @@ def _atomic_entry() -> JournalEntry:
     )
 
 
+def _base_fields(event_id: str = "e1") -> dict[str, object]:
+    return {
+        "schema_version": JOURNAL_SCHEMA_VERSION,
+        "event_id": event_id,
+        "scenario_id": "sc",
+        "run_id": str(uuid.uuid4()),
+        "logical_time_ns": 2_000_000_000,
+        "action": "x",
+    }
+
+
 def test_atomic_entry_roundtrip() -> None:
     e = _atomic_entry()
-    loaded = JournalEntry.model_validate_json(e.model_dump_json())
+    loaded = TypeAdapter(JournalEntry).validate_json(e.model_dump_json())
     assert loaded == e
 
 
-def test_atomic_entry_omits_phase_fields() -> None:
-    e = _atomic_entry()
-    blob = e.model_dump_json(exclude_none=True)
-    assert "phase" not in blob
-    assert "temp_path" not in blob
-    assert "related_event_id" not in blob
-
-
 def test_start_phase_with_temp_path() -> None:
-    e = JournalEntry(
+    e = StartedJournalEntry(
         schema_version=JOURNAL_SCHEMA_VERSION,
         event_id="s1",
         scenario_id="sc",
@@ -1435,13 +1482,13 @@ def test_start_phase_with_temp_path() -> None:
         phase=JournalPhase.STARTED,
         temp_path="movies-hd/A.mkv.part",
     )
-    loaded = JournalEntry.model_validate_json(e.model_dump_json())
+    loaded = TypeAdapter(JournalEntry).validate_json(e.model_dump_json())
     assert loaded.phase is JournalPhase.STARTED
     assert loaded.temp_path == "movies-hd/A.mkv.part"
 
 
 def test_commit_phase_references_start() -> None:
-    e = JournalEntry(
+    e = CommittedJournalEntry(
         schema_version=JOURNAL_SCHEMA_VERSION,
         event_id="c1",
         scenario_id="sc",
@@ -1452,7 +1499,7 @@ def test_commit_phase_references_start() -> None:
         phase=JournalPhase.COMMITTED,
         related_event_id="s1",
     )
-    loaded = JournalEntry.model_validate_json(e.model_dump_json())
+    loaded = TypeAdapter(JournalEntry).validate_json(e.model_dump_json())
     assert loaded.phase is JournalPhase.COMMITTED
     assert loaded.related_event_id == "s1"
 
@@ -1461,12 +1508,74 @@ def test_rejects_unknown_phase() -> None:
     bad = _atomic_entry().model_dump(mode="json")
     bad["phase"] = "halfway"
     with pytest.raises(ValidationError):
-        JournalEntry.model_validate(bad)
+        TypeAdapter(JournalEntry).validate_python(bad)
 
 
 def test_wall_clock_time_optional() -> None:
     e = _atomic_entry()
     assert e.wall_clock_time is None
+
+
+def test_atomic_entry_rejects_temp_path() -> None:
+    bad = _atomic_entry().model_dump(mode="json")
+    bad["temp_path"] = "x"
+    with pytest.raises(ValidationError):
+        # Validate via the union so the discriminator is respected.
+        TypeAdapter(JournalEntry).validate_python(bad)
+
+
+def test_started_entry_requires_temp_path() -> None:
+    base = {**_base_fields("s1"), "phase": "started"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
+
+
+def test_progressed_entry_requires_both_temp_path_and_related_event_id() -> None:
+    base = {**_base_fields("p1"), "phase": "progressed"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(
+            {**base, "temp_path": "x"}
+        )
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(
+            {**base, "related_event_id": "s1"}
+        )
+
+
+def test_committed_entry_requires_related_event_id() -> None:
+    base = {**_base_fields("c1"), "phase": "committed"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
+
+
+def test_committed_entry_rejects_temp_path() -> None:
+    base = {
+        **_base_fields("c1"),
+        "phase": "committed",
+        "related_event_id": "s1",
+        "temp_path": "x",  # forbidden on committed
+    }
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
+
+
+def test_aborted_entry_requires_related_event_id() -> None:
+    base = {**_base_fields("a1"), "phase": "aborted"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
+
+
+def test_aborted_entry_rejects_temp_path() -> None:
+    base = {
+        **_base_fields("a1"),
+        "phase": "aborted",
+        "related_event_id": "s1",
+        "temp_path": "x",  # forbidden on aborted
+    }
+    with pytest.raises(ValidationError):
+        TypeAdapter(JournalEntry).validate_python(base)
 ```
 
 - [ ] **Step 2: Run tests and confirm they fail**
@@ -1486,7 +1595,11 @@ Expected: FAIL on import.
 The journal is append-only and is the source of truth for the oracle. Sprint 0
 freezes the multi-phase fields (``phase``, ``temp_path``, ``related_event_id``)
 so adding multi-phase mutations after V1 does not force a schema version bump.
-See docs/specs/chaos-librarian-design.md "Oracle Journal" and "Mutation Model".
+The journal entry type is a discriminated union on ``phase`` so impossible
+combinations (e.g. ``committed`` without ``related_event_id``, ``atomic`` with
+``temp_path``) are rejected by Pydantic AND by the exported JSON Schema's
+``oneOf``. See docs/specs/chaos-librarian-design.md "Oracle Journal" and
+"Mutation Model".
 """
 
 from __future__ import annotations
@@ -1494,7 +1607,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -1502,17 +1615,18 @@ from chaos_librarian.contract import JOURNAL_SCHEMA_VERSION
 
 
 class JournalPhase(str, enum.Enum):
-    """Multi-phase mutation lifecycle. Absent on atomic entries."""
+    """Mutation lifecycle phase. ``atomic`` is the default for single-event
+    actions; the other values describe multi-phase mutations (e.g. slow-copy).
+    """
 
+    ATOMIC = "atomic"
     STARTED = "started"
     PROGRESSED = "progressed"
     COMMITTED = "committed"
     ABORTED = "aborted"
 
 
-class JournalEntry(BaseModel):
-    """One JSONL line in journal.jsonl."""
-
+class _JournalEntryBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[JOURNAL_SCHEMA_VERSION]
@@ -1529,13 +1643,52 @@ class JournalEntry(BaseModel):
     state_delta: dict[str, object] = Field(default_factory=dict)
     toolchain: dict[str, str] | None = None
 
-    # Multi-phase fields. Absent on atomic entries (semantically equivalent to
-    # `phase: committed`). Present on multi-phase entries; defined in Sprint 0
-    # so the schema is stable from day one even though only slow-copy uses them
-    # in V1.
-    phase: JournalPhase | None = None
-    temp_path: str | None = None
-    related_event_id: str | None = None
+
+class AtomicJournalEntry(_JournalEntryBase):
+    """Single-event mutation. No ``temp_path``, no ``related_event_id``."""
+
+    phase: Literal[JournalPhase.ATOMIC] = JournalPhase.ATOMIC
+
+
+class StartedJournalEntry(_JournalEntryBase):
+    """First event of a multi-phase mutation. Requires ``temp_path``."""
+
+    phase: Literal[JournalPhase.STARTED]
+    temp_path: str
+
+
+class ProgressedJournalEntry(_JournalEntryBase):
+    """Intermediate event of a multi-phase mutation."""
+
+    phase: Literal[JournalPhase.PROGRESSED]
+    temp_path: str
+    related_event_id: str
+
+
+class CommittedJournalEntry(_JournalEntryBase):
+    """Successful terminal event of a multi-phase mutation."""
+
+    phase: Literal[JournalPhase.COMMITTED]
+    related_event_id: str
+    # No temp_path: the staged file has been renamed to its final path.
+
+
+class AbortedJournalEntry(_JournalEntryBase):
+    """Failed terminal event of a multi-phase mutation."""
+
+    phase: Literal[JournalPhase.ABORTED]
+    related_event_id: str
+    # No temp_path: staging artifact lifecycle is described by related_event_id.
+
+
+JournalEntry = Annotated[
+    AtomicJournalEntry
+    | StartedJournalEntry
+    | ProgressedJournalEntry
+    | CommittedJournalEntry
+    | AbortedJournalEntry,
+    Field(discriminator="phase"),
+]
 ```
 
 - [ ] **Step 4: Run tests**
@@ -1543,7 +1696,7 @@ class JournalEntry(BaseModel):
 ```bash
 uv run pytest tests/contract/test_journal.py -v
 ```
-Expected: 6 PASS.
+Expected: 12 PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -1560,12 +1713,13 @@ git commit -m "Add journal entry schema with multi-phase fields"
 - Create: `src/chaos_librarian/contract/replay_bundle.py`
 - Create: `tests/contract/test_replay_bundle.py`
 
-**Background:** Plan-only and materialize replay bundles differ in two fields:
+**Background:** Plan-only and materialize replay bundles differ in three fields:
 
+- **`execution_mode`** — discriminator literal: `"plan_only"` vs. `"materialize"` / `"run"`.
 - **`run_id`** — UUIDv5 (deterministic) in plan-only, UUIDv4 (random) in materialize.
-- **`created_at`** — omitted entirely in plan-only, RFC 3339 in materialize.
+- **`created_at` / `toolchain`** — both forbidden in plan-only, both required (non-null) in materialize.
 
-We use a single Pydantic model that allows both shapes; the helper `compute_plan_only_run_id` lives in this module so callers don't re-derive it. Tests cover both shapes plus round-trip equivalence after exclude-none serialization.
+`ReplayBundle` is a Pydantic discriminated union on `execution_mode` so the JSON Schema exports as `oneOf` and external consumers (e.g. voom-v2 in Sprint 9) get the mode-split contract natively rather than relying on Python-side validation. The helper `compute_plan_only_run_id` lives in this module so callers don't re-derive it. Tests cover both shapes plus round-trip equivalence after serialization.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -1582,7 +1736,7 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from chaos_librarian.contract import (
     CHAOS_LIBRARIAN_NAMESPACE_UUID,
@@ -1590,6 +1744,8 @@ from chaos_librarian.contract import (
 )
 from chaos_librarian.contract.replay_bundle import (
     ExecutionTraceEntry,
+    MaterializeReplayBundle,
+    PlanOnlyReplayBundle,
     ReplayBundle,
     compute_plan_only_run_id,
 )
@@ -1597,6 +1753,31 @@ from chaos_librarian.contract.replay_bundle import (
 
 def _scenario_hash(scenario_yaml: str) -> str:
     return hashlib.sha256(scenario_yaml.encode("utf-8")).hexdigest()
+
+
+def _plan_only_base(seed: int = 1) -> dict[str, object]:
+    h = _scenario_hash("scenario_id: t\nseed: 1\n")
+    return {
+        "execution_mode": "plan_only",
+        "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
+        "chaos_librarian_version": "0.0.0",
+        "scenario": "scenario_id: t\nseed: 1\n",
+        "run_id": str(compute_plan_only_run_id(h, seed)),
+        "resolved_seed": seed,
+        "execution_trace": [],
+    }
+
+
+def _materialize_base() -> dict[str, object]:
+    return {
+        "execution_mode": "materialize",
+        "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
+        "chaos_librarian_version": "0.0.0",
+        "scenario": "scenario_id: t\nseed: 1\n",
+        "run_id": str(uuid.uuid4()),
+        "resolved_seed": 1,
+        "execution_trace": [],
+    }
 
 
 def test_plan_only_run_id_is_deterministic() -> None:
@@ -1618,9 +1799,9 @@ def test_plan_only_run_id_differs_by_seed() -> None:
     assert compute_plan_only_run_id(h, 1) != compute_plan_only_run_id(h, 2)
 
 
-def test_plan_only_bundle_omits_created_at() -> None:
+def test_plan_only_bundle_has_no_created_at_or_toolchain_fields() -> None:
     h = _scenario_hash("x")
-    b = ReplayBundle(
+    b = PlanOnlyReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
         scenario="scenario_id: t\nseed: 1\n",
@@ -1628,14 +1809,14 @@ def test_plan_only_bundle_omits_created_at() -> None:
         resolved_seed=1,
         execution_trace=[],
     )
-    parsed = json.loads(b.model_dump_json(exclude_none=True))
+    parsed = json.loads(b.model_dump_json())
     assert "created_at" not in parsed
     assert "toolchain" not in parsed
 
 
 def test_plan_only_bundle_roundtrip_byte_identical() -> None:
     h = _scenario_hash("scenario_id: t\nseed: 1\n")
-    b = ReplayBundle(
+    b = PlanOnlyReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
         scenario="scenario_id: t\nseed: 1\n",
@@ -1646,13 +1827,14 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
             ExecutionTraceEntry(kind="alloc", stream="work_id", value="w1"),
         ],
     )
-    blob_a = b.model_dump_json(exclude_none=True, sort_keys=True)
-    blob_b = b.model_dump_json(exclude_none=True, sort_keys=True)
+    blob_a = json.dumps(json.loads(b.model_dump_json()), sort_keys=True)
+    blob_b = json.dumps(json.loads(b.model_dump_json()), sort_keys=True)
     assert blob_a == blob_b
 
 
 def test_materialize_bundle_has_created_at_and_toolchain() -> None:
-    b = ReplayBundle(
+    b = MaterializeReplayBundle(
+        execution_mode="materialize",
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
         scenario="scenario_id: t\nseed: 1\n",
@@ -1662,21 +1844,51 @@ def test_materialize_bundle_has_created_at_and_toolchain() -> None:
         execution_trace=[],
         toolchain={"ffmpeg": "7.1", "ffprobe": "7.1", "platform": "darwin-arm64"},
     )
-    loaded = ReplayBundle.model_validate_json(b.model_dump_json())
+    loaded = TypeAdapter(ReplayBundle).validate_json(b.model_dump_json())
     assert loaded.created_at == b.created_at
     assert loaded.toolchain == b.toolchain
 
 
 def test_rejects_unknown_schema_version() -> None:
+    bad = {**_plan_only_base(), "schema_version": 999}
     with pytest.raises(ValidationError):
-        ReplayBundle(
-            schema_version=999,
-            chaos_librarian_version="0.0.0",
-            scenario="x",
-            run_id=uuid.uuid4(),
-            resolved_seed=1,
-            execution_trace=[],
-        )
+        TypeAdapter(ReplayBundle).validate_python(bad)
+
+
+def test_plan_only_rejects_created_at() -> None:
+    # extra="forbid" on PlanOnlyReplayBundle rejects created_at outright,
+    # including explicit null.
+    bundle_json = {**_plan_only_base(), "created_at": None}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_plan_only_rejects_toolchain() -> None:
+    bundle_json = {**_plan_only_base(), "toolchain": {"ffmpeg": "7.1"}}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_materialize_requires_created_at() -> None:
+    bundle_json = {**_materialize_base(), "toolchain": {"ffmpeg": "7.1"}}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_materialize_requires_toolchain() -> None:
+    bundle_json = {**_materialize_base(), "created_at": "2026-05-17T12:00:00Z"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_materialize_rejects_null_toolchain() -> None:
+    bundle_json = {
+        **_materialize_base(),
+        "created_at": "2026-05-17T12:00:00Z",
+        "toolchain": None,
+    }
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
 ```
 
 - [ ] **Step 2: Run tests and confirm they fail**
@@ -1695,7 +1907,10 @@ Expected: FAIL on import.
 
 A single JSON file (``replay.json``) sufficient to reproduce a run. Plan-only
 bundles are bit-identical for the same scenario + seed; materialize bundles
-are logically identical modulo volatile fields. See
+are logically identical modulo volatile fields. ``ReplayBundle`` is a
+discriminated union on ``execution_mode`` so the mode-split contract
+(created_at / toolchain required iff materialize/run; forbidden iff plan_only)
+is enforced by Pydantic AND exported as ``oneOf`` in JSON Schema. See
 docs/specs/chaos-librarian-design.md "Replay Bundle" and "Reproducibility
 Guarantees".
 """
@@ -1704,7 +1919,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -1736,9 +1951,7 @@ class ExecutionTraceEntry(BaseModel):
     exit_code: int | None = None  # only set on `materializer` entries
 
 
-class ReplayBundle(BaseModel):
-    """Replay bundle (``replay.json``)."""
-
+class _ReplayBundleBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[REPLAY_BUNDLE_SCHEMA_VERSION]
@@ -1748,19 +1961,36 @@ class ReplayBundle(BaseModel):
     resolved_seed: int
     execution_trace: list[ExecutionTraceEntry] = Field(default_factory=list)
 
-    # Volatile / materialize-only. Absent in plan-only mode.
-    created_at: datetime | None = None
-    toolchain: dict[str, str] | None = None
-```
 
-Note on `sort_keys=True` in the test: Pydantic v2 supports it via `model_dump_json(sort_keys=True)` starting in 2.10. If your installed version differs, sort keys via `json.dumps(json.loads(b.model_dump_json(exclude_none=True)), sort_keys=True)` in the test instead.
+class PlanOnlyReplayBundle(_ReplayBundleBase):
+    """Replay bundle in plan-only mode. No ``created_at`` or ``toolchain``."""
+
+    execution_mode: Literal["plan_only"] = "plan_only"
+
+
+class MaterializeReplayBundle(_ReplayBundleBase):
+    """Replay bundle in materialize or run mode.
+
+    ``created_at`` and ``toolchain`` are both required (non-null).
+    """
+
+    execution_mode: Literal["materialize", "run"]
+    created_at: datetime
+    toolchain: dict[str, str]
+
+
+ReplayBundle = Annotated[
+    PlanOnlyReplayBundle | MaterializeReplayBundle,
+    Field(discriminator="execution_mode"),
+]
+```
 
 - [ ] **Step 4: Run tests**
 
 ```bash
 uv run pytest tests/contract/test_replay_bundle.py -v
 ```
-Expected: 7 PASS. If `sort_keys` is unavailable, refactor the test per the note above.
+Expected: 12 PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -2083,30 +2313,35 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
-from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.journal import JournalEntry  # Annotated union
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
-from chaos_librarian.contract.replay_bundle import ReplayBundle
+from chaos_librarian.contract.replay_bundle import ReplayBundle  # Annotated union
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationReport
 
-# (filename, model). Filenames are public contract; do not rename.
-MODELS: Final[list[tuple[str, type[BaseModel]]]] = [
+# (filename, model-or-adapter). Filenames are public contract; do not rename.
+# Discriminated unions are wrapped in TypeAdapter so model_json_schema is not
+# accessible on the bare Annotated alias.
+MODELS: Final[list[tuple[str, object]]] = [
     ("scenario.schema.json", Scenario),
     ("manifest.schema.json", Manifest),
-    ("journal.schema.json", JournalEntry),
-    ("replay-bundle.schema.json", ReplayBundle),
+    ("journal.schema.json", TypeAdapter(JournalEntry)),
+    ("replay-bundle.schema.json", TypeAdapter(ReplayBundle)),
     ("validation.schema.json", ValidationReport),
     ("materialization.schema.json", MaterializationReport),
     ("run-sentinel.schema.json", RunSentinel),
 ]
 
 
-def _schema_for(model: type[BaseModel]) -> dict[str, object]:
-    return model.model_json_schema(mode="serialization")
+def _schema_for(model_or_adapter: object) -> dict[str, object]:
+    if isinstance(model_or_adapter, TypeAdapter):
+        return model_or_adapter.json_schema(mode="serialization")
+    assert isinstance(model_or_adapter, type) and issubclass(model_or_adapter, BaseModel)
+    return model_or_adapter.model_json_schema(mode="serialization")
 
 
 def _serialize(schema: dict[str, object]) -> str:
@@ -2193,6 +2428,7 @@ so editors that forget to regenerate get a fast local signal from pytest.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from chaos_librarian.schema_export import MODELS, check_all
@@ -2218,6 +2454,21 @@ def test_all_seven_schemas_listed() -> None:
         "materialization.schema.json",
         "run-sentinel.schema.json",
     }
+
+
+def test_journal_schema_has_oneof_on_phase() -> None:
+    # Discriminated unions emit either top-level oneOf or under $defs;
+    # either way, the discriminator key must appear so external consumers
+    # can statically distinguish atomic/started/progressed/committed/aborted.
+    schemas_dir = Path(__file__).resolve().parents[2] / "schemas"
+    journal_schema = json.loads((schemas_dir / "journal.schema.json").read_text())
+    assert "discriminator" in journal_schema or "oneOf" in journal_schema
+
+
+def test_replay_bundle_schema_has_oneof_on_execution_mode() -> None:
+    schemas_dir = Path(__file__).resolve().parents[2] / "schemas"
+    bundle_schema = json.loads((schemas_dir / "replay-bundle.schema.json").read_text())
+    assert "discriminator" in bundle_schema or "oneOf" in bundle_schema
 ```
 
 - [ ] **Step 4: Run the schema test**
@@ -2225,7 +2476,7 @@ def test_all_seven_schemas_listed() -> None:
 ```bash
 uv run pytest tests/contract/test_schema_export.py -v
 ```
-Expected: 2 PASS.
+Expected: 4 PASS.
 
 - [ ] **Step 5: Verify the --check command exits non-zero on drift**
 
