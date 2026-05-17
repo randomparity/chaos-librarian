@@ -1,0 +1,178 @@
+{
+  "$defs": {
+    "ExecutionTraceEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "kind": {
+          "enum": [
+            "rng",
+            "alloc",
+            "materializer"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "stream": {
+          "title": "Stream",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "stream",
+        "value"
+      ],
+      "title": "ExecutionTraceEntry",
+      "type": "object"
+    },
+    "MaterializeReplayBundle": {
+      "additionalProperties": false,
+      "description": "Replay bundle in materialize or run mode.\n\n``created_at`` and ``toolchain`` are both required (non-null).",
+      "properties": {
+        "chaos_librarian_version": {
+          "title": "Chaos Librarian Version",
+          "type": "string"
+        },
+        "created_at": {
+          "format": "date-time",
+          "title": "Created At",
+          "type": "string"
+        },
+        "execution_mode": {
+          "enum": [
+            "materialize",
+            "run"
+          ],
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "execution_trace": {
+          "items": {
+            "$ref": "#/$defs/ExecutionTraceEntry"
+          },
+          "title": "Execution Trace",
+          "type": "array"
+        },
+        "resolved_seed": {
+          "title": "Resolved Seed",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "toolchain": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Toolchain",
+          "type": "object"
+        }
+      },
+      "required": [
+        "schema_version",
+        "chaos_librarian_version",
+        "scenario",
+        "run_id",
+        "resolved_seed",
+        "execution_mode",
+        "created_at",
+        "toolchain"
+      ],
+      "title": "MaterializeReplayBundle",
+      "type": "object"
+    },
+    "PlanOnlyReplayBundle": {
+      "additionalProperties": false,
+      "description": "Replay bundle in plan-only mode. No ``created_at`` or ``toolchain``.",
+      "properties": {
+        "chaos_librarian_version": {
+          "title": "Chaos Librarian Version",
+          "type": "string"
+        },
+        "execution_mode": {
+          "const": "plan_only",
+          "default": "plan_only",
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "execution_trace": {
+          "items": {
+            "$ref": "#/$defs/ExecutionTraceEntry"
+          },
+          "title": "Execution Trace",
+          "type": "array"
+        },
+        "resolved_seed": {
+          "title": "Resolved Seed",
+          "type": "integer"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario": {
+          "title": "Scenario",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "schema_version",
+        "chaos_librarian_version",
+        "scenario",
+        "run_id",
+        "resolved_seed"
+      ],
+      "title": "PlanOnlyReplayBundle",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "materialize": "#/$defs/MaterializeReplayBundle",
+      "plan_only": "#/$defs/PlanOnlyReplayBundle",
+      "run": "#/$defs/MaterializeReplayBundle"
+    },
+    "propertyName": "execution_mode"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/PlanOnlyReplayBundle"
+    },
+    {
+      "$ref": "#/$defs/MaterializeReplayBundle"
+    }
+  ]
+}

@@ -1,0 +1,281 @@
+{
+  "$defs": {
+    "ManifestAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle_id": {
+          "title": "Bundle Id",
+          "type": "string"
+        },
+        "container": {
+          "title": "Container",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "bundle_id",
+        "role",
+        "container",
+        "duration_seconds"
+      ],
+      "title": "ManifestAsset",
+      "type": "object"
+    },
+    "ManifestBundle": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "variant_id": {
+          "title": "Variant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "variant_id"
+      ],
+      "title": "ManifestBundle",
+      "type": "object"
+    },
+    "ManifestLocation": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "bytes_written": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bytes Written"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        },
+        "temp_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Path"
+        }
+      },
+      "required": [
+        "id",
+        "asset_id",
+        "path"
+      ],
+      "title": "ManifestLocation",
+      "type": "object"
+    },
+    "ManifestSidecar": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "asset_id",
+        "kind",
+        "path"
+      ],
+      "title": "ManifestSidecar",
+      "type": "object"
+    },
+    "ManifestVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "work_id": {
+          "title": "Work Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "work_id",
+        "label"
+      ],
+      "title": "ManifestVariant",
+      "type": "object"
+    },
+    "ManifestVersion": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "index": {
+          "title": "Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "asset_id",
+        "index"
+      ],
+      "title": "ManifestVersion",
+      "type": "object"
+    },
+    "ManifestWork": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title"
+      ],
+      "title": "ManifestWork",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/ManifestAsset"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "bundles": {
+      "items": {
+        "$ref": "#/$defs/ManifestBundle"
+      },
+      "title": "Bundles",
+      "type": "array"
+    },
+    "locations": {
+      "items": {
+        "$ref": "#/$defs/ManifestLocation"
+      },
+      "title": "Locations",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sidecars": {
+      "items": {
+        "$ref": "#/$defs/ManifestSidecar"
+      },
+      "title": "Sidecars",
+      "type": "array"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/ManifestVariant"
+      },
+      "title": "Variants",
+      "type": "array"
+    },
+    "versions": {
+      "items": {
+        "$ref": "#/$defs/ManifestVersion"
+      },
+      "title": "Versions",
+      "type": "array"
+    },
+    "works": {
+      "items": {
+        "$ref": "#/$defs/ManifestWork"
+      },
+      "title": "Works",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "works",
+    "variants",
+    "bundles",
+    "assets",
+    "versions",
+    "locations"
+  ],
+  "title": "Manifest",
+  "type": "object"
+}
