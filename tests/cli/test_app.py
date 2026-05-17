@@ -37,7 +37,6 @@ def test_command_exists_and_exits_one(command: str) -> None:
     "command_args",
     [
         ["replay", "fixtures/run-001/replay.json", "--out", "fixtures/replay-001"],
-        ["inspect", "fixtures/run-001"],
         ["capabilities"],
         ["clean", "fixtures/run-001"],
     ],
@@ -272,6 +271,30 @@ def test_step_stub_with_valid_run_dir_exits_one(tmp_path: Path) -> None:
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
     result = runner.invoke(app, ["step", str(run_dir), "--next"])
+    assert result.exit_code == 1
+
+
+class TestInspectPathValidation:
+    def test_rejects_missing_run_dir(self, tmp_path: Path) -> None:
+        missing = tmp_path / "missing-run"
+        result = runner.invoke(app, ["inspect", str(missing)])
+        assert result.exit_code == 2, (
+            f"missing run_dir should exit 2 (BadParameter), got {result.exit_code}"
+        )
+
+    def test_rejects_file_as_run_dir(self, tmp_path: Path) -> None:
+        a_file = tmp_path / "not-a-dir"
+        a_file.write_text("")
+        result = runner.invoke(app, ["inspect", str(a_file)])
+        assert result.exit_code == 2, (
+            f"file passed as run_dir should exit 2, got {result.exit_code}"
+        )
+
+
+def test_inspect_stub_with_valid_run_dir_exits_one(tmp_path: Path) -> None:
+    run_dir = tmp_path / "run-001"
+    run_dir.mkdir()
+    result = runner.invoke(app, ["inspect", str(run_dir)])
     assert result.exit_code == 1
 
 
