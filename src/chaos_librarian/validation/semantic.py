@@ -657,7 +657,48 @@ def _check_containment(
         )
 
 
-# ---- Registry (Tasks 7-12 add more rules here) ----------------------------
+# ---- Rule 7: E_TIMELINE_ORDER ---------------------------------------------
+
+
+def _rule_timeline_order(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject timeline events whose ``at:`` is earlier than the previous one.
+
+    Ties are allowed. Pairs where either ``at:`` is unparseable are
+    skipped (Rule 3 already flagged the unparseable string).
+    """
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    last_ns: int | None = None
+    last_idx: int = -1
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        at = event.get("at")
+        if not isinstance(at, str):
+            continue
+        try:
+            at_ns = parse_duration(at)
+        except DurationParseError:
+            continue
+        if last_ns is not None and at_ns < last_ns:
+            collector.add(
+                code=codes.E_TIMELINE_ORDER,
+                severity=ValidationSeverity.ERROR,
+                message=(f"timeline event at {at!r} precedes previous event at index {last_idx}"),
+                loc=("timeline", idx, "at"),
+                line_index=line_index,
+            )
+        last_ns = at_ns
+        last_idx = idx
+
+
+# ---- Registry -------------------------------------------------------------
 
 
 _RULES: list[_Rule] = [
@@ -668,4 +709,5 @@ _RULES: list[_Rule] = [
     _rule_slow_copy_unpaired,
     _rule_slow_copy_timing,
     _rule_path_containment,
+    _rule_timeline_order,
 ]
