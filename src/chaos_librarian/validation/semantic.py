@@ -370,6 +370,19 @@ def _rule_duration_syntax(
 # ---- Rule 4: E_TARGET_UNKNOWN ---------------------------------------------
 
 
+def _iter_asset_ids(raw: Mapping[str, object]) -> Iterator[str]:
+    """Yield every ``asset_id`` value defined in the scenario.
+
+    Implemented as a filter over ``_iter_global_namespaces`` rather than a
+    fresh walker so the shape-skipping logic stays in one place; Rule 1
+    needs the locs (and the variant/bundle namespaces), Rule 4 only needs
+    the asset-id values.
+    """
+    for namespace, value, _ in _iter_global_namespaces(raw):
+        if namespace == _NS_ASSET_ID:
+            yield value
+
+
 def _rule_target_unknown(
     raw: Mapping[str, object],
     line_index: LineIndex,
@@ -377,15 +390,10 @@ def _rule_target_unknown(
 ) -> None:
     """Reject timeline events whose ``target:`` is not a defined asset id.
 
-    Reuses ``_iter_global_namespaces`` (already walks works→variants→
-    bundle→assets for Rule 1) and filters to the ``asset_id`` namespace —
-    a fresh walker here would duplicate the same shape-skipping logic.
     Events with no string ``target`` (e.g. ``slow_copy_commit``) are
     skipped: Pydantic's shape pass owns "the field must exist."
     """
-    asset_ids = {
-        value for namespace, value, _ in _iter_global_namespaces(raw) if namespace == _NS_ASSET_ID
-    }
+    asset_ids = set(_iter_asset_ids(raw))
     for idx, event in _iter_timeline_events(raw):
         target = event.get("target")
         if not isinstance(target, str):
