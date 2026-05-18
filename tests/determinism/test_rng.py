@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import random
 
+import pytest
+
 from chaos_librarian.contract.replay_bundle import RngTraceEntry
 from chaos_librarian.determinism.rng import RngStream, RngStreams
 from chaos_librarian.determinism.trace import TraceRecorder
@@ -102,6 +104,20 @@ class TestTraceFidelity:
         assert entry.value == repr(v)
         # And the recorded string survives a pure-Python compare.
         assert isinstance(entry.value, str)
+
+    def test_randrange_step_with_no_stop_raises(self) -> None:
+        """randrange(n, step=k) with no stop must raise ValueError, not silently drop step.
+
+        WHY: silently ignoring step violates the Fail Loud rule — a caller writing
+        rng.randrange(10, step=2) would get any integer in [0, 10), not just evens,
+        with no indication that step was discarded.
+        """
+        rec = TraceRecorder()
+        s = RngStreams(resolved_seed=42, recorder=rec).stream("guard_check")
+        with pytest.raises(ValueError, match="step has no effect"):
+            s.randrange(10, step=2)
+        # No trace entry should be recorded when the guard fires.
+        assert len(rec) == 0
 
 
 class TestShuffleIsExcluded:

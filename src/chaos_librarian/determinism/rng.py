@@ -55,6 +55,8 @@ class RngStream:
 
     def randrange(self, start: int, stop: int | None = None, step: int = 1) -> int:
         if stop is None:
+            if step != 1:
+                raise ValueError("randrange step has no effect when stop is omitted")
             value = self._random.randrange(start)
         else:
             value = self._random.randrange(start, stop, step)
@@ -72,11 +74,19 @@ class RngStream:
         return value
 
     def choices(self, seq: Sequence[T], k: int = 1) -> list[T]:
+        """Equal-weight choice with replacement.
+
+        ``weights`` / ``cum_weights`` from random.Random.choices are not exposed.
+        """
         value = self._random.choices(seq, k=k)
         self._record(value)
         return value
 
     def sample(self, seq: Sequence[T], k: int) -> list[T]:
+        """Random sample without replacement.
+
+        ``counts`` from random.Random.sample is not exposed.
+        """
         value = self._random.sample(seq, k)
         self._record(value)
         return value
