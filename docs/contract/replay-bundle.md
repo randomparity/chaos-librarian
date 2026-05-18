@@ -21,3 +21,20 @@ The following fields are excluded from materialize-mode equivalence comparison:
 - `run_id` (UUIDv4 in these modes)
 - content hashes and probed media facts
 - the `toolchain` block
+
+## Bit-Identical Plan-Only Output (Sprint 3)
+
+Two `chaos-librarian plan` invocations on the same scenario + seed produce
+byte-identical `replay.json`, manifests, journal, and sentinel. The
+plan-only `run_id` is deterministic (UUIDv5 of scenario hash + seed) and
+`created_at` is omitted, so no volatile fields leak into the bundle.
+
+## Replay Verifier
+
+`chaos_librarian.engine.replay_plan_bundle(bundle)` re-runs `plan` from a
+recorded `PlanOnlyReplayBundle` alone — it re-validates the embedded
+scenario, re-resolves the timeline, and returns a fresh `PlanArtifacts`
+that compares byte-for-byte with the original fixture when written
+through `write_fixture`. Sprint 4 wraps this helper in the public
+`chaos-librarian replay` CLI command and adds divergence reporting
+(exit 6).
