@@ -14,8 +14,16 @@ from typing import Annotated
 import typer
 
 from chaos_librarian.contract.validation import ValidationIssue
-from chaos_librarian.engine import PlanArtifacts, run_plan
-from chaos_librarian.engine.writer import write_fixture
+from chaos_librarian.engine import (
+    JournalCorruptError,
+    PlanArtifacts,
+    ScenarioTamperedError,
+    SentinelInvalidError,
+    StepResult,
+    run_plan,
+    step_fixture,
+)
+from chaos_librarian.engine.writer import append_step, write_fixture
 from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     ValidationReport,
@@ -165,11 +173,71 @@ def run(
 @app.command()
 def step(
     run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
-    next_: Annotated[bool, typer.Option("--next")] = False,
+    next_count: Annotated[int, typer.Option("--next", min=1)] = 1,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Advance a step-mode run."""
-    _stub("step")
+    """Advance a step-mode run by ``--next`` resolved events (default 1)."""
+    try:
+        result = step_fixture(run_dir, n_events=next_count)
+    except SentinelInvalidError as exc:
+        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        raise typer.Exit(code=7) from exc
+    except ScenarioTamperedError as exc:
+        _emit_step_error(
+            "scenario_tampered",
+            str(exc),
+            json_output=json_output,
+            extra={"recorded_run_id": exc.recorded, "recomputed_run_id": exc.recomputed},
+        )
+        raise typer.Exit(code=7) from exc
+    except JournalCorruptError as exc:
+        _emit_step_error(
+            "journal_corrupt",
+            str(exc),
+            json_output=json_output,
+            extra={"kind": exc.kind, "line": exc.line, "detail": exc.detail},
+        )
+        raise typer.Exit(code=1) from exc
+
+    append_step(
+        run_dir,
+        new_entries=result.new_entries,
+        new_current_manifest=result.new_current_manifest,
+        new_report_set=result.new_report_set,
+        new_replay_bundle=result.new_replay_bundle,
+    )
+
+    if json_output:
+        typer.echo(_step_summary_json(result))
+    else:
+        typer.echo(f"step: applied {result.steps_applied}, remaining {result.steps_remaining}")
+
+
+def _step_summary_json(result: StepResult) -> str:
+    payload = {
+        "run_id": str(result.new_replay_bundle.run_id),
+        "steps_applied": result.steps_applied,
+        "steps_remaining": result.steps_remaining,
+        "applied_events": result.new_replay_bundle.applied_events,
+        "done": result.done,
+    }
+    return json.dumps(payload, sort_keys=True)
+
+
+def _emit_step_error(
+    error_code: str,
+    message: str,
+    *,
+    json_output: bool,
+    extra: dict[str, object] | None = None,
+) -> None:
+    if json_output:
+        payload: dict[str, object] = {"error": error_code, "message": message}
+        if extra:
+            payload.update(extra)
+        typer.echo(json.dumps(payload, sort_keys=True), err=True)
+    else:
+        typer.echo(f"{error_code}: {message}", err=True)
 
 
 @app.command()

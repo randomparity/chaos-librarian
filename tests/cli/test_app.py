@@ -53,7 +53,7 @@ _FILE_ARG_WITH_OUT: list[tuple[str, list[str]]] = [
 # Commands whose positional argument is a directory (``exists=True,
 # file_okay=False``).
 _DIR_ARG_COMMANDS: list[tuple[str, list[str]]] = [
-    ("step", ["--next"]),
+    ("step", ["--next", "1"]),
     ("inspect", []),
     ("clean", []),
 ]
@@ -240,4 +240,11 @@ def test_dir_arg_stub_with_valid_dir_exits_one(
 ) -> None:
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
-    assert _invoke_with_dir_arg(name, extra_args, run_dir) == 1
+    code = _invoke_with_dir_arg(name, extra_args, run_dir)
+    # ``step`` (Sprint 4) is a real command — an empty run_dir has no
+    # sentinel, so it exits 7 (SentinelInvalidError). Other dir-arg
+    # commands are still stubs and exit 1.
+    if name == "step":
+        assert code == 7
+    else:
+        assert code == 1
