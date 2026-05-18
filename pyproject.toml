@@ -31,12 +31,20 @@ build-backend = "uv_build"
 package = true
 
 [tool.pytest.ini_options]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers --cov=chaos_librarian --cov-report=term --no-cov-on-fail"
 testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["chaos_librarian"]
 branch = true
+
+[tool.coverage.report]
+# Current measured coverage is ~91%. The gate sits a few points below to
+# absorb normal churn without flaking PRs; tighten it whenever the floor
+# moves up. ``show_missing`` makes regressions readable in the CI log.
+fail_under = 88
+show_missing = true
+skip_covered = false
 
 [tool.ruff]
 line-length = 100
