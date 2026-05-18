@@ -3295,3 +3295,178 @@ EOF
 - Wiring the path-containment helper into a runtime materializer.
 - Implementing `capabilities` probing (Sprint 5).
 - Implementing real `clean` behavior (Sprint 4).
+
+---
+
+## Reconciliation Notes
+
+Added post-merge for [issue #4](https://github.com/randomparity/chaos-librarian/issues/4).
+The plan body above (lines 1–3297) is preserved as the artifact it was at
+authoring time. Six concrete patterns drifted between this plan and the code
+that actually shipped in Sprint 0 (PR #5). Each delta below names the
+offending snippet, shows the form that shipped, and points at the project doc
+or lint rule that enforces it. The authoritative summary lives in the
+"Project-specific conventions" section of [`CLAUDE.md`](../../../CLAUDE.md);
+this appendix is a pointer for anyone copying from the plan, not a second
+source of truth.
+
+### 1. `Literal[<CONSTANT>]` indirection on `schema_version`
+
+**Plan (lines 847, 1196, 1384, 1632, 1957, 2117, 2262)** declares each model's
+`schema_version` via the named constant, e.g.:
+
+```python
+schema_version: Literal[RUN_SENTINEL_SCHEMA_VERSION]
+```
+
+**Shipped form** writes the literal `1` directly:
+
+```python
+schema_version: Literal[1]
+```
+
+The constants in [`src/chaos_librarian/contract/__init__.py`](../../../src/chaos_librarian/contract/__init__.py)
+are declared as bare `Final = 1` (no `[int]`) so `ty` infers them as
+`Literal[1]` for use in test bodies. The indirect form `Literal[CONST]` is
+rejected by `ty` — only the hard-coded literal works in model field
+annotations. See CLAUDE.md → "Schema-version typing".
+
+### 2. `class X(str, enum.Enum)` for string enums
+
+**Plan (lines 1617, 2097, 2242)** defines enums via the mixin form:
+
+```python
+class JournalPhase(str, enum.Enum):
+class ValidationSeverity(str, enum.Enum):
+class MaterializationStatus(str, enum.Enum):
+```
+
+**Shipped form** uses `enum.StrEnum` (Python 3.11+, equivalent JSON
+serialization):
+
+```python
+class JournalPhase(enum.StrEnum):
+```
+
+Ruff rule `UP042` (`pyupgrade`) auto-rewrites the mixin form. See CLAUDE.md →
+"Enum classes" and the shipped models in
+[`contract/journal.py`](../../../src/chaos_librarian/contract/journal.py),
+[`contract/validation.py`](../../../src/chaos_librarian/contract/validation.py),
+[`contract/materialization.py`](../../../src/chaos_librarian/contract/materialization.py).
+
+### 3. Negative tests via keyword-arg constructors with `# type: ignore`
+
+**Plan (lines 789, 807, 2211)** drives invalid-model tests through positional
+constructors with mypy-style ignores:
+
+```python
+RunSentinel(
+    schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+    created_by="chaos-librarian 0.0.0",
+)  # type: ignore[call-arg]
+```
+
+```python
+RunSentinel(
+    run_id=uuid.uuid4(),
+    schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+    created_by="chaos-librarian 0.0.0",
+    bogus="x",  # type: ignore[call-arg]
+)
+```
+
+```python
+MaterializationReport(
+    schema_version=MATERIALIZATION_SCHEMA_VERSION,
+    run_id=uuid.uuid4(),
+    status="wat",  # type: ignore[arg-type]
+    toolchain={},
+    invocations=[],
+)
+```
+
+**Shipped form** builds a `dict` payload and exercises Pydantic validation
+through `model_validate`:
+
+```python
+payload = {
+    "schema_version": 1,
+    "created_by": "chaos-librarian 0.0.0",
+}
+with pytest.raises(ValidationError):
+    RunSentinel.model_validate(payload)
+```
+
+`ty` does not honor mypy-style `# type: ignore[...]` annotations, and the
+project's ruff config lints out stale `# noqa` markers — so the constructor
+form is doubly broken: the type checker reports the error and ruff strips the
+suppression next time it runs. See CLAUDE.md → "Negative tests".
+
+### 4. Renamed `ty` rule: `possibly-unbound` → `possibly-unresolved-reference`
+
+**Plan (line 260)** configures the rule under its old name:
+
+```toml
+[tool.ty.rules]
+unresolved-import = "error"
+possibly-unbound = "error"
+```
+
+**Shipped form** uses the current rule name:
+
+```toml
+[tool.ty.rules]
+unresolved-import = "error"
+possibly-unresolved-reference = "error"
+```
+
+The rule was renamed in current `ty`; the old name is silently ignored, so
+the plan's snippet would type-check fine but not actually enable the check.
+See [`pyproject.toml`](../../../pyproject.toml) `[tool.ty.rules]`.
+
+### 5. `Path = typer.Argument(...)` parameter default
+
+**Plan (lines 2630, 2639, 2649, 2659, 2671, 2681, 2691, 2708)** uses the
+default-value form for all CLI Path arguments, e.g.:
+
+```python
+def validate(
+    scenario: Path = typer.Argument(..., exists=False, dir_okay=False),
+    json_output: bool = typer.Option(False, "--json"),
+) -> None:
+```
+
+**Shipped form** uses `Annotated[Path, typer.Argument(...)]` — the only form
+that passes Ruff `B008` ("Do not perform function call in argument defaults"):
+
+```python
+def validate(
+    scenario: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
+    json_output: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+```
+
+Note that `exists=True` is also the shipped default for paths that must
+already exist (validate, plan, materialize, run, step, replay, inspect,
+clean); only `--out` paths skip the existence check via a callback. See
+CLAUDE.md → "Typer Path arguments" and
+[`src/chaos_librarian/cli/app.py`](../../../src/chaos_librarian/cli/app.py).
+
+### 6. `CliRunner(mix_stderr=False)` removed in Click 8.2+
+
+**Plan (line 2527)** constructs the test runner with a kwarg that no longer
+exists:
+
+```python
+runner = CliRunner(mix_stderr=False)
+```
+
+**Shipped form** drops the kwarg — Click 8.2 removed `mix_stderr` because
+stdout and stderr are separated by default:
+
+```python
+runner = CliRunner()
+```
+
+See [`tests/cli/test_app.py`](../../../tests/cli/test_app.py) (the shipped
+file carries a one-line comment recording the rationale).
