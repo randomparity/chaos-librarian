@@ -11,6 +11,8 @@ Lines are exposed 1-based (editor convention) even though ruamel reports
 
 from __future__ import annotations
 
+import hashlib
+import io
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -49,31 +51,49 @@ class LineIndex:
         return self.entries.get(loc)
 
 
-def load_scenario(path: Path) -> tuple[Any, LineIndex]:
-    """Parse a YAML scenario file with line tracking.
+def load_scenario(path: Path) -> tuple[Any, LineIndex, bytes, str]:
+    """Read, parse, and hash a YAML scenario file in one pass.
 
     Args:
         path: Absolute or relative path to a YAML file.
 
     Returns:
-        ``(raw_data, line_index)``. ``raw_data`` is a plain Python tree
-        (dict / list / scalars). The caller is responsible for the
-        top-level-shape check (see ``validation.pipeline``).
+        ``(raw_data, line_index, raw_bytes, content_hash)``. ``raw_data`` is
+        a plain Python tree (dict / list / scalars); ``raw_bytes`` is the
+        exact source for byte-binding (replay bundle, content hash);
+        ``content_hash`` is the sha256 hex digest of ``raw_bytes``. The
+        caller is responsible for the top-level-shape check (see
+        ``validation.pipeline``).
 
     Raises:
         ScenarioLoadError: On any YAMLError, missing file, or unreadable file.
     """
     try:
-        text = path.read_text()
+        raw_bytes = path.read_bytes()
     except OSError as e:
         raise ScenarioLoadError(f"cannot read {path}: {e}", line=None, column=None) from e
 
+    raw_data, line_index = parse_scenario_bytes(raw_bytes, source=path)
+    content_hash = hashlib.sha256(raw_bytes).hexdigest()
+    return raw_data, line_index, raw_bytes, content_hash
+
+
+def parse_scenario_bytes(raw_bytes: bytes, *, source: Path) -> tuple[Any, LineIndex]:
+    """Parse pre-read YAML bytes into ``(raw_data, line_index)``.
+
+    Shared by ``load_scenario`` (path-based) and
+    ``chaos_librarian.validation.input.prepare_run_input_from_bytes``
+    (bundle-replay path). ``source`` is used only in error messages.
+
+    Raises:
+        ScenarioLoadError: If ruamel rejects the bytes as malformed YAML.
+    """
     yaml = YAML(typ="rt")
     try:
-        loaded = yaml.load(text)
+        loaded = yaml.load(io.BytesIO(raw_bytes))
     except YAMLError as e:
         line, column = _yaml_error_position(e)
-        raise ScenarioLoadError(f"YAML parse error in {path}: {e}", line, column) from e
+        raise ScenarioLoadError(f"YAML parse error in {source}: {e}", line, column) from e
 
     index_data: dict[_PathTuple, tuple[int, int]] = {}
     plain = _walk(loaded, path_so_far=(), index=index_data)

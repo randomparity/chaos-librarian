@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ class TestLoadScenarioHappyPath:
             tmp_path,
             ("schema_version: 1\nscenario_id: t\ntimeline:\n  - id: e1\n    at: 1s\n"),
         )
-        raw, index = load_scenario(path)
+        raw, index, raw_bytes, content_hash = load_scenario(path)
         assert isinstance(raw, dict)
         assert raw["scenario_id"] == "t"
         assert isinstance(raw["timeline"], list)
@@ -43,10 +44,13 @@ class TestLoadScenarioHappyPath:
         # Nested keys carry their own positions.
         assert index.lookup(("timeline", 0, "id")) == (4, 4)
         assert index.lookup(("timeline", 0, "at")) == (5, 4)
+        # Bytes preserved verbatim; hash is sha256 of those exact bytes.
+        assert raw_bytes == path.read_bytes()
+        assert content_hash == hashlib.sha256(raw_bytes).hexdigest()
 
     def test_missing_path_lookup_returns_none(self, tmp_path: Path) -> None:
         path = _write(tmp_path, "scenario_id: t\n")
-        _, index = load_scenario(path)
+        _, index, _, _ = load_scenario(path)
         assert index.lookup(("nonexistent",)) is None
         assert index.lookup(("timeline", 99, "at")) is None
 
@@ -80,10 +84,10 @@ class TestLineIndexTopLevelShape:
 
     def test_scalar_top_level(self, tmp_path: Path) -> None:
         path = _write(tmp_path, "42\n")
-        raw, _ = load_scenario(path)
+        raw, _, _, _ = load_scenario(path)
         assert raw == 42
 
     def test_sequence_top_level(self, tmp_path: Path) -> None:
         path = _write(tmp_path, "- a\n- b\n")
-        raw, _ = load_scenario(path)
+        raw, _, _, _ = load_scenario(path)
         assert raw == ["a", "b"]

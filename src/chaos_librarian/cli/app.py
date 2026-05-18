@@ -12,11 +12,15 @@ from typing import Annotated
 
 import typer
 
+from chaos_librarian.contract.validation import ValidationIssue
+from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     ValidationReport,
     ValidationSeverity,
+    prepare_run_input,
     run_validation,
 )
+from chaos_librarian.validation.codes import E_YAML_PARSE
 
 app = typer.Typer(
     name="chaos-librarian",
@@ -48,13 +52,41 @@ def validate(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Validate a scenario file."""
-    report = run_validation(scenario)
+    try:
+        run_input = prepare_run_input(scenario)
+    except ScenarioLoadError as exc:
+        report = _synthesize_yaml_parse_report(scenario, exc)
+    else:
+        report = run_validation(run_input)
     if json_output:
         typer.echo(report.model_dump_json(by_alias=True, exclude_none=True))
     else:
         _render_human(report)
     if not report.ok:
         raise typer.Exit(code=3)
+
+
+def _synthesize_yaml_parse_report(scenario_path: Path, exc: ScenarioLoadError) -> ValidationReport:
+    """Wrap a ScenarioLoadError as the Sprint 1 E_YAML_PARSE report.
+
+    The byte-binding factory raises now; the CLI maps the exception to the
+    structured report shape Sprint 1 promised for unparseable input.
+    """
+    return ValidationReport(
+        schema_version=1,
+        scenario_id="<unknown>",
+        ok=False,
+        issues=[
+            ValidationIssue(
+                severity=ValidationSeverity.ERROR,
+                code=E_YAML_PARSE,
+                message=str(exc),
+                line=exc.line,
+                column=exc.column,
+                path=None,
+            )
+        ],
+    )
 
 
 @app.command()
