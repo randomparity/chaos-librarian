@@ -20,11 +20,18 @@ from chaos_librarian.contract.journal import (
     JournalEntry,
     JournalPhase,
 )
-from chaos_librarian.contract.manifest import ManifestLocation
+from chaos_librarian.contract.manifest import (
+    ManifestLocation,
+    ManifestSidecar,
+    ManifestVersion,
+)
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
+    CreateSidecarEvent,
     DeleteFileEvent,
     MoveAssetEvent,
+    ReencodeAudioEvent,
+    ReencodeVideoEvent,
     RenameFileEvent,
     TimelineActionName,
 )
@@ -183,10 +190,104 @@ def _handle_add_file(
     return (entry,)
 
 
-# Tasks 6 and 7 add the remaining five action variants to this table.
+def _handle_reencode_video(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, ReencodeVideoEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
+    )
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REENCODE_VIDEO,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={"resolution": event.resolution, "codec": event.codec},
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+    )
+    return (entry,)
+
+
+def _handle_reencode_audio(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, ReencodeAudioEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
+    )
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REENCODE_AUDIO,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={"from_channels": event.from_channels, "to_channels": event.to_channels},
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+    )
+    return (entry,)
+
+
+def _handle_create_sidecar(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, CreateSidecarEvent)
+    sidecar_id = ids.next_sidecar_id()
+    # V1: every sidecar is a subtitle file; future kinds (chapters, fanart)
+    # will branch here.
+    sidecar = ManifestSidecar(
+        id=sidecar_id,
+        asset_id=event.target,
+        kind="subtitle",
+        path=event.to,
+    )
+    state.sidecars[sidecar_id] = sidecar
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.CREATE_SIDECAR,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={"sidecar_path": event.to, "sidecar_id": sidecar_id},
+    )
+    return (entry,)
+
+
+# Task 7 adds slow_copy_start / slow_copy_commit.
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
     TimelineActionName.DELETE_FILE: _handle_delete_file,
     TimelineActionName.ADD_FILE: _handle_add_file,
+    TimelineActionName.REENCODE_VIDEO: _handle_reencode_video,
+    TimelineActionName.REENCODE_AUDIO: _handle_reencode_audio,
+    TimelineActionName.CREATE_SIDECAR: _handle_create_sidecar,
 }
