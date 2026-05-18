@@ -7,6 +7,8 @@ semantic rule did not exist.
 
 from __future__ import annotations
 
+from typing import cast
+
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation import codes
 from chaos_librarian.validation.pipeline import IssueCollector
@@ -17,9 +19,27 @@ def _empty_index() -> LineIndex:
     return LineIndex()
 
 
-def _minimal_scenario(timeline: list[dict] | None = None, **overrides) -> dict:
+def _as_list(node: object) -> list[dict[str, object]]:
+    """Narrow ``object`` to a typed list for test-site subscripting.
+
+    The scenario tree returned by ``_minimal_scenario`` types everything as
+    ``object`` (matching what semantic rules see). Tests know the concrete
+    shape and use this helper to drill in without sprinkling casts.
+    """
+    return cast("list[dict[str, object]]", node)
+
+
+def _as_dict(node: object) -> dict[str, object]:
+    """Narrow ``object`` to a typed dict; mirror of ``_as_list``."""
+    return cast("dict[str, object]", node)
+
+
+def _minimal_scenario(
+    timeline: list[dict[str, object]] | None = None,
+    **overrides: object,
+) -> dict[str, object]:
     """Build a minimal valid-shape scenario. Overrides can add duplicates."""
-    base = {
+    base: dict[str, object] = {
         "schema_version": 1,
         "scenario_id": "t",
         "seed": 1,
@@ -66,7 +86,8 @@ class TestRule1IdDuplicateGlobalAssets:
     def test_duplicate_asset_id_across_bundles(self) -> None:
         raw = _minimal_scenario()
         # Add a second variant whose bundle contains an asset with the same id.
-        raw["works"][0]["variants"].append(
+        variants = _as_list(_as_list(raw["works"])[0]["variants"])
+        variants.append(
             {
                 "id": "v2",
                 "label": "l2",
@@ -93,7 +114,9 @@ class TestRule1IdDuplicateGlobalAssets:
     def test_duplicate_asset_id_within_bundle(self) -> None:
         """Per-bundle duplicates still fire — global uniqueness subsumes scoped."""
         raw = _minimal_scenario()
-        raw["works"][0]["variants"][0]["bundle"]["assets"].append(
+        bundle = _as_dict(_as_list(_as_list(raw["works"])[0]["variants"])[0]["bundle"])
+        assets = _as_list(bundle["assets"])
+        assets.append(
             {
                 "id": "a",
                 "role": "secondary_video",
@@ -115,7 +138,8 @@ class TestRule1IdDuplicateGlobalVariants:
 
     def test_duplicate_variant_id_across_works(self) -> None:
         raw = _minimal_scenario()
-        raw["works"].append(
+        works = _as_list(raw["works"])
+        works.append(
             {
                 "id": "w2",
                 "title": "t2",
@@ -144,7 +168,8 @@ class TestRule1IdDuplicateGlobalBundles:
 
     def test_duplicate_bundle_id_across_variants(self) -> None:
         raw = _minimal_scenario()
-        raw["works"][0]["variants"].append(
+        variants = _as_list(_as_list(raw["works"])[0]["variants"])
+        variants.append(
             {
                 "id": "v2",
                 "label": "l",
@@ -167,7 +192,8 @@ class TestRule1IdDuplicateTopLevel:
 
     def test_duplicate_root_id(self) -> None:
         raw = _minimal_scenario()
-        raw["library"]["roots"].append({"id": "r", "path": "r2"})
+        roots = _as_list(_as_dict(raw["library"])["roots"])
+        roots.append({"id": "r", "path": "r2"})
         collector = IssueCollector()
         run_semantic_pass(raw, _empty_index(), collector)
         assert any(
@@ -176,7 +202,8 @@ class TestRule1IdDuplicateTopLevel:
 
     def test_duplicate_work_id(self) -> None:
         raw = _minimal_scenario()
-        raw["works"].append(
+        works = _as_list(raw["works"])
+        works.append(
             {"id": "w", "title": "t2", "variants": []},
         )
         collector = IssueCollector()
@@ -200,11 +227,11 @@ class TestRule1IdDuplicateTopLevel:
 
 
 class TestRule1IdDuplicateNoFalsePositives:
-    """A valid scenario produces zero E_ID_DUPLICATE issues.
+    """A minimal valid scenario produces zero E_ID_DUPLICATE issues.
 
-    WHY: existing valid fixtures (identity-move-rename, version-evolution,
-    bundle-sidecars, slow-copy) must remain valid. A regression here
-    breaks every Sprint 1 exit-criteria check.
+    WHY: rule must not over-fire on clean input. The end-to-end valid-
+    fixture smoke check is in tests/validation/test_invalid_corpus.py
+    (Task 14).
     """
 
     def test_minimal_scenario_no_duplicates(self) -> None:
