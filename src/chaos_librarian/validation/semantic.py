@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import (
     E_DURATION_SYNTAX,
@@ -354,7 +355,7 @@ def _rule_duration_syntax(
                 line_index=line_index,
                 collector=collector,
             )
-        if event.get("action") == "slow_copy_start":
+        if event.get("action") == TimelineActionName.SLOW_COPY_START:
             duration = event.get("duration")
             if isinstance(duration, str):
                 _check_duration(
@@ -415,9 +416,9 @@ def _index_starts_and_commits(
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         ev_id = event.get("id")
-        if action == "slow_copy_start" and isinstance(ev_id, str):
+        if action == TimelineActionName.SLOW_COPY_START and isinstance(ev_id, str):
             starts[ev_id] = (idx, event)
-        elif action == "slow_copy_commit":
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
             commits.append((idx, event))
     return starts, commits
 
@@ -548,13 +549,16 @@ def _rule_slow_copy_timing(
 
 _SYNTHETIC_LIBRARY_ROOT: Path = Path("/__chaos_librarian_validate__/library")
 
-# Per-action-variant path field names. Pulled from contract/scenario.py.
+# Per-action-variant path field names. Keys are the discriminator values
+# declared on TimelineEvent variants in contract/scenario.py; using the
+# StrEnum binds this map to the contract symbol set at the type level —
+# adding/renaming an action surfaces here, not as a silent miss.
 _PATH_FIELDS_BY_ACTION: dict[str, tuple[str, ...]] = {
-    "move_asset": ("to",),
-    "rename_file": ("to",),
-    "add_file": ("to",),
-    "create_sidecar": ("to",),
-    "slow_copy_start": ("to", "temp_path"),
+    TimelineActionName.MOVE_ASSET: ("to",),
+    TimelineActionName.RENAME_FILE: ("to",),
+    TimelineActionName.ADD_FILE: ("to",),
+    TimelineActionName.CREATE_SIDECAR: ("to",),
+    TimelineActionName.SLOW_COPY_START: ("to", "temp_path"),
 }
 
 

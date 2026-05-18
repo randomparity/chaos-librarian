@@ -12,6 +12,7 @@ Guarantees".
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
 from typing import Annotated, Literal
@@ -19,6 +20,22 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract import CHAOS_LIBRARIAN_NAMESPACE_UUID
+
+
+class ExecutionTraceKind(enum.StrEnum):
+    """Discriminator for ``ExecutionTraceEntry`` variants."""
+
+    RNG = "rng"
+    ALLOC = "alloc"
+    MATERIALIZER = "materializer"
+
+
+class ExecutionMode(enum.StrEnum):
+    """Discriminator for ``ReplayBundle`` variants."""
+
+    PLAN_ONLY = "plan_only"
+    MATERIALIZE = "materialize"
+    RUN = "run"
 
 
 def compute_plan_only_run_id(scenario_content_hash: str, resolved_seed: int) -> uuid.UUID:
@@ -45,19 +62,19 @@ class _TraceBase(BaseModel):
 class RngTraceEntry(_TraceBase):
     """Trace entry for an RNG draw. No ``exit_code``."""
 
-    kind: Literal["rng"]
+    kind: Literal[ExecutionTraceKind.RNG]
 
 
 class AllocTraceEntry(_TraceBase):
     """Trace entry for an identifier/seed allocation. No ``exit_code``."""
 
-    kind: Literal["alloc"]
+    kind: Literal[ExecutionTraceKind.ALLOC]
 
 
 class MaterializerTraceEntry(_TraceBase):
     """Trace entry for a materializer subprocess. ``exit_code`` is required."""
 
-    kind: Literal["materializer"]
+    kind: Literal[ExecutionTraceKind.MATERIALIZER]
     exit_code: int
 
 
@@ -81,7 +98,7 @@ class _ReplayBundleBase(BaseModel):
 class PlanOnlyReplayBundle(_ReplayBundleBase):
     """Replay bundle in plan-only mode. No ``created_at`` or ``toolchain``."""
 
-    execution_mode: Literal["plan_only"] = "plan_only"
+    execution_mode: Literal[ExecutionMode.PLAN_ONLY] = ExecutionMode.PLAN_ONLY
 
 
 class MaterializeReplayBundle(_ReplayBundleBase):
@@ -90,7 +107,7 @@ class MaterializeReplayBundle(_ReplayBundleBase):
     ``created_at`` and ``toolchain`` are both required (non-null).
     """
 
-    execution_mode: Literal["materialize", "run"]
+    execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN]
     created_at: datetime
     toolchain: dict[str, str]
 
