@@ -100,7 +100,7 @@ def _walk_map(
     lc_data = getattr(node, "lc", None)
     for key, value in node.items():
         child_path = (*path_so_far, key)
-        if lc_data is not None and key in lc_data.data:
+        if lc_data is not None and lc_data.data is not None and key in lc_data.data:
             # lc.data[key] is (key_line, key_col, value_line, value_col), 0-based.
             key_line, key_col, *_ = lc_data.data[key]
             index[child_path] = (key_line + 1, key_col)
@@ -117,6 +117,8 @@ def _walk_seq(
     result: list[Any] = []
     for idx, value in enumerate(node):
         child_path = (*path_so_far, idx)
+        # LineCol.item returns None for empty seqs (TypeError on unpack);
+        # KeyError when idx is absent; AttributeError for lc-less subclasses.
         try:
             line, col = node.lc.item(idx)
             index[child_path] = (line + 1, col)
