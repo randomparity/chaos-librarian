@@ -15,13 +15,13 @@ Sprint 4 closes the "stepping and replay" half of the design doc's CLI contract.
 
 The design doc leaves several Sprint-4 specifics open. Each is resolved below; flag if you disagree before the plan is written.
 
-1. **Step fixture preparation.** `plan` gains `--steps N`. `plan --out X` (no `--steps`) runs the timeline to completion (Sprint 3 behavior, byte-identical). `plan --out X --steps 0` writes a complete fixture with an empty journal and `manifest.current = initial`. `plan --out X --steps K` (0 < K < timeline-length) writes a partial fixture. `step run-dir --next [N]` advances from wherever the fixture sits.
+1. **Step fixture preparation.** `plan` gains `--steps N`. `plan --out X` (no `--steps`) runs the timeline to completion (Sprint 3 behavior, byte-identical). `plan --out X --steps 0` writes a complete fixture with an empty journal and `manifest.current = initial`. `plan --out X --steps K` (0 < K < timeline-length) writes a partial fixture whose `replay.json.applied_events == K`. `step run-dir --next [N]` advances from wherever the fixture sits.
 
 2. **Step state recovery.** Stateless: each `step --next` re-derives WorldState by re-running the engine from `t=0` and stopping when the journal-entry count matches what is already on disk. No new on-disk state, no schema concern, no drift risk. Plan-only is fast enough that the O(events_already_applied) cost is negligible for V1 scenarios.
 
-3. **Replay divergence semantics.** `replay` performs two checks. First, `replay_plan_bundle()` raises `ReplayIntegrityError` when `bundle.scenario` or `bundle.resolved_seed` no longer matches `bundle.run_id`; exit code 6. Second, after writing the new fixture to `--out`, `replay` byte-compares against either an explicit `--against original-dir` or, if absent, against the bundle's parent directory when that parent is a valid sentinel'd fixture whose `run_id` matches the bundle. Any byte-level mismatch exits 6 with a structured diff.
+3. **Replay divergence semantics.** `replay_plan_bundle()` raises `ReplayIntegrityError` in three cases: (a) `compute_plan_only_run_id(bundle.scenario, bundle.resolved_seed) != bundle.run_id` (scenario or seed tampering); (b) `bundle.applied_events` does not land on a step boundary — i.e. `bundle.applied_events not in (0, *step_boundaries(resolve_timeline(bundle.scenario)))`; (c) the sha256 of the replayed journal's serialized bytes does not match `bundle.journal_digest`. All three exit 6. After integrity passes, the artifact-diff stage runs as before: `replay` byte-compares against either an explicit `--against original-dir` or, if absent, against the bundle's parent directory when that parent is a valid sentinel'd fixture whose `run_id` matches the bundle. Any byte-level mismatch exits 6 with a structured diff.
 
-4. **Report scope (plan-only).** Reports are derived from manifest + journal data only — no content hashes, no probed media facts (those land with Sprint 5's materializer). Per-asset: `initial` snapshot, ordered `history` (journal entries targeting the asset), `current` snapshot or `None` if deleted. Per-work/variant/bundle: member id lists. The schema is forward-compatible: Sprint 5+ adds `content_hash` and probed facts as new optional fields under `schema_version: 1`.
+4. **Report scope (plan-only).** Reports are derived from manifest + journal data only — no content hashes, no probed media facts (those land with Sprint 5's materializer). Per-asset: `initial` snapshot, ordered `history` (journal entries targeting the asset), `current` snapshot or `None` if deleted. Per-work/variant/bundle: member id lists. Each report carries a `schema_version: Literal[N]` declared from a bare `Final = N` constant, identical to every other contract model. Adding any field — required or optional — bumps `N` to `N+1`. Sprint 5's `content_hash` and probed facts land under `schema_version: 2`. Adapter authors key on `schema_version` and load the matching exported schema.
 
 5. **Reports are a versioned contract.** Four Pydantic models in `chaos_librarian.contract.reports` export to `schemas/asset-report.schema.json`, `work-report.schema.json`, `variant-report.schema.json`, `bundle-report.schema.json`. The Sprint 0 drift gate covers them.
 
@@ -29,13 +29,15 @@ The design doc leaves several Sprint-4 specifics open. Each is resolved below; f
 
 7. **`inspect` shape.** Single JSON summary block — `run_id`, `scenario_id`, `schema_version`, `execution_mode`, `journal_entries`, `steps_remaining`, manifest counts (works/variants/bundles/assets/sidecars), `created_at`. Concise enough to pipe to `jq`. Detailed per-entity views live in `reports/`.
 
-8. **`step --next` arity.** `--next` accepts an optional positive integer (default 1). `step run-dir --next` advances one event; `step run-dir --next 5` advances five. `--next 0` and negative values exit 2 (usage error). When the timeline is exhausted, JSON output emits `{"done": true, "steps_applied": <0_or_partial>, "steps_remaining": 0}` and exits 0 cleanly — running out of events is not an error condition.
+8. **`step --next` arity.** `--next` accepts an optional positive integer (default 1) counting **user-visible step units**, not raw timeline events. A consecutive `slow_copy_start` + `slow_copy_commit` pair (where the commit's `for_` field references the start's `id`) is one step unit; every other action is one step unit. `step run-dir --next 5` advances up to five step units. `--next 0` and negative values exit 2 (usage error). When the step count is exhausted, JSON output emits `{"done": true, "steps_applied": <0_or_partial>, "steps_remaining": 0}` and exits 0 cleanly — running out of events is not an error condition.
 
 9. **`clean` success output.** Human: `clean: removed <abs path> (run_id <uuid>)`. JSON: `{"removed": "<abs path>", "run_id": "<uuid>"}`. Sentinel violations exit 7 with `{"error": "sentinel_invalid", "reason": "..."}`.
 
 10. **Sentinel re-entry.** `step`, `inspect`, and `clean` each verify `<run-dir>/.chaos-librarian-run` parses as `RunSentinel` before any read or mutation. This is the "re-use a sentinel'd directory" path Sprint 3 deferred. `step` adds a second check: it recomputes the plan-only `run_id` from the on-disk `scenario.yaml` + `bundle.resolved_seed` and compares to `bundle.run_id`; mismatch exits 7 as `scenario_tampered`.
 
 11. **`divergence.schema.json`.** Not added in Sprint 4. Sprint 9 owns it because its scope (app-vs-oracle comparison) is broader than Sprint 4's fixture-vs-fixture diff. Sprint 4 emits the same shape Sprint 9 will formalize, but does not export a schema artifact for it.
+
+12. **Partial replay round-trip.** `PlanOnlyReplayBundle` gains an `applied_events: int` field (non-negative, ≤ `len(resolve_timeline(scenario))`). `compute_plan_only_run_id` stays 2-arg — `applied_events` is bundle metadata, not a hash input. `replay_plan_bundle` passes `bundle.applied_events` as `steps_limit` into `run_plan`; a `--steps 0` bundle replays as an empty-journal fixture, a `--steps K` bundle replays as the same K-event fixture, a full-run bundle replays the full timeline. Two bundles of the same scenario+seed at different truncation points share a `run_id` — they describe the same logical run at different prefixes. `inspect` surfaces both `run_id` and `applied_events` so adapters can tell them apart. Sprint 3 full-run bundles continue to byte-roundtrip; the only contract change is the new field plus the `REPLAY_BUNDLE_SCHEMA_VERSION` bump from 1 to 2. `bundle.applied_events` is the **raw event count** (= number of journal entries), but it is constrained to land on a step boundary computed from `step_boundaries(resolve_timeline(scenario))` ∪ {0}. Off-boundary values trip `ReplayIntegrityError` at replay time. `PlanOnlyReplayBundle` also gains a `journal_digest: str` field (sha256-hex of the serialized journal bytes). `replay_plan_bundle` recomputes the digest from the replayed journal; mismatch trips `ReplayIntegrityError` even when no `--against` is supplied. Two fields land in one `REPLAY_BUNDLE_SCHEMA_VERSION` bump (1 → 2).
 
 ## Architecture
 
@@ -160,7 +162,7 @@ class BundleReport(BaseModel):
     sidecar_ids: list[str]            # currently bound sidecars only
 ```
 
-All models use `extra="forbid"`. Forward compatibility is preserved by Pydantic's normal behavior: new optional fields can be added under `schema_version: 1` without breaking existing readers, but no field may be removed or retyped.
+All models use `extra="forbid"`, which means the exported JSON Schemas carry `additionalProperties: false`. This is the same forward-incompatible-but-strict policy every other model in `contract/` uses. The four report `schema_version` constants live in `chaos_librarian.contract.__init__` alongside the rest (`ASSET_REPORT_SCHEMA_VERSION: Final = 1`, etc.), declared as bare `Final = 1` so type inference makes them `Literal[1]`. Every model annotates `schema_version: Literal[1]` directly. Adding any field — required or optional — bumps the constant and the `Literal` annotation in lock-step, and regenerates the affected schema artifact. Sprint 5's content-hashes and probed facts land under `schema_version: 2`.
 
 ### `engine/reports.py` — `build_report_set`
 
@@ -207,12 +209,23 @@ Algorithm:
 2. Read `scenario.yaml` (bytes), `replay.json` (as `PlanOnlyReplayBundle`), `journal.jsonl` (parse each line as `JournalEntry`).
 3. Recompute `compute_plan_only_run_id(sha256(scenario_bytes).hex(), bundle.resolved_seed)`; compare to `bundle.run_id`. Mismatch → `ScenarioTamperedError`, exit 7.
 4. Build a fresh `WorldState` from the scenario (Sprint 3's `build_initial_state`); set up a fresh `IdAllocator` + `TraceRecorder`.
-5. Walk `resolve_timeline(scenario)` in order. For each resolved event, call `apply_event` and count the journal entries it produces. Stop replaying when the cumulative count equals `len(existing_journal)`. The state at that point is the cursor.
-6. Continue applying up to `n_events` more resolved events, collecting their new journal entries.
-7. Build the new `current_manifest` from `state.to_manifest()` and the new `ReportSet` from `build_report_set(initial, current, full_journal)`.
-8. Return `StepResult` — the function does not write.
+5. Walk `resolve_timeline(scenario)` in order. For each resolved event, call `apply_event` and compare the returned journal entries one-for-one against the next slice of the on-disk `existing_journal`. If any field of any entry disagrees — phase, event_id, target_ids, state_delta, anything — raise `JournalCorruptError(line=i, expected=..., found=...)`, exit 1. Stop when the cumulative count exactly equals an element of `step_boundaries(resolved_timeline) ∪ {0}`. Off-boundary cumulative counts (including counts that overshoot mid-pair) raise `JournalCorruptError(kind='off_boundary')`. Comparison is by Pydantic model equality (`entry_a == entry_b`) on the parsed `JournalEntry` objects, not byte-compare on the serialized lines — robust against future serializer changes while still failing on every semantic difference.
+6. Continue applying up to `n_events` more resolved events, starting from the cursor state (which is now provably consistent with the on-disk journal).
+7. Build the new `current_manifest` from `state.to_manifest()` and the new `ReportSet` from `build_report_set(initial, current, full_journal)`. Compute `journal_digest = sha256(canonical_journal_bytes).hexdigest()` from the full (existing + new) journal.
+8. Return `StepResult` — the function does not write. The returned `new_replay_bundle` carries the updated `applied_events` AND the updated `journal_digest`. `run_id` is unchanged (same scenario+seed).
 
 Cursor-recovery cost is O(events_already_applied). Step counts resolved events, not journal entries, so a slow_copy pair counts as one step for `--next` purposes even though it adds two journal lines.
+
+### `contract/replay_bundle.py` — `applied_events` + `journal_digest` fields
+
+`_ReplayBundleBase` gains two fields:
+
+- `applied_events: int = Field(ge=0)` — raw event count (= journal entry count). Constrained at replay time to land on a step boundary.
+- `journal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")` — sha256-hex of the serialized journal bytes.
+
+`MaterializeReplayBundle` inherits both fields identically; for materialize-mode the journal is still the deterministic chaos-librarian journal (execution_trace handles the non-deterministic FFmpeg output).
+
+Schema export via the existing `TypeAdapter(ReplayBundle)` wrapper picks up both fields for both union arms automatically.
 
 ### `engine/diff.py` — `compare_fixtures`
 
@@ -239,6 +252,16 @@ class FixtureDiff:
 
 Walks both directories, treats `.chaos-librarian-run/created_at` as ignorable (plan-only omits it anyway), and compares every other file by exact byte content. For JSON / JSONL files, the first differing line is surfaced with a short preview; for other files only byte counts are reported. No third-party diff library; the project keeps zero new runtime dependencies.
 
+### `engine/resolution.py` — `step_boundaries`
+
+```python
+def step_boundaries(resolved_timeline: list[ResolvedEvent]) -> list[int]: ...
+```
+
+Returns the cumulative raw-event count after each step unit. A consecutive `slow_copy_start` followed by `slow_copy_commit` whose `for_` field references the start's `id` is one step unit (+2 raw events). Every other action — including non-adjacent slow_copy halves — is its own single-event step (+1 raw event).
+
+Pure function; called by `run_plan` (steps_limit translation), `step_fixture` (cursor recovery boundary check), `replay_plan_bundle` (applied_events boundary check), and `inspect` (steps_remaining computation).
+
 ### `engine/plan.py` — `steps_limit` extension
 
 ```python
@@ -251,7 +274,7 @@ def run_plan(
 ) -> PlanArtifacts: ...
 ```
 
-Behavior unchanged when `steps_limit is None`. When set, the timeline loop stops after `steps_limit` resolved events have been applied (slow_copy_start counts as one step even though it does not commit). The resulting `journal`, `current_manifest`, and `replay_bundle.execution_trace` reflect only the applied prefix; the `replay_bundle.run_id` is still the deterministic UUIDv5 (which depends only on `scenario_content_hash` and `resolved_seed`, not on event count). The `validation_report` is unchanged.
+When `steps_limit` is supplied, `run_plan` computes `boundaries = step_boundaries(resolved_timeline)`. The number of raw events to apply is `boundaries[steps_limit - 1]` if `0 < steps_limit ≤ len(boundaries)`, `0` if `steps_limit == 0`, and `boundaries[-1]` (clamped) if `steps_limit > len(boundaries)`. The journal is built from `resolved_timeline[:applied_events]`. `applied_events` is set on the bundle as the raw count. `journal_digest = sha256(b"".join(entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8") + b"\n" for entry in journal)).hexdigest()` is computed and set on the bundle. `replay_bundle.run_id = compute_plan_only_run_id(scenario_content_hash, resolved_seed)` — unchanged from Sprint 3; the new fields do not affect `run_id`. Behavior is unchanged when `steps_limit is None` (full-run, equivalent to `steps_limit = len(boundaries)`). Two `run_plan` calls of the same scenario+seed always produce identical `run_id` values regardless of `steps_limit`. The `validation_report` is unchanged.
 
 `steps_limit=0` is a valid input that produces an empty journal and `current_manifest == initial_manifest`.
 
@@ -335,16 +358,18 @@ Summary shape:
 {
   "run_id": "<uuid>",
   "scenario_id": "identity-move-rename",
-  "schema_version": 1,
+  "schema_version": 2,
   "execution_mode": "plan_only",
   "journal_entries": 3,
+  "applied_events": 3,
+  "applied_steps": 3,
   "steps_remaining": 4,
   "counts": {"works": 1, "variants": 1, "bundles": 1, "assets": 1, "sidecars": 0},
   "created_at": null
 }
 ```
 
-`steps_remaining` measures resolved events still to apply (not journal lines), so it matches the user-facing count of `--next` calls remaining.
+`journal_entries` and `applied_events` are equal (one journal entry per raw event). `applied_steps` and `steps_remaining` are in **step units** — a `slow_copy_start` + `slow_copy_commit` pair counts as one step even though it contributes two journal entries. This matches the user-facing `--next` semantic.
 
 **`clean`**:
 
@@ -524,7 +549,7 @@ No new exit codes; Sprint 4 stays within the design doc's frozen 0–7 range.
 
 1. **`step` on a Sprint 3 plan fixture (timeline already complete).** Fixture has a full journal; `step --next` finds `steps_remaining=0` and emits `done: true`, exit 0.
 
-2. **`step` on a corrupted journal.** Per-line `JournalEntry.model_validate_json` failure → `JournalCorruptError`, exit 1 with structured message naming the offending line. No automatic repair.
+2. **`step` on a corrupted journal.** Three sub-cases, all exit 1 with `JournalCorruptError`: (a) per-line `JournalEntry.model_validate_json` failure; (b) regenerated entry disagrees with the on-disk entry during cursor recovery; (c) on-disk journal length doesn't land on a **step-unit** boundary computed from `step_boundaries(resolve_timeline(scenario))`. A slow_copy pair must be entirely present or entirely absent; a journal ending with a `started` entry whose matching `committed` is missing is off-boundary. Each error names the offending line and the expected/found values. No automatic repair.
 
 3. **`step` after `scenario.yaml` has been hand-edited.** The integrity check at start (`compute_plan_only_run_id(sha256(scenario_bytes), bundle.resolved_seed) == bundle.run_id`) fails; exit 7 with `scenario_tampered`, naming both run_ids.
 
@@ -546,6 +571,8 @@ No new exit codes; Sprint 4 stays within the design doc's frozen 0–7 range.
 
 12. **Concurrent `step` invocations.** Not supported. No file locking. Behavior is undefined per the design doc's existing non-goal ("Concurrent / overlapping mutations within the timeline beyond the explicit multi-phase pairs").
 
+13. **`step` on a partial fixture emitted by `plan --steps K` followed by `--steps J` for J>K.** Cursor recovery verifies the K existing entries against the regenerated prefix, then applies up to N more events as requested. `bundle.applied_events` is updated to `K+steps_applied`. `bundle.run_id` is unchanged (same scenario+seed). `inspect` reflects the new `applied_events`; `replay` produces the longer prefix's fixture. Both `K` and `K+steps_applied` are step-unit counts; the engine translates them to raw event indices via `step_boundaries`. A slow_copy pair always advances together (one step = +2 raw events).
+
 ## Testing
 
 ### Per-component unit tests
@@ -555,6 +582,13 @@ tests/contract/test_reports.py
   - round-trip each report type through Pydantic
   - extra="forbid" rejection
   - drift gate covered by existing schema_export test once the four schemas land
+
+tests/engine/test_resolution.py
+  - step_boundaries on identity-move-rename → [1, 2] (two atomic steps)
+  - step_boundaries on slow-copy → [2] (one step covering start+commit)
+  - step_boundaries on a scenario with [slow_copy_start, atomic_move, slow_copy_commit] →
+      [1, 2, 3] (non-adjacent pair degrades to three single-event steps)
+  - step_boundaries on empty timeline → []
 
 tests/engine/test_reports.py
   - asset with no mutations → history empty, current==initial
@@ -571,6 +605,10 @@ tests/engine/test_step.py
   - tampered scenario.yaml → exit 7 (scenario_tampered)
   - corrupt journal.jsonl → exit 1 (journal_corrupt)
   - missing sentinel → exit 7 (sentinel_missing)
+  - cursor recovery rejects a journal where one line has been hand-edited to a different action (JournalCorruptError, kind="entry_mismatch")
+  - cursor recovery rejects a journal that's been duplicated (extra valid line in the middle; off-boundary length)
+  - cursor recovery rejects a journal whose final line is a `started` entry without its matching `committed` (off-boundary at slow_copy pair)
+  - cursor recovery accepts a faithfully regenerated journal byte-for-byte (the happy path; covered by the existing "step from t=0 produces journal identical to plan" test)
 
 tests/engine/test_diff.py
   - identical fixtures → is_clean()
@@ -584,6 +622,11 @@ tests/engine/test_plan_steps.py
   - --steps K for 0 < K < timeline-length → partial journal
   - omitted --steps → byte-identical to Sprint 3 baseline (regression)
   - --steps -1 → exit 2 (Typer rejects)
+  - --steps 0 produces applied_events = 0; run_id is identical to the full-run bundle's run_id for the same scenario+seed
+  - --steps K (0 < K < total step units) produces applied_events == step_boundaries(...)[K-1]; run_id is identical across truncation points
+  - omitted --steps produces applied_events == step_boundaries(...)[-1] (which equals len(resolve_timeline(...)) for first-pack scenarios); round-trip replay matches
+  - --steps 1 on slow-copy.yaml applies BOTH slow_copy_start AND slow_copy_commit (one step unit = two raw events; journal has 2 entries)
+  - --steps K whose translated raw count would land mid-pair is impossible by construction — the boundary translator never produces an off-boundary value
 
 tests/engine/test_plan_e2e.py (EXTEND existing file)
   - "step + plan journals are byte-identical" headline test:
@@ -628,6 +671,12 @@ tests/cli/test_replay.py
   - --against pointing at a different scenario → exit 6 (wholesale divergence)
   - auto-discover original from bundle.parent works when sentinel matches
   - no auto-discover when bundle.parent has no sentinel
+  - replay a `plan --steps K` fixture round-trips byte-identical (same partial journal, same partial manifest, same partial reports)
+  - replay a `plan --steps 0` fixture round-trips byte-identical (empty journal, manifest.current == manifest.initial)
+  - tamper bundle.applied_events to an off-boundary value (e.g., 1 on slow-copy.yaml whose boundaries are [2]) → ReplayIntegrityError, exit 6 (boundary check, no --against needed)
+  - tamper bundle.applied_events to a valid boundary value but leave journal_digest unchanged → ReplayIntegrityError, exit 6 (digest check, no --against needed)
+  - tamper bundle.journal_digest directly → ReplayIntegrityError, exit 6
+  - replay a partial bundle with NO --against and NO sentineled parent → integrity checks still fire; success case exits 0 even without comparison target
 ```
 
 ### Exit criteria (mapped to tests)
@@ -659,7 +708,6 @@ All five must pass on `feat/sprint-4` before PR.
 - No concurrent `step` support.
 - No `divergence.schema.json` artifact (deferred to Sprint 9).
 - No backwards-incremental step (no `--prev`).
-- No partial-fixture recovery tools.
 - No new `E_` validation codes; the Sprint 3 lifecycle pass covers everything Sprint 4 exercises.
 - No materializer-related work — no content hashes in reports, no probed media facts, no FFmpeg invocation.
 - No wall-clock support — `run` stays a stub until Sprint 8.
