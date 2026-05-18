@@ -11,6 +11,7 @@ Sprint 4 wraps it in the public ``replay`` CLI command.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 
 from chaos_librarian import __version__ as _chaos_librarian_version
@@ -84,13 +85,14 @@ def run_plan(
     initial_state = build_initial_state(parsed, ids)
     initial_manifest = initial_state.to_manifest()
 
+    resolved_timeline = resolve_timeline(parsed)
     run_id = compute_plan_only_run_id(
         scenario_content_hash=run_input.content_hash,
         resolved_seed=resolved_seed,
     )
 
     journal: list[JournalEntry] = []
-    for resolved in resolve_timeline(parsed):
+    for resolved in resolved_timeline:
         entries = apply_event(
             initial_state,
             resolved,
@@ -102,12 +104,20 @@ def run_plan(
 
     current_manifest = initial_state.to_manifest()
 
+    journal_bytes = b"".join(
+        entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8") + b"\n"
+        for entry in journal
+    )
+    journal_digest = hashlib.sha256(journal_bytes).hexdigest()
+
     bundle = PlanOnlyReplayBundle(
-        schema_version=1,
+        schema_version=2,
         chaos_librarian_version=_chaos_librarian_version,
         scenario=run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,
         resolved_seed=resolved_seed,
+        applied_events=len(resolved_timeline),
+        journal_digest=journal_digest,
         execution_trace=list(recorder.entries()),
         execution_mode=ExecutionMode.PLAN_ONLY,
     )

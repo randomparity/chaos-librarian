@@ -30,6 +30,11 @@
       "additionalProperties": false,
       "description": "Replay bundle in materialize or run mode.\n\n``created_at`` and ``toolchain`` are both required (non-null).",
       "properties": {
+        "applied_events": {
+          "minimum": 0,
+          "title": "Applied Events",
+          "type": "integer"
+        },
         "chaos_librarian_version": {
           "title": "Chaos Librarian Version",
           "type": "string"
@@ -72,6 +77,11 @@
           "title": "Execution Trace",
           "type": "array"
         },
+        "journal_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Journal Digest",
+          "type": "string"
+        },
         "resolved_seed": {
           "title": "Resolved Seed",
           "type": "integer"
@@ -86,7 +96,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 1,
+          "const": 2,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -104,6 +114,8 @@
         "scenario",
         "run_id",
         "resolved_seed",
+        "applied_events",
+        "journal_digest",
         "execution_mode",
         "created_at",
         "toolchain"
@@ -146,6 +158,11 @@
       "additionalProperties": false,
       "description": "Replay bundle in plan-only mode. No ``created_at`` or ``toolchain``.",
       "properties": {
+        "applied_events": {
+          "minimum": 0,
+          "title": "Applied Events",
+          "type": "integer"
+        },
         "chaos_librarian_version": {
           "title": "Chaos Librarian Version",
           "type": "string"
@@ -181,6 +198,11 @@
           "title": "Execution Trace",
           "type": "array"
         },
+        "journal_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Journal Digest",
+          "type": "string"
+        },
         "resolved_seed": {
           "title": "Resolved Seed",
           "type": "integer"
@@ -195,7 +217,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 1,
+          "const": 2,
           "title": "Schema Version",
           "type": "integer"
         }
@@ -205,7 +227,9 @@
         "chaos_librarian_version",
         "scenario",
         "run_id",
-        "resolved_seed"
+        "resolved_seed",
+        "applied_events",
+        "journal_digest"
       ],
       "title": "PlanOnlyReplayBundle",
       "type": "object"

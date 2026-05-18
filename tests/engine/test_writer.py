@@ -31,11 +31,13 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sidecars=[],
     )
     bundle = PlanOnlyReplayBundle(
-        schema_version=1,
+        schema_version=2,
         chaos_librarian_version="0.0.0",
         scenario="schema_version: 1\n",
         run_id=_RUN_ID,
         resolved_seed=1,
+        applied_events=0,
+        journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
         execution_mode=ExecutionMode.PLAN_ONLY,
     )

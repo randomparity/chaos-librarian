@@ -8,14 +8,15 @@ from typing import Final
 # Schema versions. Bumps are always breaking (no minor versions).
 # See docs/specs/chaos-librarian-design.md "Versioning".
 # Declared as bare ``Final`` (no explicit ``[int]``) so ty infers each value
-# as ``Literal[1]``. That lets every model use ``schema_version: Literal[1]``
-# and lets test code pass the named constant without a type error. Runtime
-# semantics are identical (each constant is the int ``1``); the test in
+# as its concrete ``Literal[N]``. That lets test code pass the named constant
+# without a type error. Models hardcode the literal (``schema_version:
+# Literal[1]`` or ``Literal[2]``) rather than referencing the constant —
+# ``ty`` rejects indirect ``Literal[]`` forms. The test in
 # test_contract_constants.py asserts ``isinstance(v, int)``.
 SCENARIO_SCHEMA_VERSION: Final = 1
 MANIFEST_SCHEMA_VERSION: Final = 1
 JOURNAL_SCHEMA_VERSION: Final = 1
-REPLAY_BUNDLE_SCHEMA_VERSION: Final = 1
+REPLAY_BUNDLE_SCHEMA_VERSION: Final = 2
 VALIDATION_SCHEMA_VERSION: Final = 1
 MATERIALIZATION_SCHEMA_VERSION: Final = 1
 RUN_SENTINEL_SCHEMA_VERSION: Final = 1

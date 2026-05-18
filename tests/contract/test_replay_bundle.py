@@ -41,6 +41,8 @@ def _plan_only_base(seed: int = 1) -> dict[str, object]:
         "scenario": "scenario_id: t\nseed: 1\n",
         "run_id": str(compute_plan_only_run_id(h, seed)),
         "resolved_seed": seed,
+        "applied_events": 0,
+        "journal_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "execution_trace": [],
     }
 
@@ -53,6 +55,8 @@ def _materialize_base() -> dict[str, object]:
         "scenario": "scenario_id: t\nseed: 1\n",
         "run_id": str(uuid.uuid4()),
         "resolved_seed": 1,
+        "applied_events": 0,
+        "journal_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "execution_trace": [],
     }
 
@@ -84,11 +88,18 @@ def test_plan_only_bundle_has_no_created_at_or_toolchain_fields() -> None:
         scenario="scenario_id: t\nseed: 1\n",
         run_id=compute_plan_only_run_id(h, 1),
         resolved_seed=1,
+        applied_events=0,
+        journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
     )
     parsed = json.loads(b.model_dump_json())
     assert "created_at" not in parsed
     assert "toolchain" not in parsed
+    assert parsed["applied_events"] == 0
+    assert (
+        parsed["journal_digest"]
+        == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
 
 
 def test_plan_only_bundle_roundtrip_byte_identical() -> None:
@@ -99,6 +110,8 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
         scenario="scenario_id: t\nseed: 1\n",
         run_id=compute_plan_only_run_id(h, 1),
         resolved_seed=1,
+        applied_events=0,
+        journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[
             RngTraceEntry(kind=ExecutionTraceKind.RNG, stream="ids", value="1"),
             AllocTraceEntry(kind=ExecutionTraceKind.ALLOC, stream="work_id", value="w1"),
@@ -118,6 +131,8 @@ def test_materialize_bundle_has_created_at_and_toolchain() -> None:
         run_id=uuid.uuid4(),
         created_at=datetime(2026, 5, 17, 12, 0, tzinfo=UTC),
         resolved_seed=1,
+        applied_events=0,
+        journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
         toolchain={"ffmpeg": "7.1", "ffprobe": "7.1", "platform": "darwin-arm64"},
     )
@@ -166,6 +181,74 @@ def test_materialize_rejects_null_toolchain() -> None:
     }
     with pytest.raises(ValidationError):
         TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_run_id_independent_of_applied_events() -> None:
+    """run_id is invariant across applied_events values.
+
+    WHY: under the no-fold design, two bundles of the same scenario+seed
+    at different truncation points share a run_id — they describe the
+    same logical run at different prefixes. The previous fold-into-run_id
+    design was rejected because it broke step-mode cursor recovery (the
+    journal entries stamped during plan carried the old run_id while the
+    regenerated entries on the next step carried a new run_id, tripping
+    JournalCorruptError on the plan's own writes). Codex review
+    finding 1.
+    """
+    h = _scenario_hash("x")
+    base = compute_plan_only_run_id(h, resolved_seed=1)
+    assert compute_plan_only_run_id(h, resolved_seed=1) == base
+    # applied_events is bundle metadata, not part of the hash; constructing
+    # bundles with different applied_events does not affect the run_id.
+    payload_zero = {**_plan_only_base(), "applied_events": 0, "run_id": str(base)}
+    payload_five = {**_plan_only_base(), "applied_events": 5, "run_id": str(base)}
+    assert TypeAdapter(ReplayBundle).validate_python(payload_zero).run_id == base
+    assert TypeAdapter(ReplayBundle).validate_python(payload_five).run_id == base
+
+
+def test_plan_only_bundle_rejects_negative_applied_events() -> None:
+    """applied_events must be non-negative.
+
+    WHY: a negative count would imply a journal of negative length —
+    nonsensical; reject at the schema layer so no downstream code has to
+    defend against it.
+    """
+    payload = {**_plan_only_base(), "applied_events": -1}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(payload)
+
+
+def test_journal_digest_required() -> None:
+    """journal_digest is mandatory on every plan-only bundle.
+
+    WHY: it's the self-contained integrity anchor — without it,
+    applied_events tampering goes undetected when no --against is
+    supplied (Codex round 3 finding 2).
+    """
+    payload = {**_plan_only_base()}
+    del payload["journal_digest"]
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(payload)
+
+
+def test_journal_digest_must_be_sha256_hex() -> None:
+    """journal_digest is constrained to 64 lowercase hex chars."""
+    payload = {**_plan_only_base(), "journal_digest": "nothex"}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(payload)
+
+
+def test_journal_digest_matches_helper_output() -> None:
+    """A known journal produces a known digest.
+
+    WHY: ensures the documented digest formula (sha256 of the on-disk
+    journal byte stream) is what bundles actually record.
+    """
+    payload = {**_plan_only_base()}  # empty journal helper default
+    bundle = TypeAdapter(ReplayBundle).validate_python(payload)
+    assert (
+        bundle.journal_digest == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    )
 
 
 def _trace_base(kind: str) -> dict[str, object]:
