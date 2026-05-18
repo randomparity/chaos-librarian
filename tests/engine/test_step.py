@@ -126,8 +126,9 @@ class TestStepFixtureJournalCorruption:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=1)
         journal = fixture / "journal.jsonl"
         journal.write_text("{not json\n")
-        with pytest.raises(JournalCorruptError):
+        with pytest.raises(JournalCorruptError) as excinfo:
             step_fixture(fixture, n_events=1)
+        assert excinfo.value.kind == "parse"
 
     def test_hand_edited_entry_action(self, tmp_path: Path) -> None:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=1)
@@ -136,18 +137,22 @@ class TestStepFixtureJournalCorruption:
         entry = json.loads(line)
         entry["action"] = "delete_file"
         journal.write_text(json.dumps(entry) + "\n")
-        with pytest.raises(JournalCorruptError):
+        with pytest.raises(JournalCorruptError) as excinfo:
             step_fixture(fixture, n_events=1)
+        assert excinfo.value.kind == "entry_mismatch"
 
     def test_duplicated_line_off_boundary(self, tmp_path: Path) -> None:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=2)
         journal = fixture / "journal.jsonl"
         lines = journal.read_text().splitlines()
         # Duplicate the first line so the journal has three entries when only
-        # two resolved events exist.
+        # two resolved events exist. Cursor recovery's entry-by-entry compare
+        # trips entry_mismatch at the second slot (regenerated entry 2 vs the
+        # duplicated copy of line[0]) before the length check can fire.
         journal.write_text(lines[0] + "\n" + lines[0] + "\n" + lines[1] + "\n")
-        with pytest.raises(JournalCorruptError):
+        with pytest.raises(JournalCorruptError) as excinfo:
             step_fixture(fixture, n_events=1)
+        assert excinfo.value.kind == "entry_mismatch"
 
     def test_slow_copy_started_without_committed_off_boundary(self, tmp_path: Path) -> None:
         """A journal ending mid-pair is off-boundary.
@@ -163,8 +168,9 @@ class TestStepFixtureJournalCorruption:
         # so the journal contains only the 'started' line.
         lines = journal.read_text().splitlines()
         journal.write_text(lines[0] + "\n")
-        with pytest.raises(JournalCorruptError):
+        with pytest.raises(JournalCorruptError) as excinfo:
             step_fixture(fixture, n_events=1)
+        assert excinfo.value.kind == "off_boundary"
 
 
 class TestStepFixtureFromEmpty:

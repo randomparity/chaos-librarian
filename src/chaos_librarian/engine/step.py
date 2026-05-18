@@ -294,6 +294,8 @@ def _recover_cursor(
                     ),
                 )
             return resolved_index + 1
+    # Only reachable if existing_journal extends past the resolved timeline
+    # (the inner overshoot guard above catches the more common case).
     raise JournalCorruptError(
         kind="off_boundary",
         line=matched,
