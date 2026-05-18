@@ -57,6 +57,12 @@ class TestClockMonotonic:
         with pytest.raises(ValueError, match="current_ns"):
             clk.set_to(4_999)
 
+    def test_negative_initial_value_raises(self) -> None:
+        # WHY: direct construction bypasses advance/set_to guards; a negative
+        # initial clock would silently corrupt every downstream timestamp.
+        with pytest.raises(ValueError, match="current_ns"):
+            Clock(current_ns=-1)
+
 
 class TestFormatDurationHumanEdges:
     """Edge cases for format_duration_human.
@@ -89,6 +95,13 @@ class TestFormatDurationHumanEdges:
         with pytest.raises(ValueError, match=">= 0"):
             format_duration_human(-1)
 
+    def test_bool_raises_type_error(self) -> None:
+        # WHY: bool is a subclass of int, so isinstance(True, int) is True;
+        # without an explicit guard, format_duration_human(True) returns "1ns"
+        # which is a silent footgun at call sites that pass untrusted input.
+        with pytest.raises(TypeError):
+            format_duration_human(True)
+
 
 class TestFormatDurationJson:
     """format_duration_json returns ints verbatim.
@@ -105,6 +118,13 @@ class TestFormatDurationJson:
     def test_non_int_raises_type_error(self) -> None:
         with pytest.raises(TypeError):
             format_duration_json("90s")  # ty: ignore[invalid-argument-type]
+
+    def test_bool_raises_type_error(self) -> None:
+        # WHY: bool is a subclass of int; without an explicit guard,
+        # format_duration_json(True) returns True (not 1), which breaks
+        # downstream JSON consumers expecting a plain integer.
+        with pytest.raises(TypeError):
+            format_duration_json(True)
 
 
 class TestParseFormatRoundTripExamples:

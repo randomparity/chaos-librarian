@@ -7,8 +7,7 @@ add wall-clock-mode wiring on top.
 The formatters here pair with Sprint 1's
 ``chaos_librarian.clock.parse_duration``. The round-trip identity
 ``parse_duration(format_duration_human(ns)) == ns`` holds for every
-``ns >= 0`` representable as a clean h/m/s/ms sum (no microsecond /
-nanosecond residue).
+``ns >= 0``.
 """
 
 from __future__ import annotations
@@ -36,6 +35,15 @@ class Clock:
     """Monotonic logical clock measured in nanoseconds since t=0."""
 
     current_ns: int = 0
+
+    def __post_init__(self) -> None:
+        """Validate that the initial current_ns is non-negative.
+
+        Raises:
+            ValueError: If ``current_ns < 0``.
+        """
+        if self.current_ns < 0:
+            raise ValueError(f"current_ns must be >= 0, got {self.current_ns}")
 
     def advance(self, delta_ns: int) -> int:
         """Move the clock forward by ``delta_ns`` and return the new ``current_ns``.
@@ -79,6 +87,8 @@ def format_duration_human(ns: int) -> str:
     Raises:
         ValueError: If ``ns < 0``.
     """
+    if isinstance(ns, bool):
+        raise TypeError("format_duration_human expects int, got bool")
     if ns < 0:
         raise ValueError(f"format_duration_human requires ns >= 0, got {ns}")
     if ns == 0:
@@ -102,6 +112,8 @@ def format_duration_json(ns: int) -> int:
     Raises:
         TypeError: If ``ns`` is not an ``int``.
     """
+    if isinstance(ns, bool):
+        raise TypeError("format_duration_json expects int, got bool")
     if not isinstance(ns, int):
         raise TypeError(f"format_duration_json expects int, got {type(ns).__name__}")
     return ns
