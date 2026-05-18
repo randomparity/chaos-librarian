@@ -129,6 +129,12 @@ Flow:
 
 1. `load_scenario(path)`; on `ScenarioLoadError`, emit one `E_YAML_PARSE` issue,
    set `ok=False`, return early.
+1.5. **Top-level shape guard.** If `raw_data` is not a `dict` (e.g., the file
+   is a YAML scalar like `42` or a top-level sequence like `[]`), emit one
+   `E_TOP_LEVEL_NOT_MAPPING` issue at `loc=()`, line 1, column 0, set
+   `ok=False`, and return early — analogous to the `ScenarioLoadError`
+   branch. Subsequent passes assume a mapping and would crash on a list or
+   scalar.
 2. `run_shape_pass(raw, line_index, collector)` — emits zero or more issues;
    returns `Scenario | None`.
 3. `run_semantic_pass(raw, line_index, collector)` — runs unconditionally, even
@@ -189,13 +195,48 @@ Rules (run in this fixed order):
 
 | # | Code                        | Rule                                                                                                                                                |
 |---|-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------|
-| 1 | `E_ID_DUPLICATE`            | No duplicate IDs within a scope. Scopes: timeline events; library roots; works; variants under a work; bundles under a variant; assets under a bundle |
+| 1 | `E_ID_DUPLICATE`            | No duplicate IDs within the scenario; per-namespace scopes defined in the table below                                                                |
 | 2 | `E_PATH_DUPLICATE`          | No two `library.roots` share the same `path`                                                                                                        |
 | 3 | `E_DURATION_SYNTAX`         | Every `timeline[*].at` and `slow_copy_start.duration` parses via `clock.parse_duration`                                                              |
 | 4 | `E_TARGET_UNKNOWN`          | Every `timeline[*].target` resolves to an `asset.id` defined in `works[*].variants[*].bundle.assets[*]`                                              |
-| 5 | `E_SLOW_COPY_UNPAIRED`      | Every `slow_copy_commit.for` references an existing `slow_copy_start.id`; every start has exactly one matching commit; `at_commit > at_start`        |
+| 5a | `E_SLOW_COPY_UNPAIRED`     | Every `slow_copy_commit.for` references an existing `slow_copy_start.id`; every start has exactly one matching commit                                |
+| 5b | `E_SLOW_COPY_TIMING`       | For each matched pair, `parse_duration(commit.at) == parse_duration(start.at) + parse_duration(start.duration)` (strict equality)                    |
 | 6 | `E_PATH_CONTAINMENT`        | Every `library.roots[*].path`, `to:`, `temp_path:` passes `paths.resolve_under_library` against a synthetic library root                             |
 | 7 | `E_TIMELINE_ORDER`          | Timeline `at:` values are non-decreasing (ties allowed; same-`at` events apply in declared order)                                                    |
+
+`E_ID_DUPLICATE` namespace scopes:
+
+| Namespace                                | Scope of uniqueness                                                |
+|------------------------------------------|--------------------------------------------------------------------|
+| `library.roots[].id`                     | top-level                                                          |
+| `works[].id`                             | top-level                                                          |
+| `works[].variants[].id`                  | **global across all works in the scenario**                        |
+| `works[].variants[].bundle.id`           | **global across all variants in the scenario**                     |
+| `works[].variants[].bundle.assets[].id`  | **global across all bundles** (timeline `target:` resolves here)   |
+| `timeline[].id`                          | top-level                                                          |
+
+Variants, bundles, and assets are scoped globally within a scenario because
+downstream consumers (manifest, journal, timeline `target:` resolution) treat
+them as flat ID-keyed namespaces. Two assets sharing an ID would make a
+`target:` reference ambiguous and would collide in `manifest.json`
+(see `contract/manifest.py`). The issue message must name the namespace, the
+duplicated value, and the path of the second occurrence
+(e.g., `$.works[1].variants[0].bundle.assets[2].id`).
+
+Note on roots: duplicate `library.roots[].id` is `E_ID_DUPLICATE` (ERROR);
+duplicate `library.roots[].path` between distinct root IDs is
+`E_PATH_DUPLICATE` (WARNING). The two are intentionally different rules
+because IDs are oracle keys (collisions ambiguate the journal) while paths
+with distinct IDs are merely a suspicious alias.
+
+Rule 5b uses strict equality (not `>=`) to prevent idle gaps between a copy
+finishing and its commit. If a scenario needs an idle gap, that must be
+expressed as a later atomic event, not as drift between paired slow-copy
+events. This matches the design spec's "grown over the declared `duration:`
+between the two events" wording in §"Mutation Model". Rule 5b's preconditions:
+both events have parseable `at:` strings AND the start has a parseable
+`duration:` (else `E_DURATION_SYNTAX` already flagged) AND Rule 5a did not
+fire for this pair.
 
 Rule 6 uses a synthetic absolute library root (e.g.,
 `Path("/__chaos_librarian_validate__/library")`) because no run directory
@@ -279,6 +320,7 @@ JSON output is the stable contract; human format may change.
 | Code                       | Severity | Source pass | Description                                            |
 |----------------------------|----------|-------------|--------------------------------------------------------|
 | `E_YAML_PARSE`             | ERROR    | loader      | YAML failed to parse                                   |
+| `E_TOP_LEVEL_NOT_MAPPING`  | ERROR    | loader      | Top-level YAML is not a mapping (scalar or sequence)   |
 | `E_FIELD_MISSING`          | ERROR    | shape       | Required field absent                                  |
 | `E_FIELD_UNKNOWN`          | ERROR    | shape       | Unknown field (`extra="forbid"`)                       |
 | `E_FIELD_LITERAL`          | ERROR    | shape       | Value outside `Literal[...]` choices                   |
@@ -289,6 +331,7 @@ JSON output is the stable contract; human format may change.
 | `E_ID_DUPLICATE`           | ERROR    | semantic    | Duplicate ID within a scope                            |
 | `E_TARGET_UNKNOWN`         | ERROR    | semantic    | Timeline event references a non-existent asset ID      |
 | `E_SLOW_COPY_UNPAIRED`     | ERROR    | semantic    | slow_copy_start/commit pairing violated                 |
+| `E_SLOW_COPY_TIMING`       | ERROR    | semantic    | slow_copy commit time != start time + duration          |
 | `E_PATH_CONTAINMENT`       | ERROR    | semantic    | Scenario path violates library containment rules       |
 | `E_PATH_DUPLICATE`         | WARNING  | semantic    | Two library roots resolve to the same path (see note below) |
 | `E_TIMELINE_ORDER`         | ERROR    | semantic    | Timeline `at:` values not non-decreasing               |
@@ -344,6 +387,9 @@ tests/fixtures/scenarios/
     slow-copy-unpaired.yaml          # E_SLOW_COPY_UNPAIRED
     path-escape.yaml                 # E_PATH_CONTAINMENT (`..` segment)
     timeline-out-of-order.yaml       # E_TIMELINE_ORDER
+    duplicate-asset-id-cross-bundle.yaml  # E_ID_DUPLICATE — same asset id in two different bundles
+    slow-copy-timing-mismatch.yaml        # E_SLOW_COPY_TIMING — at_commit != at_start + duration
+    top-level-not-mapping.yaml            # E_TOP_LEVEL_NOT_MAPPING — top-level is a list or scalar
 ```
 
 - Each invalid fixture is the smallest reproducer for one error code and
@@ -390,6 +436,9 @@ The PR is mergeable when:
 - `uv run chaos-librarian validate tests/fixtures/scenarios/invalid/bad-duration.yaml --json`
   exits `3` and emits a report with `ok: false` and at least one
   `E_DURATION_SYNTAX` issue carrying a non-null `line`
+- `uv run chaos-librarian validate tests/fixtures/scenarios/invalid/duplicate-asset-id-cross-bundle.yaml --json`
+  exits `3` with an `E_ID_DUPLICATE` issue naming the `asset_id` namespace
+  (regression guard for Codex finding #1)
 - CI green on `feat/sprint-1`
 
 ## Non-Goals
