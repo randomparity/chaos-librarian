@@ -66,12 +66,13 @@ class TestPlanJSONSummary:
 
 
 class TestPlanWritesEveryFile:
-    """plan writes the seven plan-only artifacts.
+    """plan writes the contracted plan-only artifacts.
 
-    WHY: locks the public fixture layout for plan-only mode.
+    WHY: locks the public fixture layout for plan-only mode. Sprint 4
+    adds the ``reports/`` tree alongside the original seven entries.
     """
 
-    def test_seven_files(self, tmp_path: Path) -> None:
+    def test_top_level_entries(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         runner.invoke(
             app,
@@ -84,6 +85,11 @@ class TestPlanWritesEveryFile:
             "manifest.current.json",
             "manifest.initial.json",
             "replay.json",
+            "reports",
             "scenario.yaml",
             "validation.json",
         ]
+        assert (out / "reports" / "assets").is_dir()
+        assert (out / "reports" / "works").is_dir()
+        assert (out / "reports" / "variants").is_dir()
+        assert (out / "reports" / "bundles").is_dir()

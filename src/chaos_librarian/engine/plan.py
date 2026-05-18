@@ -31,6 +31,8 @@ from chaos_librarian.determinism import (
     resolve_seed,
 )
 from chaos_librarian.engine.events import apply_event
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.reports import ReportSet, build_report_set
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.validation import (
@@ -50,6 +52,7 @@ class PlanArtifacts:
     replay_bundle: PlanOnlyReplayBundle
     validation_report: ValidationReport
     sentinel: RunSentinel
+    reports: ReportSet
 
 
 def run_plan(
@@ -104,11 +107,13 @@ def run_plan(
 
     current_manifest = initial_state.to_manifest()
 
-    journal_bytes = b"".join(
-        entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8") + b"\n"
-        for entry in journal
+    reports = build_report_set(
+        initial=initial_manifest,
+        current=current_manifest,
+        journal=journal,
     )
-    journal_digest = hashlib.sha256(journal_bytes).hexdigest()
+
+    journal_digest = hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
     bundle = PlanOnlyReplayBundle(
         schema_version=2,
@@ -137,6 +142,7 @@ def run_plan(
         replay_bundle=bundle,
         validation_report=validation_report,
         sentinel=sentinel,
+        reports=reports,
     )
 
 

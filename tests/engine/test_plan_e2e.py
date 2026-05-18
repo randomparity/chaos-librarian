@@ -24,6 +24,11 @@ _PACK_SCENARIOS = [
 ]
 
 
+def _relative_files(root: Path) -> list[Path]:
+    """All files under ``root`` as paths relative to ``root``, sorted."""
+    return sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
+
+
 @pytest.mark.parametrize("scenario_name", _PACK_SCENARIOS)
 def test_pack_scenario_plans_successfully(scenario_name: str, tmp_path: Path) -> None:
     """Every first-pack scenario (plus slow-copy fixture) plans end-to-end.
@@ -56,10 +61,11 @@ def test_pack_scenario_bit_identical_across_runs(scenario_name: str, tmp_path: P
     assert result_a.exit_code == 0, result_a.stdout + result_a.stderr
     assert result_b.exit_code == 0, result_b.stdout + result_b.stderr
 
-    file_names = sorted(p.name for p in out_a.iterdir())
-    assert file_names == sorted(p.name for p in out_b.iterdir())
-    for name in file_names:
-        assert (out_a / name).read_bytes() == (out_b / name).read_bytes(), name
+    rel_a = _relative_files(out_a)
+    rel_b = _relative_files(out_b)
+    assert rel_a == rel_b
+    for rel in rel_a:
+        assert (out_a / rel).read_bytes() == (out_b / rel).read_bytes(), str(rel)
 
 
 def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
@@ -89,16 +95,11 @@ def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
     replayed = replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
-    for name in [
-        ".chaos-librarian-run",
-        "manifest.current.json",
-        "manifest.initial.json",
-        "replay.json",
-        "scenario.yaml",
-        "validation.json",
-        "journal.jsonl",
-    ]:
-        assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name
+    rel_original = _relative_files(out_original)
+    rel_replay = _relative_files(out_replay)
+    assert rel_original == rel_replay
+    for rel in rel_original:
+        assert (out_original / rel).read_bytes() == (out_replay / rel).read_bytes(), str(rel)
 
 
 def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
@@ -128,13 +129,8 @@ def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
     replayed = replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
-    for name in [
-        ".chaos-librarian-run",
-        "manifest.current.json",
-        "manifest.initial.json",
-        "replay.json",
-        "scenario.yaml",
-        "validation.json",
-        "journal.jsonl",
-    ]:
-        assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name
+    rel_original = _relative_files(out_original)
+    rel_replay = _relative_files(out_replay)
+    assert rel_original == rel_replay
+    for rel in rel_original:
+        assert (out_original / rel).read_bytes() == (out_replay / rel).read_bytes(), str(rel)
