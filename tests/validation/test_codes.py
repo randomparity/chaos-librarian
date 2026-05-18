@@ -31,7 +31,7 @@ class TestPydanticToCode:
     def test_known_pydantic_types_map(self, pydantic_type: str, expected_code: str) -> None:
         assert codes.PYDANTIC_TO_CODE[pydantic_type] == expected_code
 
-    def test_unmapped_type_returns_none(self) -> None:
+    def test_unmapped_type_absent_from_map(self) -> None:
         """Unmapped types must not be in the dict (caller falls back to E_FIELD_SHAPE)."""
         assert "made_up_type" not in codes.PYDANTIC_TO_CODE
 

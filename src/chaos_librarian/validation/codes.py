@@ -78,6 +78,9 @@ _ALIAS_REWRITES: Final[dict[str, str]] = {
 def format_jsonpath(loc: tuple[str | int, ...]) -> str:
     """Convert a Pydantic-style loc tuple to a JSONPath string.
 
+    Scenario ``loc`` segments are contract-defined identifiers or list indices;
+    no bracket-quoting is applied (we assume keys are valid Python identifiers).
+
     Strips discriminator-tag segments (e.g., ``"slow_copy_commit"``) and
     rewrites Python field aliases (e.g., ``for_`` → ``for``).
 
