@@ -19,6 +19,28 @@ class PathContainmentError(ChaosLibrarianValueError):
     """Raised when a scenario path violates the library containment contract."""
 
 
+_UNSAFE_COMPONENT_CHARS = frozenset({"/", "\\", "\x00"})
+_RESERVED_COMPONENTS = frozenset({"", ".", ".."})
+_FIRST_PRINTABLE_ASCII = 0x20
+
+
+def is_safe_path_component(value: str) -> bool:
+    """True iff ``value`` is safe to splice into a path as a single component.
+
+    Rejects empty, ``"."``, ``".."``, any value containing a separator
+    (``/`` or ``\\``), NUL bytes, or other ASCII control characters
+    (``\\x00``-``\\x1f``). Mirrors the escape patterns blocked by
+    ``resolve_under_library`` so that paths synthesized from components
+    stay inside the library root without needing to round-trip through
+    the full resolver.
+    """
+    if value in _RESERVED_COMPONENTS:
+        return False
+    if any(ch in _UNSAFE_COMPONENT_CHARS for ch in value):
+        return False
+    return not any(ord(ch) < _FIRST_PRINTABLE_ASCII for ch in value)
+
+
 def resolve_under_library(candidate: Path, library_root: Path) -> Path:
     """Resolve a scenario path under the library root, rejecting any escape.
 

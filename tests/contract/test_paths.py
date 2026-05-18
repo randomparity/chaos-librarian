@@ -9,6 +9,7 @@ import pytest
 
 from chaos_librarian.contract.paths import (
     PathContainmentError,
+    is_safe_path_component,
     resolve_under_library,
 )
 
@@ -103,3 +104,48 @@ def test_path_that_resolves_to_library_root_rejected(library_root: Path) -> None
 def test_deep_path_that_resolves_to_library_root_rejected(library_root: Path) -> None:
     with pytest.raises(PathContainmentError, match="library root"):
         resolve_under_library(Path("a/b/c/../../.."), library_root)
+
+
+class TestIsSafePathComponent:
+    """``is_safe_path_component`` rejects everything that would escape containment.
+
+    WHY: ``build_initial_state`` synthesizes paths as
+    ``f"{root.path}/{asset.id}.{asset.container}"``. If either field is a
+    separator-bearing or traversal string, the synthesized path escapes
+    the library root without ever touching ``resolve_under_library``. The
+    helper mirrors the escape patterns that ``resolve_under_library``
+    blocks so the validation gate stays the only place that decides
+    "safe". Closes Codex adversarial-review finding 3.
+    """
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            ".",
+            "..",
+            "../foo",
+            "foo/bar",
+            "foo\\bar",
+            "foo\x00bar",
+            "foo\x07bar",
+            "\n",
+            "\t",
+        ],
+    )
+    def test_rejects(self, value: str) -> None:
+        assert is_safe_path_component(value) is False
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "a0",
+            "asset-1",
+            "My_Title_2025",
+            "Foo.Bar.Baz",
+            "中文",
+            "Movie (2024) [1080p]",
+        ],
+    )
+    def test_accepts(self, value: str) -> None:
+        assert is_safe_path_component(value) is True

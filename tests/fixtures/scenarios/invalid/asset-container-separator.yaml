@@ -1,0 +1,26 @@
+# expected: E_PATH_CONTAINMENT
+schema_version: 1
+scenario_id: asset-container-separator
+seed: 1
+duration_scale: short
+
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: ../foo
+              duration_seconds: 1
+
+timeline: []

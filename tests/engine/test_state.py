@@ -6,6 +6,8 @@ from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
+from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 
 
 def _scenario_from_dict(data: dict[str, object]) -> Scenario:
@@ -147,3 +149,48 @@ class TestWorldStateMutations:
         )
         (loc,) = state.locations.values()
         assert loc.path == "movies-hd/Renamed.mkv"
+
+
+class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
+    """A scenario whose ``asset.id`` escapes containment fails validation.
+
+    WHY: ``build_initial_state`` concatenates ``asset.id`` directly into
+    the synthesized location path. The validation gate is the only thing
+    keeping that concatenation safe; if this regression starts passing
+    (i.e. the rule no longer fires) the engine would silently produce a
+    manifest path outside the library root. Closes Codex adversarial-
+    review finding 3.
+    """
+
+    def test_asset_id_traversal_rejected_by_validation(self) -> None:
+        yaml_bytes = b"""\
+schema_version: 1
+scenario_id: unsafe-id
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: ../../escape
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline: []
+"""
+        run_input = prepare_run_input_from_bytes(
+            raw_bytes=yaml_bytes,
+            source_label="test:unsafe-id",
+        )
+        report = run_validation(run_input)
+        assert report.ok is False
+        assert any(i.code == E_PATH_CONTAINMENT for i in report.issues)
