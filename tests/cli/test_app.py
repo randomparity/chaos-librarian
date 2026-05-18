@@ -55,13 +55,6 @@ class TestValidatePathValidation:
         )
 
 
-def test_validate_stub_with_valid_scenario_exits_one(tmp_path: Path) -> None:
-    scenario = tmp_path / "scenario.yaml"
-    scenario.write_text("")
-    result = runner.invoke(app, ["validate", str(scenario)])
-    assert result.exit_code == 1
-
-
 class TestPlanPathValidation:
     def test_rejects_missing_scenario(self, tmp_path: Path) -> None:
         missing = tmp_path / "missing.yaml"

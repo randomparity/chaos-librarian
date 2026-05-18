@@ -65,7 +65,7 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project state
 
-Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface, but ships no runtime behavior. Every CLI command is a stub that exits 1. Later sprints implement validate / plan / materialize / run / step / replay / inspect / capabilities / clean.
+Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface, but ships no runtime behavior. `validate` is implemented as of Sprint 1. The other eight CLI commands are stubs that exit 1. Later sprints implement plan / materialize / run / step / replay / inspect / capabilities / clean.
 
 Active per-sprint implementation plans live at `docs/superpowers/plans/`. Deferred work is tracked as GitHub issues — current open: #1 (ExecutionTraceEntry discriminated-union refinement), #2 (CLI Path validation hardening), #3 (uv_build version pin), #4 (plan documentation maintenance).
 

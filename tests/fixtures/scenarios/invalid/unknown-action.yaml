@@ -1,0 +1,13 @@
+# expected: E_TIMELINE_ACTION_UNKNOWN
+schema_version: 1
+scenario_id: bad
+seed: 1
+duration_scale: short
+library:
+  roots: []
+works: []
+timeline:
+  - id: e1
+    at: 1s
+    action: bogus_action
+    target: x

@@ -1,0 +1,9 @@
+# expected: E_FIELD_MISSING
+schema_version: 1
+seed: 1
+duration_scale: short
+library:
+  roots: []
+works: []
+timeline: []
+# scenario_id intentionally missing

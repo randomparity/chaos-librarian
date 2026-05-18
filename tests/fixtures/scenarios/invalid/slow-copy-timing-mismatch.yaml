@@ -1,0 +1,34 @@
+# expected: E_SLOW_COPY_TIMING
+schema_version: 1
+scenario_id: bad
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+works:
+  - id: w
+    title: t
+    variants:
+      - id: v
+        label: l
+        bundle:
+          id: b
+          assets:
+            - id: a
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: s1
+    at: 1s
+    action: slow_copy_start
+    target: a
+    to: r/x.mkv
+    temp_path: r/x.mkv.part
+    duration: 3s
+  - id: c1
+    at: 5s  # should be 4s = 1s + 3s
+    action: slow_copy_commit
+    for: s1
