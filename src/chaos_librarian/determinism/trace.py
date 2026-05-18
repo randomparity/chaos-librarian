@@ -10,6 +10,7 @@ from __future__ import annotations
 from chaos_librarian.contract.replay_bundle import (
     AllocTraceEntry,
     ExecutionTraceEntry,
+    ExecutionTraceKind,
     MaterializerTraceEntry,
     RngTraceEntry,
 )
@@ -23,11 +24,13 @@ class TraceRecorder:
 
     def record_rng(self, stream: str, value: str) -> None:
         """Append an RngTraceEntry for one RNG draw."""
-        self._entries.append(RngTraceEntry(kind="rng", stream=stream, value=value))
+        self._entries.append(RngTraceEntry(kind=ExecutionTraceKind.RNG, stream=stream, value=value))
 
     def record_alloc(self, stream: str, value: str) -> None:
         """Append an AllocTraceEntry for one identifier allocation."""
-        self._entries.append(AllocTraceEntry(kind="alloc", stream=stream, value=value))
+        self._entries.append(
+            AllocTraceEntry(kind=ExecutionTraceKind.ALLOC, stream=stream, value=value)
+        )
 
     def record_materializer(self, stream: str, value: str, exit_code: int) -> None:
         """Append a MaterializerTraceEntry for one materializer subprocess.
@@ -37,7 +40,7 @@ class TraceRecorder:
         """
         self._entries.append(
             MaterializerTraceEntry(
-                kind="materializer",
+                kind=ExecutionTraceKind.MATERIALIZER,
                 stream=stream,
                 value=value,
                 exit_code=exit_code,
