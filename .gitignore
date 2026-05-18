@@ -12,6 +12,7 @@ dist/
 .coverage
 htmlcov/
 .ty_cache/
+.hypothesis/
 
 # OS
 .DS_Store
