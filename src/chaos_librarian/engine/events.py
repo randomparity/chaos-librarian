@@ -17,8 +17,10 @@ from collections.abc import Callable
 
 from chaos_librarian.contract.journal import (
     AtomicJournalEntry,
+    CommittedJournalEntry,
     JournalEntry,
     JournalPhase,
+    StartedJournalEntry,
 )
 from chaos_librarian.contract.manifest import (
     ManifestLocation,
@@ -33,6 +35,8 @@ from chaos_librarian.contract.scenario import (
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RenameFileEvent,
+    SlowCopyCommitEvent,
+    SlowCopyStartEvent,
     TimelineActionName,
 )
 from chaos_librarian.determinism import IdAllocator
@@ -281,7 +285,63 @@ def _handle_create_sidecar(
     return (entry,)
 
 
-# Task 7 adds slow_copy_start / slow_copy_commit.
+def _handle_slow_copy_start(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, SlowCopyStartEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    state.locations[loc_id] = previous.model_copy(update={"temp_path": event.temp_path})
+    state.pending_slow_copies[event.id] = (loc_id, event.to)
+    entry = StartedJournalEntry(
+        schema_version=1,
+        event_id=event.id,
+        scenario_id=scenario_id,
+        run_id=run_id,
+        logical_time_ns=resolved.at_ns,
+        action=TimelineActionName.SLOW_COPY_START,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={"final_path": event.to, "temp_path": event.temp_path},
+        phase=JournalPhase.STARTED,
+        temp_path=event.temp_path,
+    )
+    return (entry,)
+
+
+def _handle_slow_copy_commit(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, SlowCopyCommitEvent)
+    loc_id, final_path = state.pending_slow_copies.pop(event.for_)
+    previous = state.locations[loc_id]
+    state.locations[loc_id] = previous.model_copy(update={"path": final_path, "temp_path": None})
+    entry = CommittedJournalEntry(
+        schema_version=1,
+        event_id=event.id,
+        scenario_id=scenario_id,
+        run_id=run_id,
+        logical_time_ns=resolved.at_ns,
+        action=TimelineActionName.SLOW_COPY_COMMIT,
+        target_ids=[previous.asset_id],
+        location_ids=[loc_id],
+        state_delta={"final_path": final_path},
+        phase=JournalPhase.COMMITTED,
+        related_event_id=event.for_,
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -290,4 +350,6 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.REENCODE_VIDEO: _handle_reencode_video,
     TimelineActionName.REENCODE_AUDIO: _handle_reencode_audio,
     TimelineActionName.CREATE_SIDECAR: _handle_create_sidecar,
+    TimelineActionName.SLOW_COPY_START: _handle_slow_copy_start,
+    TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
 }

@@ -47,6 +47,9 @@ class WorldState:
     _asset_to_location: dict[str, str] = field(default_factory=dict)
     _asset_to_version: dict[str, str] = field(default_factory=dict)
 
+    # Maps slow_copy_start event_id → (location_id, final_path). Drained on commit.
+    pending_slow_copies: dict[str, tuple[str, str]] = field(default_factory=dict)
+
     def location_id_for_asset(self, asset_id: str) -> str:
         """Return the location id currently bound to ``asset_id``.
 
