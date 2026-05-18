@@ -96,6 +96,7 @@ def _synthesize_yaml_parse_report(scenario_path: Path, exc: ScenarioLoadError) -
 def plan(
     scenario: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     out: Annotated[Path, typer.Option("--out", callback=_validate_new_out_path)],
+    steps: Annotated[int | None, typer.Option("--steps", min=0)] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Plan a scenario without creating media."""
@@ -111,7 +112,7 @@ def plan(
         _emit_failure(report, json_output=json_output)
         raise typer.Exit(code=3)
 
-    artifacts = run_plan(run_input=run_input, validation_report=report)
+    artifacts = run_plan(run_input=run_input, validation_report=report, steps_limit=steps)
     write_fixture(out, artifacts, run_input.raw_bytes)
 
     if json_output:
