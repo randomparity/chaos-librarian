@@ -1,0 +1,152 @@
+"""Tests for validation.shape: Pydantic ValidationError → ValidationIssue."""
+
+from __future__ import annotations
+
+from chaos_librarian.scenario_io import LineIndex
+from chaos_librarian.validation import codes
+from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.shape import run_shape_pass
+
+
+def _empty_index() -> LineIndex:
+    return LineIndex()
+
+
+class TestShapePassMissingFields:
+    """Pydantic 'missing' → E_FIELD_MISSING.
+
+    WHY: the spec freezes scenario_id, schema_version, etc. as required;
+    omitting one must surface as a clear, named issue.
+    """
+
+    def test_missing_scenario_id(self) -> None:
+        raw = {"schema_version": 1}  # minimal — many fields missing
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        codes_emitted = {i.code for i in collector.issues}
+        assert codes.E_FIELD_MISSING in codes_emitted
+
+
+class TestShapePassUnknownField:
+    """Pydantic 'extra_forbidden' → E_FIELD_UNKNOWN.
+
+    WHY: ConfigDict(extra="forbid") on every model catches typos that
+    would otherwise silently no-op; the code surfaces that to authors.
+    """
+
+    def test_unknown_top_level_field(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": [],
+            "timeline": [],
+            "made_up_extra_field": 1,
+        }
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        assert any(i.code == codes.E_FIELD_UNKNOWN for i in collector.issues)
+
+
+class TestShapePassLiteralValue:
+    """Pydantic 'literal_error' → E_FIELD_LITERAL.
+
+    WHY: duration_scale and schema_version are closed enums; an
+    out-of-range value should be cleanly named.
+    """
+
+    def test_wrong_duration_scale(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "extremely_long",  # not in Literal
+            "library": {"roots": []},
+            "works": [],
+            "timeline": [],
+        }
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        assert any(i.code == codes.E_FIELD_LITERAL for i in collector.issues)
+
+
+class TestShapePassDiscriminatorTag:
+    """Pydantic 'union_tag_invalid' → E_TIMELINE_ACTION_UNKNOWN.
+
+    WHY: a typo in a timeline event's `action:` value (e.g., `move_assets`
+    instead of `move_asset`) is the most common authoring mistake;
+    flagging it with a specific code keeps the message readable.
+    """
+
+    def test_unknown_action(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": [],
+            "timeline": [
+                {"id": "e1", "at": "1s", "action": "bogus_action", "target": "x"},
+            ],
+        }
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        assert any(i.code == codes.E_TIMELINE_ACTION_UNKNOWN for i in collector.issues)
+
+
+class TestShapePassJSONPathStripping:
+    """A discriminator tag in the Pydantic loc must not appear in the JSONPath.
+
+    WHY: the discriminator tag is an internal Pydantic detail and would
+    mislead an author looking for a field named "slow_copy_commit" in
+    their YAML.
+    """
+
+    def test_for_alias_under_slow_copy_commit(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": [],
+            "timeline": [
+                {
+                    "id": "e1",
+                    "at": "1s",
+                    "action": "slow_copy_commit",
+                    "for": 12345,  # wrong type — for must be str
+                },
+            ],
+        }
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        paths = [i.path for i in collector.issues if i.path]
+        assert any("slow_copy_commit" not in p for p in paths)
+        # And the alias rewrite for_ → for is applied.
+        assert any(p == "$.timeline[0].for" for p in paths)
+
+
+class TestShapePassNoErrorsForValidScenario:
+    """A valid raw dict produces zero issues from the shape pass.
+
+    WHY: this is the contract; downstream semantic rules can assume
+    no shape-level noise was injected for valid input.
+    """
+
+    def test_valid_scenario_produces_no_issues(self) -> None:
+        raw = {
+            "schema_version": 1,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "r", "path": "r"}]},
+            "works": [],
+            "timeline": [],
+        }
+        collector = IssueCollector()
+        run_shape_pass(raw, _empty_index(), collector)
+        assert collector.issues == []
