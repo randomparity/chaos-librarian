@@ -841,6 +841,7 @@ Deliverables:
 
 - YAML loader (`ruamel.yaml`) with line-number-aware errors
 - Pydantic-based validation pipeline
+- Duration string parser (`parse_duration`) shared with later sprints
 - `chaos-librarian validate scenario.yaml --json` produces a validation report
   matching `validation.schema.json`
 
@@ -858,8 +859,9 @@ Deliverables:
   interfere
 - ID allocator producing stable `work_id`, `variant_id`, `bundle_id`,
   `asset_id`, `version_id`, `location_id`, `sidecar_id`, `mutation_id`
-- Logical clock (nanosecond integer), duration string parser, human/JSON
-  formatters
+- Logical clock (nanosecond integer) and duration string *formatters*
+  (`format_duration_human`, `format_duration_json`). Sprint 2 consumes the
+  duration parser shipped in Sprint 1.
 - Property tests covering determinism guarantees
 
 Exit criteria:
