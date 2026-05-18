@@ -9,9 +9,11 @@ right type"; rules only check semantics on top of well-shaped sub-trees.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
+from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation import codes
 
@@ -551,6 +553,110 @@ def _rule_slow_copy_timing(
         )
 
 
+# ---- Rule 6: E_PATH_CONTAINMENT -------------------------------------------
+
+
+_SYNTHETIC_LIBRARY_ROOT: Path = Path("/__chaos_librarian_validate__/library")
+
+# Per-action-variant path field names. Pulled from contract/scenario.py.
+_PATH_FIELDS_BY_ACTION: dict[str, tuple[str, ...]] = {
+    "move_asset": ("to",),
+    "rename_file": ("to",),
+    "add_file": ("to",),
+    "create_sidecar": ("to",),
+    "slow_copy_start": ("to", "temp_path"),
+}
+
+
+def _check_root_paths(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Containment-check every ``library.roots[*].path``."""
+    library = _as_mapping(raw.get("library"))
+    if library is None:
+        return
+    roots = _as_list(library.get("roots"))
+    if roots is None:
+        return
+    for idx, root_obj in enumerate(roots):
+        root = _as_mapping(root_obj)
+        if root is None:
+            continue
+        path = root.get("path")
+        if isinstance(path, str):
+            _check_containment(
+                path,
+                loc=("library", "roots", idx, "path"),
+                line_index=line_index,
+                collector=collector,
+            )
+
+
+def _check_timeline_paths(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Containment-check every ``to:`` / ``temp_path:`` on timeline events."""
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        action = event.get("action")
+        if not isinstance(action, str):
+            continue
+        for field_name in _PATH_FIELDS_BY_ACTION.get(action, ()):
+            value = event.get(field_name)
+            if isinstance(value, str):
+                _check_containment(
+                    value,
+                    loc=("timeline", idx, field_name),
+                    line_index=line_index,
+                    collector=collector,
+                )
+
+
+def _rule_path_containment(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject paths that violate library-root containment.
+
+    Uses ``contract.paths.resolve_under_library`` against a synthetic
+    absolute root. The helper's structural checks (absolute, ``..``,
+    empty) do not require the root to exist on the filesystem. Split
+    into ``_check_root_paths`` / ``_check_timeline_paths`` to stay
+    under the per-function CC limit.
+    """
+    _check_root_paths(raw, line_index, collector)
+    _check_timeline_paths(raw, line_index, collector)
+
+
+def _check_containment(
+    raw_path: str,
+    *,
+    loc: tuple[str | int, ...],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    try:
+        resolve_under_library(Path(raw_path), _SYNTHETIC_LIBRARY_ROOT)
+    except PathContainmentError as e:
+        collector.add(
+            code=codes.E_PATH_CONTAINMENT,
+            severity=ValidationSeverity.ERROR,
+            message=str(e),
+            loc=loc,
+            line_index=line_index,
+        )
+
+
 # ---- Registry (Tasks 7-12 add more rules here) ----------------------------
 
 
@@ -561,4 +667,5 @@ _RULES: list[_Rule] = [
     _rule_target_unknown,
     _rule_slow_copy_unpaired,
     _rule_slow_copy_timing,
+    _rule_path_containment,
 ]
