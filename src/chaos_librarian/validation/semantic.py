@@ -230,9 +230,51 @@ def _record_or_report(
         seen[value] = loc
 
 
+# ---- Rule 2: E_PATH_DUPLICATE ---------------------------------------------
+
+
+def _rule_path_duplicate(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Warn on two library roots with the same ``path`` (distinct IDs).
+
+    WARNING severity — does not flip ``report.ok``. Authors who genuinely
+    want to alias a directory under two ID namespaces can ignore it.
+    """
+    library = _as_mapping(raw.get("library"))
+    if library is None:
+        return
+    roots = _as_list(library.get("roots"))
+    if roots is None:
+        return
+    seen: dict[str, _Loc] = {}
+    for idx, root_obj in enumerate(roots):
+        root = _as_mapping(root_obj)
+        if root is None:
+            continue
+        path = root.get("path")
+        if not isinstance(path, str):
+            continue
+        loc: _Loc = ("library", "roots", idx, "path")
+        if path in seen:
+            first_path = codes.format_jsonpath(seen[path])
+            collector.add(
+                code=codes.E_PATH_DUPLICATE,
+                severity=ValidationSeverity.WARNING,
+                message=f"root path {path!r} already used at {first_path}",
+                loc=loc,
+                line_index=line_index,
+            )
+        else:
+            seen[path] = loc
+
+
 # ---- Registry (Tasks 7-12 add more rules here) ----------------------------
 
 
 _RULES: list[_Rule] = [
     _rule_id_duplicate,
+    _rule_path_duplicate,
 ]

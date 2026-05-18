@@ -238,3 +238,32 @@ class TestRule1IdDuplicateNoFalsePositives:
         collector = IssueCollector()
         run_semantic_pass(_minimal_scenario(), _empty_index(), collector)
         assert not any(i.code == codes.E_ID_DUPLICATE for i in collector.issues)
+
+
+class TestRule2PathDuplicate:
+    """Two library roots sharing the same path emit a WARNING, not an ERROR.
+
+    WHY: duplicate paths under distinct IDs are well-defined (alias) but
+    almost always a typo; flagging without flipping ok lets validate
+    still pass on legitimate aliases.
+    """
+
+    def test_warning_severity_no_exit_flip(self) -> None:
+        raw = _minimal_scenario()
+        library = _as_dict(raw["library"])
+        roots = _as_list(library["roots"])
+        roots.append({"id": "r2", "path": "r"})  # same path
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        warnings = [i for i in collector.issues if i.code == codes.E_PATH_DUPLICATE]
+        assert len(warnings) == 1
+        assert warnings[0].severity.value == "warning"
+
+    def test_distinct_paths_no_warning(self) -> None:
+        raw = _minimal_scenario()
+        library = _as_dict(raw["library"])
+        roots = _as_list(library["roots"])
+        roots.append({"id": "r2", "path": "r2"})
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        assert not any(i.code == codes.E_PATH_DUPLICATE for i in collector.issues)
