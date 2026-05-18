@@ -259,17 +259,12 @@ class TestAppendStep:
     appear consistently or not at all.
     """
 
-    @pytest.mark.xfail(
-        reason="depends on run_plan(steps_limit=...), which lands in Task 5",
-        strict=False,
-    )
     def test_journal_grows(self, tmp_path: Path) -> None:
         run_input, report = _prepare("identity-move-rename.yaml")
-        # steps_limit lands in Task 5; until then ty cannot see the kwarg.
         artifacts = run_plan(
             run_input=run_input,
             validation_report=report,
-            steps_limit=0,  # ty: ignore[unknown-argument]
+            steps_limit=0,
         )
         out = tmp_path / "run"
         write_fixture(out, artifacts, run_input.raw_bytes)
@@ -279,7 +274,7 @@ class TestAppendStep:
         artifacts_after = run_plan(
             run_input=run_input,
             validation_report=report,
-            steps_limit=1,  # ty: ignore[unknown-argument]
+            steps_limit=1,
         )
         new_entries = artifacts_after.journal
         append_step(

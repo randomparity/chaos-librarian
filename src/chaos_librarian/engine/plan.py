@@ -33,7 +33,7 @@ from chaos_librarian.determinism import (
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.reports import ReportSet, build_report_set
-from chaos_librarian.engine.resolution import resolve_timeline
+from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.validation import (
     RunInput,
@@ -60,6 +60,7 @@ def run_plan(
     run_input: RunInput,
     validation_report: ValidationReport,
     resolved_seed_override: int | None = None,
+    steps_limit: int | None = None,
 ) -> PlanArtifacts:
     """Walk the scenario carried by ``run_input`` and assemble every plan-only artifact.
 
@@ -74,6 +75,12 @@ def run_plan(
             ``resolve_seed`` and use this value instead. ``replay_plan_bundle``
             passes ``bundle.resolved_seed`` so ``seed: random`` scenarios
             reproduce the recorded seed instead of redrawing.
+        steps_limit: Cap on resolved events to apply, counted in step units.
+            ``None`` (default) runs the entire timeline. ``0`` produces an
+            empty journal and ``current_manifest == initial_manifest``.
+            Values above ``len(step_boundaries(resolve_timeline(parsed)))``
+            are clamped silently. A ``slow_copy_start`` + ``slow_copy_commit``
+            adjacent pair counts as one step (advances together).
 
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
@@ -89,13 +96,23 @@ def run_plan(
     initial_manifest = initial_state.to_manifest()
 
     resolved_timeline = resolve_timeline(parsed)
+    boundaries = step_boundaries(resolved_timeline)
+    if steps_limit is None:
+        applied_events = boundaries[-1] if boundaries else 0
+    elif steps_limit <= 0:
+        applied_events = 0
+    elif steps_limit >= len(boundaries):
+        applied_events = boundaries[-1] if boundaries else 0
+    else:
+        applied_events = boundaries[steps_limit - 1]
+
     run_id = compute_plan_only_run_id(
         scenario_content_hash=run_input.content_hash,
         resolved_seed=resolved_seed,
     )
 
     journal: list[JournalEntry] = []
-    for resolved in resolved_timeline:
+    for resolved in resolved_timeline[:applied_events]:
         entries = apply_event(
             initial_state,
             resolved,
@@ -121,7 +138,7 @@ def run_plan(
         scenario=run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,
         resolved_seed=resolved_seed,
-        applied_events=len(resolved_timeline),
+        applied_events=applied_events,
         journal_digest=journal_digest,
         execution_trace=list(recorder.entries()),
         execution_mode=ExecutionMode.PLAN_ONLY,

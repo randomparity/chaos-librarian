@@ -54,6 +54,11 @@ def step_boundaries(resolved_timeline: list[ResolvedEvent]) -> list[int]:
     A consecutive ``slow_copy_start`` followed by ``slow_copy_commit`` whose
     ``for_`` field references the start's ``id`` is one step unit covering
     two raw events. Every other action is its own single-event step.
+
+    Non-adjacent halves or a commit whose ``for_`` does not match the
+    preceding start degrade to single-event steps. Sprint 4 intentionally
+    treats only the adjacent matched pair as one step; richer pairing
+    (interleaved slow_copies) is out of scope.
     """
     boundaries: list[int] = []
     i = 0
