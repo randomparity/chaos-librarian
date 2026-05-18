@@ -648,3 +648,93 @@ class TestRule7TimelineOrder:
         run_semantic_pass(raw, _empty_index(), collector)
         # Rule 3 fires; Rule 7 must not double-report.
         assert not any(i.code == codes.E_TIMELINE_ORDER for i in collector.issues)
+
+
+class TestRuleTimelineLifecycle:
+    """The lifecycle rule rejects sequences that the engine cannot honor.
+
+    WHY: shape-valid timelines used to crash the engine with unstructured
+    ``ValueError``s. The rule keeps the failure mode inside the validation
+    pipeline so the CLI emits an ``E_LIFECYCLE_INVALID`` report and exits 3.
+    """
+
+    def test_add_on_placed_asset_emits(self) -> None:
+        raw = _minimal_scenario(
+            timeline=[
+                {"id": "e1", "at": "0", "action": "add_file", "target": "a", "to": "r/a.mkv"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        assert any(i.code == codes.E_LIFECYCLE_INVALID for i in collector.issues)
+
+    def test_move_after_delete_emits(self) -> None:
+        raw = _minimal_scenario(
+            timeline=[
+                {"id": "e1", "at": "0", "action": "delete_file", "target": "a"},
+                {
+                    "id": "e2",
+                    "at": "1s",
+                    "action": "move_asset",
+                    "target": "a",
+                    "to": "r/x.mkv",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        codes_found = [i.code for i in collector.issues]
+        assert codes.E_LIFECYCLE_INVALID in codes_found
+
+    def test_double_slow_copy_start_emits(self) -> None:
+        raw = _minimal_scenario(
+            timeline=[
+                {
+                    "id": "c1",
+                    "at": "0",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "r/x.mkv",
+                    "temp_path": "r/x.mkv.part",
+                    "duration": "2s",
+                },
+                {
+                    "id": "c2",
+                    "at": "1s",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "r/y.mkv",
+                    "temp_path": "r/y.mkv.part",
+                    "duration": "2s",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        assert any(
+            i.code == codes.E_LIFECYCLE_INVALID and "pending" in i.message for i in collector.issues
+        )
+
+    def test_happy_path_unaffected(self) -> None:
+        """A normal move/rename sequence must NOT trip the rule."""
+        raw = _minimal_scenario(
+            timeline=[
+                {
+                    "id": "e1",
+                    "at": "1s",
+                    "action": "move_asset",
+                    "target": "a",
+                    "to": "r/x.mkv",
+                },
+                {
+                    "id": "e2",
+                    "at": "2s",
+                    "action": "rename_file",
+                    "target": "a",
+                    "to": "r/y.mkv",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, _empty_index(), collector)
+        assert not any(i.code == codes.E_LIFECYCLE_INVALID for i in collector.issues)

@@ -19,6 +19,7 @@ from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import (
     E_DURATION_SYNTAX,
     E_ID_DUPLICATE,
+    E_LIFECYCLE_INVALID,
     E_PATH_CONTAINMENT,
     E_PATH_DUPLICATE,
     E_SLOW_COPY_TIMING,
@@ -697,6 +698,91 @@ def _rule_timeline_order(
         last_idx = idx
 
 
+# ---- Rule 8: E_LIFECYCLE_INVALID ------------------------------------------
+
+
+def _rule_timeline_lifecycle(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject timelines that cannot execute against the asset lifecycle.
+
+    Simulates: every declared asset starts "placed" (per the initial-state
+    convention in docs/contract/manifest-initial-state.md); ``add_file`` on
+    a placed asset, mutations on an unplaced asset, and overlapping
+    ``slow_copy_start`` on the same asset are all rejected before the
+    engine reaches them.
+    """
+    placed: set[str] = set(_iter_asset_ids(raw))
+    pending_slow_copies: dict[str, str] = {}  # start_event_id -> asset_id
+
+    for idx, event in _iter_timeline_events(raw):
+        action = event.get("action")
+        target = event.get("target")
+        loc: tuple[str | int, ...] = ("timeline", idx, "action")
+
+        if action == TimelineActionName.ADD_FILE and isinstance(target, str):
+            if target in placed:
+                collector.add(
+                    code=E_LIFECYCLE_INVALID,
+                    severity=ValidationSeverity.ERROR,
+                    message=f"add_file on already-placed asset {target!r}",
+                    loc=loc,
+                    line_index=line_index,
+                )
+            placed.add(target)
+            continue
+
+        if action in {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.DELETE_FILE,
+        } and isinstance(target, str):
+            if target not in placed:
+                collector.add(
+                    code=E_LIFECYCLE_INVALID,
+                    severity=ValidationSeverity.ERROR,
+                    message=f"{action} on unplaced asset {target!r}",
+                    loc=loc,
+                    line_index=line_index,
+                )
+            if action == TimelineActionName.DELETE_FILE:
+                placed.discard(target)
+            continue
+
+        if action == TimelineActionName.SLOW_COPY_START and isinstance(target, str):
+            ev_id = event.get("id")
+            if target not in placed:
+                collector.add(
+                    code=E_LIFECYCLE_INVALID,
+                    severity=ValidationSeverity.ERROR,
+                    message=f"slow_copy_start on unplaced asset {target!r}",
+                    loc=loc,
+                    line_index=line_index,
+                )
+            if isinstance(ev_id, str):
+                if target in pending_slow_copies.values():
+                    collector.add(
+                        code=E_LIFECYCLE_INVALID,
+                        severity=ValidationSeverity.ERROR,
+                        message=(
+                            f"slow_copy_start on asset {target!r} that already has a pending copy"
+                        ),
+                        loc=loc,
+                        line_index=line_index,
+                    )
+                pending_slow_copies[ev_id] = target
+            continue
+
+        if action == TimelineActionName.SLOW_COPY_COMMIT:
+            ref = event.get("for")
+            if isinstance(ref, str) and ref in pending_slow_copies:
+                pending_slow_copies.pop(ref)
+            # Rule 5a flags orphan commits; lifecycle rule owns the
+            # "start already consumed" / overlap branches above.
+
+
 # ---- Rules in declared run order ------------------------------------------
 
 
@@ -709,4 +795,5 @@ _RULES: list[_Rule] = [
     _rule_slow_copy_timing,
     _rule_path_containment,
     _rule_timeline_order,
+    _rule_timeline_lifecycle,
 ]
