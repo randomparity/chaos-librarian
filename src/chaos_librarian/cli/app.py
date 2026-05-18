@@ -9,10 +9,15 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
+from pydantic import ValidationError
 
+from chaos_librarian.contract.manifest import Manifest
+from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.engine import (
     JournalCorruptError,
@@ -23,12 +28,14 @@ from chaos_librarian.engine import (
     run_plan,
     step_fixture,
 )
+from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.engine.writer import append_step, write_fixture
 from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     ValidationReport,
     ValidationSeverity,
     prepare_run_input,
+    prepare_run_input_from_bytes,
     run_validation,
 )
 from chaos_librarian.validation.codes import E_YAML_PARSE
@@ -256,7 +263,109 @@ def inspect(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Inspect a run directory."""
-    _stub("inspect")
+    try:
+        summary = _build_inspect_summary(run_dir)
+    except SentinelInvalidError as exc:
+        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        raise typer.Exit(code=7) from exc
+
+    if json_output:
+        typer.echo(json.dumps(summary, sort_keys=True))
+    else:
+        _render_inspect_human(summary)
+
+
+def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
+    """Read a run directory's persisted artifacts and return a summary dict.
+
+    Verifies the sentinel first; missing or unparseable sentinels raise
+    ``SentinelInvalidError`` so the CLI can map them to exit 7. After the
+    sentinel passes, reads ``replay.json``, ``manifest.current.json``, the
+    journal, and the embedded ``scenario.yaml`` to compute step-unit
+    counted ``applied_steps`` / ``steps_remaining`` via ``step_boundaries``.
+
+    Args:
+        run_dir: Path to a chaos-librarian run directory.
+
+    Returns:
+        A dict matching the design D10 inspect summary shape.
+
+    Raises:
+        SentinelInvalidError: sentinel missing or unparseable.
+    """
+    _verify_sentinel(run_dir)
+
+    bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
+    manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
+    journal_path = run_dir / "journal.jsonl"
+    journal_entries = (
+        sum(1 for line in journal_path.read_text().splitlines() if line.strip())
+        if journal_path.exists()
+        else 0
+    )
+
+    scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=scenario_bytes,
+        source_label=f"inspect:{run_dir}",
+    )
+    scenario = Scenario.model_validate(run_input.raw_data)
+    resolved_timeline = resolve_timeline(scenario)
+    boundaries = step_boundaries(resolved_timeline)
+    if bundle.applied_events == 0:
+        applied_steps = 0
+    elif bundle.applied_events in boundaries:
+        applied_steps = boundaries.index(bundle.applied_events) + 1
+    else:
+        # Off-boundary detection here is informational; the integrity
+        # error fires at replay/step time, not inspect time.
+        applied_steps = 0
+    steps_remaining = len(boundaries) - applied_steps
+    return {
+        "run_id": str(bundle.run_id),
+        "scenario_id": scenario.scenario_id,
+        "schema_version": bundle.schema_version,
+        "execution_mode": bundle.execution_mode.value,
+        "journal_entries": journal_entries,
+        "applied_events": bundle.applied_events,
+        "applied_steps": applied_steps,
+        "steps_remaining": steps_remaining,
+        "counts": {
+            "works": len(manifest_current.works),
+            "variants": len(manifest_current.variants),
+            "bundles": len(manifest_current.bundles),
+            "assets": len(manifest_current.assets),
+            "sidecars": len(manifest_current.sidecars),
+        },
+        "created_at": None,
+    }
+
+
+def _verify_sentinel(run_dir: Path) -> None:
+    """Raise ``SentinelInvalidError`` if the run sentinel is missing or unparseable."""
+    sentinel_path = run_dir / ".chaos-librarian-run"
+    if not sentinel_path.exists():
+        raise SentinelInvalidError(f"sentinel missing: {sentinel_path}")
+    try:
+        RunSentinel.model_validate_json(sentinel_path.read_text())
+    except (ValidationError, ValueError) as exc:
+        raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
+
+
+def _render_inspect_human(summary: dict[str, object]) -> None:
+    """Echo the inspect summary as a plain key:value block to stdout."""
+    typer.echo(f"run_id:           {summary['run_id']}")
+    typer.echo(f"scenario_id:      {summary['scenario_id']}")
+    typer.echo(f"execution_mode:   {summary['execution_mode']}")
+    typer.echo(f"journal_entries:  {summary['journal_entries']}")
+    typer.echo(f"applied_events:   {summary['applied_events']}")
+    typer.echo(f"applied_steps:    {summary['applied_steps']}")
+    typer.echo(f"steps_remaining:  {summary['steps_remaining']}")
+    counts = cast("dict[str, int]", summary["counts"])
+    typer.echo(
+        f"counts:           works={counts['works']} variants={counts['variants']} "
+        f"bundles={counts['bundles']} assets={counts['assets']} sidecars={counts['sidecars']}"
+    )
 
 
 @app.command()
