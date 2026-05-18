@@ -15,7 +15,17 @@ from typing import TYPE_CHECKING, Final, cast
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
 from chaos_librarian.contract.validation import ValidationSeverity
-from chaos_librarian.validation import codes
+from chaos_librarian.validation.codes import (
+    E_DURATION_SYNTAX,
+    E_ID_DUPLICATE,
+    E_PATH_CONTAINMENT,
+    E_PATH_DUPLICATE,
+    E_SLOW_COPY_TIMING,
+    E_SLOW_COPY_UNPAIRED,
+    E_TARGET_UNKNOWN,
+    E_TIMELINE_ORDER,
+    format_jsonpath,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -250,9 +260,9 @@ def _record_or_report(
     collector: IssueCollector,
 ) -> None:
     if value in seen:
-        first_path = codes.format_jsonpath(seen[value])
+        first_path = format_jsonpath(seen[value])
         collector.add(
-            code=codes.E_ID_DUPLICATE,
+            code=E_ID_DUPLICATE,
             severity=ValidationSeverity.ERROR,
             message=f"duplicate {namespace} {value!r} (first defined at {first_path})",
             loc=loc,
@@ -288,9 +298,9 @@ def _rule_path_duplicate(
             continue
         loc: _Loc = ("library", "roots", idx, "path")
         if path in seen:
-            first_path = codes.format_jsonpath(seen[path])
+            first_path = format_jsonpath(seen[path])
             collector.add(
-                code=codes.E_PATH_DUPLICATE,
+                code=E_PATH_DUPLICATE,
                 severity=ValidationSeverity.WARNING,
                 message=f"root path {path!r} already used at {first_path}",
                 loc=loc,
@@ -316,7 +326,7 @@ def _check_duration(
         parse_duration(raw_str)
     except DurationParseError as e:
         collector.add(
-            code=codes.E_DURATION_SYNTAX,
+            code=E_DURATION_SYNTAX,
             severity=ValidationSeverity.ERROR,
             message=f"invalid {field_label} {raw_str!r}: {e.reason}",
             loc=loc,
@@ -381,7 +391,7 @@ def _rule_target_unknown(
             continue
         if target not in asset_ids:
             collector.add(
-                code=codes.E_TARGET_UNKNOWN,
+                code=E_TARGET_UNKNOWN,
                 severity=ValidationSeverity.ERROR,
                 message=f"target asset {target!r} is not defined in any bundle",
                 loc=("timeline", idx, "target"),
@@ -429,7 +439,7 @@ def _report_orphan_starts(
             continue
         s_idx, _ = starts[sid]
         collector.add(
-            code=codes.E_SLOW_COPY_UNPAIRED,
+            code=E_SLOW_COPY_UNPAIRED,
             severity=ValidationSeverity.ERROR,
             message=message,
             loc=("timeline", s_idx, "id"),
@@ -451,7 +461,7 @@ def _rule_slow_copy_unpaired(
             continue  # Pydantic owns shape
         if ref not in starts:
             collector.add(
-                code=codes.E_SLOW_COPY_UNPAIRED,
+                code=E_SLOW_COPY_UNPAIRED,
                 severity=ValidationSeverity.ERROR,
                 message=f"slow_copy_commit references unknown slow_copy_start {ref!r}",
                 loc=("timeline", c_idx, "for"),
@@ -496,7 +506,7 @@ def _check_pair_timing(
     expected = start_at_ns + start_dur_ns
     if commit_at_ns != expected:
         collector.add(
-            code=codes.E_SLOW_COPY_TIMING,
+            code=E_SLOW_COPY_TIMING,
             severity=ValidationSeverity.ERROR,
             message=(
                 f"slow_copy_commit.at {commit_at!r} != "
@@ -618,7 +628,7 @@ def _check_containment(
         resolve_under_library(Path(raw_path), _SYNTHETIC_LIBRARY_ROOT)
     except PathContainmentError as e:
         collector.add(
-            code=codes.E_PATH_CONTAINMENT,
+            code=E_PATH_CONTAINMENT,
             severity=ValidationSeverity.ERROR,
             message=str(e),
             loc=loc,
@@ -651,7 +661,7 @@ def _rule_timeline_order(
             continue
         if last_ns is not None and at_ns < last_ns:
             collector.add(
-                code=codes.E_TIMELINE_ORDER,
+                code=E_TIMELINE_ORDER,
                 severity=ValidationSeverity.ERROR,
                 message=(f"timeline event at {at!r} precedes previous event at index {last_idx}"),
                 loc=("timeline", idx, "at"),

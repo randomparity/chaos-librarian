@@ -19,11 +19,13 @@ from typing import Any
 from ruamel.yaml import YAML, YAMLError
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from chaos_librarian.errors import ChaosLibrarianError
+
 _PathPart = str | int
 _PathTuple = tuple[_PathPart, ...]
 
 
-class ScenarioLoadError(Exception):
+class ScenarioLoadError(ChaosLibrarianError):
     """Raised when the YAML file cannot be parsed.
 
     Attributes:

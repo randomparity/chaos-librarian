@@ -12,8 +12,11 @@ from typing import Annotated
 
 import typer
 
-from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
-from chaos_librarian.validation import run_validation
+from chaos_librarian.validation import (
+    ValidationReport,
+    ValidationSeverity,
+    run_validation,
+)
 
 app = typer.Typer(
     name="chaos-librarian",
