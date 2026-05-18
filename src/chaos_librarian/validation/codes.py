@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Final
 
+from chaos_librarian.contract.scenario import ALL_TIMELINE_ACTIONS
+
 # ---- Code constants --------------------------------------------------------
 
 E_YAML_PARSE: Final = "E_YAML_PARSE"
@@ -53,20 +55,8 @@ PYDANTIC_TO_CODE: Final[dict[str, str]] = {
 # ---- JSONPath formatting ---------------------------------------------------
 
 # Discriminator values that Pydantic inserts mid-loc for Scenario.timeline.
-# Source of truth: ``Scenario.timeline``'s discriminated union variants.
-_DISCRIMINATOR_TAGS: Final[frozenset[str]] = frozenset(
-    {
-        "move_asset",
-        "rename_file",
-        "delete_file",
-        "add_file",
-        "reencode_video",
-        "reencode_audio",
-        "create_sidecar",
-        "slow_copy_start",
-        "slow_copy_commit",
-    }
-)
+# Source of truth: ``ALL_TIMELINE_ACTIONS`` in contract.scenario.
+_DISCRIMINATOR_TAGS: Final[frozenset[str]] = ALL_TIMELINE_ACTIONS
 
 # Pydantic emits Python field names in loc tuples. Map them back to the
 # YAML/JSON alias used in the user's scenario file.

@@ -13,7 +13,7 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationSeverity
-from chaos_librarian.validation import codes
+from chaos_librarian.validation.codes import E_FIELD_SHAPE, PYDANTIC_TO_CODE
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -21,23 +21,26 @@ if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
+__all__ = ["run_shape_pass"]
+
 
 def run_shape_pass(
     raw_data: Mapping[str, object],
     line_index: LineIndex,
     collector: IssueCollector,
-) -> Scenario | None:
+) -> None:
     """Validate ``raw_data`` against the Scenario model; collect any issues.
 
-    Returns the parsed ``Scenario`` on success, ``None`` on any error.
+    The pipeline reads outcomes off ``collector``; this function returns
+    nothing.
     """
     try:
-        return Scenario.model_validate(raw_data)
+        Scenario.model_validate(raw_data)
     except ValidationError as e:
         for entry in e.errors(include_url=False, include_context=True):
             pydantic_type = entry["type"]
-            code = codes.PYDANTIC_TO_CODE.get(pydantic_type, codes.E_FIELD_SHAPE)
-            if code == codes.E_FIELD_SHAPE:
+            code = PYDANTIC_TO_CODE.get(pydantic_type, E_FIELD_SHAPE)
+            if code == E_FIELD_SHAPE:
                 message = f"{entry['msg']} (pydantic type: {pydantic_type})"
             else:
                 message = entry["msg"]
@@ -49,4 +52,3 @@ def run_shape_pass(
                 loc=loc,
                 line_index=line_index,
             )
-        return None

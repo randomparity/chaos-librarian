@@ -14,8 +14,19 @@ from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationSeverity
-from chaos_librarian.validation import codes
+from chaos_librarian.validation.codes import (
+    E_DURATION_SYNTAX,
+    E_ID_DUPLICATE,
+    E_PATH_CONTAINMENT,
+    E_PATH_DUPLICATE,
+    E_SLOW_COPY_TIMING,
+    E_SLOW_COPY_UNPAIRED,
+    E_TARGET_UNKNOWN,
+    E_TIMELINE_ORDER,
+    format_jsonpath,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -250,9 +261,9 @@ def _record_or_report(
     collector: IssueCollector,
 ) -> None:
     if value in seen:
-        first_path = codes.format_jsonpath(seen[value])
+        first_path = format_jsonpath(seen[value])
         collector.add(
-            code=codes.E_ID_DUPLICATE,
+            code=E_ID_DUPLICATE,
             severity=ValidationSeverity.ERROR,
             message=f"duplicate {namespace} {value!r} (first defined at {first_path})",
             loc=loc,
@@ -288,9 +299,9 @@ def _rule_path_duplicate(
             continue
         loc: _Loc = ("library", "roots", idx, "path")
         if path in seen:
-            first_path = codes.format_jsonpath(seen[path])
+            first_path = format_jsonpath(seen[path])
             collector.add(
-                code=codes.E_PATH_DUPLICATE,
+                code=E_PATH_DUPLICATE,
                 severity=ValidationSeverity.WARNING,
                 message=f"root path {path!r} already used at {first_path}",
                 loc=loc,
@@ -316,12 +327,26 @@ def _check_duration(
         parse_duration(raw_str)
     except DurationParseError as e:
         collector.add(
-            code=codes.E_DURATION_SYNTAX,
+            code=E_DURATION_SYNTAX,
             severity=ValidationSeverity.ERROR,
             message=f"invalid {field_label} {raw_str!r}: {e.reason}",
             loc=loc,
             line_index=line_index,
         )
+
+
+def _try_parse_duration(raw_str: str) -> int | None:
+    """Parse a duration string; return None instead of raising.
+
+    Rules that re-parse a duration string for arithmetic (5b: slow-copy
+    timing, 7: timeline order) need to skip pairs where the input is
+    malformed — Rule 3 has already flagged those with E_DURATION_SYNTAX,
+    and re-reporting them as order/timing failures would be noise.
+    """
+    try:
+        return parse_duration(raw_str)
+    except DurationParseError:
+        return None
 
 
 def _rule_duration_syntax(
@@ -344,7 +369,7 @@ def _rule_duration_syntax(
                 line_index=line_index,
                 collector=collector,
             )
-        if event.get("action") == "slow_copy_start":
+        if event.get("action") == TimelineActionName.SLOW_COPY_START:
             duration = event.get("duration")
             if isinstance(duration, str):
                 _check_duration(
@@ -359,6 +384,19 @@ def _rule_duration_syntax(
 # ---- Rule 4: E_TARGET_UNKNOWN ---------------------------------------------
 
 
+def _iter_asset_ids(raw: Mapping[str, object]) -> Iterator[str]:
+    """Yield every ``asset_id`` value defined in the scenario.
+
+    Implemented as a filter over ``_iter_global_namespaces`` rather than a
+    fresh walker so the shape-skipping logic stays in one place; Rule 1
+    needs the locs (and the variant/bundle namespaces), Rule 4 only needs
+    the asset-id values.
+    """
+    for namespace, value, _ in _iter_global_namespaces(raw):
+        if namespace == _NS_ASSET_ID:
+            yield value
+
+
 def _rule_target_unknown(
     raw: Mapping[str, object],
     line_index: LineIndex,
@@ -366,22 +404,17 @@ def _rule_target_unknown(
 ) -> None:
     """Reject timeline events whose ``target:`` is not a defined asset id.
 
-    Reuses ``_iter_global_namespaces`` (already walks works→variants→
-    bundle→assets for Rule 1) and filters to the ``asset_id`` namespace —
-    a fresh walker here would duplicate the same shape-skipping logic.
     Events with no string ``target`` (e.g. ``slow_copy_commit``) are
     skipped: Pydantic's shape pass owns "the field must exist."
     """
-    asset_ids = {
-        value for namespace, value, _ in _iter_global_namespaces(raw) if namespace == _NS_ASSET_ID
-    }
+    asset_ids = set(_iter_asset_ids(raw))
     for idx, event in _iter_timeline_events(raw):
         target = event.get("target")
         if not isinstance(target, str):
             continue
         if target not in asset_ids:
             collector.add(
-                code=codes.E_TARGET_UNKNOWN,
+                code=E_TARGET_UNKNOWN,
                 severity=ValidationSeverity.ERROR,
                 message=f"target asset {target!r} is not defined in any bundle",
                 loc=("timeline", idx, "target"),
@@ -405,9 +438,9 @@ def _index_starts_and_commits(
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         ev_id = event.get("id")
-        if action == "slow_copy_start" and isinstance(ev_id, str):
+        if action == TimelineActionName.SLOW_COPY_START and isinstance(ev_id, str):
             starts[ev_id] = (idx, event)
-        elif action == "slow_copy_commit":
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
             commits.append((idx, event))
     return starts, commits
 
@@ -429,7 +462,7 @@ def _report_orphan_starts(
             continue
         s_idx, _ = starts[sid]
         collector.add(
-            code=codes.E_SLOW_COPY_UNPAIRED,
+            code=E_SLOW_COPY_UNPAIRED,
             severity=ValidationSeverity.ERROR,
             message=message,
             loc=("timeline", s_idx, "id"),
@@ -451,7 +484,7 @@ def _rule_slow_copy_unpaired(
             continue  # Pydantic owns shape
         if ref not in starts:
             collector.add(
-                code=codes.E_SLOW_COPY_UNPAIRED,
+                code=E_SLOW_COPY_UNPAIRED,
                 severity=ValidationSeverity.ERROR,
                 message=f"slow_copy_commit references unknown slow_copy_start {ref!r}",
                 loc=("timeline", c_idx, "for"),
@@ -487,16 +520,15 @@ def _check_pair_timing(
         return  # Rule 3 / Pydantic flagged
     if not isinstance(start_dur, str) or not isinstance(commit_at, str):
         return  # Rule 3 / Pydantic flagged
-    try:
-        start_at_ns = parse_duration(start_at)
-        start_dur_ns = parse_duration(start_dur)
-        commit_at_ns = parse_duration(commit_at)
-    except DurationParseError:
-        return  # Rule 3 flagged
+    start_at_ns = _try_parse_duration(start_at)
+    start_dur_ns = _try_parse_duration(start_dur)
+    commit_at_ns = _try_parse_duration(commit_at)
+    if start_at_ns is None or start_dur_ns is None or commit_at_ns is None:
+        return  # Rule 3 flagged the unparseable string
     expected = start_at_ns + start_dur_ns
     if commit_at_ns != expected:
         collector.add(
-            code=codes.E_SLOW_COPY_TIMING,
+            code=E_SLOW_COPY_TIMING,
             severity=ValidationSeverity.ERROR,
             message=(
                 f"slow_copy_commit.at {commit_at!r} != "
@@ -538,13 +570,16 @@ def _rule_slow_copy_timing(
 
 _SYNTHETIC_LIBRARY_ROOT: Path = Path("/__chaos_librarian_validate__/library")
 
-# Per-action-variant path field names. Pulled from contract/scenario.py.
+# Per-action-variant path field names. Keys are the discriminator values
+# declared on TimelineEvent variants in contract/scenario.py; using the
+# StrEnum binds this map to the contract symbol set at the type level —
+# adding/renaming an action surfaces here, not as a silent miss.
 _PATH_FIELDS_BY_ACTION: dict[str, tuple[str, ...]] = {
-    "move_asset": ("to",),
-    "rename_file": ("to",),
-    "add_file": ("to",),
-    "create_sidecar": ("to",),
-    "slow_copy_start": ("to", "temp_path"),
+    TimelineActionName.MOVE_ASSET: ("to",),
+    TimelineActionName.RENAME_FILE: ("to",),
+    TimelineActionName.ADD_FILE: ("to",),
+    TimelineActionName.CREATE_SIDECAR: ("to",),
+    TimelineActionName.SLOW_COPY_START: ("to", "temp_path"),
 }
 
 
@@ -618,7 +653,7 @@ def _check_containment(
         resolve_under_library(Path(raw_path), _SYNTHETIC_LIBRARY_ROOT)
     except PathContainmentError as e:
         collector.add(
-            code=codes.E_PATH_CONTAINMENT,
+            code=E_PATH_CONTAINMENT,
             severity=ValidationSeverity.ERROR,
             message=str(e),
             loc=loc,
@@ -645,13 +680,14 @@ def _rule_timeline_order(
         at = event.get("at")
         if not isinstance(at, str):
             continue
-        try:
-            at_ns = parse_duration(at)
-        except DurationParseError:
+        at_ns = _try_parse_duration(at)
+        if at_ns is None:
+            # Rule 3 (E_DURATION_SYNTAX) already reported the unparseable
+            # string; don't re-flag it as an order violation here.
             continue
         if last_ns is not None and at_ns < last_ns:
             collector.add(
-                code=codes.E_TIMELINE_ORDER,
+                code=E_TIMELINE_ORDER,
                 severity=ValidationSeverity.ERROR,
                 message=(f"timeline event at {at!r} precedes previous event at index {last_idx}"),
                 loc=("timeline", idx, "at"),

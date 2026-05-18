@@ -31,7 +31,11 @@ from chaos_librarian.scenario_io import (
     ScenarioLoadError,
     load_scenario,
 )
-from chaos_librarian.validation import codes
+from chaos_librarian.validation.codes import (
+    E_TOP_LEVEL_NOT_MAPPING,
+    E_YAML_PARSE,
+    format_jsonpath,
+)
 from chaos_librarian.validation.semantic import run_semantic_pass
 from chaos_librarian.validation.shape import run_shape_pass
 
@@ -59,7 +63,7 @@ class IssueCollector:
                 message=message,
                 line=position[0],
                 column=position[1],
-                path=codes.format_jsonpath(loc) if loc else None,
+                path=format_jsonpath(loc) if loc else None,
             )
         )
 
@@ -77,7 +81,7 @@ def run_validation(scenario_path: Path) -> ValidationReport:
         raw_data, line_index = load_scenario(scenario_path)
     except ScenarioLoadError as e:
         collector.add(
-            code=codes.E_YAML_PARSE,
+            code=E_YAML_PARSE,
             severity=ValidationSeverity.ERROR,
             message=str(e),
             loc=(),
@@ -89,7 +93,7 @@ def run_validation(scenario_path: Path) -> ValidationReport:
     # the shape pass; emit a structured issue and stop here.
     if not isinstance(raw_data, dict):
         collector.add(
-            code=codes.E_TOP_LEVEL_NOT_MAPPING,
+            code=E_TOP_LEVEL_NOT_MAPPING,
             severity=ValidationSeverity.ERROR,
             message=(f"top-level YAML is {type(raw_data).__name__}, expected mapping"),
             loc=(),
@@ -110,6 +114,9 @@ def run_validation(scenario_path: Path) -> ValidationReport:
 
 
 def _assemble_report(scenario_id: str, collector: IssueCollector) -> ValidationReport:
+    # ``line`` / ``column`` are ``None`` for un-located issues (E_YAML_PARSE,
+    # E_TOP_LEVEL_NOT_MAPPING) — coercing to 0 sorts them ahead of every
+    # located issue, so file-wide problems appear at the top of the report.
     issues_sorted = sorted(
         collector.issues,
         key=lambda i: (i.line or 0, i.column or 0, i.code),

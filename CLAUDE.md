@@ -125,4 +125,5 @@ prek run --all-files                                                 # pre-commi
 
 - `schemas/` is generated but checked in — never hand-edit.
 - `tests/fixtures/scenarios/*.yaml` are both example fixtures and the contract smoke-test corpus (`tests/contract/test_sample_scenarios.py` loads each through `Scenario.model_validate`).
+- `tests/fixtures/scenarios/invalid/*.yaml` fixtures **must** start with `# expected: E_<CODE>` on the first line. `tests/validation/test_invalid_corpus.py` parses that marker and asserts the validation report carries the same code — adding an invalid fixture without it fails collection with a clear AssertionError.
 - `tests/` mirrors `src/chaos_librarian/` structure (`tests/contract/` ↔ `src/chaos_librarian/contract/`, `tests/cli/` ↔ `src/chaos_librarian/cli/`).

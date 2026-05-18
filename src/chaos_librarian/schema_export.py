@@ -57,9 +57,19 @@ def _repo_root() -> Path:
 
 
 def write_all(schemas_dir: Path) -> None:
+    """Regenerate every schema under ``schemas_dir`` atomically.
+
+    Each file is written to a sibling ``<filename>.tmp`` and renamed into
+    place. The drift gate in CI compares byte-for-byte, so a partial write
+    interrupted by SIGINT or disk-full must never leave a half-written
+    schema file behind.
+    """
     schemas_dir.mkdir(parents=True, exist_ok=True)
     for filename, model in MODELS:
-        (schemas_dir / filename).write_text(_serialize(_schema_for(model)))
+        target = schemas_dir / filename
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(_serialize(_schema_for(model)))
+        tmp.replace(target)
 
 
 def check_all(schemas_dir: Path) -> list[str]:

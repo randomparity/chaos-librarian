@@ -16,7 +16,9 @@ from chaos_librarian.contract import (
 )
 from chaos_librarian.contract.replay_bundle import (
     AllocTraceEntry,
+    ExecutionMode,
     ExecutionTraceEntry,
+    ExecutionTraceKind,
     MaterializeReplayBundle,
     MaterializerTraceEntry,  # noqa: F401  -- verifies public re-export of materializer variant
     PlanOnlyReplayBundle,
@@ -98,8 +100,8 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
         run_id=compute_plan_only_run_id(h, 1),
         resolved_seed=1,
         execution_trace=[
-            RngTraceEntry(kind="rng", stream="ids", value="1"),
-            AllocTraceEntry(kind="alloc", stream="work_id", value="w1"),
+            RngTraceEntry(kind=ExecutionTraceKind.RNG, stream="ids", value="1"),
+            AllocTraceEntry(kind=ExecutionTraceKind.ALLOC, stream="work_id", value="w1"),
         ],
     )
     blob_a = json.dumps(json.loads(b.model_dump_json()), sort_keys=True)
@@ -109,7 +111,7 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
 
 def test_materialize_bundle_has_created_at_and_toolchain() -> None:
     b = MaterializeReplayBundle(
-        execution_mode="materialize",
+        execution_mode=ExecutionMode.MATERIALIZE,
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
         scenario="scenario_id: t\nseed: 1\n",

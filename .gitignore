@@ -12,7 +12,10 @@ dist/
 .coverage
 htmlcov/
 .ty_cache/
+.desloppify/
 .hypothesis/
+.claude/
+scorecard.png
 
 # OS
 .DS_Store
