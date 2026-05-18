@@ -125,8 +125,8 @@ class TestShapePassJSONPathStripping:
         collector = IssueCollector()
         run_shape_pass(raw, _empty_index(), collector)
         paths = [i.path for i in collector.issues if i.path]
-        assert any("slow_copy_commit" not in p for p in paths)
-        # And the alias rewrite for_ → for is applied.
+        assert all("slow_copy_commit" not in p for p in paths)
+        # Discriminator tag 'slow_copy_commit' is stripped, leaving 'for' intact.
         assert any(p == "$.timeline[0].for" for p in paths)
 
 
