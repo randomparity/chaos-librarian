@@ -20,6 +20,10 @@ REPLAY_BUNDLE_SCHEMA_VERSION: Final = 2
 VALIDATION_SCHEMA_VERSION: Final = 1
 MATERIALIZATION_SCHEMA_VERSION: Final = 1
 RUN_SENTINEL_SCHEMA_VERSION: Final = 1
+ASSET_REPORT_SCHEMA_VERSION: Final = 1
+WORK_REPORT_SCHEMA_VERSION: Final = 1
+VARIANT_REPORT_SCHEMA_VERSION: Final = 1
+BUNDLE_REPORT_SCHEMA_VERSION: Final = 1
 
 # Namespace UUID used to derive deterministic UUIDv5 run_ids in plan-only mode.
 # Derived once from a stable DNS-style string so the value is reproducible

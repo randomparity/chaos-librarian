@@ -19,6 +19,12 @@ from chaos_librarian.contract.journal import JournalEntry  # Annotated union
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.replay_bundle import ReplayBundle  # Annotated union
+from chaos_librarian.contract.reports import (
+    AssetReport,
+    BundleReport,
+    VariantReport,
+    WorkReport,
+)
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationReport
@@ -34,6 +40,10 @@ MODELS: Final[list[tuple[str, object]]] = [
     ("validation.schema.json", ValidationReport),
     ("materialization.schema.json", MaterializationReport),
     ("run-sentinel.schema.json", RunSentinel),
+    ("asset-report.schema.json", AssetReport),
+    ("work-report.schema.json", WorkReport),
+    ("variant-report.schema.json", VariantReport),
+    ("bundle-report.schema.json", BundleReport),
 ]
 
 

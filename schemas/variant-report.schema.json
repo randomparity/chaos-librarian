@@ -1,0 +1,44 @@
+{
+  "additionalProperties": false,
+  "description": "Per-variant report \u2014 owning work, bundle, member assets.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "bundle_id": {
+      "title": "Bundle Id",
+      "type": "string"
+    },
+    "label": {
+      "title": "Label",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    },
+    "work_id": {
+      "title": "Work Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "variant_id",
+    "work_id",
+    "label",
+    "bundle_id",
+    "asset_ids"
+  ],
+  "title": "VariantReport",
+  "type": "object"
+}

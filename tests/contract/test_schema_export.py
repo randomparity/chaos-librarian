@@ -20,7 +20,7 @@ def test_committed_schemas_match_models() -> None:
     )
 
 
-def test_all_seven_schemas_listed() -> None:
+def test_all_schemas_listed() -> None:
     names = {filename for filename, _ in MODELS}
     assert names == {
         "scenario.schema.json",
@@ -30,6 +30,10 @@ def test_all_seven_schemas_listed() -> None:
         "validation.schema.json",
         "materialization.schema.json",
         "run-sentinel.schema.json",
+        "asset-report.schema.json",
+        "work-report.schema.json",
+        "variant-report.schema.json",
+        "bundle-report.schema.json",
     }
 
 

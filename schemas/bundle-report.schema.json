@@ -1,0 +1,41 @@
+{
+  "additionalProperties": false,
+  "description": "Per-bundle report \u2014 owning variant, member assets, currently-bound sidecars.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "bundle_id": {
+      "title": "Bundle Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "sidecar_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Sidecar Ids",
+      "type": "array"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "bundle_id",
+    "variant_id",
+    "asset_ids"
+  ],
+  "title": "BundleReport",
+  "type": "object"
+}
