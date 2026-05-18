@@ -12,10 +12,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chaos_librarian.errors import ChaosLibrarianError
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 
-class PathContainmentError(ChaosLibrarianError):
+class PathContainmentError(ChaosLibrarianValueError):
     """Raised when a scenario path violates the library containment contract."""
 
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 from typing import Final, NoReturn
 
-from chaos_librarian.errors import ChaosLibrarianError
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 _I64_MAX_NS: Final[int] = 2**63 - 1
 
@@ -40,7 +40,7 @@ _SEGMENT_RE: Final[re.Pattern[str]] = re.compile(r"(?P<n>\d+)(?P<u>[a-z]+)")
 _VALID_UNITS: Final[tuple[str, ...]] = tuple(u for u, _ in _UNITS_DESCENDING)
 
 
-class DurationParseError(ChaosLibrarianError):
+class DurationParseError(ChaosLibrarianValueError):
     """Raised when a duration string violates the grammar or overflows i64."""
 
     def __init__(self, raw: str, reason: str) -> None:
