@@ -39,7 +39,7 @@ in the RNG / allocator / clock / trace shipped here.
   uses to populate `replay_bundle.resolved_seed` and to derive the
   plan-only `run_id` via the existing
   `contract.replay_bundle.compute_plan_only_run_id`.
-- `format_duration_human(ns: int) -> str` (`"1m30.250s"`) and
+- `format_duration_human(ns: int) -> str` (`"1m30s250ms"`) and
   `format_duration_json(ns: int) -> int` — paired with Sprint 1's
   `parse_duration`. The formatters live in `determinism/clock.py`; the
   Sprint 1 parser stays at top-level `chaos_librarian.clock`.
@@ -120,7 +120,6 @@ class RngStream:
     def choice(self, seq: Sequence[T]) -> T: ...
     def choices(self, seq: Sequence[T], k: int = 1) -> list[T]: ...
     def sample(self, seq: Sequence[T], k: int) -> list[T]: ...
-    def shuffle(self, x: list[T]) -> None: ...
     def uniform(self, a: float, b: float) -> float: ...
     def gauss(self, mu: float, sigma: float) -> float: ...
 
@@ -145,7 +144,10 @@ class RngStreams:
 - The wrapper exposes exactly the methods listed in the contract above.
   Methods not in that list are out of contract for Sprint 2; consumers
   that need a new primitive add it explicitly with a trace hook in a
-  later sprint.
+  later sprint. Methods that return `None` (e.g.,
+  `random.Random.shuffle`) are excluded because their trace value would
+  not capture the operation result; callers needing random reordering
+  use `sample(seq, k=len(seq))`.
 - `value` is `repr(returned_value)` so floats, tuples, and byte strings
   round-trip in the trace as their canonical Python repr; consumers
   comparing traces compare strings byte-for-byte.
@@ -183,6 +185,15 @@ class IdAllocator:
     def next_sidecar_id(self) -> str: ...
     def next_mutation_id(self) -> str: ...
 ```
+
+The allocator owns only the four namespaces whose IDs have no source in
+the scenario YAML — `version`, `location`, `sidecar`, `mutation`. The
+other four oracle namespaces (`work`, `variant`, `bundle`, `asset`)
+are scenario-authored: `Work.id`, `Variant.id`, `Bundle.id`, and
+`Asset.id` are typed `str` in `contract/scenario.py:54-82` and flow
+verbatim through the timeline into the manifest emitted by
+`contract/manifest.py`. The allocator never generates or mutates those
+values, so it offers no `next_*_id` methods for them.
 
 - Each method bumps a private per-namespace counter (starting at 1) and
   returns `f"{namespace}_{counter:04d}"` — `version_0001`,
@@ -224,10 +235,10 @@ def format_duration_json(ns: int) -> int: ...
 - `now()` returns `current_ns` (added so callers do not reach for the
   dataclass field directly; preserves a single read API).
 - `format_duration_human(0)` returns `"0s"`.
-  `format_duration_human(90_250_000_000)` returns `"1m30.250s"`. Uses
+  `format_duration_human(90_250_000_000)` returns `"1m30s250ms"`. Uses
   h/m/s/ms decomposition; sub-millisecond residue is rendered as a
-  trailing microsecond or nanosecond suffix (e.g., `"1m30.250s500us"`,
-  `"1m30.250s500us123ns"`) only when the residue is nonzero. This
+  trailing microsecond or nanosecond suffix (e.g., `"1m30s250ms500us"`,
+  `"1m30s250ms500us123ns"`) only when the residue is nonzero. This
   matches the design-spec time-model wording while staying
   human-readable.
 - `format_duration_json(ns)` is conceptually `int(ns)` with a `TypeError`
@@ -250,7 +261,7 @@ class TraceRecorder:
     def record_rng(self, stream: str, value: str) -> None: ...
     def record_alloc(self, stream: str, value: str) -> None: ...
     def record_materializer(self, stream: str, value: str, exit_code: int) -> None: ...
-    def entries(self) -> list[ExecutionTraceEntry]: ...
+    def entries(self) -> tuple[ExecutionTraceEntry, ...]: ...
     def __len__(self) -> int: ...
 ```
 
@@ -259,9 +270,10 @@ class TraceRecorder:
   (`RngTraceEntry` / `AllocTraceEntry` / `MaterializerTraceEntry` from
   `contract.replay_bundle`) so callers never import the discriminated
   union types directly.
-- `entries()` returns the internal list — not a copy. Sprint 3's
-  plan-only assembler treats it as a snapshot at end-of-run; mutating
-  the returned list afterwards is out of contract.
+- `entries()` returns an immutable tuple snapshot of the recorded
+  entries. Pydantic accepts tuples for `list[...]` fields during
+  serialization, so Sprint 3's plan-only assembler can pass the snapshot
+  through to the replay bundle without an extra copy step.
 - `record_materializer` is declared now but no Sprint 2 caller exists.
   Shipping it closes the recorder API so Sprint 5's materializer just
   calls it.
@@ -328,7 +340,9 @@ Each guarantee has at least one dedicated test (see "Test Strategy").
 7. **Trace recorder fidelity.** Every RNG draw and every allocation
    produces exactly one trace entry, in call order, with the right
    `kind` and `stream`. The recorder is the only writer; nothing else
-   appends to the trace.
+   appends to the trace. `entries()` returns an immutable tuple
+   snapshot so callers cannot mutate the recorded sequence after the
+   fact.
 
 ## Test Strategy
 
