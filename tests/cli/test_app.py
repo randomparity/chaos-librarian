@@ -241,10 +241,10 @@ def test_dir_arg_stub_with_valid_dir_exits_one(
     run_dir = tmp_path / "run-001"
     run_dir.mkdir()
     code = _invoke_with_dir_arg(name, extra_args, run_dir)
-    # ``step`` and ``inspect`` (Sprint 4) are real commands — an empty
-    # run_dir has no sentinel, so they exit 7 (SentinelInvalidError).
+    # ``step``, ``inspect``, and ``clean`` (Sprint 4) are real commands —
+    # an empty run_dir has no sentinel, so they exit 7 (sentinel_invalid).
     # Other dir-arg commands are still stubs and exit 1.
-    if name in {"step", "inspect"}:
+    if name in {"step", "inspect", "clean"}:
         assert code == 7
     else:
         assert code == 1

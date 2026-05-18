@@ -8,6 +8,7 @@ implementations. See docs/specs/chaos-librarian-design.md "CLI Contract".
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Annotated, cast
 
@@ -382,7 +383,33 @@ def clean(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
-    _stub("clean")
+    sentinel_path = run_dir / ".chaos-librarian-run"
+    if not sentinel_path.exists():
+        _emit_step_error(
+            "sentinel_invalid",
+            f"sentinel missing: {sentinel_path}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7)
+    try:
+        sentinel = RunSentinel.model_validate_json(sentinel_path.read_text())
+    except (ValidationError, ValueError) as exc:
+        _emit_step_error(
+            "sentinel_invalid",
+            f"sentinel unparseable: {exc}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7) from exc
+
+    resolved = run_dir.resolve()
+    shutil.rmtree(run_dir)
+
+    if json_output:
+        typer.echo(
+            json.dumps({"removed": str(resolved), "run_id": str(sentinel.run_id)}, sort_keys=True)
+        )
+    else:
+        typer.echo(f"clean: removed {resolved} (run_id {sentinel.run_id})")
 
 
 _SEVERITY_LABEL = {
