@@ -217,3 +217,68 @@ class TestRunPlanSlowCopyBoundary:
         # Ordering: started then committed
         assert artifacts.journal[0].phase.value == "started"
         assert artifacts.journal[1].phase.value == "committed"
+
+
+class TestReplayPartialBundles:
+    """replay_plan_bundle reproduces partial fixtures.
+
+    WHY: decision #12 of the design — partial fixtures are first-class.
+    The integrity checks fire on scenario / resolved_seed tampering,
+    applied_events off-boundary, and journal_digest mismatch.
+    """
+
+    def test_replay_zero_step_bundle(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report, steps_limit=0)
+        replayed = replay_plan_bundle(original.replay_bundle)
+        assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
+        assert replayed.replay_bundle.applied_events == 0
+        assert replayed.journal == ()
+
+    def test_replay_partial_bundle_round_trip(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
+        replayed = replay_plan_bundle(original.replay_bundle)
+        assert replayed.journal == original.journal
+        assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
+
+    def test_replay_mid_pair_tamper_trips_integrity(self) -> None:
+        """Tampering applied_events to an off-boundary value trips integrity.
+
+        WHY: Codex round 3 finding 1 — partial fixtures must land on a
+        step-unit boundary; mid-pair counts are nonsensical.
+        """
+        run_input, report = _input_and_report("slow-copy.yaml")
+        original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
+        # boundaries == [2]; flip applied_events from 2 to 1 (mid-pair)
+        tampered = original.replay_bundle.model_copy(update={"applied_events": 1})
+        with pytest.raises(ReplayIntegrityError):
+            replay_plan_bundle(tampered)
+
+    def test_replay_journal_digest_mismatch_trips_integrity(self) -> None:
+        """Tampering journal_digest directly trips integrity.
+
+        WHY: Codex round 3 finding 2 — digest is the self-contained integrity
+        anchor.
+        """
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
+        bogus = "0" * 64
+        tampered = original.replay_bundle.model_copy(update={"journal_digest": bogus})
+        with pytest.raises(ReplayIntegrityError):
+            replay_plan_bundle(tampered)
+
+    def test_replay_applied_events_tampered_to_valid_boundary_trips_digest(self) -> None:
+        """applied_events flipped between two valid boundaries is caught by digest.
+
+        WHY: Codex round 3 finding 2 — without journal_digest, flipping
+        applied_events from 1 to 2 (both valid on identity-move-rename) would
+        silently produce a longer fixture. The recorded digest reflects the
+        1-event journal, so the recomputed 2-event digest must mismatch.
+        """
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
+        # boundaries == [1, 2]; both are valid. Flip applied_events but leave digest.
+        tampered = original.replay_bundle.model_copy(update={"applied_events": 2})
+        with pytest.raises(ReplayIntegrityError):
+            replay_plan_bundle(tampered)

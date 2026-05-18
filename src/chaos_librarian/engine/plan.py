@@ -182,11 +182,30 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     helper in the public ``chaos-librarian replay`` CLI command and adds
     divergence reporting (exit 6).
 
+    Three integrity checks fire in order before returning artifacts:
+
+    1. ``applied_events`` must sit on a step-unit boundary derived from the
+       resolved timeline (Codex round 3 finding 1 — mid-pair counts are
+       nonsensical because a ``slow_copy_start`` + ``slow_copy_commit`` pair
+       advances together as one step).
+    2. The recomputed ``run_id`` must match ``bundle.run_id`` — catches
+       tampering of ``bundle.scenario`` text or ``bundle.resolved_seed``.
+    3. The recomputed ``journal_digest`` must match ``bundle.journal_digest``
+       (Codex round 3 finding 2 — without this, flipping ``applied_events``
+       between two valid boundaries would silently produce a longer fixture).
+
+    After the boundary check passes, ``bundle.applied_events`` (translated
+    from a raw-event count to a step-unit count) is threaded through to
+    ``run_plan`` as ``steps_limit`` so a partial bundle replays as the same
+    partial fixture.
+
     Raises:
-        ReplayIntegrityError: if the recomputed ``run_id`` does not match
-            ``bundle.run_id`` — i.e. the bundle's ``scenario`` text or
-            ``resolved_seed`` has been tampered with relative to the
-            recorded ``run_id``.
+        ReplayIntegrityError: if any of the three integrity checks fails —
+            ``bundle.applied_events`` is not on a step-unit boundary, the
+            recomputed ``run_id`` disagrees with ``bundle.run_id`` (scenario
+            or seed tampering), or the recomputed ``journal_digest`` does
+            not match ``bundle.journal_digest`` (``applied_events`` flipped
+            between two valid boundaries).
     """
     yaml_bytes = bundle.scenario.encode("utf-8")
     run_input = prepare_run_input_from_bytes(
@@ -197,11 +216,26 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     if not report.ok:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
         raise RuntimeError(f"replay scenario re-validation failed: {errors}")
+
+    parsed = Scenario.model_validate(run_input.raw_data)
+    resolved_timeline = resolve_timeline(parsed)
+    boundaries = step_boundaries(resolved_timeline)
+    valid_boundaries = {0, *boundaries}
+    if bundle.applied_events not in valid_boundaries:
+        raise ReplayIntegrityError(
+            f"applied_events {bundle.applied_events} is not on a step boundary "
+            f"(valid: {sorted(valid_boundaries)})"
+        )
+
+    step_count = 0 if bundle.applied_events == 0 else boundaries.index(bundle.applied_events) + 1
+
     artifacts = run_plan(
         run_input=run_input,
         validation_report=report,
         resolved_seed_override=bundle.resolved_seed,
+        steps_limit=step_count,
     )
+
     recomputed = artifacts.replay_bundle.run_id
     if recomputed != bundle.run_id:
         raise ReplayIntegrityError(
@@ -209,4 +243,11 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
             f"does not match recomputed run_id {recomputed} "
             f"(bundle.scenario or bundle.resolved_seed has been modified)"
         )
+
+    if artifacts.replay_bundle.journal_digest != bundle.journal_digest:
+        raise ReplayIntegrityError(
+            f"journal_digest mismatch: recorded {bundle.journal_digest}, "
+            f"recomputed {artifacts.replay_bundle.journal_digest}"
+        )
+
     return artifacts
