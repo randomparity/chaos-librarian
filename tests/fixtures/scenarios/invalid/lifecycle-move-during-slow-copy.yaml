@@ -1,0 +1,42 @@
+# expected: E_LIFECYCLE_INVALID
+schema_version: 1
+scenario_id: lifecycle-move-during-slow-copy
+seed: 1
+duration_scale: short
+
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+
+timeline:
+  - id: s1
+    at: "0"
+    action: slow_copy_start
+    target: a0
+    to: movies-hd/a0.mkv
+    temp_path: movies-hd/a0.mkv.part
+    duration: 2s
+  - id: e2
+    at: 1s
+    action: move_asset
+    target: a0
+    to: movies-hd/relocated.mkv
+  - id: c1
+    at: 2s
+    action: slow_copy_commit
+    for: s1

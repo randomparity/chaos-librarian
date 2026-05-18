@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
@@ -155,3 +157,42 @@ class TestCreateSidecarHandler:
         (sidecar,) = state.sidecars.values()
         assert sidecar.asset_id == "a0"
         assert sidecar.path == "movies-hd/a0.eng.srt"
+
+
+class TestReencodeAudioOnUnplacedAssetCrashes:
+    """Engine crashes if reencode_audio runs on an asset with no location.
+
+    WHY: encodes the necessity of the E_LIFECYCLE_INVALID rule that flags
+    ``reencode_audio`` on an unplaced asset. If this regression starts
+    passing (i.e. no KeyError) the engine has gained a defensive branch
+    that may make the validation rule redundant — at which point the rule
+    and this test need a coordinated re-evaluation.
+    """
+
+    def test_reencode_audio_after_delete_raises_keyerror(self) -> None:
+        scenario = _scenario(
+            [
+                {"id": "e1", "at": "0", "action": "delete_file", "target": "a0"},
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (delete_resolved,) = resolve_timeline(scenario)
+        apply_event(state, delete_resolved, ids, _RUN_ID, "media")
+        assert not state.has_location("a0")
+
+        bad_scenario = _scenario(
+            [
+                {
+                    "id": "e2",
+                    "at": "1s",
+                    "action": "reencode_audio",
+                    "target": "a0",
+                    "from_channels": "5.1",
+                    "to_channels": "stereo",
+                }
+            ]
+        )
+        (reencode_resolved,) = resolve_timeline(bad_scenario)
+        with pytest.raises(KeyError):
+            apply_event(state, reencode_resolved, ids, _RUN_ID, "media")

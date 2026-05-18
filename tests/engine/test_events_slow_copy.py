@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import uuid
 
+import pytest
+
 from chaos_librarian.contract.journal import (
     CommittedJournalEntry,
     JournalPhase,
@@ -119,3 +121,33 @@ class TestSlowCopyCommit:
         assert loc.temp_path is None
         assert loc.path == "movies-hd/Nova.mkv"
         assert state.pending_slow_copies == {}
+
+
+class TestSlowCopyCommitAfterDeleteCrashes:
+    """Engine crashes if slow_copy_commit runs after the asset was deleted.
+
+    WHY: encodes the necessity of the E_LIFECYCLE_INVALID rule that flags
+    ``delete_file`` on an asset with a pending slow_copy. ``slow_copy_commit``
+    looks up the staged location id in ``state.locations``; if ``delete_file``
+    has popped it, the commit handler raises ``KeyError``. If this test
+    stops raising, the engine has gained a defensive branch and the rule's
+    necessity needs to be re-evaluated.
+    """
+
+    def test_commit_after_delete_raises_keyerror(self) -> None:
+        scenario = _scenario()
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        start_event, commit_event = resolve_timeline(scenario)
+
+        apply_event(state, start_event, ids, _RUN_ID, "sc")
+        assert "copy_start_001" in state.pending_slow_copies
+
+        # Hand-build a delete: scenario.Scenario.model_validate would reject
+        # the mixed timeline if we tried to put delete + commit in one
+        # scenario, so we manually mutate state to mirror what a missing
+        # lifecycle rule would let the engine reach.
+        state.unbind_location("a0")
+
+        with pytest.raises(KeyError):
+            apply_event(state, commit_event, ids, _RUN_ID, "sc")
