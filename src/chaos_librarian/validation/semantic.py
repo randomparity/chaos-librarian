@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Mapping
 from typing import TYPE_CHECKING, cast
 
+from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation import codes
 
@@ -271,10 +272,78 @@ def _rule_path_duplicate(
             seen[path] = loc
 
 
+# ---- Rule 3: E_DURATION_SYNTAX --------------------------------------------
+
+
+def _check_duration(
+    *,
+    raw_str: str,
+    loc: _Loc,
+    field_label: str,
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Parse one duration string; on failure, emit one E_DURATION_SYNTAX issue.
+
+    Extracted so ``_rule_duration_syntax`` stays under the 8-branch CC limit:
+    the try/except plus the issue construction are the costly bit, and they
+    are identical for both fields we check.
+    """
+    try:
+        parse_duration(raw_str)
+    except DurationParseError as e:
+        collector.add(
+            code=codes.E_DURATION_SYNTAX,
+            severity=ValidationSeverity.ERROR,
+            message=f"invalid {field_label} {raw_str!r}: {e.reason}",
+            loc=loc,
+            line_index=line_index,
+        )
+
+
+def _rule_duration_syntax(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject unparseable duration strings on timeline events.
+
+    Fields checked: ``timeline[*].at`` (every event) and
+    ``slow_copy_start.duration`` (only when ``action == "slow_copy_start"``).
+    """
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        at = event.get("at")
+        if isinstance(at, str):
+            _check_duration(
+                raw_str=at,
+                loc=("timeline", idx, "at"),
+                field_label="at duration",
+                line_index=line_index,
+                collector=collector,
+            )
+        if event.get("action") == "slow_copy_start":
+            duration = event.get("duration")
+            if isinstance(duration, str):
+                _check_duration(
+                    raw_str=duration,
+                    loc=("timeline", idx, "duration"),
+                    field_label="duration",
+                    line_index=line_index,
+                    collector=collector,
+                )
+
+
 # ---- Registry (Tasks 7-12 add more rules here) ----------------------------
 
 
 _RULES: list[_Rule] = [
     _rule_id_duplicate,
     _rule_path_duplicate,
+    _rule_duration_syntax,
 ]
