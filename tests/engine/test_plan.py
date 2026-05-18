@@ -252,7 +252,7 @@ class TestReplayPartialBundles:
         original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
         # boundaries == [2]; flip applied_events from 2 to 1 (mid-pair)
         tampered = original.replay_bundle.model_copy(update={"applied_events": 1})
-        with pytest.raises(ReplayIntegrityError):
+        with pytest.raises(ReplayIntegrityError, match="step boundary"):
             replay_plan_bundle(tampered)
 
     def test_replay_journal_digest_mismatch_trips_integrity(self) -> None:
@@ -265,7 +265,7 @@ class TestReplayPartialBundles:
         original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
         bogus = "0" * 64
         tampered = original.replay_bundle.model_copy(update={"journal_digest": bogus})
-        with pytest.raises(ReplayIntegrityError):
+        with pytest.raises(ReplayIntegrityError, match="journal_digest"):
             replay_plan_bundle(tampered)
 
     def test_replay_applied_events_tampered_to_valid_boundary_trips_digest(self) -> None:
@@ -280,5 +280,5 @@ class TestReplayPartialBundles:
         original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
         # boundaries == [1, 2]; both are valid. Flip applied_events but leave digest.
         tampered = original.replay_bundle.model_copy(update={"applied_events": 2})
-        with pytest.raises(ReplayIntegrityError):
+        with pytest.raises(ReplayIntegrityError, match="journal_digest"):
             replay_plan_bundle(tampered)

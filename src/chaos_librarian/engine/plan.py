@@ -164,12 +164,21 @@ def run_plan(
 
 
 class ReplayIntegrityError(RuntimeError):
-    """Raised when a replay bundle's recorded fields disagree with the recomputed run.
+    """Raised when a replay bundle's integrity check fails.
 
-    Catches tampered or corrupted bundles where ``scenario`` text and
-    ``resolved_seed`` no longer agree with the recorded ``run_id``: replaying
-    such a bundle would silently produce artifacts that look authoritative
-    but cannot be matched to the original run.
+    Three independent checks live in ``replay_plan_bundle``:
+
+    1. Scenario / seed tampering: the recomputed ``run_id`` does not
+       match ``bundle.run_id``. The bundle's ``scenario`` text or
+       ``resolved_seed`` has been modified relative to the recorded
+       ``run_id``.
+    2. ``applied_events`` is not on a step boundary. A slow_copy pair
+       must be entirely present or entirely absent; mid-pair counts are
+       nonsensical and indicate tampering.
+    3. ``journal_digest`` mismatch. Catches ``applied_events`` flipped
+       between two valid boundary values (run_id check still passes,
+       but the recomputed journal's bytes no longer match the recorded
+       digest).
     """
 
 
@@ -227,6 +236,7 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
             f"(valid: {sorted(valid_boundaries)})"
         )
 
+    # Safe: boundary check above proved applied_events is in {0, *boundaries}.
     step_count = 0 if bundle.applied_events == 0 else boundaries.index(bundle.applied_events) + 1
 
     artifacts = run_plan(
