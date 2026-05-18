@@ -378,6 +378,179 @@ def _rule_target_unknown(
             )
 
 
+# ---- Rules 5a + 5b: slow-copy pairing and timing --------------------------
+
+
+def _index_starts_and_commits(
+    timeline: list[object],
+) -> tuple[dict[str, tuple[int, _RawMapping]], list[tuple[int, _RawMapping]]]:
+    """Split a timeline into ``slow_copy_start`` index and commit list.
+
+    Extracted from ``_rule_slow_copy_unpaired`` so the rule body stays under
+    the 8-branch CC limit. Returns ``(starts_by_id, commits)`` where each
+    entry preserves the original timeline index for error ``loc`` reporting.
+    """
+    starts: dict[str, tuple[int, _RawMapping]] = {}
+    commits: list[tuple[int, _RawMapping]] = []
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        action = event.get("action")
+        ev_id = event.get("id")
+        if action == "slow_copy_start" and isinstance(ev_id, str):
+            starts[ev_id] = (idx, event)
+        elif action == "slow_copy_commit":
+            commits.append((idx, event))
+    return starts, commits
+
+
+def _report_orphan_starts(
+    *,
+    commits_per_start: dict[str, int],
+    starts: dict[str, tuple[int, _RawMapping]],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Emit E_SLOW_COPY_UNPAIRED for any start with zero or >1 matching commits."""
+    for sid, count in commits_per_start.items():
+        s_idx, _ = starts[sid]
+        if count == 0:
+            collector.add(
+                code=codes.E_SLOW_COPY_UNPAIRED,
+                severity=ValidationSeverity.ERROR,
+                message=f"slow_copy_start {sid!r} has no matching slow_copy_commit",
+                loc=("timeline", s_idx, "id"),
+                line_index=line_index,
+            )
+        elif count > 1:
+            collector.add(
+                code=codes.E_SLOW_COPY_UNPAIRED,
+                severity=ValidationSeverity.ERROR,
+                message=f"slow_copy_start {sid!r} has {count} matching commits (expected 1)",
+                loc=("timeline", s_idx, "id"),
+                line_index=line_index,
+            )
+
+
+def _rule_slow_copy_unpaired(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """5a: structural pairing of slow_copy_start <-> slow_copy_commit."""
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    starts, commits = _index_starts_and_commits(timeline)
+    commits_per_start: dict[str, int] = {sid: 0 for sid in starts}
+    for c_idx, commit in commits:
+        ref = commit.get("for")
+        if not isinstance(ref, str):
+            continue  # Pydantic owns shape
+        if ref not in starts:
+            collector.add(
+                code=codes.E_SLOW_COPY_UNPAIRED,
+                severity=ValidationSeverity.ERROR,
+                message=f"slow_copy_commit references unknown slow_copy_start {ref!r}",
+                loc=("timeline", c_idx, "for"),
+                line_index=line_index,
+            )
+            continue
+        commits_per_start[ref] += 1
+    _report_orphan_starts(
+        commits_per_start=commits_per_start,
+        starts=starts,
+        line_index=line_index,
+        collector=collector,
+    )
+
+
+def _index_starts(timeline: list[object]) -> dict[str, tuple[int, _RawMapping]]:
+    """Index ``slow_copy_start`` events by id; helper for Rule 5b."""
+    starts: dict[str, tuple[int, _RawMapping]] = {}
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None or event.get("action") != "slow_copy_start":
+            continue
+        sid = event.get("id")
+        if isinstance(sid, str):
+            starts[sid] = (idx, event)
+    return starts
+
+
+def _check_pair_timing(
+    *,
+    c_idx: int,
+    commit: _RawMapping,
+    start: _RawMapping,
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Validate one matched pair's ``commit.at == start.at + start.duration``.
+
+    Skips silently when any of the three durations fail to parse — Rule 3
+    has already flagged that case, and double-reporting would be noise.
+    """
+    start_at = start.get("at")
+    start_dur = start.get("duration")
+    commit_at = commit.get("at")
+    if not isinstance(start_at, str):
+        return  # Rule 3 / Pydantic flagged
+    if not isinstance(start_dur, str) or not isinstance(commit_at, str):
+        return  # Rule 3 / Pydantic flagged
+    try:
+        start_at_ns = parse_duration(start_at)
+        start_dur_ns = parse_duration(start_dur)
+        commit_at_ns = parse_duration(commit_at)
+    except DurationParseError:
+        return  # Rule 3 flagged
+    expected = start_at_ns + start_dur_ns
+    if commit_at_ns != expected:
+        collector.add(
+            code=codes.E_SLOW_COPY_TIMING,
+            severity=ValidationSeverity.ERROR,
+            message=(
+                f"slow_copy_commit.at {commit_at!r} != "
+                f"start.at {start_at!r} + duration {start_dur!r}"
+            ),
+            loc=("timeline", c_idx, "at"),
+            line_index=line_index,
+        )
+
+
+def _rule_slow_copy_timing(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """5b: strict equality ``commit.at == start.at + start.duration``.
+
+    Preconditions: durations on both events parse (Rule 3 already flagged
+    otherwise) AND structural pairing holds (Rule 5a already flagged
+    orphans). Skipping here prevents double-reporting.
+    """
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    starts = _index_starts(timeline)
+    for c_idx, event_obj in enumerate(timeline):
+        commit = _as_mapping(event_obj)
+        if commit is None or commit.get("action") != "slow_copy_commit":
+            continue
+        ref = commit.get("for")
+        if not isinstance(ref, str) or ref not in starts:
+            continue  # Rule 5a flagged orphan
+        _, start = starts[ref]
+        _check_pair_timing(
+            c_idx=c_idx,
+            commit=commit,
+            start=start,
+            line_index=line_index,
+            collector=collector,
+        )
+
+
 # ---- Registry (Tasks 7-12 add more rules here) ----------------------------
 
 
@@ -386,4 +559,6 @@ _RULES: list[_Rule] = [
     _rule_path_duplicate,
     _rule_duration_syntax,
     _rule_target_unknown,
+    _rule_slow_copy_unpaired,
+    _rule_slow_copy_timing,
 ]
