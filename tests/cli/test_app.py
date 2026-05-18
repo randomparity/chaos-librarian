@@ -59,9 +59,7 @@ def test_validate_stub_with_valid_scenario_exits_one(tmp_path: Path) -> None:
     scenario = tmp_path / "scenario.yaml"
     scenario.write_text("")
     result = runner.invoke(app, ["validate", str(scenario)])
-    assert result.exit_code == 1, (
-        f"validate stub with valid path should exit 1, got {result.exit_code}"
-    )
+    assert result.exit_code == 1
 
 
 class TestPlanPathValidation:

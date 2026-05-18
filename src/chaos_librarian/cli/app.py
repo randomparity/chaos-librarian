@@ -25,13 +25,7 @@ def _stub(command: str) -> None:
 
 
 def _validate_new_out_path(value: Path) -> Path:
-    """Reject --out paths whose parent is missing or that already exist.
-
-    The CLI never overwrites an existing output directory and requires
-    the caller to have prepared a writable parent. This runs as a Typer
-    callback so failures surface as exit-code 2 BadParameter errors
-    before any command body executes.
-    """
+    """Reject --out paths that already exist or whose parent is not a writable directory."""
     if value.exists():
         raise typer.BadParameter(f"--out path already exists: {value}")
     parent = value.parent
@@ -85,7 +79,7 @@ def run(
 
 @app.command()
 def step(
-    run_dir: Annotated[Path, typer.Argument(exists=True, dir_okay=True, file_okay=False)],
+    run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     next_: Annotated[bool, typer.Option("--next")] = False,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
@@ -105,7 +99,7 @@ def replay(
 
 @app.command()
 def inspect(
-    run_dir: Annotated[Path, typer.Argument(exists=True, dir_okay=True, file_okay=False)],
+    run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Inspect a run directory."""
@@ -122,7 +116,7 @@ def capabilities(
 
 @app.command()
 def clean(
-    run_dir: Annotated[Path, typer.Argument(exists=True, dir_okay=True, file_okay=False)],
+    run_dir: Annotated[Path, typer.Argument(exists=True, file_okay=False)],
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
