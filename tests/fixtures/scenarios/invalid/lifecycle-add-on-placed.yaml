@@ -1,0 +1,31 @@
+# expected: E_LIFECYCLE_INVALID
+schema_version: 1
+scenario_id: lifecycle-add-on-placed
+seed: 1
+duration_scale: short
+
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+
+timeline:
+  - id: e1
+    at: "0"
+    action: add_file
+    target: a0
+    to: movies-hd/a0.mkv

@@ -1,0 +1,40 @@
+# expected: E_LIFECYCLE_INVALID
+schema_version: 1
+scenario_id: lifecycle-double-slow-copy-start
+seed: 1
+duration_scale: short
+
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+
+timeline:
+  - id: c1
+    at: "0"
+    action: slow_copy_start
+    target: a0
+    to: movies-hd/copy.mkv
+    temp_path: movies-hd/copy.mkv.part
+    duration: 2s
+  - id: c2
+    at: 1s
+    action: slow_copy_start
+    target: a0
+    to: movies-hd/copy2.mkv
+    temp_path: movies-hd/copy2.mkv.part
+    duration: 2s

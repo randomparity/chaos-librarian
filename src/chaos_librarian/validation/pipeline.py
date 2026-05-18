@@ -2,8 +2,12 @@
 
 Flow (matches the Sprint 1 design spec):
 
-1. ``load_scenario(path)`` → if it raises ``ScenarioLoadError``, emit one
-   ``E_YAML_PARSE`` issue and return early.
+1. Caller invokes ``prepare_run_input(path)`` to byte-bind the read; on
+   ``ScenarioLoadError`` the caller is responsible for synthesizing an
+   ``E_YAML_PARSE`` report (the CLI helper ``_synthesize_yaml_parse_report``
+   does this). ``run_validation`` itself receives an already-parsed
+   ``RunInput`` so validation, planning, and the replay bundle all
+   describe the same byte sequence.
 1.5. **Top-level shape guard.** If ``raw_data`` is not a ``dict``, emit
    ``E_TOP_LEVEL_NOT_MAPPING`` and return early. Subsequent passes assume
    a mapping and would crash on a list or scalar.
@@ -19,23 +23,18 @@ Flow (matches the Sprint 1 design spec):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from chaos_librarian.contract.validation import (
     ValidationIssue,
     ValidationReport,
     ValidationSeverity,
 )
-from chaos_librarian.scenario_io import (
-    LineIndex,
-    ScenarioLoadError,
-    load_scenario,
-)
+from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import (
     E_TOP_LEVEL_NOT_MAPPING,
-    E_YAML_PARSE,
     format_jsonpath,
 )
+from chaos_librarian.validation.input import RunInput
 from chaos_librarian.validation.semantic import run_semantic_pass
 from chaos_librarian.validation.shape import run_shape_pass
 
@@ -68,26 +67,19 @@ class IssueCollector:
         )
 
 
-def run_validation(scenario_path: Path) -> ValidationReport:
-    """Run the full validation pipeline against a scenario file.
+def run_validation(run_input: RunInput) -> ValidationReport:
+    """Run the full validation pipeline against a pre-read scenario.
+
+    The ``ScenarioLoadError`` branch lives in ``prepare_run_input`` now;
+    callers that may face a malformed YAML file must catch it there and
+    synthesize an ``E_YAML_PARSE`` report themselves.
 
     Returns a ``ValidationReport`` regardless of outcome. ``report.ok``
     is ``True`` iff zero ERROR-severity issues accumulated.
     """
     collector = IssueCollector()
-
-    # Step 1: load.
-    try:
-        raw_data, line_index = load_scenario(scenario_path)
-    except ScenarioLoadError as e:
-        collector.add(
-            code=E_YAML_PARSE,
-            severity=ValidationSeverity.ERROR,
-            message=str(e),
-            loc=(),
-            line_index=LineIndex(),
-        )
-        return _assemble_report(scenario_id="<unknown>", collector=collector)
+    raw_data = run_input.raw_data
+    line_index = run_input.line_index
 
     # Step 1.5: top-level shape guard. A non-mapping top level would crash
     # the shape pass; emit a structured issue and stop here.

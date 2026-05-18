@@ -29,3 +29,18 @@ run/
 
 Path-containment rules: every scenario path resolves under `<run-dir>/library/`
 after symlink/`..` normalization. Violations fail with exit code `7`.
+
+## Plan-Only Subset
+
+Plan-only runs (Sprint 3) write a strict subset of the full layout:
+
+- `.chaos-librarian-run` (sentinel)
+- `scenario.yaml`
+- `replay.json`
+- `manifest.initial.json`
+- `manifest.current.json`
+- `journal.jsonl`
+- `validation.json`
+
+`materialization.json`, `library/`, and `reports/` are written by later
+sprints (5 / 6+ / 4 respectively).

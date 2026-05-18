@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from chaos_librarian.contract.validation import ValidationSeverity
-from chaos_librarian.scenario_io import LineIndex
-from chaos_librarian.validation import codes, run_validation
+from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError
+from chaos_librarian.validation import codes, prepare_run_input, run_validation
 from chaos_librarian.validation.pipeline import IssueCollector
 
 
@@ -16,24 +18,23 @@ def _write(tmp_path: Path, content: str, name: str = "scenario.yaml") -> Path:
     return p
 
 
-class TestRunValidationLoaderErrors:
-    """YAML parse failures and missing files produce E_YAML_PARSE.
+class TestPrepareRunInputLoaderErrors:
+    """YAML parse failures and missing files surface as ScenarioLoadError.
 
-    WHY: the loader is the entry point; a parse failure must surface as a
-    structured issue, not a stack trace, so the CLI can exit 3 cleanly.
+    WHY: the byte-binding factory owns the parse step now. The CLI maps the
+    exception to ``E_YAML_PARSE`` so callers still see a structured report;
+    the contract that bad input never reaches ``run_validation`` is enforced
+    by the factory raising rather than the pipeline emitting.
     """
 
-    def test_yaml_syntax_error_short_circuits(self, tmp_path: Path) -> None:
+    def test_yaml_syntax_error_raises(self, tmp_path: Path) -> None:
         path = _write(tmp_path, "key: [\n")
-        report = run_validation(path)
-        assert report.ok is False
-        assert any(i.code == codes.E_YAML_PARSE for i in report.issues)
-        assert report.scenario_id == "<unknown>"
+        with pytest.raises(ScenarioLoadError):
+            prepare_run_input(path)
 
-    def test_missing_file_short_circuits(self, tmp_path: Path) -> None:
-        report = run_validation(tmp_path / "missing.yaml")
-        assert report.ok is False
-        assert any(i.code == codes.E_YAML_PARSE for i in report.issues)
+    def test_missing_file_raises(self, tmp_path: Path) -> None:
+        with pytest.raises(ScenarioLoadError):
+            prepare_run_input(tmp_path / "missing.yaml")
 
 
 class TestRunValidationTopLevelMappingGuard:
@@ -45,7 +46,7 @@ class TestRunValidationTopLevelMappingGuard:
     """
 
     def test_scalar_top_level_emits_code(self, tmp_path: Path) -> None:
-        report = run_validation(_write(tmp_path, "42\n"))
+        report = run_validation(prepare_run_input(_write(tmp_path, "42\n")))
         assert report.ok is False
         assert any(i.code == codes.E_TOP_LEVEL_NOT_MAPPING for i in report.issues)
         # exactly one issue — the pipeline returned early
@@ -55,14 +56,14 @@ class TestRunValidationTopLevelMappingGuard:
         assert report.scenario_id == "<unknown>"
 
     def test_sequence_top_level_emits_code(self, tmp_path: Path) -> None:
-        report = run_validation(_write(tmp_path, "- a\n- b\n"))
+        report = run_validation(prepare_run_input(_write(tmp_path, "- a\n- b\n")))
         assert report.ok is False
         assert any(i.code == codes.E_TOP_LEVEL_NOT_MAPPING for i in report.issues)
         assert len(report.issues) == 1
 
     def test_empty_file_emits_code(self, tmp_path: Path) -> None:
         """Empty YAML parses to None — not a mapping."""
-        report = run_validation(_write(tmp_path, ""))
+        report = run_validation(prepare_run_input(_write(tmp_path, "")))
         assert report.ok is False
         assert any(i.code == codes.E_TOP_LEVEL_NOT_MAPPING for i in report.issues)
 
@@ -102,7 +103,7 @@ class TestRunValidationHappyPath:
             "              duration_seconds: 1\n"
             "timeline: []\n",
         )
-        report = run_validation(path)
+        report = run_validation(prepare_run_input(path))
         assert report.ok is True
         assert report.issues == []
         assert report.scenario_id == "minimal"
@@ -183,6 +184,6 @@ class TestRunValidationReportSorting:
             "    action: delete_file\n"
             "    target: nope2\n",
         )
-        report = run_validation(path)
+        report = run_validation(prepare_run_input(path))
         lines = [i.line for i in report.issues if i.line is not None]
         assert lines == sorted(lines)

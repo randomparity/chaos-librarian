@@ -9,16 +9,22 @@ right type"; rules only check semantics on top of well-shaped sub-trees.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
-from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
+from chaos_librarian.contract.paths import (
+    PathContainmentError,
+    is_safe_path_component,
+    resolve_under_library,
+)
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import (
     E_DURATION_SYNTAX,
     E_ID_DUPLICATE,
+    E_LIFECYCLE_INVALID,
     E_PATH_CONTAINMENT,
     E_PATH_DUPLICATE,
     E_SLOW_COPY_TIMING,
@@ -697,6 +703,289 @@ def _rule_timeline_order(
         last_idx = idx
 
 
+# ---- Rule 8: E_LIFECYCLE_INVALID ------------------------------------------
+
+
+@dataclass
+class _LifecycleState:
+    """Mutable per-asset state for the lifecycle simulation.
+
+    Tracking it in a dataclass keeps ``_rule_timeline_lifecycle`` flat
+    (one branch per action variant) and lets each per-action helper
+    receive a single state handle instead of three positional dicts.
+    """
+
+    placed: set[str]
+    pending_slow_copies: dict[str, str]  # start_event_id -> asset_id
+    assets_with_pending_copy: set[str]
+
+
+_MUTATION_ACTIONS: frozenset[str] = frozenset(
+    {
+        TimelineActionName.MOVE_ASSET,
+        TimelineActionName.RENAME_FILE,
+        TimelineActionName.DELETE_FILE,
+    }
+)
+_LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
+    {
+        TimelineActionName.REENCODE_VIDEO,
+        TimelineActionName.REENCODE_AUDIO,
+        TimelineActionName.CREATE_SIDECAR,
+    }
+)
+
+
+def _lifecycle_emit(
+    *,
+    collector: IssueCollector,
+    line_index: LineIndex,
+    loc: _Loc,
+    message: str,
+) -> None:
+    """Add one E_LIFECYCLE_INVALID error to the collector."""
+    collector.add(
+        code=E_LIFECYCLE_INVALID,
+        severity=ValidationSeverity.ERROR,
+        message=message,
+        loc=loc,
+        line_index=line_index,
+    )
+
+
+def _lifecycle_check_add_file(
+    *,
+    target: str,
+    state: _LifecycleState,
+    collector: IssueCollector,
+    line_index: LineIndex,
+    loc: _Loc,
+) -> None:
+    if target in state.placed:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"add_file on already-placed asset {target!r}",
+        )
+    state.placed.add(target)
+
+
+def _lifecycle_check_mutation(
+    *,
+    action: str,
+    target: str,
+    state: _LifecycleState,
+    collector: IssueCollector,
+    line_index: LineIndex,
+    loc: _Loc,
+) -> None:
+    if target not in state.placed:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"{action} on unplaced asset {target!r}",
+        )
+    if target in state.assets_with_pending_copy:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"{action} on asset {target!r} with a pending slow_copy",
+        )
+    if action == TimelineActionName.DELETE_FILE:
+        state.placed.discard(target)
+
+
+def _lifecycle_check_passthrough(
+    *,
+    action: str,
+    target: str,
+    state: _LifecycleState,
+    collector: IssueCollector,
+    line_index: LineIndex,
+    loc: _Loc,
+) -> None:
+    if target not in state.placed:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"{action} on unplaced asset {target!r}",
+        )
+
+
+def _lifecycle_check_slow_copy_start(
+    *,
+    target: str,
+    ev_id: object,
+    state: _LifecycleState,
+    collector: IssueCollector,
+    line_index: LineIndex,
+    loc: _Loc,
+) -> None:
+    if target not in state.placed:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"slow_copy_start on unplaced asset {target!r}",
+        )
+    if not isinstance(ev_id, str):
+        return  # Pydantic owns shape; nothing to track
+    if target in state.assets_with_pending_copy:
+        _lifecycle_emit(
+            collector=collector,
+            line_index=line_index,
+            loc=loc,
+            message=f"slow_copy_start on asset {target!r} that already has a pending copy",
+        )
+    state.pending_slow_copies[ev_id] = target
+    state.assets_with_pending_copy.add(target)
+
+
+def _lifecycle_apply_commit(*, ref: object, state: _LifecycleState) -> None:
+    """Drop the matched start from pending state. Rule 5a owns orphan reporting."""
+    if not isinstance(ref, str):
+        return
+    if ref not in state.pending_slow_copies:
+        return
+    committed_asset = state.pending_slow_copies.pop(ref)
+    state.assets_with_pending_copy.discard(committed_asset)
+
+
+def _rule_timeline_lifecycle(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject timelines that cannot execute against the asset lifecycle.
+
+    Simulates: every declared asset starts "placed" (per the initial-state
+    convention in docs/contract/manifest-initial-state.md). Rejects:
+
+    - ``add_file`` on a placed asset
+    - any location-dependent mutation (move/rename/delete, reencode_video/
+      reencode_audio/create_sidecar) on an unplaced asset — the engine
+      reads ``state._asset_to_location`` / ``_asset_to_version`` in each
+      handler and would raise ``KeyError`` otherwise
+    - overlapping ``slow_copy_start`` on the same asset
+    - ``delete_file``, ``move_asset``, or ``rename_file`` on an asset that
+      has a pending ``slow_copy_start`` — the engine's commit handler
+      would otherwise look up a location id the delete/move/rename has
+      already popped or relocated
+    """
+    state = _LifecycleState(
+        placed=set(_iter_asset_ids(raw)),
+        pending_slow_copies={},
+        assets_with_pending_copy=set(),
+    )
+
+    for idx, event in _iter_timeline_events(raw):
+        action = event.get("action")
+        if not isinstance(action, str):
+            continue  # Pydantic owns shape on missing/non-string action
+        target = event.get("target")
+        loc: _Loc = ("timeline", idx, "action")
+        kwargs = {
+            "state": state,
+            "collector": collector,
+            "line_index": line_index,
+            "loc": loc,
+        }
+
+        if action == TimelineActionName.ADD_FILE and isinstance(target, str):
+            _lifecycle_check_add_file(target=target, **kwargs)
+        elif action in _MUTATION_ACTIONS and isinstance(target, str):
+            _lifecycle_check_mutation(action=action, target=target, **kwargs)
+        elif action in _LOCATION_DEPENDENT_PASSTHROUGH and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+        elif action == TimelineActionName.SLOW_COPY_START and isinstance(target, str):
+            _lifecycle_check_slow_copy_start(target=target, ev_id=event.get("id"), **kwargs)
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
+            _lifecycle_apply_commit(ref=event.get("for"), state=state)
+
+
+# ---- Rule 9: E_PATH_CONTAINMENT on asset.id / asset.container -------------
+
+
+def _iter_assets_with_loc(
+    raw: Mapping[str, object],
+) -> Iterator[tuple[_RawMapping, _Loc]]:
+    """Yield ``(asset_mapping, loc)`` for every well-shaped asset.
+
+    Reuses the same walk shape as ``_iter_global_namespaces`` but yields
+    the full asset sub-mapping so rules can inspect any field on it.
+    """
+    works = _as_list(raw.get("works"))
+    if works is None:
+        return
+    for w_idx, work_obj in enumerate(works):
+        work = _as_mapping(work_obj)
+        if work is None:
+            continue
+        variants = _as_list(work.get("variants"))
+        if variants is None:
+            continue
+        for v_idx, variant_obj in enumerate(variants):
+            variant = _as_mapping(variant_obj)
+            if variant is None:
+                continue
+            bundle = _as_mapping(variant.get("bundle"))
+            if bundle is None:
+                continue
+            assets = _as_list(bundle.get("assets"))
+            if assets is None:
+                continue
+            for a_idx, asset_obj in enumerate(assets):
+                asset = _as_mapping(asset_obj)
+                if asset is None:
+                    continue
+                loc: _Loc = (
+                    "works",
+                    w_idx,
+                    "variants",
+                    v_idx,
+                    "bundle",
+                    "assets",
+                    a_idx,
+                )
+                yield asset, loc
+
+
+def _rule_asset_id_container_safe(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject ``asset.id`` / ``asset.container`` values that escape containment.
+
+    ``build_initial_state`` synthesizes the initial location path as
+    ``f"{root.path}/{asset.id}.{asset.container}"``. Without this rule a
+    scenario could write a manifest path outside the library root by
+    embedding a separator or a ``..`` segment in either field. Reuses
+    ``E_PATH_CONTAINMENT`` because the guarantee is the same as for
+    timeline paths — keep the consumer-facing taxonomy small.
+    """
+    for asset, asset_loc in _iter_assets_with_loc(raw):
+        for field_name in ("id", "container"):
+            value = asset.get(field_name)
+            if not isinstance(value, str):
+                continue  # Pydantic owns "field is a string"
+            if not is_safe_path_component(value):
+                collector.add(
+                    code=E_PATH_CONTAINMENT,
+                    severity=ValidationSeverity.ERROR,
+                    message=(
+                        f"asset.{field_name} {value!r} is not a safe path component "
+                        f"(would escape library containment when used in synthesized paths)"
+                    ),
+                    loc=(*asset_loc, field_name),
+                    line_index=line_index,
+                )
+
+
 # ---- Rules in declared run order ------------------------------------------
 
 
@@ -709,4 +998,6 @@ _RULES: list[_Rule] = [
     _rule_slow_copy_timing,
     _rule_path_containment,
     _rule_timeline_order,
+    _rule_timeline_lifecycle,
+    _rule_asset_id_container_safe,
 ]

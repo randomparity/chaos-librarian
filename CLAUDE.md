@@ -65,7 +65,7 @@ Default to surfacing uncertainty, not hiding it.
 
 ## Project state
 
-Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface, but ships no runtime behavior. `validate` is implemented as of Sprint 1. The other eight CLI commands are stubs that exit 1. Later sprints implement plan / materialize / run / step / replay / inspect / capabilities / clean.
+Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface. `validate` ships in Sprint 1 (`feat/sprint-1`); `plan` ships in Sprint 3 (`feat/sprint-3`). Sprint 3 also extends Sprint 1's validation pipeline with `E_LIFECYCLE_INVALID`, which rejects shape-valid timelines that the engine cannot execute (add-on-placed, move-after-delete, double slow-copy). The remaining seven CLI commands are stubs that exit 1. Later sprints implement materialize / run / step / replay / inspect / capabilities / clean.
 
 Active per-sprint implementation plans live at `docs/superpowers/plans/`. No deferred-work issues are currently open.
 

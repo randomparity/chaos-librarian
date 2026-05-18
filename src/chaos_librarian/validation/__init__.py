@@ -12,10 +12,18 @@ from chaos_librarian.contract.validation import (
     ValidationReport,
     ValidationSeverity,
 )
+from chaos_librarian.validation.input import (
+    RunInput,
+    prepare_run_input,
+    prepare_run_input_from_bytes,
+)
 from chaos_librarian.validation.pipeline import run_validation
 
 __all__ = [
+    "RunInput",
     "ValidationReport",
     "ValidationSeverity",
+    "prepare_run_input",
+    "prepare_run_input_from_bytes",
     "run_validation",
 ]

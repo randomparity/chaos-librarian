@@ -25,6 +25,7 @@ All commands support `--json`. Exit codes:
 | `6`  | replay diverged                                               |
 | `7`  | filesystem safety violation (containment or sentinel)         |
 
-Every command except `validate` ships as a Sprint 0 stub and exits `1`.
-`validate` was implemented in Sprint 1. See
+Sprint 0 ships every command as a stub returning `1`. `validate`
+(Sprint 1) and `plan` (Sprint 3) are real commands. The remaining seven
+commands still exit `1`. See
 [`chaos-librarian-design.md` "CLI Contract"](../specs/chaos-librarian-design.md).

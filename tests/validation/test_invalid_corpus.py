@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.validation import run_validation
+from chaos_librarian.scenario_io import ScenarioLoadError
+from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_DIR = FIXTURE_DIR / "invalid"
@@ -49,7 +50,13 @@ def test_invalid_fixture_produces_expected_code(path: Path) -> None:
     removing the code) is caught here.
     """
     expected = _expected_code(path)
-    report = run_validation(path)
+    if expected == "E_YAML_PARSE":
+        # The factory raises before validation runs; the CLI synthesizes the
+        # report. Asserting the raise here is the equivalent regression guard.
+        with pytest.raises(ScenarioLoadError):
+            prepare_run_input(path)
+        return
+    report = run_validation(prepare_run_input(path))
     assert report.ok is False, f"{path.name}: expected ok=False"
     assert any(i.code == expected for i in report.issues), (
         f"{path.name}: no issue with code {expected} in {[i.code for i in report.issues]}"
@@ -64,7 +71,7 @@ def test_valid_fixture_validates_clean(path: Path) -> None:
     from the schema or a new rule has a false positive. Either way the
     refactor that broke it must be reconsidered.
     """
-    report = run_validation(path)
+    report = run_validation(prepare_run_input(path))
     assert report.ok is True, (
         f"{path.name}: expected ok=True, got issues {[i.code for i in report.issues]}"
     )

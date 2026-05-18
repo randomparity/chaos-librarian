@@ -222,10 +222,11 @@ def test_file_arg_stub_with_valid_paths_exits_one(
     scenario.write_text("")
     out = tmp_path / "run-001"
     code = _invoke_with_file_arg(name, extra_args, takes_out, scenario, out)
-    # ``validate`` succeeds on an empty file (it's a YAML parse error report
-    # with exit 3, not a stub-not-implemented exit 1); skip it for this
-    # assertion since this test guards the stubbed commands.
-    if name == "validate":
+    # ``validate`` (Sprint 1) and ``plan`` (Sprint 3) are real commands —
+    # an empty file flows through E_TOP_LEVEL_NOT_MAPPING (validate) or
+    # E_YAML_PARSE / E_TOP_LEVEL_NOT_MAPPING (plan) and exits 3. Other
+    # commands are still stubs and exit 1.
+    if name in {"validate", "plan"}:
         assert code == 3
     else:
         assert code == 1
