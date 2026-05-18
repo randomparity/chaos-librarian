@@ -1,0 +1,601 @@
+{
+  "$defs": {
+    "AbortedJournalEntry": {
+      "additionalProperties": false,
+      "description": "Failed terminal event of a multi-phase mutation.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Version Ids",
+          "type": "array"
+        },
+        "location_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Ids",
+          "type": "array"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Version Ids",
+          "type": "array"
+        },
+        "phase": {
+          "const": "aborted",
+          "title": "Phase",
+          "type": "string"
+        },
+        "related_event_id": {
+          "title": "Related Event Id",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        },
+        "toolchain": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toolchain"
+        },
+        "wall_clock_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "scenario_id",
+        "run_id",
+        "logical_time_ns",
+        "action",
+        "phase",
+        "related_event_id"
+      ],
+      "title": "AbortedJournalEntry",
+      "type": "object"
+    },
+    "AtomicJournalEntry": {
+      "additionalProperties": false,
+      "description": "Single-event mutation. No ``temp_path``, no ``related_event_id``.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Version Ids",
+          "type": "array"
+        },
+        "location_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Ids",
+          "type": "array"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Version Ids",
+          "type": "array"
+        },
+        "phase": {
+          "const": "atomic",
+          "default": "atomic",
+          "title": "Phase",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        },
+        "toolchain": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toolchain"
+        },
+        "wall_clock_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "scenario_id",
+        "run_id",
+        "logical_time_ns",
+        "action"
+      ],
+      "title": "AtomicJournalEntry",
+      "type": "object"
+    },
+    "CommittedJournalEntry": {
+      "additionalProperties": false,
+      "description": "Successful terminal event of a multi-phase mutation.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Version Ids",
+          "type": "array"
+        },
+        "location_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Ids",
+          "type": "array"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Version Ids",
+          "type": "array"
+        },
+        "phase": {
+          "const": "committed",
+          "title": "Phase",
+          "type": "string"
+        },
+        "related_event_id": {
+          "title": "Related Event Id",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        },
+        "toolchain": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toolchain"
+        },
+        "wall_clock_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "scenario_id",
+        "run_id",
+        "logical_time_ns",
+        "action",
+        "phase",
+        "related_event_id"
+      ],
+      "title": "CommittedJournalEntry",
+      "type": "object"
+    },
+    "ProgressedJournalEntry": {
+      "additionalProperties": false,
+      "description": "Intermediate event of a multi-phase mutation.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Version Ids",
+          "type": "array"
+        },
+        "location_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Ids",
+          "type": "array"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Version Ids",
+          "type": "array"
+        },
+        "phase": {
+          "const": "progressed",
+          "title": "Phase",
+          "type": "string"
+        },
+        "related_event_id": {
+          "title": "Related Event Id",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        },
+        "temp_path": {
+          "title": "Temp Path",
+          "type": "string"
+        },
+        "toolchain": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toolchain"
+        },
+        "wall_clock_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "scenario_id",
+        "run_id",
+        "logical_time_ns",
+        "action",
+        "phase",
+        "temp_path",
+        "related_event_id"
+      ],
+      "title": "ProgressedJournalEntry",
+      "type": "object"
+    },
+    "StartedJournalEntry": {
+      "additionalProperties": false,
+      "description": "First event of a multi-phase mutation. Requires ``temp_path``.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Input Version Ids",
+          "type": "array"
+        },
+        "location_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Location Ids",
+          "type": "array"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Output Version Ids",
+          "type": "array"
+        },
+        "phase": {
+          "const": "started",
+          "title": "Phase",
+          "type": "string"
+        },
+        "run_id": {
+          "format": "uuid",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "scenario_id": {
+          "title": "Scenario Id",
+          "type": "string"
+        },
+        "schema_version": {
+          "const": 1,
+          "title": "Schema Version",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        },
+        "target_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Target Ids",
+          "type": "array"
+        },
+        "temp_path": {
+          "title": "Temp Path",
+          "type": "string"
+        },
+        "toolchain": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Toolchain"
+        },
+        "wall_clock_time": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Wall Clock Time"
+        }
+      },
+      "required": [
+        "schema_version",
+        "event_id",
+        "scenario_id",
+        "run_id",
+        "logical_time_ns",
+        "action",
+        "phase",
+        "temp_path"
+      ],
+      "title": "StartedJournalEntry",
+      "type": "object"
+    }
+  },
+  "discriminator": {
+    "mapping": {
+      "aborted": "#/$defs/AbortedJournalEntry",
+      "atomic": "#/$defs/AtomicJournalEntry",
+      "committed": "#/$defs/CommittedJournalEntry",
+      "progressed": "#/$defs/ProgressedJournalEntry",
+      "started": "#/$defs/StartedJournalEntry"
+    },
+    "propertyName": "phase"
+  },
+  "oneOf": [
+    {
+      "$ref": "#/$defs/AtomicJournalEntry"
+    },
+    {
+      "$ref": "#/$defs/StartedJournalEntry"
+    },
+    {
+      "$ref": "#/$defs/ProgressedJournalEntry"
+    },
+    {
+      "$ref": "#/$defs/CommittedJournalEntry"
+    },
+    {
+      "$ref": "#/$defs/AbortedJournalEntry"
+    }
+  ]
+}

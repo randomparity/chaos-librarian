@@ -1,0 +1,45 @@
+schema_version: 1
+scenario_id: version-evolution
+seed: 17
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_pulsar
+    title: Synthetic Pulsar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 10
+              video:
+                source: color_bars
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: "5.1"
+                  language: eng
+
+timeline:
+  - id: reencode_video_001
+    at: 3s
+    action: reencode_video
+    target: asset_main
+    resolution: sd
+    codec: h264
+  - id: reencode_audio_001
+    at: 6s
+    action: reencode_audio
+    target: asset_main
+    from_channels: "5.1"
+    to_channels: stereo

@@ -1,0 +1,42 @@
+schema_version: 1
+scenario_id: bundle-sidecars
+seed: 99
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_quasar
+    title: Synthetic Quasar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 8
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+              subtitles:
+                - codec: srt
+                  language: eng
+                  mode: sidecar
+
+timeline:
+  - id: create_subs_001
+    at: 1s
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Quasar.eng.srt

@@ -1,0 +1,46 @@
+schema_version: 1
+scenario_id: slow-copy
+seed: 7
+duration_scale: short
+
+library:
+  roots:
+    - id: staging
+      path: staging
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_nova
+    title: Synthetic Nova
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: noise
+                codec: h264
+                resolution: 720p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: copy_start_001
+    at: 1s
+    action: slow_copy_start
+    target: asset_main
+    to: movies-hd/Nova.mkv
+    temp_path: movies-hd/Nova.mkv.part
+    duration: 3s
+  - id: copy_commit_001
+    at: 4s
+    action: slow_copy_commit
+    for: copy_start_001

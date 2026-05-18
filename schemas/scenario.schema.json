@@ -1,0 +1,670 @@
+{
+  "$defs": {
+    "AddFileEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "add_file",
+          "default": "add_file",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to"
+      ],
+      "title": "AddFileEvent",
+      "type": "object"
+    },
+    "Asset": {
+      "additionalProperties": false,
+      "properties": {
+        "audio": {
+          "items": {
+            "$ref": "#/$defs/AudioTrack"
+          },
+          "title": "Audio",
+          "type": "array"
+        },
+        "container": {
+          "title": "Container",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "role": {
+          "title": "Role",
+          "type": "string"
+        },
+        "subtitles": {
+          "items": {
+            "$ref": "#/$defs/SubtitleTrack"
+          },
+          "title": "Subtitles",
+          "type": "array"
+        },
+        "video": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoTrack"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "id",
+        "role",
+        "container",
+        "duration_seconds"
+      ],
+      "title": "Asset",
+      "type": "object"
+    },
+    "AudioTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "channels": {
+          "title": "Channels",
+          "type": "string"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        }
+      },
+      "required": [
+        "codec",
+        "channels",
+        "language"
+      ],
+      "title": "AudioTrack",
+      "type": "object"
+    },
+    "Bundle": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "items": {
+            "$ref": "#/$defs/Asset"
+          },
+          "title": "Assets",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "assets"
+      ],
+      "title": "Bundle",
+      "type": "object"
+    },
+    "CreateSidecarEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "create_sidecar",
+          "default": "create_sidecar",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to"
+      ],
+      "title": "CreateSidecarEvent",
+      "type": "object"
+    },
+    "DeleteFileEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "delete_file",
+          "default": "delete_file",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "DeleteFileEvent",
+      "type": "object"
+    },
+    "Library": {
+      "additionalProperties": false,
+      "properties": {
+        "roots": {
+          "items": {
+            "$ref": "#/$defs/LibraryRoot"
+          },
+          "title": "Roots",
+          "type": "array"
+        }
+      },
+      "required": [
+        "roots"
+      ],
+      "title": "Library",
+      "type": "object"
+    },
+    "LibraryRoot": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ],
+      "title": "LibraryRoot",
+      "type": "object"
+    },
+    "MoveAssetEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "move_asset",
+          "default": "move_asset",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to"
+      ],
+      "title": "MoveAssetEvent",
+      "type": "object"
+    },
+    "ReencodeAudioEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "reencode_audio",
+          "default": "reencode_audio",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "from_channels": {
+          "title": "From Channels",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to_channels": {
+          "title": "To Channels",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "from_channels",
+        "to_channels"
+      ],
+      "title": "ReencodeAudioEvent",
+      "type": "object"
+    },
+    "ReencodeVideoEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "reencode_video",
+          "default": "reencode_video",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "resolution": {
+          "title": "Resolution",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "resolution",
+        "codec"
+      ],
+      "title": "ReencodeVideoEvent",
+      "type": "object"
+    },
+    "RenameFileEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "rename_file",
+          "default": "rename_file",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to"
+      ],
+      "title": "RenameFileEvent",
+      "type": "object"
+    },
+    "SlowCopyCommitEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "slow_copy_commit",
+          "default": "slow_copy_commit",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "for": {
+          "title": "For",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "for"
+      ],
+      "title": "SlowCopyCommitEvent",
+      "type": "object"
+    },
+    "SlowCopyStartEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "slow_copy_start",
+          "default": "slow_copy_start",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "duration": {
+          "title": "Duration",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "temp_path": {
+          "title": "Temp Path",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to",
+        "temp_path",
+        "duration"
+      ],
+      "title": "SlowCopyStartEvent",
+      "type": "object"
+    },
+    "SubtitleTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "embedded",
+            "sidecar"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "codec",
+        "language",
+        "mode"
+      ],
+      "title": "SubtitleTrack",
+      "type": "object"
+    },
+    "Variant": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle": {
+          "$ref": "#/$defs/Bundle"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "label",
+        "bundle"
+      ],
+      "title": "Variant",
+      "type": "object"
+    },
+    "VideoTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "resolution": {
+          "title": "Resolution",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "codec",
+        "resolution"
+      ],
+      "title": "VideoTrack",
+      "type": "object"
+    },
+    "Work": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "variants"
+      ],
+      "title": "Work",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "duration_scale": {
+      "enum": [
+        "short",
+        "normal",
+        "long"
+      ],
+      "title": "Duration Scale",
+      "type": "string"
+    },
+    "library": {
+      "$ref": "#/$defs/Library"
+    },
+    "scenario_id": {
+      "title": "Scenario Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "seed": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "const": "random",
+          "type": "string"
+        }
+      ],
+      "title": "Seed"
+    },
+    "timeline": {
+      "items": {
+        "discriminator": {
+          "mapping": {
+            "add_file": "#/$defs/AddFileEvent",
+            "create_sidecar": "#/$defs/CreateSidecarEvent",
+            "delete_file": "#/$defs/DeleteFileEvent",
+            "move_asset": "#/$defs/MoveAssetEvent",
+            "reencode_audio": "#/$defs/ReencodeAudioEvent",
+            "reencode_video": "#/$defs/ReencodeVideoEvent",
+            "rename_file": "#/$defs/RenameFileEvent",
+            "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
+            "slow_copy_start": "#/$defs/SlowCopyStartEvent"
+          },
+          "propertyName": "action"
+        },
+        "oneOf": [
+          {
+            "$ref": "#/$defs/MoveAssetEvent"
+          },
+          {
+            "$ref": "#/$defs/RenameFileEvent"
+          },
+          {
+            "$ref": "#/$defs/DeleteFileEvent"
+          },
+          {
+            "$ref": "#/$defs/AddFileEvent"
+          },
+          {
+            "$ref": "#/$defs/ReencodeVideoEvent"
+          },
+          {
+            "$ref": "#/$defs/ReencodeAudioEvent"
+          },
+          {
+            "$ref": "#/$defs/CreateSidecarEvent"
+          },
+          {
+            "$ref": "#/$defs/SlowCopyStartEvent"
+          },
+          {
+            "$ref": "#/$defs/SlowCopyCommitEvent"
+          }
+        ]
+      },
+      "title": "Timeline",
+      "type": "array"
+    },
+    "works": {
+      "items": {
+        "$ref": "#/$defs/Work"
+      },
+      "title": "Works",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "seed",
+    "duration_scale",
+    "library",
+    "works",
+    "timeline"
+  ],
+  "title": "Scenario",
+  "type": "object"
+}
