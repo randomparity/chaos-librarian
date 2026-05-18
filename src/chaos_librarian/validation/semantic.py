@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
@@ -26,16 +26,23 @@ _Loc = tuple[str | int, ...]
 _RawMapping = Mapping[str, object]
 _Rule = Callable[[_RawMapping, "LineIndex", "IssueCollector"], None]
 
+# Namespace labels used in E_ID_DUPLICATE messages and as control-flow keys
+# (e.g., ``_rule_target_unknown`` filters ``_iter_global_namespaces`` on
+# ``_NS_ASSET_ID``). String literals would silently break that filter on typo.
+_NS_ROOT_ID: Final = "root_id"
+_NS_WORK_ID: Final = "work_id"
+_NS_TIMELINE_ID: Final = "timeline_id"
+_NS_VARIANT_ID: Final = "variant_id"
+_NS_BUNDLE_ID: Final = "bundle_id"
+_NS_ASSET_ID: Final = "asset_id"
+
 
 def _as_mapping(node: object) -> _RawMapping | None:
     """Narrow an ``object`` to ``Mapping[str, object]`` for safe ``.get`` calls.
 
-    Pydantic owns shape-level enforcement (a non-mapping where a mapping is
-    expected fires E_FIELD_TYPE in the shape pass). Returning None here is
-    the rule's way of saying "skip this malformed sub-tree".
-
-    The ``cast`` is needed because ``isinstance`` against a generic alias is
-    erased at runtime; we trust the YAML loader to produce string-keyed maps.
+    Returns None when ``node`` is non-mapping so the rule can skip the malformed
+    sub-tree (Pydantic's shape pass owns the E_FIELD_TYPE report). ``cast`` is
+    needed because ``isinstance`` against a generic alias is erased at runtime.
     """
     if isinstance(node, Mapping):
         return cast("_RawMapping", node)
@@ -47,6 +54,34 @@ def _as_list(node: object) -> list[object] | None:
     if isinstance(node, list):
         return cast("list[object]", node)
     return None
+
+
+def _list_at_path(raw: _RawMapping, path_parts: tuple[str, ...]) -> list[object] | None:
+    """Walk ``path_parts`` from ``raw`` and return the list at the end, or None."""
+    node: object = raw
+    for part in path_parts:
+        parent = _as_mapping(node)
+        if parent is None:
+            return None
+        node = parent.get(part)
+    return _as_list(node)
+
+
+def _iter_timeline_events(raw: _RawMapping) -> Iterator[tuple[int, _RawMapping]]:
+    """Yield ``(idx, event)`` for each well-shaped event under ``raw["timeline"]``.
+
+    Centralizes the iterate-and-narrow preamble every timeline-walking rule
+    needs. Malformed events (non-mapping) are skipped silently — the shape
+    pass already reported them.
+    """
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        yield idx, event
 
 
 def run_semantic_pass(
@@ -74,30 +109,30 @@ def _rule_id_duplicate(
     """
     _check_top_level_dups(
         raw=raw,
-        namespace="root_id",
+        namespace=_NS_ROOT_ID,
         path_parts=("library", "roots"),
         line_index=line_index,
         collector=collector,
     )
     _check_top_level_dups(
         raw=raw,
-        namespace="work_id",
+        namespace=_NS_WORK_ID,
         path_parts=("works",),
         line_index=line_index,
         collector=collector,
     )
     _check_top_level_dups(
         raw=raw,
-        namespace="timeline_id",
+        namespace=_NS_TIMELINE_ID,
         path_parts=("timeline",),
         line_index=line_index,
         collector=collector,
     )
 
     seen: dict[str, dict[str, _Loc]] = {
-        "variant_id": {},
-        "bundle_id": {},
-        "asset_id": {},
+        _NS_VARIANT_ID: {},
+        _NS_BUNDLE_ID: {},
+        _NS_ASSET_ID: {},
     }
     for namespace, value, loc in _iter_global_namespaces(raw):
         _record_or_report(
@@ -145,14 +180,14 @@ def _iter_variant(
         return
     v_id = variant.get("id")
     if isinstance(v_id, str):
-        yield "variant_id", v_id, ("works", w_idx, "variants", v_idx, "id")
+        yield _NS_VARIANT_ID, v_id, ("works", w_idx, "variants", v_idx, "id")
     bundle = _as_mapping(variant.get("bundle"))
     if bundle is None:
         return
     b_id = bundle.get("id")
     bundle_path: _Loc = ("works", w_idx, "variants", v_idx, "bundle")
     if isinstance(b_id, str):
-        yield "bundle_id", b_id, (*bundle_path, "id")
+        yield _NS_BUNDLE_ID, b_id, (*bundle_path, "id")
     yield from _iter_bundle_assets(bundle.get("assets"), bundle_path=bundle_path)
 
 
@@ -171,7 +206,7 @@ def _iter_bundle_assets(
             continue
         a_id = asset.get("id")
         if isinstance(a_id, str):
-            yield "asset_id", a_id, (*bundle_path, "assets", a_idx, "id")
+            yield _NS_ASSET_ID, a_id, (*bundle_path, "assets", a_idx, "id")
 
 
 def _check_top_level_dups(
@@ -183,13 +218,7 @@ def _check_top_level_dups(
     collector: IssueCollector,
 ) -> None:
     """Top-level duplicate-id check: walk one list field and report collisions."""
-    node: object = raw
-    for part in path_parts:
-        parent = _as_mapping(node)
-        if parent is None:
-            return
-        node = parent.get(part)
-    items = _as_list(node)
+    items = _list_at_path(raw, path_parts)
     if items is None:
         return
     seen: dict[str, _Loc] = {}
@@ -246,10 +275,7 @@ def _rule_path_duplicate(
     WARNING severity — does not flip ``report.ok``. Authors who genuinely
     want to alias a directory under two ID namespaces can ignore it.
     """
-    library = _as_mapping(raw.get("library"))
-    if library is None:
-        return
-    roots = _as_list(library.get("roots"))
+    roots = _list_at_path(raw, ("library", "roots"))
     if roots is None:
         return
     seen: dict[str, _Loc] = {}
@@ -285,12 +311,7 @@ def _check_duration(
     line_index: LineIndex,
     collector: IssueCollector,
 ) -> None:
-    """Parse one duration string; on failure, emit one E_DURATION_SYNTAX issue.
-
-    Extracted so ``_rule_duration_syntax`` stays under the 8-branch CC limit:
-    the try/except plus the issue construction are the costly bit, and they
-    are identical for both fields we check.
-    """
+    """Parse one duration string; on failure, emit one E_DURATION_SYNTAX issue."""
     try:
         parse_duration(raw_str)
     except DurationParseError as e:
@@ -313,13 +334,7 @@ def _rule_duration_syntax(
     Fields checked: ``timeline[*].at`` (every event) and
     ``slow_copy_start.duration`` (only when ``action == "slow_copy_start"``).
     """
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None:
-            continue
+    for idx, event in _iter_timeline_events(raw):
         at = event.get("at")
         if isinstance(at, str):
             _check_duration(
@@ -358,15 +373,9 @@ def _rule_target_unknown(
     skipped: Pydantic's shape pass owns "the field must exist."
     """
     asset_ids = {
-        value for namespace, value, _ in _iter_global_namespaces(raw) if namespace == "asset_id"
+        value for namespace, value, _ in _iter_global_namespaces(raw) if namespace == _NS_ASSET_ID
     }
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None:
-            continue
+    for idx, event in _iter_timeline_events(raw):
         target = event.get("target")
         if not isinstance(target, str):
             continue
@@ -384,20 +393,16 @@ def _rule_target_unknown(
 
 
 def _index_starts_and_commits(
-    timeline: list[object],
+    raw: _RawMapping,
 ) -> tuple[dict[str, tuple[int, _RawMapping]], list[tuple[int, _RawMapping]]]:
-    """Split a timeline into ``slow_copy_start`` index and commit list.
+    """Split the timeline into ``(starts_by_id, commits)`` for slow-copy rules.
 
-    Extracted from ``_rule_slow_copy_unpaired`` so the rule body stays under
-    the 8-branch CC limit. Returns ``(starts_by_id, commits)`` where each
-    entry preserves the original timeline index for error ``loc`` reporting.
+    Entries preserve the original timeline index for error ``loc`` reporting.
+    Used by Rule 5a (which inspects both) and Rule 5b (which only needs starts).
     """
     starts: dict[str, tuple[int, _RawMapping]] = {}
     commits: list[tuple[int, _RawMapping]] = []
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None:
-            continue
+    for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         ev_id = event.get("id")
         if action == "slow_copy_start" and isinstance(ev_id, str):
@@ -416,23 +421,20 @@ def _report_orphan_starts(
 ) -> None:
     """Emit E_SLOW_COPY_UNPAIRED for any start with zero or >1 matching commits."""
     for sid, count in commits_per_start.items():
-        s_idx, _ = starts[sid]
         if count == 0:
-            collector.add(
-                code=codes.E_SLOW_COPY_UNPAIRED,
-                severity=ValidationSeverity.ERROR,
-                message=f"slow_copy_start {sid!r} has no matching slow_copy_commit",
-                loc=("timeline", s_idx, "id"),
-                line_index=line_index,
-            )
+            message = f"slow_copy_start {sid!r} has no matching slow_copy_commit"
         elif count > 1:
-            collector.add(
-                code=codes.E_SLOW_COPY_UNPAIRED,
-                severity=ValidationSeverity.ERROR,
-                message=f"slow_copy_start {sid!r} has {count} matching commits (expected 1)",
-                loc=("timeline", s_idx, "id"),
-                line_index=line_index,
-            )
+            message = f"slow_copy_start {sid!r} has {count} matching commits (expected 1)"
+        else:
+            continue
+        s_idx, _ = starts[sid]
+        collector.add(
+            code=codes.E_SLOW_COPY_UNPAIRED,
+            severity=ValidationSeverity.ERROR,
+            message=message,
+            loc=("timeline", s_idx, "id"),
+            line_index=line_index,
+        )
 
 
 def _rule_slow_copy_unpaired(
@@ -441,10 +443,7 @@ def _rule_slow_copy_unpaired(
     collector: IssueCollector,
 ) -> None:
     """5a: structural pairing of slow_copy_start <-> slow_copy_commit."""
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
-    starts, commits = _index_starts_and_commits(timeline)
+    starts, commits = _index_starts_and_commits(raw)
     commits_per_start: dict[str, int] = {sid: 0 for sid in starts}
     for c_idx, commit in commits:
         ref = commit.get("for")
@@ -466,19 +465,6 @@ def _rule_slow_copy_unpaired(
         line_index=line_index,
         collector=collector,
     )
-
-
-def _index_starts(timeline: list[object]) -> dict[str, tuple[int, _RawMapping]]:
-    """Index ``slow_copy_start`` events by id; helper for Rule 5b."""
-    starts: dict[str, tuple[int, _RawMapping]] = {}
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None or event.get("action") != "slow_copy_start":
-            continue
-        sid = event.get("id")
-        if isinstance(sid, str):
-            starts[sid] = (idx, event)
-    return starts
 
 
 def _check_pair_timing(
@@ -532,14 +518,8 @@ def _rule_slow_copy_timing(
     otherwise) AND structural pairing holds (Rule 5a already flagged
     orphans). Skipping here prevents double-reporting.
     """
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
-    starts = _index_starts(timeline)
-    for c_idx, event_obj in enumerate(timeline):
-        commit = _as_mapping(event_obj)
-        if commit is None or commit.get("action") != "slow_copy_commit":
-            continue
+    starts, commits = _index_starts_and_commits(raw)
+    for c_idx, commit in commits:
         ref = commit.get("for")
         if not isinstance(ref, str) or ref not in starts:
             continue  # Rule 5a flagged orphan
@@ -574,10 +554,7 @@ def _check_root_paths(
     collector: IssueCollector,
 ) -> None:
     """Containment-check every ``library.roots[*].path``."""
-    library = _as_mapping(raw.get("library"))
-    if library is None:
-        return
-    roots = _as_list(library.get("roots"))
+    roots = _list_at_path(raw, ("library", "roots"))
     if roots is None:
         return
     for idx, root_obj in enumerate(roots):
@@ -600,13 +577,7 @@ def _check_timeline_paths(
     collector: IssueCollector,
 ) -> None:
     """Containment-check every ``to:`` / ``temp_path:`` on timeline events."""
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None:
-            continue
+    for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         if not isinstance(action, str):
             continue
@@ -630,9 +601,7 @@ def _rule_path_containment(
 
     Uses ``contract.paths.resolve_under_library`` against a synthetic
     absolute root. The helper's structural checks (absolute, ``..``,
-    empty) do not require the root to exist on the filesystem. Split
-    into ``_check_root_paths`` / ``_check_timeline_paths`` to stay
-    under the per-function CC limit.
+    empty) do not require the root to exist on the filesystem.
     """
     _check_root_paths(raw, line_index, collector)
     _check_timeline_paths(raw, line_index, collector)
@@ -670,15 +639,9 @@ def _rule_timeline_order(
     Ties are allowed. Pairs where either ``at:`` is unparseable are
     skipped (Rule 3 already flagged the unparseable string).
     """
-    timeline = _as_list(raw.get("timeline"))
-    if timeline is None:
-        return
     last_ns: int | None = None
     last_idx: int = -1
-    for idx, event_obj in enumerate(timeline):
-        event = _as_mapping(event_obj)
-        if event is None:
-            continue
+    for idx, event in _iter_timeline_events(raw):
         at = event.get("at")
         if not isinstance(at, str):
             continue
@@ -698,7 +661,7 @@ def _rule_timeline_order(
         last_idx = idx
 
 
-# ---- Registry -------------------------------------------------------------
+# ---- Rules in declared run order ------------------------------------------
 
 
 _RULES: list[_Rule] = [

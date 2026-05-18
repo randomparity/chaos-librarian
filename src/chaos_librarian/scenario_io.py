@@ -11,6 +11,7 @@ Lines are exposed 1-based (editor convention) even though ruamel reports
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -40,10 +41,10 @@ class ScenarioLoadError(Exception):
 class LineIndex:
     """Maps path tuples to ``(line, column)`` for downstream issue reporting."""
 
-    _data: dict[_PathTuple, tuple[int, int]] = field(default_factory=dict)
+    entries: Mapping[_PathTuple, tuple[int, int]] = field(default_factory=dict)
 
     def lookup(self, loc: _PathTuple) -> tuple[int, int] | None:
-        return self._data.get(loc)
+        return self.entries.get(loc)
 
 
 def load_scenario(path: Path) -> tuple[Any, LineIndex]:
@@ -74,7 +75,7 @@ def load_scenario(path: Path) -> tuple[Any, LineIndex]:
 
     index_data: dict[_PathTuple, tuple[int, int]] = {}
     plain = _walk(loaded, path_so_far=(), index=index_data)
-    return plain, LineIndex(_data=index_data)
+    return plain, LineIndex(entries=index_data)
 
 
 def _walk(

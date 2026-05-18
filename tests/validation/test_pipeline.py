@@ -117,7 +117,7 @@ class TestIssueCollectorLocResolution:
     """
 
     def test_exact_hit(self) -> None:
-        index = LineIndex(_data={("timeline", 3, "at"): (42, 14)})
+        index = LineIndex(entries={("timeline", 3, "at"): (42, 14)})
         collector = IssueCollector()
         collector.add(
             code=codes.E_DURATION_SYNTAX,
@@ -130,7 +130,7 @@ class TestIssueCollectorLocResolution:
         assert collector.issues[0].column == 14
 
     def test_walk_up_one_level(self) -> None:
-        index = LineIndex(_data={("timeline", 3): (40, 4)})
+        index = LineIndex(entries={("timeline", 3): (40, 4)})
         collector = IssueCollector()
         collector.add(
             code=codes.E_DURATION_SYNTAX,

@@ -23,7 +23,7 @@ app = typer.Typer(
 
 
 def _stub(command: str) -> None:
-    typer.echo(f"chaos-librarian {command}: not yet implemented (Sprint 0 stub).", err=True)
+    typer.echo(f"chaos-librarian {command}: not yet implemented.", err=True)
     raise typer.Exit(code=1)
 
 
