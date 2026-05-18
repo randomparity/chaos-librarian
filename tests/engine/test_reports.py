@@ -91,7 +91,13 @@ class TestBuildReportSet:
             target="asset_hd_main",
             delta={"to": "movies-hd/Blazar.mkv"},
         )
-        rs = build_report_set(initial=m, current=m, journal=[entry])
+        non_matching = _atomic_entry(
+            event_id="move_002",
+            action="move_asset",
+            target="asset_other",
+            delta={"to": "movies-hd/Other.mkv"},
+        )
+        rs = build_report_set(initial=m, current=m, journal=[entry, non_matching])
         asset_report = rs.assets[0]
         assert len(asset_report.history) == 1
         assert asset_report.history[0].event_id == "move_001"

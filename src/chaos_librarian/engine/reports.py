@@ -168,7 +168,12 @@ def _build_work_report(work: ManifestWork, initial: Manifest) -> WorkReport:
 
 
 def _build_variant_report(variant: ManifestVariant, initial: Manifest) -> VariantReport:
-    bundle = next(b for b in initial.bundles if b.variant_id == variant.id)
+    bundle = next(
+        (b for b in initial.bundles if b.variant_id == variant.id),
+        None,
+    )
+    if bundle is None:
+        raise ValueError(f"variant {variant.id} has no bundle")
     asset_ids = sorted(a.id for a in initial.assets if a.bundle_id == bundle.id)
     return VariantReport(
         schema_version=1,
