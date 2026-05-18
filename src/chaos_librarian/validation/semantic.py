@@ -335,6 +335,20 @@ def _check_duration(
         )
 
 
+def _try_parse_duration(raw_str: str) -> int | None:
+    """Parse a duration string; return None instead of raising.
+
+    Rules that re-parse a duration string for arithmetic (5b: slow-copy
+    timing, 7: timeline order) need to skip pairs where the input is
+    malformed — Rule 3 has already flagged those with E_DURATION_SYNTAX,
+    and re-reporting them as order/timing failures would be noise.
+    """
+    try:
+        return parse_duration(raw_str)
+    except DurationParseError:
+        return None
+
+
 def _rule_duration_syntax(
     raw: Mapping[str, object],
     line_index: LineIndex,
@@ -506,12 +520,11 @@ def _check_pair_timing(
         return  # Rule 3 / Pydantic flagged
     if not isinstance(start_dur, str) or not isinstance(commit_at, str):
         return  # Rule 3 / Pydantic flagged
-    try:
-        start_at_ns = parse_duration(start_at)
-        start_dur_ns = parse_duration(start_dur)
-        commit_at_ns = parse_duration(commit_at)
-    except DurationParseError:
-        return  # Rule 3 flagged
+    start_at_ns = _try_parse_duration(start_at)
+    start_dur_ns = _try_parse_duration(start_dur)
+    commit_at_ns = _try_parse_duration(commit_at)
+    if start_at_ns is None or start_dur_ns is None or commit_at_ns is None:
+        return  # Rule 3 flagged the unparseable string
     expected = start_at_ns + start_dur_ns
     if commit_at_ns != expected:
         collector.add(
@@ -667,9 +680,10 @@ def _rule_timeline_order(
         at = event.get("at")
         if not isinstance(at, str):
             continue
-        try:
-            at_ns = parse_duration(at)
-        except DurationParseError:
+        at_ns = _try_parse_duration(at)
+        if at_ns is None:
+            # Rule 3 (E_DURATION_SYNTAX) already reported the unparseable
+            # string; don't re-flag it as an order violation here.
             continue
         if last_ns is not None and at_ns < last_ns:
             collector.add(
