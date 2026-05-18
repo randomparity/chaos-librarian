@@ -87,9 +87,7 @@ class TestCompareFixtures:
         assert entry.left_bytes is None
         assert entry.right_bytes == len(b"extra\n")
 
-    def test_sentinel_created_at_difference_trivially_clean_in_plan_only(
-        self, tmp_path: Path
-    ) -> None:
+    def test_plan_only_sentinel_omits_created_at_so_runs_match(self, tmp_path: Path) -> None:
         """Plan-only sentinels omit ``created_at`` so two runs are byte-identical.
 
         WHY: Sprint 4 is plan-only-only. The user spec is explicit that
