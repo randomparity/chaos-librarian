@@ -12,6 +12,9 @@ from typing import Annotated
 
 import typer
 
+from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
+from chaos_librarian.validation import run_validation
+
 app = typer.Typer(
     name="chaos-librarian",
     help="Scenario-driven synthetic media library simulator.",
@@ -42,7 +45,13 @@ def validate(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Validate a scenario file."""
-    _stub("validate")
+    report = run_validation(scenario)
+    if json_output:
+        typer.echo(report.model_dump_json(by_alias=True, exclude_none=True))
+    else:
+        _render_human(report)
+    if not report.ok:
+        raise typer.Exit(code=3)
 
 
 @app.command()
@@ -121,3 +130,28 @@ def clean(
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
     _stub("clean")
+
+
+_SEVERITY_LABEL = {
+    ValidationSeverity.ERROR: "ERROR",
+    ValidationSeverity.WARNING: "WARN ",
+    ValidationSeverity.INFO: "INFO ",
+}
+
+
+def _render_human(report: ValidationReport) -> None:
+    status = "OK" if report.ok else f"FAIL ({len(report.issues)} issues)"
+    typer.echo(f"scenario: {report.scenario_id}")
+    typer.echo(f"status: {status}")
+    if not report.issues:
+        return
+    typer.echo("")
+    for issue in report.issues:
+        label = _SEVERITY_LABEL[issue.severity]
+        location = (
+            f"line {issue.line}:{issue.column}"
+            if issue.line is not None and issue.column is not None
+            else ""
+        )
+        path = issue.path or ""
+        typer.echo(f"{label}  {issue.code:<25} {path:<35} {location:<14} {issue.message}")
