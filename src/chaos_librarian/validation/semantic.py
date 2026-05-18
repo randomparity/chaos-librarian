@@ -339,6 +339,45 @@ def _rule_duration_syntax(
                 )
 
 
+# ---- Rule 4: E_TARGET_UNKNOWN ---------------------------------------------
+
+
+def _rule_target_unknown(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject timeline events whose ``target:`` is not a defined asset id.
+
+    Reuses ``_iter_global_namespaces`` (already walks works→variants→
+    bundle→assets for Rule 1) and filters to the ``asset_id`` namespace —
+    a fresh walker here would duplicate the same shape-skipping logic.
+    Events with no string ``target`` (e.g. ``slow_copy_commit``) are
+    skipped: Pydantic's shape pass owns "the field must exist."
+    """
+    asset_ids = {
+        value for namespace, value, _ in _iter_global_namespaces(raw) if namespace == "asset_id"
+    }
+    timeline = _as_list(raw.get("timeline"))
+    if timeline is None:
+        return
+    for idx, event_obj in enumerate(timeline):
+        event = _as_mapping(event_obj)
+        if event is None:
+            continue
+        target = event.get("target")
+        if not isinstance(target, str):
+            continue
+        if target not in asset_ids:
+            collector.add(
+                code=codes.E_TARGET_UNKNOWN,
+                severity=ValidationSeverity.ERROR,
+                message=f"target asset {target!r} is not defined in any bundle",
+                loc=("timeline", idx, "target"),
+                line_index=line_index,
+            )
+
+
 # ---- Registry (Tasks 7-12 add more rules here) ----------------------------
 
 
@@ -346,4 +385,5 @@ _RULES: list[_Rule] = [
     _rule_id_duplicate,
     _rule_path_duplicate,
     _rule_duration_syntax,
+    _rule_target_unknown,
 ]
