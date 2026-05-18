@@ -141,7 +141,7 @@ class TestStepFixtureJournalCorruption:
             step_fixture(fixture, n_events=1)
         assert excinfo.value.kind == "entry_mismatch"
 
-    def test_duplicated_line_off_boundary(self, tmp_path: Path) -> None:
+    def test_duplicated_line_in_middle_trips_entry_mismatch(self, tmp_path: Path) -> None:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=2)
         journal = fixture / "journal.jsonl"
         lines = journal.read_text().splitlines()
