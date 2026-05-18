@@ -4,12 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     PlanOnlyReplayBundle,
 )
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts, replay_plan_bundle, run_plan
+from chaos_librarian.engine.plan import ReplayIntegrityError
 from chaos_librarian.validation import RunInput, prepare_run_input, run_validation
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -103,3 +106,43 @@ class TestReplayPlanBundle:
         assert replayed.initial_manifest == original.initial_manifest
         assert replayed.current_manifest == original.current_manifest
         assert replayed.journal == original.journal
+
+    def test_replay_uses_recorded_seed_for_seed_random(self) -> None:
+        """``replay_plan_bundle`` reuses ``bundle.resolved_seed`` instead of redrawing.
+
+        WHY: ``seed: random`` scenarios produce a fresh integer at plan time.
+        Without an override, replay would draw a different seed and diverge —
+        ``run_id``, sentinel, replay.json, and trace would no longer match
+        the recorded artifacts. This is Codex adversarial-review finding 1.
+        """
+        run_input, report = _input_and_report("seed-random.yaml")
+        assert report.ok, [i.code for i in report.issues]
+        original = run_plan(run_input=run_input, validation_report=report)
+        replayed = replay_plan_bundle(original.replay_bundle)
+        assert replayed.replay_bundle.resolved_seed == original.replay_bundle.resolved_seed
+        assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
+        assert replayed.replay_bundle == original.replay_bundle
+        assert replayed.journal == original.journal
+
+    def test_replay_raises_on_run_id_mismatch(self) -> None:
+        """Tampered bundles raise ``ReplayIntegrityError`` instead of silently diverging.
+
+        WHY: if ``bundle.resolved_seed`` is mutated but ``bundle.run_id`` is
+        left intact, the recomputed run_id (from content_hash + override seed)
+        no longer agrees with the recorded one. Raising surfaces the
+        corruption before producing artifacts that look authoritative but
+        cannot be matched to the original run.
+        """
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report)
+        tampered = original.replay_bundle.model_copy(
+            update={"resolved_seed": original.replay_bundle.resolved_seed + 1}
+        )
+        with pytest.raises(ReplayIntegrityError) as exc_info:
+            replay_plan_bundle(tampered)
+        message = str(exc_info.value)
+        assert str(tampered.run_id) in message
+        # The recomputed run_id must also be in the message so operators can
+        # see which side of the mismatch came from the recorded bundle vs.
+        # the recomputed value.
+        assert "recomputed" in message.lower() or "computed" in message.lower()

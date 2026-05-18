@@ -55,6 +55,7 @@ def run_plan(
     *,
     run_input: RunInput,
     validation_report: ValidationReport,
+    resolved_seed_override: int | None = None,
 ) -> PlanArtifacts:
     """Walk the scenario carried by ``run_input`` and assemble every plan-only artifact.
 
@@ -65,12 +66,18 @@ def run_plan(
         validation_report: The Sprint 1 report; serialized into the fixture
             as ``validation.json``. Must be ``ok=True`` if the caller wants
             a real fixture, but ``run_plan`` does not re-check.
+        resolved_seed_override: Internal-only. When set, skip
+            ``resolve_seed`` and use this value instead. ``replay_plan_bundle``
+            passes ``bundle.resolved_seed`` so ``seed: random`` scenarios
+            reproduce the recorded seed instead of redrawing.
 
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
     parsed = Scenario.model_validate(run_input.raw_data)
-    resolved_seed = resolve_seed(parsed.seed)
+    resolved_seed = (
+        resolved_seed_override if resolved_seed_override is not None else resolve_seed(parsed.seed)
+    )
     recorder = TraceRecorder()
     ids = IdAllocator(recorder)
 
@@ -123,6 +130,16 @@ def run_plan(
     )
 
 
+class ReplayIntegrityError(RuntimeError):
+    """Raised when a replay bundle's recorded fields disagree with the recomputed run.
+
+    Catches tampered or corrupted bundles where ``scenario`` text and
+    ``resolved_seed`` no longer agree with the recorded ``run_id``: replaying
+    such a bundle would silently produce artifacts that look authoritative
+    but cannot be matched to the original run.
+    """
+
+
 def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     """Re-run ``plan`` from a recorded plan-only bundle.
 
@@ -131,6 +148,12 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     record identical to the original run on success. Sprint 4 wraps this
     helper in the public ``chaos-librarian replay`` CLI command and adds
     divergence reporting (exit 6).
+
+    Raises:
+        ReplayIntegrityError: if the recomputed ``run_id`` does not match
+            ``bundle.run_id`` — i.e. the bundle's ``scenario`` text or
+            ``resolved_seed`` has been tampered with relative to the
+            recorded ``run_id``.
     """
     yaml_bytes = bundle.scenario.encode("utf-8")
     run_input = prepare_run_input_from_bytes(
@@ -141,4 +164,16 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     if not report.ok:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
         raise RuntimeError(f"replay scenario re-validation failed: {errors}")
-    return run_plan(run_input=run_input, validation_report=report)
+    artifacts = run_plan(
+        run_input=run_input,
+        validation_report=report,
+        resolved_seed_override=bundle.resolved_seed,
+    )
+    recomputed = artifacts.replay_bundle.run_id
+    if recomputed != bundle.run_id:
+        raise ReplayIntegrityError(
+            f"replay bundle integrity check failed: recorded run_id {bundle.run_id} "
+            f"does not match recomputed run_id {recomputed} "
+            f"(bundle.scenario or bundle.resolved_seed has been modified)"
+        )
+    return artifacts

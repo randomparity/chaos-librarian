@@ -99,3 +99,42 @@ def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
         "journal.jsonl",
     ]:
         assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name
+
+
+def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
+    """``seed: random`` scenarios replay byte-for-byte from the recorded bundle.
+
+    WHY: a ``seed: random`` scenario draws a fresh seed at plan time, so
+    two ``plan`` invocations of the same scenario would diverge. Replay
+    must reuse the recorded ``resolved_seed`` to reproduce the original
+    artifacts. This is the end-to-end proof for Codex adversarial-review
+    finding 1; the unit-level equivalent lives in test_plan.py.
+    """
+    out_original = tmp_path / "run-original"
+    out_replay = tmp_path / "run-replay"
+
+    result = runner.invoke(
+        app,
+        [
+            "plan",
+            str(FIXTURE_DIR / "seed-random.yaml"),
+            "--out",
+            str(out_original),
+        ],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+
+    bundle = PlanOnlyReplayBundle.model_validate_json((out_original / "replay.json").read_text())
+    replayed = replay_plan_bundle(bundle)
+    write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
+
+    for name in [
+        ".chaos-librarian-run",
+        "manifest.current.json",
+        "manifest.initial.json",
+        "replay.json",
+        "scenario.yaml",
+        "validation.json",
+        "journal.jsonl",
+    ]:
+        assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name

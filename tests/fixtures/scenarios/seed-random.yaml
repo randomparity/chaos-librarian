@@ -1,0 +1,30 @@
+schema_version: 1
+scenario_id: seed-random
+seed: random
+duration_scale: short
+
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+
+works:
+  - id: w0
+    title: Random Seed Probe
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+
+timeline:
+  - id: e1
+    at: 1s
+    action: rename_file
+    target: a0
+    to: movies-hd/Renamed.mkv
