@@ -110,6 +110,9 @@ def run_validation(scenario_path: Path) -> ValidationReport:
 
 
 def _assemble_report(scenario_id: str, collector: IssueCollector) -> ValidationReport:
+    # ``line`` / ``column`` are ``None`` for un-located issues (E_YAML_PARSE,
+    # E_TOP_LEVEL_NOT_MAPPING) — coercing to 0 sorts them ahead of every
+    # located issue, so file-wide problems appear at the top of the report.
     issues_sorted = sorted(
         collector.issues,
         key=lambda i: (i.line or 0, i.column or 0, i.code),

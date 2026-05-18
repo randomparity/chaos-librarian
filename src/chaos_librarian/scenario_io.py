@@ -116,17 +116,34 @@ def _walk_seq(
 ) -> list[Any]:
     """Convert a CommentedSeq to a plain list, recording each item's position."""
     result: list[Any] = []
+    lc_data = getattr(node, "lc", None)
     for idx, value in enumerate(node):
         child_path = (*path_so_far, idx)
-        # LineCol.item returns None for empty seqs (TypeError on unpack);
-        # KeyError when idx is absent; AttributeError for lc-less subclasses.
-        try:
-            line, col = node.lc.item(idx)
-            index[child_path] = (line + 1, col)
-        except (AttributeError, KeyError, TypeError):
-            pass
+        position = _seq_item_position(lc_data, idx)
+        if position is not None:
+            index[child_path] = position
         result.append(_walk(value, child_path, index))
     return result
+
+
+def _seq_item_position(
+    lc_data: Any,
+    idx: int,
+) -> tuple[int, int] | None:
+    """Return 1-based ``(line, column)`` for sequence item ``idx``, if known.
+
+    ``ruamel`` reports positions through ``CommentedSeq.lc.item``; for
+    empty sequences or subclasses without an ``lc`` attribute the call
+    raises. We treat any of those cases as "position unknown" — the
+    caller falls back to the parent path's position when looking up.
+    """
+    if lc_data is None:
+        return None
+    try:
+        line, col = lc_data.item(idx)
+    except (AttributeError, KeyError, TypeError):
+        return None
+    return line + 1, col
 
 
 def _yaml_error_position(error: YAMLError) -> tuple[int | None, int | None]:
