@@ -177,7 +177,7 @@ previous event. Events with the same `at:` value are applied in declared order.
 The journal records both `logical_time_ns` (integer) and, in wall-clock and
 materialize modes, `wall_clock_time` (RFC 3339 string). JSON output always
 includes precise integer nanoseconds for agent consumers; human-readable
-output formats the same value as `1m30.250s`.
+output formats the same value as `1m30s250ms`.
 
 ## CLI Contract
 
