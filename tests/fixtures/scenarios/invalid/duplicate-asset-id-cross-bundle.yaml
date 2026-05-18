@@ -1,0 +1,32 @@
+# expected: E_ID_DUPLICATE
+schema_version: 1
+scenario_id: bad
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+works:
+  - id: w
+    title: t
+    variants:
+      - id: v1
+        label: l1
+        bundle:
+          id: b1
+          assets:
+            - id: main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+      - id: v2
+        label: l2
+        bundle:
+          id: b2
+          assets:
+            - id: main  # collides with b1's asset id across bundles
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline: []

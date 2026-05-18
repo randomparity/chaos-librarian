@@ -1,0 +1,28 @@
+# expected: E_PATH_CONTAINMENT
+schema_version: 1
+scenario_id: bad
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+works:
+  - id: w
+    title: t
+    variants:
+      - id: v
+        label: l
+        bundle:
+          id: b
+          assets:
+            - id: a
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: e1
+    at: 1s
+    action: rename_file
+    target: a
+    to: ../../etc/passwd
