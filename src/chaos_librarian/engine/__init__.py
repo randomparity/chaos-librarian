@@ -6,6 +6,11 @@ are implementation detail.
 
 from __future__ import annotations
 
+from chaos_librarian.engine.diff import (
+    FixtureDiff,
+    FixtureFileDiff,
+    compare_fixtures,
+)
 from chaos_librarian.engine.plan import (
     PlanArtifacts,
     ReplayIntegrityError,
@@ -22,6 +27,8 @@ from chaos_librarian.engine.step import (
 )
 
 __all__ = [
+    "FixtureDiff",
+    "FixtureFileDiff",
     "JournalCorruptError",
     "PlanArtifacts",
     "ReplayIntegrityError",
@@ -30,6 +37,7 @@ __all__ = [
     "SentinelInvalidError",
     "StepResult",
     "build_report_set",
+    "compare_fixtures",
     "replay_plan_bundle",
     "run_plan",
     "step_fixture",
