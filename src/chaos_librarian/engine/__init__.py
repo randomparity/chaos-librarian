@@ -6,6 +6,6 @@ are implementation detail.
 
 from __future__ import annotations
 
-from chaos_librarian.engine.plan import PlanArtifacts, run_plan
+from chaos_librarian.engine.plan import PlanArtifacts, replay_plan_bundle, run_plan
 
-__all__ = ["PlanArtifacts", "run_plan"]
+__all__ = ["PlanArtifacts", "replay_plan_bundle", "run_plan"]
