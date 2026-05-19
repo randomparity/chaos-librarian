@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "ReadyFor": {
+      "additionalProperties": false,
+      "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nSprint 5 only consults ``materialize_static``. The other two flags are\npopulated so adapter authors can skip Sprint 6/7 tests cleanly.",
+      "properties": {
+        "materialize_filesystem_mutations": {
+          "title": "Materialize Filesystem Mutations",
+          "type": "boolean"
+        },
+        "materialize_media_mutations": {
+          "title": "Materialize Media Mutations",
+          "type": "boolean"
+        },
+        "materialize_static": {
+          "title": "Materialize Static",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "materialize_static",
+        "materialize_filesystem_mutations",
+        "materialize_media_mutations"
+      ],
+      "title": "ReadyFor",
+      "type": "object"
+    },
+    "ToolStatus": {
+      "additionalProperties": false,
+      "description": "Detection outcome for one external tool.",
+      "properties": {
+        "found": {
+          "title": "Found",
+          "type": "boolean"
+        },
+        "meets_minimum": {
+          "title": "Meets Minimum",
+          "type": "boolean"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "found",
+        "meets_minimum"
+      ],
+      "title": "ToolStatus",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Full ``capabilities --json`` payload.",
+  "properties": {
+    "ffmpeg": {
+      "$ref": "#/$defs/ToolStatus"
+    },
+    "ffprobe": {
+      "$ref": "#/$defs/ToolStatus"
+    },
+    "mkvtoolnix": {
+      "$ref": "#/$defs/ToolStatus"
+    },
+    "platform": {
+      "title": "Platform",
+      "type": "string"
+    },
+    "ready_for": {
+      "$ref": "#/$defs/ReadyFor"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "ffmpeg",
+    "ffprobe",
+    "mkvtoolnix",
+    "platform",
+    "ready_for"
+  ],
+  "title": "Capabilities",
+  "type": "object"
+}

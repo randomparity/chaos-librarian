@@ -28,10 +28,11 @@
     },
     "MaterializeReplayBundle": {
       "additionalProperties": false,
-      "description": "Replay bundle in materialize or run mode.\n\n``created_at`` and ``toolchain`` are both required (non-null).",
+      "description": "Replay bundle in materialize or run mode.\n\n``applied_events`` is pinned to 0 in Sprint 5 because every materialize\ntimeline is empty; the base class constraint will widen again in Sprint 6.\n``created_at`` and ``toolchain`` are both required (non-null).",
       "properties": {
         "applied_events": {
-          "minimum": 0,
+          "const": 0,
+          "default": 0,
           "title": "Applied Events",
           "type": "integer"
         },
@@ -96,16 +97,12 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 2,
+          "const": 3,
           "title": "Schema Version",
           "type": "integer"
         },
         "toolchain": {
-          "additionalProperties": {
-            "type": "string"
-          },
-          "title": "Toolchain",
-          "type": "object"
+          "$ref": "#/$defs/ToolchainInfo"
         }
       },
       "required": [
@@ -114,7 +111,6 @@
         "scenario",
         "run_id",
         "resolved_seed",
-        "applied_events",
         "journal_digest",
         "execution_mode",
         "created_at",
@@ -217,7 +213,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 2,
+          "const": 3,
           "title": "Schema Version",
           "type": "integer"
         }
@@ -258,6 +254,50 @@
         "kind"
       ],
       "title": "RngTraceEntry",
+      "type": "object"
+    },
+    "ToolchainInfo": {
+      "additionalProperties": false,
+      "description": "Versions of the external tools used during materialization.\n\nShared with ``MaterializeReplayBundle`` so consumers see one shape.\nEvery field is optional because a tool may be missing on a system that\nnevertheless succeeded at static materialize (mkvtoolnix in Sprint 5).",
+      "properties": {
+        "ffmpeg": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ffmpeg"
+        },
+        "ffprobe": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ffprobe"
+        },
+        "mkvtoolnix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mkvtoolnix"
+        }
+      },
+      "title": "ToolchainInfo",
       "type": "object"
     }
   },

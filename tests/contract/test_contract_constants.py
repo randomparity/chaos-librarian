@@ -5,6 +5,9 @@ from __future__ import annotations
 import uuid
 
 from chaos_librarian.contract import (
+    ASSET_REPORT_SCHEMA_VERSION,
+    BUNDLE_REPORT_SCHEMA_VERSION,
+    CAPABILITIES_SCHEMA_VERSION,
     CHAOS_LIBRARIAN_NAMESPACE_UUID,
     JOURNAL_SCHEMA_VERSION,
     MANIFEST_SCHEMA_VERSION,
@@ -13,6 +16,8 @@ from chaos_librarian.contract import (
     RUN_SENTINEL_SCHEMA_VERSION,
     SCENARIO_SCHEMA_VERSION,
     VALIDATION_SCHEMA_VERSION,
+    VARIANT_REPORT_SCHEMA_VERSION,
+    WORK_REPORT_SCHEMA_VERSION,
 )
 
 
@@ -27,12 +32,17 @@ def test_namespace_uuid_is_v5() -> None:
 
 def test_all_schema_versions_are_positive_integers() -> None:
     versions = [
-        SCENARIO_SCHEMA_VERSION,
-        MANIFEST_SCHEMA_VERSION,
+        ASSET_REPORT_SCHEMA_VERSION,
+        BUNDLE_REPORT_SCHEMA_VERSION,
+        CAPABILITIES_SCHEMA_VERSION,
         JOURNAL_SCHEMA_VERSION,
-        REPLAY_BUNDLE_SCHEMA_VERSION,
-        VALIDATION_SCHEMA_VERSION,
+        MANIFEST_SCHEMA_VERSION,
         MATERIALIZATION_SCHEMA_VERSION,
+        REPLAY_BUNDLE_SCHEMA_VERSION,
         RUN_SENTINEL_SCHEMA_VERSION,
+        SCENARIO_SCHEMA_VERSION,
+        VALIDATION_SCHEMA_VERSION,
+        VARIANT_REPORT_SCHEMA_VERSION,
+        WORK_REPORT_SCHEMA_VERSION,
     ]
     assert all(isinstance(v, int) and v >= 1 for v in versions)

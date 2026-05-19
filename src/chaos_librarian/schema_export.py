@@ -15,6 +15,7 @@ from typing import Final
 
 from pydantic import BaseModel, TypeAdapter
 
+from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.journal import JournalEntry  # Annotated union
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
@@ -44,6 +45,7 @@ MODELS: Final[list[tuple[str, object]]] = [
     ("work-report.schema.json", WorkReport),
     ("variant-report.schema.json", VariantReport),
     ("bundle-report.schema.json", BundleReport),
+    ("capabilities.schema.json", Capabilities),
 ]
 
 
