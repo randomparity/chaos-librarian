@@ -61,29 +61,42 @@ class SubtitleSource(enum.StrEnum):
 # ---- Library ----------------------------------------------------------------
 
 
+# Every model in the Scenario subtree below is ``frozen=True`` and uses
+# ``tuple[X, ...]`` for collection fields. Rationale: ``RunInput.scenario``
+# caches one parsed Scenario object across the validation pipeline,
+# ``run_plan``, ``replay_plan_bundle``, and ``materialize_scenario``. A
+# mutation between validation and the engine would silently desync the
+# generated artifacts from the bytes the replay bundle records.
+# ``frozen=True`` blocks attribute reassignment; tuple collection fields
+# block list mutators (``append``/``extend``/index assignment). Together
+# they make the cached subtree effectively immutable. Pydantic coerces
+# YAML/JSON lists into tuples at validation time, so input shape is
+# unchanged.
+
+
 class LibraryRoot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     path: str
 
 
 class Library(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    roots: list[LibraryRoot]
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    roots: tuple[LibraryRoot, ...]
 
 
 # ---- Tracks -----------------------------------------------------------------
 
 
 class VideoTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: VideoSource
     codec: str
     resolution: str
 
 
 class AudioTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: AudioSource = AudioSource.SINE
     codec: str
     channels: str
@@ -91,7 +104,7 @@ class AudioTrack(BaseModel):
 
 
 class SubtitleTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: SubtitleSource = SubtitleSource.GENERATED_SRT
     codec: str
     language: str
@@ -102,41 +115,41 @@ class SubtitleTrack(BaseModel):
 
 
 class Asset(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     role: str
     container: str
     duration_seconds: float
     video: VideoTrack | None = None
-    audio: list[AudioTrack] = Field(default_factory=list)
-    subtitles: list[SubtitleTrack] = Field(default_factory=list)
+    audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
+    subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
 
 
 class Bundle(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
-    assets: list[Asset]
+    assets: tuple[Asset, ...]
 
 
 class Variant(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     label: str
     bundle: Bundle
 
 
 class Work(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     title: str
-    variants: list[Variant]
+    variants: tuple[Variant, ...]
 
 
 # ---- Timeline events --------------------------------------------------------
 
 
 class _TimelineEventBase(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
     id: str
     at: str
 
@@ -221,14 +234,7 @@ TimelineEvent = Annotated[
 
 
 class Scenario(BaseModel):
-    # frozen=True: ``RunInput.scenario`` caches the parsed Scenario and shares
-    # it across the validation pipeline, ``run_plan``, ``replay_plan_bundle``,
-    # and ``materialize_scenario``. A mutation between validation and the
-    # engine would silently produce a fixture whose manifests describe the
-    # mutated scenario while the embedded ``scenario.yaml`` bytes describe
-    # the original. Freezing the top-level model blocks ``scenario.field =
-    # value`` reassignment; deeper list/dict mutation guards are tracked
-    # separately because they would require a wider contract change.
+    # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     schema_version: Literal[2]
@@ -236,5 +242,5 @@ class Scenario(BaseModel):
     seed: int | Literal["random"]
     duration_scale: Literal["short", "normal", "long"]
     library: Library
-    works: list[Work]
-    timeline: list[TimelineEvent]
+    works: tuple[Work, ...]
+    timeline: tuple[TimelineEvent, ...]

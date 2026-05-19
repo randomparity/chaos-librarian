@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import subprocess
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
 
@@ -92,7 +92,7 @@ def _validate_video(video: VideoTrack) -> None:
     _require(video.resolution, _SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
-def _validate_audios(audios: list[AudioTrack]) -> None:
+def _validate_audios(audios: Sequence[AudioTrack]) -> None:
     """Reject any audio track outside the supported matrix."""
     for index, audio in enumerate(audios):
         _require(audio.source, _SUPPORTED_AUDIO_SOURCES, f"audio[{index}].source")
@@ -116,7 +116,7 @@ def _video_input_args(video_input: FFmpegInput) -> list[str]:
     return [*video_input.extra_flags, "-f", "lavfi", "-i", video_input.lavfi]
 
 
-def _audio_input_args(audio_inputs: list[FFmpegInput]) -> list[str]:
+def _audio_input_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
     """Argv slice covering all audio inputs — lavfi mandatory.
 
     Same input-option ordering rule as ``_video_input_args``: extra_flags
@@ -138,8 +138,8 @@ def build_command(
     *,
     video: VideoTrack,
     video_input: FFmpegInput,
-    audios: list[AudioTrack],
-    audio_inputs: list[FFmpegInput],
+    audios: Sequence[AudioTrack],
+    audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
 ) -> list[str]:
     """Build the ffmpeg argv for one asset.

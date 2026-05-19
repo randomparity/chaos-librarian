@@ -122,20 +122,49 @@ class TestRunInputScenarioCache:
         self,
         tmp_path: Path,
     ) -> None:
-        """Mutating the cached Scenario's fields must raise.
+        """Top-level attribute reassignment on the cached Scenario must raise.
 
         WHY: ``RunInput.scenario`` is shared across the validation pipeline,
         ``run_plan``, ``replay_plan_bundle``, and ``materialize_scenario``.
         A reassignment between validation and the engine would silently make
         the engine's output disagree with ``raw_bytes`` (which is what the
-        replay bundle records). The Scenario model is ``frozen=True`` to
-        catch the most common mutation path at the type-system level.
+        replay bundle records). Every model under Scenario is
+        ``frozen=True`` to catch reassignment at the type-system level.
         """
         path = tmp_path / "s.yaml"
         path.write_bytes(self._VALID_BYTES)
         run_input = prepare_run_input(path)
         with pytest.raises(ValidationError):
             run_input.scenario.scenario_id = "tampered"  # type: ignore[misc]
+
+    def test_cached_scenario_subtree_is_deeply_immutable(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Nested attribute and collection mutation on the cached Scenario
+        must also raise.
+
+        WHY: top-level ``frozen=True`` alone would let
+        ``scenario.library.roots[0].path = "tampered"`` or
+        ``scenario.works.append(...)`` slip through and desync engine output
+        from ``raw_bytes``. The contract makes every sub-model
+        ``frozen=True`` and every collection field ``tuple[X, ...]`` so
+        both forms of nested mutation raise.
+        """
+        path = tmp_path / "s.yaml"
+        path.write_bytes(self._VALID_BYTES)
+        run_input = prepare_run_input(path)
+
+        # 1. Nested attribute reassignment on a sub-model.
+        with pytest.raises(ValidationError):
+            run_input.scenario.library.roots[0].path = "tampered"  # type: ignore[misc]
+        # 2. Collection fields are tuples — immutable by Python contract.
+        # ``isinstance(..., tuple)`` is the structural assertion; the
+        # follow-up ``hasattr`` check confirms list mutators are absent.
+        assert isinstance(run_input.scenario.library.roots, tuple)
+        assert isinstance(run_input.scenario.works, tuple)
+        assert isinstance(run_input.scenario.timeline, tuple)
+        assert not hasattr(run_input.scenario.works, "append")
 
     def test_validate_and_plan_parse_scenario_once(
         self,
