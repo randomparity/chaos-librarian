@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final
+from typing import Final, Literal
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import (
@@ -46,7 +46,6 @@ from chaos_librarian.contract.scenario import (
     VideoSource,
     VideoTrack,
 )
-from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts, run_plan
 from chaos_librarian.materializer.capabilities import (
     assert_capable_for_static_materialize,
@@ -118,7 +117,8 @@ class RunContext:
 
     Threaded through synthesis/finalize/cleanup so each helper depends
     on a single immutable object instead of repeating the same 7-9
-    kwargs (issue #12).
+    kwargs (issue #12). The validation report lives on
+    ``plan_artifacts.validation_report`` — no separate field here.
     """
 
     run_input: RunInput
@@ -126,7 +126,6 @@ class RunContext:
     run_id: uuid.UUID
     started_at: datetime
     caps: Capabilities
-    validation_report: ValidationReport
     plan_artifacts: PlanArtifacts
 
 
@@ -171,18 +170,26 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         run_id=uuid.uuid4(),
         started_at=started_at,
         caps=caps,
-        validation_report=validation_report,
         plan_artifacts=plan_artifacts,
     )
-    sentinel_in_progress = RunSentinel(
+    begin_materialize_run(ctx.out_dir, _build_sentinel(ctx, "in_progress"))
+    return _run_synthesis(ctx, scenario)
+
+
+def _build_sentinel(ctx: RunContext, state: Literal["in_progress", "complete"]) -> RunSentinel:
+    """Construct a RunSentinel from the per-run invariants in ``ctx``.
+
+    The fields shared by every sentinel (``run_id``, ``schema_version``,
+    ``created_by``, ``created_at``) live on the context; ``state`` is the
+    only per-call variable.
+    """
+    return RunSentinel(
         run_id=ctx.run_id,
         schema_version=RUN_SENTINEL_SCHEMA_VERSION,
         created_by=_CREATED_BY,
         created_at=ctx.started_at,
-        state="in_progress",
+        state=state,
     )
-    begin_materialize_run(ctx.out_dir, sentinel_in_progress)
-    return _run_synthesis(ctx, scenario)
 
 
 def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
@@ -239,16 +246,11 @@ def _finalize_success(
         caps=ctx.caps,
         created_at=finished_at,
     )
-    sentinel_complete = RunSentinel(
-        run_id=ctx.run_id,
-        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
-        created_by=_CREATED_BY,
-        created_at=ctx.started_at,
-        state="complete",
-    )
     finalize_materialize_run(
         ctx.out_dir,
-        _build_metadata(ctx, materialization_report, replay_bundle, sentinel_complete),
+        _build_metadata(
+            ctx, materialization_report, replay_bundle, _build_sentinel(ctx, "complete")
+        ),
         _build_reports(ctx.plan_artifacts),
     )
     return MaterializeArtifacts(
@@ -592,16 +594,9 @@ def _finalize_failure(
         caps=ctx.caps,
         created_at=finished_at,
     )
-    sentinel_complete = RunSentinel(
-        run_id=ctx.run_id,
-        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
-        created_by=_CREATED_BY,
-        created_at=ctx.started_at,
-        state="complete",
-    )
     cleanup_failed_run(
         ctx.out_dir,
-        _build_metadata(ctx, report, replay_bundle, sentinel_complete),
+        _build_metadata(ctx, report, replay_bundle, _build_sentinel(ctx, "complete")),
     )
 
 
@@ -616,7 +611,7 @@ def _build_metadata(
         initial_manifest=ctx.plan_artifacts.initial_manifest,
         current_manifest=ctx.plan_artifacts.current_manifest,
         journal_entries=ctx.plan_artifacts.journal,
-        validation_report=ctx.validation_report,
+        validation_report=ctx.plan_artifacts.validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
         scenario_yaml_bytes=ctx.run_input.raw_bytes,
