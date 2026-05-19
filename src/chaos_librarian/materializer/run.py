@@ -24,6 +24,7 @@ from chaos_librarian.contract import (
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import (
+    FailureStage,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -599,7 +600,7 @@ def _finalize_failure(
     exit_code = invocation.exit_code if invocation is not None else None
     failure = MaterializationFailure(
         asset_id=getattr(exc, "asset_id", None),
-        stage="ffprobe" if isinstance(exc, ProbeParseError) else "ffmpeg",
+        stage=FailureStage.FFPROBE if isinstance(exc, ProbeParseError) else FailureStage.FFMPEG,
         exit_code=exit_code,
         stderr_tail=str(exc.payload.get("stderr_tail", "")),
         invocation_index=(len(invocations) - 1) if invocations else None,

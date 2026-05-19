@@ -115,7 +115,7 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
         JournalCorruptError: on-disk journal disagrees with the
             regenerated prefix or sits at an off-step-unit-boundary length.
     """
-    _verify_sentinel(run_dir)
+    verify_sentinel(run_dir)
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
     _verify_scenario_integrity(scenario_bytes, bundle)
@@ -222,10 +222,6 @@ def verify_sentinel(run_dir: Path) -> RunSentinel:
         return RunSentinel.model_validate_json(target.read_text())
     except ValidationError as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
-
-
-def _verify_sentinel(run_dir: Path) -> None:
-    verify_sentinel(run_dir)
 
 
 def _verify_scenario_integrity(scenario_bytes: bytes, bundle: PlanOnlyReplayBundle) -> None:

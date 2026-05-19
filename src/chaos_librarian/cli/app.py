@@ -341,7 +341,7 @@ def step(
 ) -> None:
     """Advance a step-mode run by ``--next`` resolved events (default 1)."""
     try:
-        sentinel = _verify_sentinel(run_dir)
+        sentinel = verify_sentinel(run_dir)
     except SentinelInvalidError as exc:
         _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
@@ -573,7 +573,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     Raises:
         SentinelInvalidError: sentinel missing or unparseable.
     """
-    sentinel = _verify_sentinel(run_dir)
+    sentinel = verify_sentinel(run_dir)
 
     bundle = _REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
@@ -624,9 +624,6 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
             "run_id": str(sentinel.run_id),
         },
     }
-
-
-_verify_sentinel = verify_sentinel
 
 
 def _render_inspect_human(summary: dict[str, object]) -> None:
@@ -689,7 +686,7 @@ def clean(
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
     try:
-        sentinel = _verify_sentinel(run_dir)
+        sentinel = verify_sentinel(run_dir)
     except SentinelInvalidError as exc:
         _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc

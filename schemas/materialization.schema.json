@@ -1,5 +1,14 @@
 {
   "$defs": {
+    "FailureStage": {
+      "description": "Subprocess stage that produced a MaterializationFailure.",
+      "enum": [
+        "ffmpeg",
+        "ffprobe"
+      ],
+      "title": "FailureStage",
+      "type": "string"
+    },
     "MaterializationFailure": {
       "additionalProperties": false,
       "description": "Per-failure record.\n\n``asset_id`` is None for non-per-asset stages (e.g. capability\nregression). ``invocation_index`` indexes into ``invocations`` when the\nfailure came from a subprocess call.",
@@ -38,8 +47,7 @@
           "title": "Invocation Index"
         },
         "stage": {
-          "title": "Stage",
-          "type": "string"
+          "$ref": "#/$defs/FailureStage"
         },
         "stderr_tail": {
           "title": "Stderr Tail",
