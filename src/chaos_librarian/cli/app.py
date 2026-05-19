@@ -1,8 +1,6 @@
 """Typer app exposing the chaos-librarian CLI surface.
 
-Sprint 0 freezes the command surface. Every command prints a not-implemented
-notice and exits with code 1. Later sprints replace these stubs with real
-implementations. See docs/specs/chaos-librarian-design.md "CLI Contract".
+See docs/specs/chaos-librarian-design.md "CLI Contract".
 """
 
 from __future__ import annotations
@@ -108,10 +106,10 @@ def validate(
 
 
 def _synthesize_yaml_parse_report(scenario_path: Path, exc: ScenarioLoadError) -> ValidationReport:
-    """Wrap a ScenarioLoadError as the Sprint 1 E_YAML_PARSE report.
+    """Wrap a ScenarioLoadError as the E_YAML_PARSE validation report.
 
-    The byte-binding factory raises now; the CLI maps the exception to the
-    structured report shape Sprint 1 promised for unparseable input.
+    The byte-binding factory raises now; the CLI maps the exception to
+    the structured report shape promised for unparseable input.
     """
     return ValidationReport(
         schema_version=1,
@@ -192,7 +190,7 @@ def materialize(
         raise typer.Exit(code=4) from exc
     except ScenarioValidationError as exc:
         # Mirror ``plan``'s exit code (3) for semantic-validation failures so
-        # downstream agents key off the same convention (Finding 1).
+        # downstream agents key off the same convention.
         _emit_materialize_error(exc, json_output=json_output, run_dir=None)
         raise typer.Exit(code=3) from exc
     except TimelineUnsupportedError as exc:
@@ -354,7 +352,7 @@ def replay(
     if isinstance(parsed_any, MaterializeReplayBundle):
         _emit_step_error(
             "materialize_replay_not_implemented",
-            "materialize replay lands in Sprint 9 (voom-v2 adapter)",
+            "materialize replay is not implemented in this CLI build",
             json_output=json_output,
             extra={"execution_mode": parsed_any.execution_mode.value},
         )
@@ -503,12 +501,12 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
 
     bundle = _REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
-    journal_path = run_dir / "journal.jsonl"
-    journal_entries = (
-        sum(1 for line in journal_path.read_text().splitlines() if line.strip())
-        if journal_path.exists()
-        else 0
-    )
+    try:
+        journal_text = (run_dir / "journal.jsonl").read_text()
+    except FileNotFoundError:
+        journal_entries = 0
+    else:
+        journal_entries = sum(1 for line in journal_text.splitlines() if line.strip())
 
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     run_input = prepare_run_input_from_bytes(

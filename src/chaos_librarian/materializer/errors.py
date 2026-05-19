@@ -15,10 +15,7 @@ from chaos_librarian.contract.validation import ValidationReport
 class MaterializationError(Exception):
     """Base for every materializer-raised error.
 
-    ``error_code`` is declared as a class-level default so subclasses can
-    override it with a more specific code while still allowing the
-    constructor to install an instance-level override (used by callers
-    that need to attach a sub-code without subclassing).
+    ``error_code`` is a class attribute set on each concrete subclass.
     """
 
     error_code: str = "E_MATERIALIZE_UNKNOWN"
@@ -27,14 +24,11 @@ class MaterializationError(Exception):
         self,
         message: str,
         *,
-        error_code: str | None = None,
         asset_id: str | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
     ) -> None:
         super().__init__(message)
-        if error_code is not None:
-            self.error_code = error_code
         self.message = message
         self.asset_id = asset_id
         self.field = field
@@ -42,13 +36,13 @@ class MaterializationError(Exception):
 
 
 class TimelineUnsupportedError(MaterializationError):
-    """Scenario has a non-empty timeline — Sprint 5 rejects."""
+    """Scenario has a non-empty timeline."""
 
     error_code: str = "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
 
 
 class UnsupportedMaterializationError(MaterializationError):
-    """Container/codec/resolution/channels combination outside Sprint 5 matrix."""
+    """Container/codec/resolution/channels combination outside the supported matrix."""
 
     error_code: str = "E_MATERIALIZE_UNSUPPORTED"
 
@@ -63,14 +57,12 @@ class ToolFailedError(MaterializationError):
         message: str,
         *,
         invocation: ToolInvocation,
-        error_code: str | None = None,
         asset_id: str | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
     ) -> None:
         super().__init__(
             message,
-            error_code=error_code,
             asset_id=asset_id,
             field=field,
             payload=payload,
@@ -99,9 +91,9 @@ class CapabilityGateError(MaterializationError):
 class ScenarioValidationError(MaterializationError):
     """Scenario passed YAML parse but failed semantic validation.
 
-    Raised by the orchestrator's pre-allocation gate (Finding 1) so the
-    materialize entry mirrors ``plan``'s validate-before-act behavior. The
-    CLI handler dispatches this to exit 3, matching ``plan``'s convention.
+    Raised by the orchestrator's pre-allocation gate so the materialize
+    entry mirrors ``plan``'s validate-before-act behavior. The CLI handler
+    dispatches this to exit 3, matching ``plan``'s convention.
     """
 
     error_code: str = "E_MATERIALIZE_VALIDATION_FAILED"
@@ -111,14 +103,12 @@ class ScenarioValidationError(MaterializationError):
         message: str,
         *,
         validation_report: ValidationReport,
-        error_code: str | None = None,
         asset_id: str | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
     ) -> None:
         super().__init__(
             message,
-            error_code=error_code,
             asset_id=asset_id,
             field=field,
             payload=payload,

@@ -2,8 +2,8 @@
 
 Runs ``ffprobe -show_format -show_streams -of json`` and maps the result
 into ``ProbedMedia``. Unparseable output raises ``ProbeParseError``.
-Sprint 5 deliberately drops subtitle streams (sidecars are separate
-files; embedded subtitles arrive in Sprint 7).
+Subtitle streams are dropped (sidecars are tracked separately; embedded
+subtitle support is not implemented).
 """
 
 from __future__ import annotations
@@ -90,8 +90,8 @@ def _language_tag(blob: dict[str, object]) -> str | None:
 def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
     """Map one ffprobe stream blob into a ``ProbedStream``.
 
-    Returns ``None`` for subtitle streams (dropped in Sprint 5) and for
-    streams whose ``codec_type`` is unknown.
+    Returns ``None`` for subtitle streams (dropped — see module
+    docstring) and for streams whose ``codec_type`` is unknown.
     """
     codec_type = blob.get("codec_type")
     codec = str(blob.get("codec_name") or "")

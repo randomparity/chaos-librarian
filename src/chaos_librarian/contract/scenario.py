@@ -41,7 +41,7 @@ class VideoSource(enum.StrEnum):
     MANDELBROT = "mandelbrot"
     COLOR_BARS = "color_bars"
     SOLID_COLOR = "solid_color"
-    NOISE = "noise"  # Sprint 6+ in materialize; passes validate today.
+    NOISE = "noise"  # passes validate; not yet supported by materialize
 
 
 class AudioSource(enum.StrEnum):

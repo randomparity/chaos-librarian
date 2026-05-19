@@ -12,11 +12,11 @@ the failure-decorated metadata.
 from __future__ import annotations
 
 import shutil
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
 
-from pydantic import BaseModel
-
+from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
@@ -28,24 +28,14 @@ from chaos_librarian.contract.reports import (
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.writer import (
+    canonical_json,
+    replace_atomic_bytes,
+    replace_atomic_text,
+)
 
 SENTINEL_FILENAME: Final = ".chaos-librarian-run"
-
-
-def _canonical(model: BaseModel) -> str:
-    return model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
-
-
-def _atomic_write_text(target: Path, content: str) -> None:
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text(content)
-    tmp.replace(target)
-
-
-def _atomic_write_bytes(target: Path, content: bytes) -> None:
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_bytes(content)
-    tmp.replace(target)
 
 
 def begin_materialize_run(out_dir: Path, sentinel: RunSentinel) -> None:
@@ -56,7 +46,7 @@ def begin_materialize_run(out_dir: Path, sentinel: RunSentinel) -> None:
     """
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
-    _atomic_write_text(out_dir / SENTINEL_FILENAME, _canonical(sentinel))
+    replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(sentinel))
 
 
 def finalize_materialize_run(
@@ -64,7 +54,7 @@ def finalize_materialize_run(
     *,
     initial_manifest: Manifest,
     current_manifest: Manifest,
-    journal_lines: list[str],
+    journal_entries: Iterable[JournalEntry],
     validation_report: ValidationReport,
     materialization_report: MaterializationReport,
     replay_bundle: MaterializeReplayBundle,
@@ -76,16 +66,16 @@ def finalize_materialize_run(
     bundle_reports: dict[str, BundleReport],
 ) -> None:
     """Write metadata atomically and replace the sentinel with state='complete'."""
-    _atomic_write_bytes(out_dir / "scenario.yaml", scenario_yaml_bytes)
-    _atomic_write_text(out_dir / "manifest.initial.json", _canonical(initial_manifest))
-    _atomic_write_text(out_dir / "manifest.current.json", _canonical(current_manifest))
-    _atomic_write_text(out_dir / "journal.jsonl", "".join(journal_lines))
-    _atomic_write_text(out_dir / "validation.json", _canonical(validation_report))
-    _atomic_write_text(out_dir / "materialization.json", _canonical(materialization_report))
-    _atomic_write_text(out_dir / "replay.json", _canonical(replay_bundle))
+    replace_atomic_bytes(out_dir / "scenario.yaml", scenario_yaml_bytes)
+    replace_atomic_text(out_dir / "manifest.initial.json", canonical_json(initial_manifest))
+    replace_atomic_text(out_dir / "manifest.current.json", canonical_json(current_manifest))
+    replace_atomic_bytes(out_dir / "journal.jsonl", serialize_journal_bytes(journal_entries))
+    replace_atomic_text(out_dir / "validation.json", canonical_json(validation_report))
+    replace_atomic_text(out_dir / "materialization.json", canonical_json(materialization_report))
+    replace_atomic_text(out_dir / "replay.json", canonical_json(replay_bundle))
     _write_reports(out_dir, asset_reports, work_reports, variant_reports, bundle_reports)
     # Sentinel last — the moment readers can trust the dir.
-    _atomic_write_text(out_dir / SENTINEL_FILENAME, _canonical(sentinel))
+    replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(sentinel))
 
 
 def cleanup_failed_run(
@@ -93,7 +83,7 @@ def cleanup_failed_run(
     *,
     initial_manifest: Manifest,
     current_manifest: Manifest,
-    journal_lines: list[str],
+    journal_entries: Iterable[JournalEntry],
     validation_report: ValidationReport,
     materialization_report: MaterializationReport,
     replay_bundle: MaterializeReplayBundle,
@@ -104,32 +94,31 @@ def cleanup_failed_run(
     to ``complete``.
 
     The failure run-dir must be readable by ``inspect`` and removable by
-    ``clean`` (Finding 4). Both commands hard-require ``replay.json`` and
+    ``clean``. Both commands hard-require ``replay.json`` and
     ``manifest.current.json``; emitting them on caught failure keeps the
     failure run-dir uniform with the success run-dir from a tooling
     perspective — ``inspect <failed-run>`` shows the same shape, just with
     ``outcome != "success"``. ``current_manifest`` is the un-augmented
     plan-only manifest (no ``content_hash`` / ``probed`` fields populated).
 
-    Reports under ``reports/`` are deliberately NOT written here: Sprint
-    4's ``build_report_set`` runs over the un-augmented manifest cleanly,
-    but emitting them on a failed run is correctness-neutral and adds
-    complexity. Skip them — the spec's failure-outcome rule only requires
-    the metadata files that ``inspect`` and ``clean`` consume.
+    Reports under ``reports/`` are deliberately NOT written here: emitting
+    them on a failed run is correctness-neutral and adds complexity. Skip
+    them — the spec's failure-outcome rule only requires the metadata
+    files that ``inspect`` and ``clean`` consume.
     """
     library = out_dir / "library"
     if library.exists():
         shutil.rmtree(library)
     library.mkdir()  # empty placeholder so the run-dir shape stays stable
-    _atomic_write_bytes(out_dir / "scenario.yaml", scenario_yaml_bytes)
-    _atomic_write_text(out_dir / "manifest.initial.json", _canonical(initial_manifest))
-    _atomic_write_text(out_dir / "manifest.current.json", _canonical(current_manifest))
-    _atomic_write_text(out_dir / "journal.jsonl", "".join(journal_lines))
-    _atomic_write_text(out_dir / "validation.json", _canonical(validation_report))
-    _atomic_write_text(out_dir / "materialization.json", _canonical(materialization_report))
-    _atomic_write_text(out_dir / "replay.json", _canonical(replay_bundle))
+    replace_atomic_bytes(out_dir / "scenario.yaml", scenario_yaml_bytes)
+    replace_atomic_text(out_dir / "manifest.initial.json", canonical_json(initial_manifest))
+    replace_atomic_text(out_dir / "manifest.current.json", canonical_json(current_manifest))
+    replace_atomic_bytes(out_dir / "journal.jsonl", serialize_journal_bytes(journal_entries))
+    replace_atomic_text(out_dir / "validation.json", canonical_json(validation_report))
+    replace_atomic_text(out_dir / "materialization.json", canonical_json(materialization_report))
+    replace_atomic_text(out_dir / "replay.json", canonical_json(replay_bundle))
     # Sentinel last — the moment readers can trust the dir.
-    _atomic_write_text(out_dir / SENTINEL_FILENAME, _canonical(sentinel))
+    replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(sentinel))
 
 
 def _write_reports(
@@ -143,10 +132,10 @@ def _write_reports(
     for sub in ("assets", "works", "variants", "bundles"):
         (reports_dir / sub).mkdir(parents=True, exist_ok=True)
     for asset_id, report in assets.items():
-        _atomic_write_text(reports_dir / "assets" / f"{asset_id}.json", _canonical(report))
+        replace_atomic_text(reports_dir / "assets" / f"{asset_id}.json", canonical_json(report))
     for work_id, report in works.items():
-        _atomic_write_text(reports_dir / "works" / f"{work_id}.json", _canonical(report))
+        replace_atomic_text(reports_dir / "works" / f"{work_id}.json", canonical_json(report))
     for variant_id, report in variants.items():
-        _atomic_write_text(reports_dir / "variants" / f"{variant_id}.json", _canonical(report))
+        replace_atomic_text(reports_dir / "variants" / f"{variant_id}.json", canonical_json(report))
     for bundle_id, report in bundles.items():
-        _atomic_write_text(reports_dir / "bundles" / f"{bundle_id}.json", _canonical(report))
+        replace_atomic_text(reports_dir / "bundles" / f"{bundle_id}.json", canonical_json(report))

@@ -4,8 +4,9 @@
 output path, returns the argv tuple. Unsupported combinations raise
 ``UnsupportedMaterializationError`` with the exact scenario field name.
 
-``run_ffmpeg`` is the subprocess wrapper. Captures stderr_tail and times
-execution. Never lets ffmpeg inherit stdin.
+``run_ffmpeg`` is the subprocess wrapper. Returns the ``ToolInvocation``
+plus the last 2 KB of stderr (UTF-8 lossy). Never lets ffmpeg inherit
+stdin.
 """
 
 from __future__ import annotations
@@ -65,7 +66,7 @@ def _require(value: object, supported: Iterable[object], field: str) -> None:
     supported_tuple = tuple(supported)
     if value not in supported_tuple:
         raise UnsupportedMaterializationError(
-            f"{field}={value!r} is not supported in Sprint 5",
+            f"{field}={value!r} is not supported",
             field=field,
             payload={"supported": sorted(str(v) for v in supported_tuple)},
         )
@@ -85,21 +86,21 @@ def _resolve_container(output_path: Path) -> str:
 
 
 def _validate_video(video: VideoTrack) -> None:
-    """Reject video tracks outside the Sprint 5 matrix."""
+    """Reject video tracks outside the supported matrix."""
     _require(video.source, _SUPPORTED_VIDEO_SOURCES, "video.source")
     _require(video.codec, _SUPPORTED_VIDEO_CODECS, "video.codec")
     _require(video.resolution, _SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
 def _validate_audios(audios: list[AudioTrack]) -> None:
-    """Reject any audio track outside the Sprint 5 matrix."""
+    """Reject any audio track outside the supported matrix."""
     for index, audio in enumerate(audios):
         _require(audio.source, _SUPPORTED_AUDIO_SOURCES, f"audio[{index}].source")
         _require(audio.codec, _SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
 
 
 def _video_input_args(video_input: FFmpegInput) -> list[str]:
-    """Argv slice for the video input — lavfi is mandatory in Sprint 5.
+    """Argv slice for the video input — lavfi is mandatory.
 
     ``extra_flags`` (e.g. ``-t 2.0``) are emitted BEFORE ``-i`` because
     ffmpeg treats them as per-input options only when they precede the
@@ -149,7 +150,7 @@ def build_command(
     Raises:
         UnsupportedMaterializationError: any element of the (container,
             video source/codec/resolution, audio source/codec) tuple falls
-            outside the Sprint 5 matrix, or an FFmpegInput is missing its
+            outside the supported matrix, or an FFmpegInput is missing its
             lavfi expression.
     """
     _resolve_container(output_path)
@@ -171,17 +172,16 @@ def run_ffmpeg(
     *,
     ffmpeg_version: str,
     timeout_s: float = 60.0,
-) -> ToolInvocation:
-    """Invoke ffmpeg. Returns a ToolInvocation regardless of exit code.
+) -> tuple[ToolInvocation, str]:
+    """Invoke ffmpeg. Returns ``(invocation, stderr_tail)`` regardless of exit code.
 
-    Stderr tail (last 2 KB, UTF-8 lossy) is recorded on the invocation's
-    command list as the final element prefixed with ``__stderr_tail__``
-    so callers can extract it without a second subprocess round-trip.
+    ``stderr_tail`` is the last 2 KB of stderr decoded UTF-8 lossy.
     """
     start = time.monotonic_ns()
     completed = subprocess.run(
         argv,
-        capture_output=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         timeout=timeout_s,
         check=False,
         stdin=subprocess.DEVNULL,
@@ -189,11 +189,11 @@ def run_ffmpeg(
     duration_ns = time.monotonic_ns() - start
     stderr_bytes = completed.stderr or b""
     stderr_tail = stderr_bytes[-2048:].decode("utf-8", errors="replace")
-    command = [*argv, f"__stderr_tail__{stderr_tail}"]
-    return ToolInvocation(
+    invocation = ToolInvocation(
         tool="ffmpeg",
         version=ffmpeg_version,
-        command=command,
+        command=list(argv),
         exit_code=completed.returncode,
         duration_ns=duration_ns,
     )
+    return invocation, stderr_tail

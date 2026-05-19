@@ -2,8 +2,6 @@
 
 Output of ``chaos-librarian capabilities --json``. Materialize re-runs
 the same detection at startup and refuses (exit 4) if the gate regresses.
-See ``docs/superpowers/specs/2026-05-18-sprint-5-design.md`` §"Capability
-Detection".
 """
 
 from __future__ import annotations
@@ -27,8 +25,9 @@ class ToolStatus(BaseModel):
 class ReadyFor(BaseModel):
     """Forward-looking signals — which materialize modes the toolchain supports.
 
-    Sprint 5 only consults ``materialize_static``. The other two flags are
-    populated so adapter authors can skip Sprint 6/7 tests cleanly.
+    The current CLI only consults ``materialize_static``. The other two
+    flags are populated so adapter authors can skip the corresponding
+    mutation-mode tests cleanly.
     """
 
     model_config = ConfigDict(extra="forbid")

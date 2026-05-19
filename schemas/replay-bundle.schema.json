@@ -28,7 +28,7 @@
     },
     "MaterializeReplayBundle": {
       "additionalProperties": false,
-      "description": "Replay bundle in materialize or run mode.\n\n``applied_events`` is pinned to 0 in Sprint 5 because every materialize\ntimeline is empty; the base class constraint will widen again in Sprint 6.\n``created_at`` and ``toolchain`` are both required (non-null).",
+      "description": "Replay bundle in materialize or run mode.\n\n``applied_events`` is currently pinned to 0 because materialize only\naccepts empty timelines; the base class constraint will widen again\nwhen timeline-mutating materialize modes ship. ``created_at`` and\n``toolchain`` are both required (non-null).",
       "properties": {
         "applied_events": {
           "const": 0,
@@ -258,7 +258,7 @@
     },
     "ToolchainInfo": {
       "additionalProperties": false,
-      "description": "Versions of the external tools used during materialization.\n\nShared with ``MaterializeReplayBundle`` so consumers see one shape.\nEvery field is optional because a tool may be missing on a system that\nnevertheless succeeded at static materialize (mkvtoolnix in Sprint 5).",
+      "description": "Versions of the external tools used during materialization.\n\nShared with ``MaterializeReplayBundle`` so consumers see one shape.\nEvery field is optional because a tool may be missing on a system\nthat nevertheless succeeded at static materialize (for example,\nmkvtoolnix is only required for media-mutation modes).",
       "properties": {
         "ffmpeg": {
           "anyOf": [

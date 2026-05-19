@@ -1,4 +1,4 @@
-"""Sprint 3 plan-only engine — public surface.
+"""Plan-only engine — public surface.
 
 Downstream callers (CLI, tests) import from this package; the submodules
 are implementation detail.

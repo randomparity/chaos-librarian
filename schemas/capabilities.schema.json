@@ -2,7 +2,7 @@
   "$defs": {
     "ReadyFor": {
       "additionalProperties": false,
-      "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nSprint 5 only consults ``materialize_static``. The other two flags are\npopulated so adapter authors can skip Sprint 6/7 tests cleanly.",
+      "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nThe current CLI only consults ``materialize_static``. The other two\nflags are populated so adapter authors can skip the corresponding\nmutation-mode tests cleanly.",
       "properties": {
         "materialize_filesystem_mutations": {
           "title": "Materialize Filesystem Mutations",

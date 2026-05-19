@@ -148,7 +148,7 @@
     },
     "ToolchainInfo": {
       "additionalProperties": false,
-      "description": "Versions of the external tools used during materialization.\n\nShared with ``MaterializeReplayBundle`` so consumers see one shape.\nEvery field is optional because a tool may be missing on a system that\nnevertheless succeeded at static materialize (mkvtoolnix in Sprint 5).",
+      "description": "Versions of the external tools used during materialization.\n\nShared with ``MaterializeReplayBundle`` so consumers see one shape.\nEvery field is optional because a tool may be missing on a system\nthat nevertheless succeeded at static materialize (for example,\nmkvtoolnix is only required for media-mutation modes).",
       "properties": {
         "ffmpeg": {
           "anyOf": [

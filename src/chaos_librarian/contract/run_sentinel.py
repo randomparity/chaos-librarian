@@ -28,6 +28,5 @@ class RunSentinel(BaseModel):
     created_at: datetime | None = None
     # ``state`` lets future tooling distinguish a completed run from a
     # partially-written materialize run-dir. Plan-only callers default to
-    # ``complete``; only the (Sprint 5) materializer ever writes
-    # ``in_progress``. See sprint-5 design doc Decision 13 / Finding 2.
+    # ``complete``; only the materializer ever writes ``in_progress``.
     state: Literal["in_progress", "complete"] = "complete"

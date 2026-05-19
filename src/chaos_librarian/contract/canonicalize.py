@@ -7,9 +7,8 @@ Stripped fields:
 - ``versions[].content_hash``, ``versions[].probed``
 - ``sidecars[].content_hash``
 
-Sprint 5 ships this pure helper; Sprint 9's voom-v2 adapter is its first
-cross-toolchain consumer. Plan-only equivalence (same toolchain, same
-seed) is byte-exact and does NOT need canonicalization.
+Plan-only equivalence (same toolchain, same seed) is byte-exact and
+does NOT need canonicalization.
 """
 
 from __future__ import annotations

@@ -1,9 +1,8 @@
 """Materialize orchestrator — the 8-step pipeline.
 
-Lazy run-dir allocation (Finding 3): steps 1-5 run entirely in memory.
-Step 6 is the only filesystem-touching primitive before synthesis. The
-materializer raises the spec's error hierarchy on any failure; the CLI
-handler converts them to exit codes.
+Steps 1-5 run entirely in memory; step 6 is the only filesystem-touching
+primitive before synthesis. The materializer raises the spec's error
+hierarchy on any failure; the CLI handler converts them to exit codes.
 """
 
 from __future__ import annotations
@@ -54,7 +53,6 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts, run_plan
-from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
@@ -122,8 +120,8 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     started_at = datetime.now(UTC)
     run_input = prepare_run_input(scenario_path)
     scenario = Scenario.model_validate(run_input.raw_data)
-    # Step 2 — semantic validation (Finding 1). Run BEFORE the timeline scope
-    # check so containment/lifecycle errors surface as ScenarioValidationError
+    # Run semantic validation BEFORE the timeline scope check so
+    # containment/lifecycle errors surface as ScenarioValidationError
     # (exit 3) instead of being shadowed by TimelineUnsupportedError when an
     # invalid scenario happens to also declare timeline events.
     validation_report = run_validation(run_input)
@@ -137,7 +135,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         )
     if scenario.timeline:
         raise TimelineUnsupportedError(
-            "Sprint 5 materialize accepts static scenarios only; remove timeline events.",
+            "materialize accepts static scenarios only; remove timeline events.",
             field="timeline",
             payload={"event_count": len(scenario.timeline)},
         )
@@ -203,23 +201,9 @@ def _run_synthesis(
                 probed,
                 sidecar_hashes,
             )
-    except ToolFailedError as exc:
-        invocations.append(exc.invocation)
-        _finalize_failure(
-            exc,
-            out_dir=out_dir,
-            outcome=Outcome.TOOL_FAILED,
-            started_at=started_at,
-            run_id=run_id,
-            caps=caps,
-            invocations=invocations,
-            materialized=materialized,
-            run_input=run_input,
-            validation_report=validation_report,
-            plan_artifacts=plan_artifacts,
-        )
-        raise
-    except ProbeParseError as exc:
+    except (ToolFailedError, ProbeParseError) as exc:
+        if isinstance(exc, ToolFailedError):
+            invocations.append(exc.invocation)
         _finalize_failure(
             exc,
             out_dir=out_dir,
@@ -285,13 +269,12 @@ def _finalize_success(
         created_at=started_at,
         state="complete",
     )
-    journal_lines = _journal_to_lines(plan_artifacts)
     asset_reports, work_reports, variant_reports, bundle_reports = _reports_as_dicts(plan_artifacts)
     finalize_materialize_run(
         out_dir,
         initial_manifest=plan_artifacts.initial_manifest,
         current_manifest=plan_artifacts.current_manifest,
-        journal_lines=journal_lines,
+        journal_entries=plan_artifacts.journal,
         validation_report=validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
@@ -317,21 +300,21 @@ def _preflight_asset(
 ) -> None:
     """Run build_command in a dry mode — raises UnsupportedMaterializationError fast.
 
-    Subtitle checks are inline (Finding 2): Sprint 5 supports exactly one
-    combination — ``codec=srt, source=generated_srt, mode=sidecar``. Without
-    these gates, ``mode=embedded`` or ``codec=ass`` would fall through and
-    the materialize "success" would silently drop the requested subtitles.
+    Subtitle checks are inline: only ``codec=srt, source=generated_srt,
+    mode=sidecar`` is supported. Without these gates, ``mode=embedded`` or
+    ``codec=ass`` would fall through and the materialize "success" would
+    silently drop the requested subtitles.
     """
     if video is None:
         raise UnsupportedMaterializationError(
-            "Sprint 5 requires every asset to declare a video track.",
+            "every asset must declare a video track.",
             field="video",
             payload={},
         )
     video_recipe = _VIDEO_RECIPES.get(video.source)
     if video_recipe is None:
         raise UnsupportedMaterializationError(
-            f"video source {video.source!r} not supported in Sprint 5",
+            f"video source {video.source!r} not supported",
             field="video.source",
             payload={"supported": sorted(s.value for s in _VIDEO_RECIPES)},
         )
@@ -355,7 +338,7 @@ def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
         recipe = _AUDIO_RECIPES.get(audio.source)
         if recipe is None:
             raise UnsupportedMaterializationError(
-                f"audio source {audio.source!r} not supported in Sprint 5",
+                f"audio source {audio.source!r} not supported",
                 field="audio.source",
                 payload={"supported": sorted(s.value for s in _AUDIO_RECIPES)},
             )
@@ -364,24 +347,23 @@ def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
 
 
 def _preflight_subtitles(subtitles: list[SubtitleTrack]) -> None:
-    """Sprint 5 subtitle matrix (Finding 2): SRT + generated + sidecar only."""
+    """Subtitle matrix: SRT + generated + sidecar only."""
     for index, sub in enumerate(subtitles):
         if sub.codec != "srt":
             raise UnsupportedMaterializationError(
-                f"subtitle codec {sub.codec!r} not supported in Sprint 5",
+                f"subtitle codec {sub.codec!r} not supported",
                 field=f"subtitle[{index}].codec",
                 payload={"supported": ["srt"]},
             )
         if sub.source is not SubtitleSource.GENERATED_SRT:
             raise UnsupportedMaterializationError(
-                f"subtitle source {sub.source!r} not supported in Sprint 5",
+                f"subtitle source {sub.source!r} not supported",
                 field=f"subtitle[{index}].source",
                 payload={"supported": [SubtitleSource.GENERATED_SRT.value]},
             )
         if sub.mode != "sidecar":
             raise UnsupportedMaterializationError(
-                f"subtitle mode {sub.mode!r} not supported in Sprint 5 "
-                "(embedded lands in Sprint 7)",
+                f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",
                 payload={"supported": ["sidecar"]},
             )
@@ -410,14 +392,13 @@ def _materialize_one_asset(
 
     Returns a 4-tuple of (ffmpeg invocation, materialized asset record,
     probed-media result for the produced file, sidecar hashes keyed by
-    ``(asset_id, language)``). Returning probed (Finding 5) lets the
-    orchestrator stop re-probing the wrong path; returning sidecar_hashes
-    (Finding 3) lets ``_augment_manifest`` populate
-    ``ManifestSidecar.content_hash``.
+    ``(asset_id, language)``). Returning probed lets the orchestrator
+    avoid re-probing; returning sidecar_hashes lets ``_augment_manifest``
+    populate ``ManifestSidecar.content_hash``.
     """
     if asset.video is None:
         raise UnsupportedMaterializationError(
-            "Sprint 5 requires every asset to declare a video track.",
+            "every asset must declare a video track.",
             field="video",
             asset_id=asset.id,
             payload={},
@@ -446,26 +427,27 @@ def _materialize_one_asset(
         audio_inputs=audio_inputs,
         output_path=output_path,
     )
-    invocation = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
     if invocation.exit_code != 0:
         raise ToolFailedError(
             f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
             asset_id=asset.id,
             field=None,
             payload={
-                "stderr_tail": _extract_stderr_tail(invocation),
+                "stderr_tail": stderr_tail,
                 "exit_code": invocation.exit_code,
             },
             invocation=invocation,
         )
     sidecar_hashes = _write_sidecars(asset, library_dir, seed)
     probed = probe_file(output_path)
-    content_hash = "sha256:" + hashlib.sha256(output_path.read_bytes()).hexdigest()
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
     materialized_asset = MaterializedAsset(
         asset_id=asset.id,
         location_path=str(output_path.relative_to(out_dir)),
         content_hash=content_hash,
-        size_bytes=output_path.stat().st_size,
+        size_bytes=probed.size_bytes,
         duration_seconds=probed.duration_seconds,
         invocation_index=invocation_index,
     )
@@ -475,9 +457,9 @@ def _materialize_one_asset(
 def _write_sidecars(asset: Asset, library_dir: Path, seed: int) -> dict[tuple[str, str], str]:
     """Write each declared SRT sidecar and return its sha256 hash.
 
-    Preflight already rejected non-sidecar modes (Finding 2), so every
-    subtitle here is sidecar; hash the bytes so ``_augment_manifest`` can
-    populate ``ManifestSidecar.content_hash`` (Finding 3).
+    Preflight already rejected non-sidecar modes, so every subtitle here
+    is sidecar; hash the bytes so ``_augment_manifest`` can populate
+    ``ManifestSidecar.content_hash``.
     """
     sidecar_hashes: dict[tuple[str, str], str] = {}
     for sub in asset.subtitles:
@@ -490,13 +472,6 @@ def _write_sidecars(asset: Asset, library_dir: Path, seed: int) -> dict[tuple[st
     return sidecar_hashes
 
 
-def _extract_stderr_tail(invocation: ToolInvocation) -> str:
-    for token in invocation.command:
-        if token.startswith("__stderr_tail__"):
-            return token[len("__stderr_tail__") :]
-    return ""
-
-
 def _augment_manifest(
     manifest: Manifest,
     asset: Asset,
@@ -507,19 +482,16 @@ def _augment_manifest(
     """Stamp ``content_hash`` + ``probed`` onto the version record and
     append/update ``ManifestSidecar`` rows for materialized sidecars.
 
-    The Sprint 1 engine does not pre-populate sidecars from
-    ``scenario.subtitles`` (sidecars there are added only via
-    ``create_sidecar`` timeline events). Sprint 5 must reflect the
-    materialized sidecars in the manifest so consumers see the bytes
-    they were promised; we append one ``ManifestSidecar`` per materialized
-    language with a deterministic id derived from the asset and language.
+    The engine does not pre-populate sidecars from ``scenario.subtitles``
+    (sidecars there are added only via ``create_sidecar`` timeline events).
+    Materialize must reflect the materialized sidecars in the manifest so
+    consumers see the bytes they were promised; we append one
+    ``ManifestSidecar`` per materialized language with a deterministic id
+    derived from the asset and language.
 
-    Finding 3: every materialized sidecar's bytes are hashed at write time
-    and surfaced here.
-
-    Finding 5: ``probed`` is passed in by ``_materialize_one_asset``
-    (which already ran ffprobe on the absolute output path). Re-probing
-    via ``probe_file(Path(materialized.location_path))`` would dispatch
+    ``probed`` is passed in by ``_materialize_one_asset`` (which already
+    ran ffprobe on the absolute output path). Re-probing via
+    ``probe_file(Path(materialized.location_path))`` would dispatch
     against a run-dir-relative string and either miss the file or resolve
     against an unrelated local ``library/`` from the CLI cwd.
     """
@@ -628,11 +600,11 @@ def _finalize_failure(
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
-    Finding 4: the failed run-dir must remain readable by ``inspect`` and
-    removable by ``clean``. Both commands hard-require ``replay.json``;
-    ``inspect`` additionally hard-requires ``manifest.current.json``. The
-    un-augmented plan-only manifest from ``plan_artifacts`` is correct
-    here — synthesis aborted, so no version has ``content_hash``/``probed``.
+    The failed run-dir must remain readable by ``inspect`` and removable
+    by ``clean``. Both commands hard-require ``replay.json``; ``inspect``
+    additionally hard-requires ``manifest.current.json``. The un-augmented
+    plan-only manifest from ``plan_artifacts`` is correct here —
+    synthesis aborted, so no version has ``content_hash``/``probed``.
     """
     finished_at = datetime.now(UTC)
     invocation = getattr(exc, "invocation", None)
@@ -672,27 +644,13 @@ def _finalize_failure(
         out_dir,
         initial_manifest=plan_artifacts.initial_manifest,
         current_manifest=plan_artifacts.current_manifest,
-        journal_lines=_journal_to_lines(plan_artifacts),
+        journal_entries=plan_artifacts.journal,
         validation_report=validation_report,
         materialization_report=report,
         replay_bundle=replay_bundle,
         scenario_yaml_bytes=run_input.raw_bytes,
         sentinel=sentinel_complete,
     )
-
-
-def _journal_to_lines(plan_artifacts: PlanArtifacts) -> list[str]:
-    """Serialize the engine's tuple of journal entries to writer-compatible lines.
-
-    The writer concatenates ``journal_lines`` directly into ``journal.jsonl``,
-    so each element is ``"<json>\\n"``. The bytes are byte-identical to
-    ``serialize_journal_bytes`` — using that helper keeps the digest in
-    ``replay_bundle.journal_digest`` consistent with the file on disk.
-    """
-    raw = serialize_journal_bytes(plan_artifacts.journal)
-    if not raw:
-        return []
-    return [line + "\n" for line in raw.decode("utf-8").splitlines()]
 
 
 def _reports_as_dicts(

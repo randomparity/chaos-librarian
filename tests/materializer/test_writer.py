@@ -124,7 +124,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         out_dir,
         initial_manifest=manifest,
         current_manifest=manifest,
-        journal_lines=[],
+        journal_entries=(),
         validation_report=validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,

@@ -53,17 +53,18 @@ def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
     def fake_run(
         argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0
-    ) -> ToolInvocation:
+    ) -> tuple[ToolInvocation, str]:
         del timeout_s
         output = Path(argv[-1])
         output.write_bytes(b"x")
-        return ToolInvocation(
+        invocation = ToolInvocation(
             tool="ffmpeg",
             version=ffmpeg_version,
             command=argv,
             exit_code=0,
             duration_ns=1_000_000,
         )
+        return invocation, ""
 
     def fake_probe(_path: Path) -> ProbedMedia:
         return ProbedMedia(
@@ -115,15 +116,16 @@ def test_orchestrator_records_ffmpeg_failure_and_wipes_library(
 
     def fake_run(
         argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0
-    ) -> ToolInvocation:
+    ) -> tuple[ToolInvocation, str]:
         del timeout_s
-        return ToolInvocation(
+        invocation = ToolInvocation(
             tool="ffmpeg",
             version=ffmpeg_version,
             command=argv,
             exit_code=1,
             duration_ns=500_000,
         )
+        return invocation, "ffmpeg simulated failure"
 
     def fail_probe(_path: Path) -> ProbedMedia:
         pytest.fail("probe should not be called")
@@ -224,17 +226,18 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
     def fake_run(
         argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0
-    ) -> ToolInvocation:
+    ) -> tuple[ToolInvocation, str]:
         del timeout_s
         output = Path(argv[-1])
         output.write_bytes(b"x")
-        return ToolInvocation(
+        invocation = ToolInvocation(
             tool="ffmpeg",
             version=ffmpeg_version,
             command=argv,
             exit_code=0,
             duration_ns=1_000_000,
         )
+        return invocation, ""
 
     calls: list[Path] = []
 

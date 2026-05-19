@@ -45,9 +45,8 @@ def test_base_error_holds_payload():
     """WHY: every error carries the structured payload the CLI emits as
     --json stdout; missing fields default to None so the payload shape is
     consistent across error types."""
-    err = MaterializationError(
+    err = UnsupportedMaterializationError(
         message="x",
-        error_code="E_MATERIALIZE_UNSUPPORTED",
         asset_id="a0",
         field="audio[0].codec",
         payload={"supported": ["aac"]},

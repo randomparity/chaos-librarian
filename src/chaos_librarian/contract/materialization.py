@@ -1,9 +1,8 @@
 """Materialization report schema (v2).
 
-Filled out for Sprint 5: started_at/finished_at, platform, structured
-ToolchainInfo, per-asset MaterializedAsset records, per-failure
-MaterializationFailure records, and an Outcome enum that includes
-``success`` (Sprint 0 used the absence of failures as the success signal).
+Carries started_at/finished_at, platform, structured ToolchainInfo,
+per-asset MaterializedAsset records, per-failure MaterializationFailure
+records, and an Outcome enum that includes an explicit ``success`` signal.
 """
 
 from __future__ import annotations
@@ -35,8 +34,9 @@ class ToolchainInfo(BaseModel):
     """Versions of the external tools used during materialization.
 
     Shared with ``MaterializeReplayBundle`` so consumers see one shape.
-    Every field is optional because a tool may be missing on a system that
-    nevertheless succeeded at static materialize (mkvtoolnix in Sprint 5).
+    Every field is optional because a tool may be missing on a system
+    that nevertheless succeeded at static materialize (for example,
+    mkvtoolnix is only required for media-mutation modes).
     """
 
     model_config = ConfigDict(extra="forbid")
