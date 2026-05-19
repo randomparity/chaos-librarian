@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import (
@@ -24,6 +24,7 @@ from chaos_librarian.contract import (
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import (
+    FailureStage,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -35,12 +36,13 @@ from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     MaterializeReplayBundle,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.contract.scenario import (
     Asset,
     AudioSource,
     AudioTrack,
     Scenario,
+    SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
     VideoSource,
@@ -130,7 +132,23 @@ class RunContext:
 
 
 def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtifacts:
-    """Run the 8-step pipeline. Raises on any failure (caught by the CLI)."""
+    """Run the 8-step pipeline. Raises on any failure (caught by the CLI).
+
+    Raises:
+        ScenarioLoadError: ``scenario_path`` cannot be read or parsed.
+        ScenarioValidationError: scenario fails semantic validation.
+        TimelineUnsupportedError: scenario carries a timeline (Sprint 5
+            supports static scenarios only).
+        UnsupportedMaterializationError: scenario declares a codec,
+            container, or subtitle mode outside the Sprint 5 matrix.
+        CapabilityGateError: ffmpeg / ffprobe / mkvtoolnix missing or
+            below the minimum version.
+        ContainmentViolationError: a path escapes ``<out_dir>/library/``.
+        ToolFailedError: ffmpeg or mkvtoolnix exited non-zero during
+            synthesis.
+        ProbeParseError: ffprobe output is malformed or missing required
+            fields.
+    """
     started_at = datetime.now(UTC)
     run_input = prepare_run_input(scenario_path)
     # Run semantic validation BEFORE the timeline scope check so
@@ -172,11 +190,11 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         caps=caps,
         plan_artifacts=plan_artifacts,
     )
-    begin_materialize_run(ctx.out_dir, _build_sentinel(ctx, "in_progress"))
+    begin_materialize_run(ctx.out_dir, _build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
     return _run_synthesis(ctx, scenario)
 
 
-def _build_sentinel(ctx: RunContext, state: Literal["in_progress", "complete"]) -> RunSentinel:
+def _build_sentinel(ctx: RunContext, state: RunSentinelState) -> RunSentinel:
     """Construct a RunSentinel from the per-run invariants in ``ctx``.
 
     The fields shared by every sentinel (``run_id``, ``schema_version``,
@@ -249,7 +267,10 @@ def _finalize_success(
     finalize_materialize_run(
         ctx.out_dir,
         _build_metadata(
-            ctx, materialization_report, replay_bundle, _build_sentinel(ctx, "complete")
+            ctx,
+            materialization_report,
+            replay_bundle,
+            _build_sentinel(ctx, RunSentinelState.COMPLETE),
         ),
         _build_reports(ctx.plan_artifacts),
     )
@@ -295,7 +316,7 @@ def _preflight_asset(
         video_input=video_input,
         audios=audios,
         audio_inputs=audio_inputs,
-        output_path=Path(f"/tmp/preflight.{container}"),
+        output_path=Path(f"preflight.{container}"),
     )
 
 
@@ -329,7 +350,7 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
                 field=f"subtitle[{index}].source",
                 payload={"supported": [SubtitleSource.GENERATED_SRT.value]},
             )
-        if sub.mode != "sidecar":
+        if sub.mode is not SubtitleMode.SIDECAR:
             raise UnsupportedMaterializationError(
                 f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",
@@ -337,7 +358,7 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
             )
 
 
-def _iter_assets(scenario: Scenario):
+def _iter_assets(scenario: Scenario) -> Iterator[Asset]:
     """Iterate all assets in scenario order."""
     for work in scenario.works:
         for variant in work.variants:
@@ -579,7 +600,7 @@ def _finalize_failure(
     exit_code = invocation.exit_code if invocation is not None else None
     failure = MaterializationFailure(
         asset_id=getattr(exc, "asset_id", None),
-        stage="ffmpeg" if outcome is Outcome.TOOL_FAILED else "ffprobe",
+        stage=FailureStage.FFPROBE if isinstance(exc, ProbeParseError) else FailureStage.FFMPEG,
         exit_code=exit_code,
         stderr_tail=str(exc.payload.get("stderr_tail", "")),
         invocation_index=(len(invocations) - 1) if invocations else None,
@@ -603,7 +624,9 @@ def _finalize_failure(
     )
     cleanup_failed_run(
         ctx.out_dir,
-        _build_metadata(ctx, report, replay_bundle, _build_sentinel(ctx, "complete")),
+        _build_metadata(
+            ctx, report, replay_bundle, _build_sentinel(ctx, RunSentinelState.COMPLETE)
+        ),
     )
 
 

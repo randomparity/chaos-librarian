@@ -6,7 +6,6 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
 from chaos_librarian.contract import (
     MATERIALIZATION_SCHEMA_VERSION,
@@ -23,7 +22,7 @@ from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     MaterializeReplayBundle,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
@@ -33,7 +32,7 @@ from chaos_librarian.materializer.writer import (
 )
 
 
-def _sentinel(state: Literal["in_progress", "complete"]) -> RunSentinel:
+def _sentinel(state: RunSentinelState) -> RunSentinel:
     return RunSentinel(
         run_id=uuid.uuid4(),
         schema_version=RUN_SENTINEL_SCHEMA_VERSION,
@@ -48,7 +47,7 @@ def test_begin_creates_run_dir_with_in_progress_sentinel(tmp_path: Path) -> None
     uses to detect interrupted materialize runs (Finding 2). It must be
     on disk before any ffmpeg subprocess starts."""
     out_dir = tmp_path / "run"
-    sentinel = _sentinel("in_progress")
+    sentinel = _sentinel(RunSentinelState.IN_PROGRESS)
     begin_materialize_run(out_dir, sentinel)
     assert out_dir.exists()
     assert (out_dir / "library").is_dir()
@@ -61,7 +60,7 @@ def test_begin_creates_run_dir_with_in_progress_sentinel(tmp_path: Path) -> None
 def test_begin_refuses_existing_out_dir(tmp_path: Path) -> None:
     out_dir = tmp_path / "run"
     out_dir.mkdir()
-    sentinel = _sentinel("in_progress")
+    sentinel = _sentinel(RunSentinelState.IN_PROGRESS)
     try:
         begin_materialize_run(out_dir, sentinel)
     except FileExistsError:
@@ -76,7 +75,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     must emit every metadata file ``finalize_materialize_run`` does so the
     two run-dir shapes are uniform for downstream consumers."""
     out_dir = tmp_path / "failed_run"
-    in_progress = _sentinel("in_progress")
+    in_progress = _sentinel(RunSentinelState.IN_PROGRESS)
     begin_materialize_run(out_dir, in_progress)
     # Drop a synthetic byte under library/ so the wipe is observable.
     (out_dir / "library" / "stale.bin").write_bytes(b"x")
@@ -131,7 +130,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
             materialization_report=materialization_report,
             replay_bundle=replay_bundle,
             scenario_yaml_bytes=b"schema_version: 3\nscenario_id: static\n",
-            sentinel=_sentinel("complete"),
+            sentinel=_sentinel(RunSentinelState.COMPLETE),
         ),
     )
     # library/ wiped to empty, sentinel flipped.

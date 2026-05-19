@@ -10,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import RUN_SENTINEL_SCHEMA_VERSION
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 
 
 def test_materialize_sentinel_roundtrip() -> None:
@@ -95,7 +95,7 @@ def test_sentinel_state_accepts_in_progress() -> None:
         run_id=uuid.uuid4(),
         schema_version=RUN_SENTINEL_SCHEMA_VERSION,
         created_by="chaos-librarian/0.1.0",
-        state="in_progress",
+        state=RunSentinelState.IN_PROGRESS,
     )
     assert sentinel.state == "in_progress"
 

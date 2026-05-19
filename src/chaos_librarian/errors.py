@@ -23,4 +23,12 @@ class ChaosLibrarianValueError(ValueError, ChaosLibrarianError):
     """Base for value-format errors that must also satisfy ``except ValueError``."""
 
 
-__all__ = ["ChaosLibrarianError", "ChaosLibrarianValueError"]
+class ChaosLibrarianTypeError(TypeError, ChaosLibrarianError):
+    """Base for type-format errors that must also satisfy ``except TypeError``."""
+
+
+__all__ = [
+    "ChaosLibrarianError",
+    "ChaosLibrarianTypeError",
+    "ChaosLibrarianValueError",
+]

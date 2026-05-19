@@ -11,12 +11,13 @@ never generates or mutates those values.
 from __future__ import annotations
 
 from chaos_librarian.determinism.trace import TraceRecorder
+from chaos_librarian.errors import ChaosLibrarianError
 
 _MAX_PER_NAMESPACE = 9_999
 _NAMESPACES = ("version", "location", "sidecar", "mutation")
 
 
-class IdAllocatorOverflow(RuntimeError):
+class IdAllocatorOverflow(ChaosLibrarianError):
     """Raised when a namespace counter would advance past 9_999."""
 
 

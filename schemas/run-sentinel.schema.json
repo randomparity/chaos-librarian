@@ -1,4 +1,15 @@
 {
+  "$defs": {
+    "RunSentinelState": {
+      "description": "Run-directory lifecycle state.\n\nPlan-only callers default to ``COMPLETE``; only the materializer\never writes ``IN_PROGRESS``.",
+      "enum": [
+        "in_progress",
+        "complete"
+      ],
+      "title": "RunSentinelState",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
   "description": "Top-level ``.chaos-librarian-run`` sentinel file.",
   "properties": {
@@ -30,13 +41,8 @@
       "type": "integer"
     },
     "state": {
-      "default": "complete",
-      "enum": [
-        "in_progress",
-        "complete"
-      ],
-      "title": "State",
-      "type": "string"
+      "$ref": "#/$defs/RunSentinelState",
+      "default": "complete"
     }
   },
   "required": [

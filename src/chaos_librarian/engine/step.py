@@ -4,7 +4,7 @@
 parseable sentinel and matching ``run_id``, recovers world state by
 replaying ``resolve_timeline(scenario)`` against the on-disk journal
 (verifying every regenerated entry against its counterpart), and then
-applies up to ``n_events`` more step units. The function does NOT write —
+applies up to ``n_steps`` more step units. The function does NOT write —
 the CLI layer calls ``append_step`` to persist the result.
 
 The recovery loop catches hand-edited or duplicated journal lines (every
@@ -28,7 +28,7 @@ from chaos_librarian.contract.replay_bundle import (
     PlanOnlyReplayBundle,
     compute_plan_only_run_id,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
@@ -94,13 +94,13 @@ class StepResult:
     done: bool
 
 
-def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
-    """Advance an existing plan-only fixture by up to ``n_events`` step units.
+def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
+    """Advance an existing plan-only fixture by up to ``n_steps`` step units.
 
     Args:
         run_dir: Existing fixture directory (must carry a parseable
             ``.chaos-librarian-run`` sentinel).
-        n_events: Maximum step units to apply this call. A ``slow_copy_start``
+        n_steps: Maximum step units to apply this call. A ``slow_copy_start``
             + ``slow_copy_commit`` adjacent pair is one step unit covering
             two raw journal entries. The CLI layer rejects 0 / negative
             values via Typer's ``min=1``.
@@ -115,7 +115,7 @@ def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
         JournalCorruptError: on-disk journal disagrees with the
             regenerated prefix or sits at an off-step-unit-boundary length.
     """
-    _verify_sentinel(run_dir)
+    verify_sentinel(run_dir)
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
     _verify_scenario_integrity(scenario_bytes, bundle)
@@ -142,9 +142,9 @@ def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
         scenario_id=scenario.scenario_id,
     )
 
-    # Translate n_events (step units) → raw event count via boundaries.
+    # Translate n_steps (step units) → raw event count via boundaries.
     step_at_cursor = 0 if cursor_index == 0 else boundaries.index(cursor_index) + 1
-    target_step = min(step_at_cursor + n_events, len(boundaries))
+    target_step = min(step_at_cursor + n_steps, len(boundaries))
     target_raw = boundaries[target_step - 1] if target_step > 0 else 0
 
     new_entries_list: list[JournalEntry] = []
@@ -208,13 +208,19 @@ def _compute_journal_digest(journal: list[JournalEntry]) -> str:
     return hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
 
-def _verify_sentinel(run_dir: Path) -> None:
-    target = run_dir / ".chaos-librarian-run"
+def verify_sentinel(run_dir: Path) -> RunSentinel:
+    """Return the parsed sentinel; raise ``SentinelInvalidError`` on missing/unparseable.
+
+    The CLI step/inspect/clean handlers use the parsed value for
+    state checks; the engine layer only needs the validation side-effect
+    and discards the return value.
+    """
+    target = run_dir / SENTINEL_FILENAME
     if not target.exists():
         raise SentinelInvalidError(f"sentinel missing: {target}")
     try:
-        RunSentinel.model_validate_json(target.read_text())
-    except (ValidationError, ValueError) as exc:
+        return RunSentinel.model_validate_json(target.read_text())
+    except ValidationError as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
 
 

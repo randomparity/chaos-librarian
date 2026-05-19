@@ -28,6 +28,7 @@ from chaos_librarian.contract.manifest import (
 )
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 
 @dataclass
@@ -108,7 +109,9 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
             after Sprint 1's shape pass, but defensive).
     """
     if not scenario.library.roots:
-        raise ValueError("scenario has no library roots; cannot synthesize initial paths")
+        raise ChaosLibrarianValueError(
+            "scenario has no library roots; cannot synthesize initial paths"
+        )
     primary_root = scenario.library.roots[0]
     state = WorldState()
 

@@ -15,6 +15,7 @@ from chaos_librarian.contract.manifest import (
     ManifestWork,
     ProbedMedia,
     ProbedStream,
+    StreamKind,
 )
 
 
@@ -62,7 +63,9 @@ def test_canonicalize_strips_content_hash_and_probed():
             container="matroska,webm",
             duration_seconds=2.0,
             size_bytes=12345,
-            streams=[ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0)],
+            streams=[
+                ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480, fps=24.0)
+            ],
         ),
     )
     right = _manifest(content_hash=None, probed=None)

@@ -35,14 +35,14 @@ def run_shape_pass(run_input: RunInput, collector: IssueCollector) -> None:
     shape pass sees the *current* ``raw_data`` even if a caller warmed
     the cache before validation ran.
 
-    On success: ``_prime_scenario_cache`` writes the fresh parse.
-    On failure: ``_invalidate_scenario_cache`` drops any prior entry so
+    On success: ``prime_scenario_cache`` writes the fresh parse.
+    On failure: ``invalidate_scenario_cache`` drops any prior entry so
     subsequent ``run_input.scenario`` access re-parses (and re-raises).
     """
     try:
         parsed = Scenario.model_validate(run_input.raw_data)
     except ValidationError as e:
-        run_input._invalidate_scenario_cache()
+        run_input.invalidate_scenario_cache()
         for entry in e.errors(include_url=False, include_context=True):
             pydantic_type = entry["type"]
             code = PYDANTIC_TO_CODE.get(pydantic_type, E_FIELD_SHAPE)
@@ -59,4 +59,4 @@ def run_shape_pass(run_input: RunInput, collector: IssueCollector) -> None:
                 line_index=run_input.line_index,
             )
         return
-    run_input._prime_scenario_cache(parsed)
+    run_input.prime_scenario_cache(parsed)

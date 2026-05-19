@@ -19,7 +19,7 @@ from chaos_librarian.contract import (
     VARIANT_REPORT_SCHEMA_VERSION,
     WORK_REPORT_SCHEMA_VERSION,
 )
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.reports import (
     AssetHistoryEntry,
     AssetReport,
@@ -149,7 +149,9 @@ def test_asset_snapshot_carries_content_hash_and_probed():
             container="matroska,webm",
             duration_seconds=2.0,
             size_bytes=12345,
-            streams=[ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0)],
+            streams=[
+                ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480, fps=24.0)
+            ],
         ),
     )
     blob = snap.model_dump_json(exclude_none=True)

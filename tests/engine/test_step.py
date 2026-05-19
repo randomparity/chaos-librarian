@@ -50,7 +50,7 @@ class TestStepFixtureHappyPath:
     def test_step_from_zero_matches_full_plan(self, tmp_path: Path) -> None:
         # Start from a --steps 0 fixture (empty journal)
         paused = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=2)
+        result = step_fixture(paused, n_steps=2)
         assert isinstance(result, StepResult)
         assert result.steps_applied == 2
         assert result.steps_remaining == 0
@@ -63,7 +63,7 @@ class TestStepFixtureHappyPath:
 
     def test_step_on_completed_fixture_returns_done(self, tmp_path: Path) -> None:
         full = _make_fixture(tmp_path, "identity-move-rename.yaml")
-        result = step_fixture(full, n_events=5)
+        result = step_fixture(full, n_steps=5)
         assert result.steps_applied == 0
         assert result.steps_remaining == 0
         assert result.done is True
@@ -73,7 +73,7 @@ class TestStepFixtureHappyPath:
         # slow_copy_start + slow_copy_commit is ONE step unit; --next 1
         # advances both halves together (Codex round 3 finding 1).
         paused = _make_fixture(tmp_path, "slow-copy.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=1)
+        result = step_fixture(paused, n_steps=1)
         assert result.steps_applied == 1  # step units
         assert len(result.new_entries) == 2  # raw entries
         assert result.new_entries[0].phase.value == "started"
@@ -92,13 +92,13 @@ class TestStepFixtureSentinelChecks:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
         (fixture / ".chaos-librarian-run").unlink()
         with pytest.raises(SentinelInvalidError):
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
 
     def test_malformed_sentinel_raises(self, tmp_path: Path) -> None:
         fixture = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
         (fixture / ".chaos-librarian-run").write_text("not json")
         with pytest.raises(SentinelInvalidError):
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
 
 
 class TestStepFixtureScenarioTampering:
@@ -113,7 +113,7 @@ class TestStepFixtureScenarioTampering:
         scenario_path = fixture / "scenario.yaml"
         scenario_path.write_text(scenario_path.read_text() + "\n# hand-edited\n")
         with pytest.raises(ScenarioTamperedError):
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
 
 
 class TestStepFixtureJournalCorruption:
@@ -128,7 +128,7 @@ class TestStepFixtureJournalCorruption:
         journal = fixture / "journal.jsonl"
         journal.write_text("{not json\n")
         with pytest.raises(JournalCorruptError) as excinfo:
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
         assert excinfo.value.kind == "parse"
 
     def test_hand_edited_entry_action(self, tmp_path: Path) -> None:
@@ -139,7 +139,7 @@ class TestStepFixtureJournalCorruption:
         entry["action"] = "delete_file"
         journal.write_text(json.dumps(entry) + "\n")
         with pytest.raises(JournalCorruptError) as excinfo:
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
         assert excinfo.value.kind == "entry_mismatch"
 
     def test_duplicated_line_in_middle_trips_entry_mismatch(self, tmp_path: Path) -> None:
@@ -152,7 +152,7 @@ class TestStepFixtureJournalCorruption:
         # duplicated copy of line[0]) before the length check can fire.
         journal.write_text(lines[0] + "\n" + lines[0] + "\n" + lines[1] + "\n")
         with pytest.raises(JournalCorruptError) as excinfo:
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
         assert excinfo.value.kind == "entry_mismatch"
 
     def test_slow_copy_started_without_committed_off_boundary(self, tmp_path: Path) -> None:
@@ -170,7 +170,7 @@ class TestStepFixtureJournalCorruption:
         lines = journal.read_text().splitlines()
         journal.write_text(lines[0] + "\n")
         with pytest.raises(JournalCorruptError) as excinfo:
-            step_fixture(fixture, n_events=1)
+            step_fixture(fixture, n_steps=1)
         assert excinfo.value.kind == "off_boundary"
 
 
@@ -187,7 +187,7 @@ class TestStepFixtureFromEmpty:
 
     def test_step_from_steps_zero_engine_level(self, tmp_path: Path) -> None:
         paused = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=1)
+        result = step_fixture(paused, n_steps=1)
         assert result.steps_applied == 1
         assert result.new_replay_bundle.applied_events == 1
 
@@ -205,7 +205,7 @@ class TestStepFixtureTwice:
     def test_step_twice_matches_plan(self, tmp_path: Path) -> None:
         paused = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
         # Step 1 — advance one event, persist via append_step
-        result1 = step_fixture(paused, n_events=1)
+        result1 = step_fixture(paused, n_steps=1)
         append_step(
             paused,
             new_entries=result1.new_entries,
@@ -214,7 +214,7 @@ class TestStepFixtureTwice:
             new_replay_bundle=result1.new_replay_bundle,
         )
         # Step 2 — must recover cursor cleanly, advance the second event
-        result2 = step_fixture(paused, n_events=1)
+        result2 = step_fixture(paused, n_steps=1)
         assert result2.steps_applied == 1
         assert result2.done is True
         # Compare combined journal against a full plan run
@@ -238,14 +238,14 @@ class TestStepFixtureRoundThree:
 
     def test_step_advances_slow_copy_pair_in_one_call(self, tmp_path: Path) -> None:
         paused = _make_fixture(tmp_path, "slow-copy.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=1)
+        result = step_fixture(paused, n_steps=1)
         assert result.steps_applied == 1  # step units
         assert len(result.new_entries) == 2  # raw entries (start + commit)
         assert result.new_replay_bundle.applied_events == 2
 
     def test_step_recomputes_journal_digest(self, tmp_path: Path) -> None:
         paused = _make_fixture(tmp_path, "identity-move-rename.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=1)
+        result = step_fixture(paused, n_steps=1)
         expected = hashlib.sha256(
             b"".join(
                 entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8") + b"\n"
@@ -269,7 +269,7 @@ class TestStepFixtureRoundFour:
 
     def test_step_preserves_full_execution_trace(self, tmp_path: Path) -> None:
         paused = _make_fixture(tmp_path / "paused", "version-evolution.yaml", steps_limit=0)
-        result = step_fixture(paused, n_events=1)
+        result = step_fixture(paused, n_steps=1)
         # reencode_video allocates a version id, so the trace must be non-empty
         assert len(result.new_replay_bundle.execution_trace) > 0
         # And must match what a full plan of the same prefix would produce

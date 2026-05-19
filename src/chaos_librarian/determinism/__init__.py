@@ -4,6 +4,8 @@ Downstream sprints import from this package; the submodules are
 implementation detail.
 """
 
+from __future__ import annotations
+
 from chaos_librarian.determinism.clock import (
     Clock,
     format_duration_human,

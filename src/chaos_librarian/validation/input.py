@@ -49,7 +49,7 @@ class RunInput:
         """
         return Scenario.model_validate(self.raw_data)
 
-    def _prime_scenario_cache(self, parsed: Scenario) -> None:
+    def prime_scenario_cache(self, parsed: Scenario) -> None:
         """Authoritatively populate the ``scenario`` cache from a fresh parse.
 
         The shape pass parses ``raw_data`` directly and calls this so the
@@ -60,7 +60,7 @@ class RunInput:
         """
         self.__dict__[_SCENARIO_CACHE_KEY] = parsed
 
-    def _invalidate_scenario_cache(self) -> None:
+    def invalidate_scenario_cache(self) -> None:
         """Drop any cached Scenario so the next ``scenario`` access re-parses.
 
         The shape pass calls this on validation failure to ensure a stale

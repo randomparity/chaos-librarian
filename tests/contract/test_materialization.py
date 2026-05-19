@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract.materialization import (
+    FailureStage,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -70,7 +71,7 @@ def test_failure_report_records_per_asset_failure():
         failures=[
             MaterializationFailure(
                 asset_id="a0",
-                stage="ffmpeg",
+                stage=FailureStage.FFMPEG,
                 exit_code=1,
                 stderr_tail="x264 [error]: bad input",
                 invocation_index=0,

@@ -11,7 +11,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     Outcome,
     ToolInvocation,
@@ -71,7 +71,9 @@ def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
             container="matroska,webm",
             duration_seconds=1.0,
             size_bytes=1,
-            streams=[ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0)],
+            streams=[
+                ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480, fps=24.0)
+            ],
         )
 
     monkeypatch.setattr(run_mod, "run_ffmpeg", fake_run)
@@ -247,7 +249,9 @@ def test_orchestrator_probes_each_asset_exactly_once(
             container="matroska,webm",
             duration_seconds=1.0,
             size_bytes=1,
-            streams=[ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0)],
+            streams=[
+                ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480, fps=24.0)
+            ],
         )
 
     monkeypatch.setattr(run_mod, "run_ffmpeg", fake_run)

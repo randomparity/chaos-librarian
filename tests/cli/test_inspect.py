@@ -8,7 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -80,7 +80,7 @@ class TestInspect:
         assert plan_result.exit_code == 0
         sentinel_path = out / ".chaos-librarian-run"
         sentinel = RunSentinel.model_validate_json(sentinel_path.read_text())
-        sentinel_in_progress = sentinel.model_copy(update={"state": "in_progress"})
+        sentinel_in_progress = sentinel.model_copy(update={"state": RunSentinelState.IN_PROGRESS})
         sentinel_path.write_text(
             sentinel_in_progress.model_dump_json(indent=2, exclude_none=True) + "\n"
         )

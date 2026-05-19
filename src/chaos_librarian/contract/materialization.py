@@ -30,6 +30,13 @@ class Outcome(enum.StrEnum):
     CONTAINMENT_VIOLATION = "containment_violation"
 
 
+class FailureStage(enum.StrEnum):
+    """Subprocess stage that produced a MaterializationFailure."""
+
+    FFMPEG = "ffmpeg"
+    FFPROBE = "ffprobe"
+
+
 class ToolchainInfo(BaseModel):
     """Versions of the external tools used during materialization.
 
@@ -82,7 +89,7 @@ class MaterializationFailure(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     asset_id: str | None
-    stage: str
+    stage: FailureStage
     exit_code: int | None
     stderr_tail: str
     invocation_index: int | None

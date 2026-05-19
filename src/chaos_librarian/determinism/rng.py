@@ -16,6 +16,7 @@ from collections.abc import Sequence
 from typing import TypeVar
 
 from chaos_librarian.determinism.trace import TraceRecorder
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 T = TypeVar("T")
 
@@ -56,7 +57,7 @@ class RngStream:
     def randrange(self, start: int, stop: int | None = None, step: int = 1) -> int:
         if stop is None:
             if step != 1:
-                raise ValueError("randrange step has no effect when stop is omitted")
+                raise ChaosLibrarianValueError("randrange step has no effect when stop is omitted")
             value = self._random.randrange(start)
         else:
             value = self._random.randrange(start, stop, step)

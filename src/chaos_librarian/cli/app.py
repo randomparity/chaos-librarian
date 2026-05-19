@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from pathlib import Path
 from typing import Annotated, Final, cast
 
@@ -20,7 +21,11 @@ from chaos_librarian.contract.replay_bundle import (
     PlanOnlyReplayBundle,
     ReplayBundle,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import (
+    SENTINEL_FILENAME,
+    RunSentinel,
+    RunSentinelState,
+)
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.engine import (
     JournalCorruptError,
@@ -29,13 +34,16 @@ from chaos_librarian.engine import (
     ScenarioTamperedError,
     SentinelInvalidError,
     StepResult,
+    append_step,
     compare_fixtures,
     replay_plan_bundle,
+    resolve_timeline,
     run_plan,
+    step_boundaries,
     step_fixture,
+    verify_sentinel,
+    write_fixture,
 )
-from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
-from chaos_librarian.engine.writer import append_step, write_fixture
 from chaos_librarian.materializer import (
     CapabilityGateError,
     ContainmentViolationError,
@@ -57,6 +65,19 @@ from chaos_librarian.validation import (
     run_validation,
 )
 from chaos_librarian.validation.codes import E_YAML_PARSE
+
+# CLI envelope error codes (single shared vocabulary; spec-anchored E_* prefix).
+# Materializer subclasses contribute their own E_MATERIALIZE_* codes via
+# MaterializationError.error_code; validation contributes E_* codes via
+# validation.codes. The constants below cover step/replay/clean/inspect paths.
+E_SENTINEL_INVALID: Final = "E_SENTINEL_INVALID"
+E_SENTINEL_IN_PROGRESS: Final = "E_SENTINEL_IN_PROGRESS"
+E_SCENARIO_TAMPERED: Final = "E_SCENARIO_TAMPERED"
+E_JOURNAL_CORRUPT: Final = "E_JOURNAL_CORRUPT"
+E_REPLAY_BUNDLE_INVALID: Final = "E_REPLAY_BUNDLE_INVALID"
+E_REPLAY_DIVERGENCE: Final = "E_REPLAY_DIVERGENCE"
+E_FIXTURE_INCONSISTENT: Final = "E_FIXTURE_INCONSISTENT"
+E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED: Final = "E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED"
 
 app = typer.Typer(
     name="chaos-librarian",
@@ -320,37 +341,37 @@ def step(
 ) -> None:
     """Advance a step-mode run by ``--next`` resolved events (default 1)."""
     try:
-        sentinel = _verify_sentinel(run_dir)
+        sentinel = verify_sentinel(run_dir)
     except SentinelInvalidError as exc:
-        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
-    if sentinel.state == "in_progress":
-        _emit_step_error(
-            "E_SENTINEL_IN_PROGRESS",
-            f"sentinel state is in_progress; clean the run-dir before stepping: {run_dir}",
+    if sentinel.state is RunSentinelState.IN_PROGRESS:
+        _emit_cli_error(
+            error_code=E_SENTINEL_IN_PROGRESS,
+            message=f"sentinel state is in_progress; clean the run-dir before stepping: {run_dir}",
             json_output=json_output,
         )
         raise typer.Exit(code=7)
 
     try:
-        result = step_fixture(run_dir, n_events=next_count)
+        result = step_fixture(run_dir, n_steps=next_count)
     except SentinelInvalidError as exc:
-        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
     except ScenarioTamperedError as exc:
-        _emit_step_error(
-            "scenario_tampered",
-            str(exc),
+        _emit_cli_error(
+            error_code=E_SCENARIO_TAMPERED,
+            message=str(exc),
             json_output=json_output,
-            extra={"recorded_run_id": exc.recorded, "recomputed_run_id": exc.recomputed},
+            details={"recorded_run_id": exc.recorded, "recomputed_run_id": exc.recomputed},
         )
         raise typer.Exit(code=7) from exc
     except JournalCorruptError as exc:
-        _emit_step_error(
-            "journal_corrupt",
-            str(exc),
+        _emit_cli_error(
+            error_code=E_JOURNAL_CORRUPT,
+            message=str(exc),
             json_output=json_output,
-            extra={"kind": exc.kind, "line": exc.line, "detail": exc.detail},
+            details={"kind": exc.kind, "line": exc.line, "detail": exc.detail},
         )
         raise typer.Exit(code=1) from exc
 
@@ -379,25 +400,6 @@ def _step_summary_json(result: StepResult) -> str:
     return json.dumps(payload, sort_keys=True)
 
 
-def _emit_step_error(
-    error_code: str,
-    message: str,
-    *,
-    json_output: bool,
-    extra: dict[str, object] | None = None,
-) -> None:
-    """Compat wrapper that routes step/clean/inspect through the unified
-    envelope. ``extra`` (recorded_run_id, kind, line, …) lands under
-    ``details`` so it can't collide with the top-level structured keys.
-    """
-    _emit_cli_error(
-        error_code=error_code,
-        message=message,
-        json_output=json_output,
-        details=extra,
-    )
-
-
 @app.command()
 def replay(
     bundle: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
@@ -412,7 +414,7 @@ def replay(
         # Typer's ``exists=True`` is pre-checked, but the file can become
         # unreadable (race, permission drop) between that check and here.
         _emit_cli_error(
-            error_code="replay_bundle_invalid",
+            error_code=E_REPLAY_BUNDLE_INVALID,
             message=f"replay bundle is not readable: {exc}",
             json_output=json_output,
             extra_top_level={"bundle_path": str(bundle)},
@@ -420,20 +422,20 @@ def replay(
         raise typer.Exit(code=1) from exc
     try:
         parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle_bytes)
-    except (ValidationError, ValueError) as exc:
+    except ValidationError as exc:
         _emit_cli_error(
-            error_code="replay_bundle_invalid",
+            error_code=E_REPLAY_BUNDLE_INVALID,
             message=f"replay bundle is not parseable: {exc}",
             json_output=json_output,
             extra_top_level={"bundle_path": str(bundle)},
         )
         raise typer.Exit(code=1) from exc
     if isinstance(parsed_any, MaterializeReplayBundle):
-        _emit_step_error(
-            "materialize_replay_not_implemented",
-            "materialize replay is not implemented in this CLI build",
+        _emit_cli_error(
+            error_code=E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED,
+            message="materialize replay is not implemented in this CLI build",
             json_output=json_output,
-            extra={"execution_mode": parsed_any.execution_mode.value},
+            details={"execution_mode": parsed_any.execution_mode.value},
         )
         raise typer.Exit(code=1)
     parsed_bundle = parsed_any
@@ -441,7 +443,7 @@ def replay(
         artifacts = replay_plan_bundle(parsed_bundle)
     except ReplayIntegrityError as exc:
         _emit_cli_error(
-            error_code="replay_divergence",
+            error_code=E_REPLAY_DIVERGENCE,
             message=str(exc),
             json_output=json_output,
             details={"kind": "integrity", "recorded_run_id": str(parsed_bundle.run_id)},
@@ -467,7 +469,7 @@ def replay(
                 for f in diff.files
             ]
             _emit_cli_error(
-                error_code="replay_divergence",
+                error_code=E_REPLAY_DIVERGENCE,
                 message=f"{len(diff.files)} files differ",
                 json_output=json_output,
                 details={
@@ -496,7 +498,7 @@ def replay(
         typer.echo(f"replay: wrote {out}{suffix}")
 
 
-def _infer_original(bundle_path: Path, run_id: object, applied_events: int) -> Path | None:
+def _infer_original(bundle_path: Path, run_id: uuid.UUID, applied_events: int) -> Path | None:
     """Return ``bundle_path.parent`` when it is the bundle's original fixture.
 
     Two bundles of the same scenario+seed at different truncation points share
@@ -506,7 +508,7 @@ def _infer_original(bundle_path: Path, run_id: object, applied_events: int) -> P
     ``replay.json`` is missing or unparseable, or either field disagrees.
     """
     parent = bundle_path.parent
-    sentinel = _load_sentinel(parent / ".chaos-librarian-run")
+    sentinel = _load_sentinel(parent / SENTINEL_FILENAME)
     if sentinel is None or sentinel.run_id != run_id:
         return None
     parent_bundle = _load_replay_bundle(parent / "replay.json")
@@ -521,7 +523,7 @@ def _load_sentinel(path: Path) -> RunSentinel | None:
         return None
     try:
         return RunSentinel.model_validate_json(path.read_text())
-    except (ValidationError, ValueError):
+    except ValidationError:
         return None
 
 
@@ -531,7 +533,7 @@ def _load_replay_bundle(path: Path) -> PlanOnlyReplayBundle | None:
         return None
     try:
         return PlanOnlyReplayBundle.model_validate_json(path.read_text())
-    except (ValidationError, ValueError):
+    except ValidationError:
         return None
 
 
@@ -544,7 +546,7 @@ def inspect(
     try:
         summary = _build_inspect_summary(run_dir)
     except SentinelInvalidError as exc:
-        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
 
     if json_output:
@@ -571,7 +573,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     Raises:
         SentinelInvalidError: sentinel missing or unparseable.
     """
-    sentinel = _verify_sentinel(run_dir)
+    sentinel = verify_sentinel(run_dir)
 
     bundle = _REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
@@ -622,17 +624,6 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
             "run_id": str(sentinel.run_id),
         },
     }
-
-
-def _verify_sentinel(run_dir: Path) -> RunSentinel:
-    """Return the parsed sentinel; raise ``SentinelInvalidError`` if missing or unparseable."""
-    sentinel_path = run_dir / ".chaos-librarian-run"
-    if not sentinel_path.exists():
-        raise SentinelInvalidError(f"sentinel missing: {sentinel_path}")
-    try:
-        return RunSentinel.model_validate_json(sentinel_path.read_text())
-    except (ValidationError, ValueError) as exc:
-        raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
 
 
 def _render_inspect_human(summary: dict[str, object]) -> None:
@@ -694,45 +685,33 @@ def clean(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Remove a run directory (sentinel-protected)."""
-    sentinel_path = run_dir / ".chaos-librarian-run"
-    if not sentinel_path.exists():
-        _emit_step_error(
-            "sentinel_invalid",
-            f"sentinel missing: {sentinel_path}",
-            json_output=json_output,
-        )
-        raise typer.Exit(code=7)
     try:
-        sentinel = RunSentinel.model_validate_json(sentinel_path.read_text())
-    except (ValidationError, ValueError) as exc:
-        _emit_step_error(
-            "sentinel_invalid",
-            f"sentinel unparseable: {exc}",
-            json_output=json_output,
-        )
+        sentinel = verify_sentinel(run_dir)
+    except SentinelInvalidError as exc:
+        _emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
 
     replay_path = run_dir / "replay.json"
     if not replay_path.exists():
-        _emit_step_error(
-            "fixture_inconsistent",
-            f"replay.json missing: {replay_path}",
+        _emit_cli_error(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"replay.json missing: {replay_path}",
             json_output=json_output,
         )
         raise typer.Exit(code=7)
     try:
         bundle = _REPLAY_BUNDLE_ADAPTER.validate_json(replay_path.read_bytes())
-    except (ValidationError, ValueError) as exc:
-        _emit_step_error(
-            "fixture_inconsistent",
-            f"replay.json unparseable: {exc}",
+    except ValidationError as exc:
+        _emit_cli_error(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"replay.json unparseable: {exc}",
             json_output=json_output,
         )
         raise typer.Exit(code=7) from exc
     if bundle.run_id != sentinel.run_id:
-        _emit_step_error(
-            "fixture_inconsistent",
-            f"sentinel.run_id {sentinel.run_id} != replay.json run_id {bundle.run_id}",
+        _emit_cli_error(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"sentinel.run_id {sentinel.run_id} != replay.json run_id {bundle.run_id}",
             json_output=json_output,
         )
         raise typer.Exit(code=7)

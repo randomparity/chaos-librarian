@@ -124,4 +124,4 @@ class TestCleanFixtureInconsistent:
         result = runner.invoke(app, ["clean", str(bare), "--json"])
         assert result.exit_code == 7
         payload = json.loads(result.stderr)
-        assert payload["error_code"] == "fixture_inconsistent"
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
