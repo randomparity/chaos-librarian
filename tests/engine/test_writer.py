@@ -52,7 +52,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     )
     sentinel = RunSentinel(
         run_id=_RUN_ID,
-        schema_version=1,
+        schema_version=2,
         created_by="chaos-librarian 0.0.0",
         created_at=None,
     )

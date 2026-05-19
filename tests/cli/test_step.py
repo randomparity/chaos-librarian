@@ -9,6 +9,7 @@ from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.run_sentinel import RunSentinel
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -108,3 +109,22 @@ class TestStepErrors:
         (out / "journal.jsonl").write_text("{not json\n")
         result = runner.invoke(app, ["step", str(out), "--next", "1"])
         assert result.exit_code == 1
+
+    def test_step_refuses_in_progress_sentinel(self, tmp_path: Path) -> None:
+        """WHY: a partial materialize run-dir must not be advanced by step;
+        step exits 7 with E_SENTINEL_IN_PROGRESS so an agent surfaces it."""
+        out = tmp_path / "run"
+        plan_result = runner.invoke(
+            app,
+            ["plan", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out)],
+        )
+        assert plan_result.exit_code == 0
+        sentinel_path = out / ".chaos-librarian-run"
+        sentinel = RunSentinel.model_validate_json(sentinel_path.read_text())
+        in_progress = sentinel.model_copy(update={"state": "in_progress"})
+        sentinel_path.write_text(in_progress.model_dump_json(indent=2, exclude_none=True) + "\n")
+
+        result = runner.invoke(app, ["step", str(out), "--json"])
+        assert result.exit_code == 7
+        payload = json.loads(result.stderr)
+        assert payload["error"] == "E_SENTINEL_IN_PROGRESS"

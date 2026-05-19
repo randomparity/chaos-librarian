@@ -146,7 +146,7 @@ def run_plan(
 
     sentinel = RunSentinel(
         run_id=run_id,
-        schema_version=1,
+        schema_version=2,
         created_by=f"chaos-librarian {_chaos_librarian_version}",
         # created_at omitted in plan-only — see "Filesystem Safety".
         created_at=None,

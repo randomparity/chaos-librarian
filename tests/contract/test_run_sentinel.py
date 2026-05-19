@@ -77,3 +77,39 @@ def test_rejects_extra_fields() -> None:
     }
     with pytest.raises(ValidationError):
         RunSentinel.model_validate(payload)
+
+
+def test_sentinel_state_defaults_to_complete() -> None:
+    """WHY: plan-only writes the sentinel via the model default; the value
+    must be 'complete' so existing fixtures continue to pass inspect."""
+    sentinel = RunSentinel(
+        run_id=uuid.uuid4(),
+        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+        created_by="chaos-librarian/0.1.0",
+    )
+    assert sentinel.state == "complete"
+
+
+def test_sentinel_state_accepts_in_progress() -> None:
+    sentinel = RunSentinel(
+        run_id=uuid.uuid4(),
+        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+        created_by="chaos-librarian/0.1.0",
+        state="in_progress",
+    )
+    assert sentinel.state == "in_progress"
+
+
+def test_sentinel_rejects_unknown_state() -> None:
+    payload = {
+        "run_id": str(uuid.uuid4()),
+        "schema_version": RUN_SENTINEL_SCHEMA_VERSION,
+        "created_by": "chaos-librarian/0.1.0",
+        "state": "halfway",
+    }
+    with pytest.raises(ValidationError):
+        RunSentinel.model_validate(payload)
+
+
+def test_sentinel_schema_version_is_two() -> None:
+    assert RUN_SENTINEL_SCHEMA_VERSION == 2

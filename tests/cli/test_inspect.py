@@ -8,6 +8,7 @@ from pathlib import Path
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
+from chaos_librarian.contract.run_sentinel import RunSentinel
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -52,6 +53,42 @@ class TestInspect:
         (fixture / ".chaos-librarian-run").unlink()
         result = runner.invoke(app, ["inspect", str(fixture)])
         assert result.exit_code == 7
+
+    def test_inspect_reports_complete_state(self, tmp_path: Path) -> None:
+        """WHY: every plan-only run-dir reports state=complete; agents read
+        the field to distinguish completed runs from interrupted materialize."""
+        out = tmp_path / "run"
+        plan_result = runner.invoke(
+            app,
+            ["plan", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out)],
+        )
+        assert plan_result.exit_code == 0, plan_result.stdout + plan_result.stderr
+
+        result = runner.invoke(app, ["inspect", str(out), "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["sentinel"]["state"] == "complete"
+
+    def test_inspect_reports_in_progress_state(self, tmp_path: Path) -> None:
+        """WHY: an interrupted materialize run leaves the sentinel at
+        state=in_progress; inspect must surface that so an agent can clean it."""
+        out = tmp_path / "interrupted"
+        plan_result = runner.invoke(
+            app,
+            ["plan", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out)],
+        )
+        assert plan_result.exit_code == 0
+        sentinel_path = out / ".chaos-librarian-run"
+        sentinel = RunSentinel.model_validate_json(sentinel_path.read_text())
+        sentinel_in_progress = sentinel.model_copy(update={"state": "in_progress"})
+        sentinel_path.write_text(
+            sentinel_in_progress.model_dump_json(indent=2, exclude_none=True) + "\n"
+        )
+
+        result = runner.invoke(app, ["inspect", str(out), "--json"])
+        assert result.exit_code == 0
+        payload = json.loads(result.stdout)
+        assert payload["sentinel"]["state"] == "in_progress"
 
     def test_inspect_slow_copy_partial(self, tmp_path: Path) -> None:
         """inspect reports step-unit counts, not raw event counts.

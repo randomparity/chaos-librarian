@@ -189,6 +189,19 @@ def step(
 ) -> None:
     """Advance a step-mode run by ``--next`` resolved events (default 1)."""
     try:
+        sentinel = _verify_sentinel(run_dir)
+    except SentinelInvalidError as exc:
+        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        raise typer.Exit(code=7) from exc
+    if sentinel.state == "in_progress":
+        _emit_step_error(
+            "E_SENTINEL_IN_PROGRESS",
+            f"sentinel state is in_progress; clean the run-dir before stepping: {run_dir}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7)
+
+    try:
         result = step_fixture(run_dir, n_events=next_count)
     except SentinelInvalidError as exc:
         _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
@@ -399,7 +412,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     Raises:
         SentinelInvalidError: sentinel missing or unparseable.
     """
-    _verify_sentinel(run_dir)
+    sentinel = _verify_sentinel(run_dir)
 
     bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
@@ -444,16 +457,21 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
             "sidecars": len(manifest_current.sidecars),
         },
         "created_at": None,
+        "sentinel": {
+            "state": sentinel.state,
+            "created_at": sentinel.created_at.isoformat() if sentinel.created_at else None,
+            "run_id": str(sentinel.run_id),
+        },
     }
 
 
-def _verify_sentinel(run_dir: Path) -> None:
-    """Raise ``SentinelInvalidError`` if the run sentinel is missing or unparseable."""
+def _verify_sentinel(run_dir: Path) -> RunSentinel:
+    """Return the parsed sentinel; raise ``SentinelInvalidError`` if missing or unparseable."""
     sentinel_path = run_dir / ".chaos-librarian-run"
     if not sentinel_path.exists():
         raise SentinelInvalidError(f"sentinel missing: {sentinel_path}")
     try:
-        RunSentinel.model_validate_json(sentinel_path.read_text())
+        return RunSentinel.model_validate_json(sentinel_path.read_text())
     except (ValidationError, ValueError) as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
 
@@ -472,6 +490,8 @@ def _render_inspect_human(summary: dict[str, object]) -> None:
         f"counts:           works={counts['works']} variants={counts['variants']} "
         f"bundles={counts['bundles']} assets={counts['assets']} sidecars={counts['sidecars']}"
     )
+    sentinel = cast("dict[str, object]", summary["sentinel"])
+    typer.echo(f"sentinel:         state={sentinel['state']} run_id={sentinel['run_id']}")
 
 
 @app.command()
