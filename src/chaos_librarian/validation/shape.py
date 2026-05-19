@@ -1,8 +1,14 @@
 """Pydantic shape-validation pass.
 
-Calls ``Scenario.model_validate`` and maps each ``ValidationError`` entry
-to a ``ValidationIssue`` with a stable error code, a JSONPath, and a
-line/column resolved via the ``LineIndex``.
+Parses ``RunInput.raw_data`` via ``Scenario.model_validate`` and maps each
+``ValidationError`` entry to a ``ValidationIssue`` with a stable error
+code, a JSONPath, and a line/column resolved via the ``LineIndex``.
+
+The shape pass is authoritative for ``RunInput.scenario``: on success it
+primes the cache from a fresh parse; on failure it invalidates any prior
+entry. Reading the cached property directly would let a caller that
+pre-populated the cache and then mutated ``raw_data`` bypass validation
+entirely.
 """
 
 from __future__ import annotations
@@ -16,27 +22,27 @@ from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_FIELD_SHAPE, PYDANTIC_TO_CODE
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
-
-    from chaos_librarian.scenario_io import LineIndex
+    from chaos_librarian.validation.input import RunInput
     from chaos_librarian.validation.pipeline import IssueCollector
 
 __all__ = ["run_shape_pass"]
 
 
-def run_shape_pass(
-    raw_data: Mapping[str, object],
-    line_index: LineIndex,
-    collector: IssueCollector,
-) -> None:
-    """Validate ``raw_data`` against the Scenario model; collect any issues.
+def run_shape_pass(run_input: RunInput, collector: IssueCollector) -> None:
+    """Parse ``run_input.raw_data`` fresh; prime the cache on success.
 
-    The pipeline reads outcomes off ``collector``; this function returns
-    nothing.
+    Parses directly rather than reading ``run_input.scenario`` so the
+    shape pass sees the *current* ``raw_data`` even if a caller warmed
+    the cache before validation ran.
+
+    On success: ``_prime_scenario_cache`` writes the fresh parse.
+    On failure: ``_invalidate_scenario_cache`` drops any prior entry so
+    subsequent ``run_input.scenario`` access re-parses (and re-raises).
     """
     try:
-        Scenario.model_validate(raw_data)
+        parsed = Scenario.model_validate(run_input.raw_data)
     except ValidationError as e:
+        run_input._invalidate_scenario_cache()
         for entry in e.errors(include_url=False, include_context=True):
             pydantic_type = entry["type"]
             code = PYDANTIC_TO_CODE.get(pydantic_type, E_FIELD_SHAPE)
@@ -50,5 +56,7 @@ def run_shape_pass(
                 severity=ValidationSeverity.ERROR,
                 message=message,
                 loc=loc,
-                line_index=line_index,
+                line_index=run_input.line_index,
             )
+        return
+    run_input._prime_scenario_cache(parsed)

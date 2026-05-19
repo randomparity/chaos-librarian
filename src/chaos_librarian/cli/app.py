@@ -21,7 +21,6 @@ from chaos_librarian.contract.replay_bundle import (
     ReplayBundle,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.engine import (
     JournalCorruptError,
@@ -513,7 +512,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
         raw_bytes=scenario_bytes,
         source_label=f"inspect:{run_dir}",
     )
-    scenario = Scenario.model_validate(run_input.raw_data)
+    scenario = run_input.scenario
     resolved_timeline = resolve_timeline(scenario)
     boundaries = step_boundaries(resolved_timeline)
     if bundle.applied_events == 0:

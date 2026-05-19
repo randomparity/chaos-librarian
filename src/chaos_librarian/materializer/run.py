@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -119,7 +120,6 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     """Run the 8-step pipeline. Raises on any failure (caught by the CLI)."""
     started_at = datetime.now(UTC)
     run_input = prepare_run_input(scenario_path)
-    scenario = Scenario.model_validate(run_input.raw_data)
     # Run semantic validation BEFORE the timeline scope check so
     # containment/lifecycle errors surface as ScenarioValidationError
     # (exit 3) instead of being shadowed by TimelineUnsupportedError when an
@@ -133,6 +133,9 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
             },
             validation_report=validation_report,
         )
+    # Validation succeeded → ``RunInput.scenario`` cache is primed by the
+    # shape pass; access the cached parse instead of re-validating.
+    scenario = run_input.scenario
     if scenario.timeline:
         raise TimelineUnsupportedError(
             "materialize accepts static scenarios only; remove timeline events.",
@@ -294,8 +297,8 @@ def _finalize_success(
 
 def _preflight_asset(
     video: VideoTrack | None,
-    audios: list[AudioTrack],
-    subtitles: list[SubtitleTrack],
+    audios: Sequence[AudioTrack],
+    subtitles: Sequence[SubtitleTrack],
     container: str,
 ) -> None:
     """Run build_command in a dry mode — raises UnsupportedMaterializationError fast.
@@ -331,7 +334,7 @@ def _preflight_asset(
     )
 
 
-def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
+def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
     """Build the audio FFmpegInput list at preflight time, raising on unknown sources."""
     inputs: list[FFmpegInput] = []
     for audio in audios:
@@ -346,7 +349,7 @@ def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
     return inputs
 
 
-def _preflight_subtitles(subtitles: list[SubtitleTrack]) -> None:
+def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
     """Subtitle matrix: SRT + generated + sidecar only."""
     for index, sub in enumerate(subtitles):
         if sub.codec != "srt":

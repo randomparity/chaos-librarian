@@ -33,18 +33,18 @@ def _minimal_scenario() -> Scenario:
         scenario_id="t",
         seed=1,
         duration_scale="short",
-        library=Library(roots=[LibraryRoot(id="movies_hd", path="movies-hd")]),
-        works=[
+        library=Library(roots=(LibraryRoot(id="movies_hd", path="movies-hd"),)),
+        works=(
             Work(
                 id="w1",
                 title="W1",
-                variants=[
+                variants=(
                     Variant(
                         id="v1",
                         label="hd",
                         bundle=Bundle(
                             id="b1",
-                            assets=[
+                            assets=(
                                 Asset(
                                     id="a1",
                                     role="primary_video",
@@ -55,22 +55,22 @@ def _minimal_scenario() -> Scenario:
                                         codec="h264",
                                         resolution="1080p",
                                     ),
-                                    audio=[
+                                    audio=(
                                         AudioTrack(
                                             codec="aac",
                                             channels="stereo",
                                             language="eng",
-                                        )
-                                    ],
-                                    subtitles=[],
-                                )
-                            ],
+                                        ),
+                                    ),
+                                    subtitles=(),
+                                ),
+                            ),
                         ),
-                    )
-                ],
-            )
-        ],
-        timeline=[],
+                    ),
+                ),
+            ),
+        ),
+        timeline=(),
     )
 
 
@@ -84,7 +84,7 @@ def test_timeline_action_discriminator() -> None:
     s = _minimal_scenario()
     s = s.model_copy(
         update={
-            "timeline": [
+            "timeline": (
                 MoveAssetEvent(id="t1", at="2s", target="a1", to="movies-hd/X.mkv"),
                 ReencodeVideoEvent(id="t2", at="5s", target="a1", resolution="sd", codec="h264"),
                 SlowCopyStartEvent(
@@ -96,7 +96,7 @@ def test_timeline_action_discriminator() -> None:
                     duration="3s",
                 ),
                 SlowCopyCommitEvent(id="t4", at="9s", for_="t3"),
-            ]
+            )
         }
     )
     loaded = Scenario.model_validate_json(s.model_dump_json(by_alias=True))

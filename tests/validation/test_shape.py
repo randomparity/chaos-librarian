@@ -2,14 +2,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import Any
+
+import pytest
+
 from chaos_librarian.scenario_io import LineIndex
-from chaos_librarian.validation import codes
+from chaos_librarian.validation import RunInput, codes
 from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.shape import run_shape_pass
 
 
-def _empty_index() -> LineIndex:
-    return LineIndex()
+def _run_input_from_dict(raw: dict[str, Any]) -> RunInput:
+    """Build a RunInput around a raw dict, skipping YAML re-parse.
+
+    Shape-pass tests exercise dict→ValidationError mapping; the raw bytes
+    and line index aren't relevant to that contract.
+    """
+    return RunInput(
+        path=Path("memory:test"),
+        raw_bytes=b"",
+        content_hash="",
+        raw_data=raw,
+        line_index=LineIndex(),
+    )
 
 
 class TestShapePassMissingFields:
@@ -22,7 +38,7 @@ class TestShapePassMissingFields:
     def test_missing_scenario_id(self) -> None:
         raw = {"schema_version": 2}  # minimal — many fields missing
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         codes_emitted = {i.code for i in collector.issues}
         assert codes.E_FIELD_MISSING in codes_emitted
 
@@ -46,7 +62,7 @@ class TestShapePassUnknownField:
             "made_up_extra_field": 1,
         }
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         assert any(i.code == codes.E_FIELD_UNKNOWN for i in collector.issues)
 
 
@@ -68,7 +84,7 @@ class TestShapePassLiteralValue:
             "timeline": [],
         }
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         assert any(i.code == codes.E_FIELD_LITERAL for i in collector.issues)
 
 
@@ -93,7 +109,7 @@ class TestShapePassDiscriminatorTag:
             ],
         }
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         assert any(i.code == codes.E_TIMELINE_ACTION_UNKNOWN for i in collector.issues)
 
 
@@ -123,11 +139,56 @@ class TestShapePassJSONPathStripping:
             ],
         }
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         paths = [i.path for i in collector.issues if i.path]
         assert all("slow_copy_commit" not in p for p in paths)
         # Discriminator tag 'slow_copy_commit' is stripped, leaving 'for' intact.
         assert any(p == "$.timeline[0].for" for p in paths)
+
+
+class TestShapePassTupleType:
+    """Pydantic 'tuple_type' → E_FIELD_TYPE.
+
+    WHY: Scenario collection fields (``library.roots``, ``works``,
+    ``timeline``, etc.) are ``tuple[X, ...]`` so the cached parse can't be
+    mutated via list methods. A non-sequence value supplied for one of
+    these fields surfaces as Pydantic ``tuple_type`` and must map to the
+    same stable ``E_FIELD_TYPE`` contract that ``list_type`` does;
+    otherwise the change from list to tuple would silently regress the
+    public error-code contract to ``E_FIELD_SHAPE``.
+    """
+
+    @pytest.mark.parametrize(
+        ("mutation_path", "bad_value"),
+        [
+            (("library", "roots"), {}),
+            (("works",), {}),
+            (("timeline",), "not-a-sequence"),
+        ],
+    )
+    def test_non_sequence_for_collection_field_emits_field_type(
+        self,
+        mutation_path: tuple[str, ...],
+        bad_value: object,
+    ) -> None:
+        raw: dict[str, Any] = {
+            "schema_version": 2,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": [],
+            "timeline": [],
+        }
+        target = raw
+        for key in mutation_path[:-1]:
+            target = target[key]
+        target[mutation_path[-1]] = bad_value
+        collector = IssueCollector()
+        run_shape_pass(_run_input_from_dict(raw), collector)
+        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues), (
+            f"expected E_FIELD_TYPE at {mutation_path!r}, got {[i.code for i in collector.issues]}"
+        )
 
 
 class TestShapePassNoErrorsForValidScenario:
@@ -148,5 +209,5 @@ class TestShapePassNoErrorsForValidScenario:
             "timeline": [],
         }
         collector = IssueCollector()
-        run_shape_pass(raw, _empty_index(), collector)
+        run_shape_pass(_run_input_from_dict(raw), collector)
         assert collector.issues == []

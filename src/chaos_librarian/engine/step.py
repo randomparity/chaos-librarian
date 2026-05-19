@@ -29,7 +29,6 @@ from chaos_librarian.contract.replay_bundle import (
     compute_plan_only_run_id,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
@@ -126,7 +125,7 @@ def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
         raw_bytes=scenario_bytes,
         source_label=f"step:{run_dir}",
     )
-    scenario = Scenario.model_validate(run_input.raw_data)
+    scenario = run_input.scenario
     recorder = TraceRecorder()
     ids = IdAllocator(recorder)
     state = build_initial_state(scenario, ids)

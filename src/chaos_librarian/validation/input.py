@@ -11,10 +11,14 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError, parse_scenario_bytes
+
+_SCENARIO_CACHE_KEY = "scenario"
 
 
 @dataclass(frozen=True)
@@ -26,6 +30,44 @@ class RunInput:
     content_hash: str
     raw_data: Any
     line_index: LineIndex
+
+    @cached_property
+    def scenario(self) -> Scenario:
+        """Parsed Scenario, computed once per RunInput.
+
+        The cached Scenario is shared across every consumer that holds the
+        same RunInput (shape pass, ``run_plan``, ``replay_plan_bundle``,
+        ``materialize_scenario``). Mutating it would desync the engine's
+        output from the bytes the replay bundle records. The Scenario
+        subtree is ``frozen=True`` with tuple collection fields so
+        attribute reassignment and list mutators both raise.
+
+        Raises ``pydantic.ValidationError`` on shape-invalid input. The
+        shape pass catches this and converts to structured issues; callers
+        downstream of a passing validation report may assume access
+        succeeds.
+        """
+        return Scenario.model_validate(self.raw_data)
+
+    def _prime_scenario_cache(self, parsed: Scenario) -> None:
+        """Authoritatively populate the ``scenario`` cache from a fresh parse.
+
+        The shape pass parses ``raw_data`` directly and calls this so the
+        cache always reflects the most recent validation, even if a caller
+        warmed it earlier by reading ``scenario`` and then mutated
+        ``raw_data``. Writes to ``__dict__`` to bypass the frozen
+        dataclass setattr block.
+        """
+        self.__dict__[_SCENARIO_CACHE_KEY] = parsed
+
+    def _invalidate_scenario_cache(self) -> None:
+        """Drop any cached Scenario so the next ``scenario`` access re-parses.
+
+        The shape pass calls this on validation failure to ensure a stale
+        cache from pre-validation access cannot mask a shape error in
+        the current ``raw_data``.
+        """
+        self.__dict__.pop(_SCENARIO_CACHE_KEY, None)
 
 
 def prepare_run_input(path: Path) -> RunInput:

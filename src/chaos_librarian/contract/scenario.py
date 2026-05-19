@@ -61,29 +61,38 @@ class SubtitleSource(enum.StrEnum):
 # ---- Library ----------------------------------------------------------------
 
 
+# Every model in the Scenario subtree below is frozen with tuple
+# collection fields. ``RunInput.scenario`` caches one parsed Scenario
+# across the validation pipeline, plan, replay, and materialize; any
+# mutation between validation and the engine would desync generated
+# artifacts from the bytes the replay bundle records. Pydantic still
+# accepts list input and coerces to tuple at validation time, so the
+# wire format is unchanged.
+
+
 class LibraryRoot(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     path: str
 
 
 class Library(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    roots: list[LibraryRoot]
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    roots: tuple[LibraryRoot, ...]
 
 
 # ---- Tracks -----------------------------------------------------------------
 
 
 class VideoTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: VideoSource
     codec: str
     resolution: str
 
 
 class AudioTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: AudioSource = AudioSource.SINE
     codec: str
     channels: str
@@ -91,7 +100,7 @@ class AudioTrack(BaseModel):
 
 
 class SubtitleTrack(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     source: SubtitleSource = SubtitleSource.GENERATED_SRT
     codec: str
     language: str
@@ -102,41 +111,41 @@ class SubtitleTrack(BaseModel):
 
 
 class Asset(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     role: str
     container: str
     duration_seconds: float
     video: VideoTrack | None = None
-    audio: list[AudioTrack] = Field(default_factory=list)
-    subtitles: list[SubtitleTrack] = Field(default_factory=list)
+    audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
+    subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
 
 
 class Bundle(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
-    assets: list[Asset]
+    assets: tuple[Asset, ...]
 
 
 class Variant(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     label: str
     bundle: Bundle
 
 
 class Work(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     title: str
-    variants: list[Variant]
+    variants: tuple[Variant, ...]
 
 
 # ---- Timeline events --------------------------------------------------------
 
 
 class _TimelineEventBase(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
     id: str
     at: str
 
@@ -221,12 +230,13 @@ TimelineEvent = Annotated[
 
 
 class Scenario(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    # See subtree-immutability note above the ``LibraryRoot`` declaration.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     schema_version: Literal[2]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: Literal["short", "normal", "long"]
     library: Library
-    works: list[Work]
-    timeline: list[TimelineEvent]
+    works: tuple[Work, ...]
+    timeline: tuple[TimelineEvent, ...]
