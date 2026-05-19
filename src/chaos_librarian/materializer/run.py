@@ -449,6 +449,14 @@ def _write_sidecars(asset: Asset, library_dir: Path, seed: int) -> dict[tuple[st
     Preflight already rejected non-sidecar modes, so every subtitle here
     is sidecar; hash the bytes so ``_augment_manifest`` can populate
     ``ManifestSidecar.content_hash``.
+
+    The SRT body is written directly to ``library_dir`` (not via a staging
+    tempdir + ``Path.replace``). Materialize mode's recovery model is
+    whole-run replay, not per-file atomicity, so a partial sidecar from an
+    interrupted run is harmless — the next ``run`` rebuilds the library
+    from scratch. See issue #24 for the canonical reference; if the
+    recovery model ever moves to per-file atomicity, replace this with the
+    ``replace_atomic_text`` helper that journal/manifest writers use.
     """
     sidecar_hashes: dict[tuple[str, str], str] = {}
     for sub in asset.subtitles:
