@@ -132,7 +132,7 @@ def run_plan(
     journal_digest = hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
     bundle = PlanOnlyReplayBundle(
-        schema_version=3,
+        schema_version=4,
         chaos_librarian_version=_chaos_librarian_version,
         scenario=run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,
@@ -223,7 +223,13 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     report = run_validation(run_input)
     if not report.ok:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
-        raise RuntimeError(f"replay scenario re-validation failed: {errors}")
+        # Surface as ReplayIntegrityError so the CLI maps it to the
+        # ``replay_divergence`` envelope + exit 6 (was a bare
+        # RuntimeError that escaped Typer's structured handling).
+        raise ReplayIntegrityError(
+            f"replay scenario re-validation failed: {errors}; "
+            "the embedded scenario may target an older contract version"
+        )
 
     parsed = run_input.scenario
     resolved_timeline = resolve_timeline(parsed)

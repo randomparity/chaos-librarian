@@ -19,7 +19,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "scenario_id": "media",
             "seed": 1,
             "duration_scale": "short",
@@ -144,6 +144,7 @@ class TestCreateSidecarHandler:
                     "action": "create_sidecar",
                     "target": "a0",
                     "to": "movies-hd/a0.eng.srt",
+                    "language": "eng",
                 }
             ]
         )
@@ -157,6 +158,7 @@ class TestCreateSidecarHandler:
         (sidecar,) = state.sidecars.values()
         assert sidecar.asset_id == "a0"
         assert sidecar.path == "movies-hd/a0.eng.srt"
+        assert sidecar.language == "eng"
 
 
 class TestReencodeAudioOnUnplacedAssetCrashes:

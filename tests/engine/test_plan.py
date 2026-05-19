@@ -35,8 +35,8 @@ class TestRunPlanBasics:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         artifacts = run_plan(run_input=run_input, validation_report=report)
         assert isinstance(artifacts, PlanArtifacts)
-        assert artifacts.initial_manifest.schema_version == 2
-        assert artifacts.current_manifest.schema_version == 2
+        assert artifacts.initial_manifest.schema_version == 3
+        assert artifacts.current_manifest.schema_version == 3
         assert len(artifacts.journal) == 2  # move + rename
         assert isinstance(artifacts.replay_bundle, PlanOnlyReplayBundle)
         assert artifacts.replay_bundle.execution_mode == ExecutionMode.PLAN_ONLY

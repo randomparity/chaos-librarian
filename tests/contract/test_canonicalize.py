@@ -20,7 +20,7 @@ from chaos_librarian.contract.manifest import (
 
 def _manifest(*, content_hash: str | None, probed: ProbedMedia | None) -> Manifest:
     return Manifest(
-        schema_version=2,
+        schema_version=3,
         works=[ManifestWork(id="w0", title="Title")],
         variants=[ManifestVariant(id="va0", work_id="w0", label="hd")],
         bundles=[ManifestBundle(id="b0", variant_id="va0")],
@@ -45,6 +45,7 @@ def _manifest(*, content_hash: str | None, probed: ProbedMedia | None) -> Manife
                 asset_id="a0",
                 kind="srt",
                 path="library/w0/va0/main.eng.srt",
+                language="eng",
                 content_hash="sha256:" + "f" * 64,
             )
         ],

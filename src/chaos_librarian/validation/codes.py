@@ -31,6 +31,7 @@ E_PATH_CONTAINMENT: Final = "E_PATH_CONTAINMENT"
 E_PATH_DUPLICATE: Final = "E_PATH_DUPLICATE"
 E_TIMELINE_ORDER: Final = "E_TIMELINE_ORDER"
 E_LIFECYCLE_INVALID: Final = "E_LIFECYCLE_INVALID"
+E_SIDECAR_LANGUAGE_INVALID: Final = "E_SIDECAR_LANGUAGE_INVALID"
 
 
 # ---- Pydantic error-type → chaos-librarian code ----------------------------

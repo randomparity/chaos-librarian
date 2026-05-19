@@ -88,7 +88,13 @@ ExecutionTraceEntry = Annotated[
 class _ReplayBundleBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    # v4: scenario contract bumped to v3 (CreateSidecarEvent.language is
+    # now required). The bundle's embedded ``scenario`` field carries a
+    # scenario v3 YAML; replaying a v3 replay bundle against this code
+    # would fail at re-validation. The version bump lets consumers detect
+    # the incompatibility cleanly instead of running into the embedded
+    # validation error later.
+    schema_version: Literal[4]
     chaos_librarian_version: str
     scenario: str  # verbatim YAML
     run_id: uuid.UUID

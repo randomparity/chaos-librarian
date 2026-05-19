@@ -99,13 +99,22 @@ class ManifestSidecar(BaseModel):
     asset_id: str
     kind: str
     path: str
+    # Language tag (e.g. "en", "eng", "fr"), required from manifest v3.
+    # Every producer carries one: materializer takes it from the
+    # scenario's subtitle declarations, and the engine's ``create_sidecar``
+    # handler reads ``event.language`` (required from scenario v3). The
+    # ``(asset_id, language)`` pair is the lookup key in
+    # ``_find_sidecar_for`` and replaces a path-substring match that
+    # mis-resolved when two language tags collided as substrings of each
+    # other (e.g. "en"/"eng").
+    language: str
     content_hash: str | None = None
 
 
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]

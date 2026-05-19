@@ -1,6 +1,6 @@
-# expected: E_LIFECYCLE_INVALID
+# expected: E_SIDECAR_LANGUAGE_INVALID
 schema_version: 3
-scenario_id: lifecycle-reencode-audio-after-delete
+scenario_id: sidecar-language-undeclared
 seed: 1
 duration_scale: short
 
@@ -22,15 +22,15 @@ works:
               role: primary_video
               container: mkv
               duration_seconds: 1
+              subtitles:
+                - codec: srt
+                  language: eng
+                  mode: sidecar
 
 timeline:
   - id: e1
-    at: "0"
-    action: delete_file
+    at: "1s"
+    action: create_sidecar
     target: a0
-  - id: e2
-    at: 1s
-    action: reencode_audio
-    target: a0
-    from_channels: stereo
-    to_channels: "5.1"
+    to: movies-hd/a0.fra.srt
+    language: fra

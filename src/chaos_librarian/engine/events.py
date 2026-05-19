@@ -271,6 +271,7 @@ def _handle_create_sidecar(
         asset_id=event.target,
         kind="subtitle",
         path=event.to,
+        language=event.language,
     )
     state.sidecars[sidecar_id] = sidecar
     entry = _new_atomic_entry(

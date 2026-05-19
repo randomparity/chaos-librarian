@@ -1,4 +1,4 @@
-schema_version: 2
+schema_version: 3
 scenario_id: bundle-sidecars
 seed: 99
 duration_scale: short
@@ -40,3 +40,4 @@ timeline:
     action: create_sidecar
     target: asset_main
     to: movies-hd/Quasar.eng.srt
+    language: eng

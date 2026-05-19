@@ -33,7 +33,7 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
         else []
     )
     return Manifest(
-        schema_version=2,
+        schema_version=3,
         works=[ManifestWork(id="work_blazar", title="Synthetic Blazar")],
         variants=[ManifestVariant(id="variant_hd", work_id="work_blazar", label="hd")],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
@@ -144,6 +144,7 @@ class TestBuildReportSet:
                 asset_id="asset_hd_main",
                 kind="subtitles",
                 path="movies-hd/a.eng.srt",
+                language="eng",
             )
         )
         rs = build_report_set(initial=m, current=m, journal=[])

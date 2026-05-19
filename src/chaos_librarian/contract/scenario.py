@@ -191,6 +191,11 @@ class CreateSidecarEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.CREATE_SIDECAR] = TimelineActionName.CREATE_SIDECAR
     target: str
     to: str
+    # Required from scenario v3 (manifest v3 keys ManifestSidecar lookups on
+    # ``(asset_id, language)``). Engine writes this onto the
+    # ``ManifestSidecar`` row so plan-only consumers can resolve the row by
+    # the same key materialized rows use.
+    language: str
 
 
 class SlowCopyStartEvent(_TimelineEventBase):
@@ -233,7 +238,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: Literal["short", "normal", "long"]
