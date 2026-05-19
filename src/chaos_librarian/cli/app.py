@@ -501,7 +501,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     """
     sentinel = _verify_sentinel(run_dir)
 
-    bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
+    bundle = _REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
     journal_path = run_dir / "journal.jsonl"
     journal_entries = (
@@ -649,7 +649,7 @@ def clean(
         )
         raise typer.Exit(code=7)
     try:
-        bundle = PlanOnlyReplayBundle.model_validate_json(replay_path.read_text())
+        bundle = _REPLAY_BUNDLE_ADAPTER.validate_json(replay_path.read_bytes())
     except (ValidationError, ValueError) as exc:
         _emit_step_error(
             "fixture_inconsistent",

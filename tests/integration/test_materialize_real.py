@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -135,3 +136,145 @@ def test_capabilities_real() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     Capabilities.model_validate_json(completed.stdout)
+
+
+def _install_failing_ffmpeg(bin_dir: Path) -> None:
+    """Drop an ``ffmpeg`` shim into ``bin_dir`` that fakes a healthy ``-version``
+    response but fails (exit 1) on any real materialize invocation.
+
+    The capability gate at the top of ``materialize_scenario`` re-probes
+    ffmpeg via ``shutil.which`` + ``ffmpeg -version`` on every call; a shim
+    that always exits 1 would trip the gate (exit 4) before we ever reach
+    the synthesis loop we want to fail. Responding correctly to ``-version``
+    keeps the gate green so the failure surfaces from the orchestrator's
+    ``ToolFailedError`` path (exit 5), which is the contract under test.
+    """
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    shim = bin_dir / "ffmpeg"
+    shim.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = "-version" ]; then\n'
+        '  echo "ffmpeg version 7.0"\n'
+        "  exit 0\n"
+        "fi\n"
+        "exit 1\n"
+    )
+    shim.chmod(0o755)
+
+
+def test_materialize_unsupported_codec(tmp_path: Path) -> None:
+    """WHY: lazy allocation (Finding 3) — pre-synthesis rejection must
+    leave NO on-disk artifact; the stdout JSON must omit
+    materialization_report_path."""
+    bad_yaml = (
+        (FIXTURE_DIR / "static-library.yaml").read_text().replace("codec: aac", "codec: opus", 1)
+    )
+    scenario_path = tmp_path / "opus.yaml"
+    scenario_path.write_text(bad_yaml)
+    out = tmp_path / "no_run_dir_please"
+    result = runner.invoke(app, ["materialize", str(scenario_path), "--out", str(out), "--json"])
+    assert result.exit_code == 5
+    payload = json.loads(result.stdout)
+    assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
+    assert "materialization_report_path" not in payload
+    assert not out.exists()
+
+
+def test_materialize_tool_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY: a synthesis-time tool failure must wipe library/, write a
+    failure-decorated materialization.json, and flip the sentinel to
+    state=complete (caught failure). Finding 4: replay.json and
+    manifest.current.json must still exist so inspect/clean keep working."""
+    bin_dir = tmp_path / "bin"
+    _install_failing_ffmpeg(bin_dir)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    out = tmp_path / "failed"
+    result = runner.invoke(
+        app,
+        [
+            "materialize",
+            str(FIXTURE_DIR / "static-library.yaml"),
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 5, result.stdout + result.stderr
+    assert (out / ".chaos-librarian-run").exists()
+    sentinel = json.loads((out / ".chaos-librarian-run").read_text())
+    assert sentinel["state"] == "complete"
+    assert list((out / "library").iterdir()) == []
+    report = json.loads((out / "materialization.json").read_text())
+    assert report["outcome"] == "tool_failed"
+    assert report["failures"]
+    for required in ("replay.json", "manifest.current.json"):
+        assert (out / required).exists(), required
+
+
+def test_inspect_works_against_failed_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """WHY: Finding 4 — ``inspect`` reads ``replay.json`` and
+    ``manifest.current.json`` unguarded; a failed run-dir missing either
+    file crashes the command with exit 1. ``cleanup_failed_run`` must
+    emit both so the standard inspect surface keeps working post-failure,
+    and ``clean`` must then accept the failed run-dir."""
+    bin_dir = tmp_path / "bin"
+    _install_failing_ffmpeg(bin_dir)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}")
+
+    out = tmp_path / "failed_for_inspect"
+    materialize_result = runner.invoke(
+        app,
+        [
+            "materialize",
+            str(FIXTURE_DIR / "static-library.yaml"),
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+    assert materialize_result.exit_code == 5, materialize_result.stdout + materialize_result.stderr
+
+    inspect_result = runner.invoke(app, ["inspect", str(out), "--json"])
+    assert inspect_result.exit_code == 0, inspect_result.stdout + inspect_result.stderr
+    inspect_payload = json.loads(inspect_result.stdout)
+    assert inspect_payload["sentinel"]["state"] == "complete"
+    assert inspect_payload["execution_mode"] == "materialize"
+
+    clean_result = runner.invoke(app, ["clean", str(out)])
+    assert clean_result.exit_code == 0, clean_result.stdout + clean_result.stderr
+    assert not out.exists()
+
+
+def test_materialize_interrupted_recovery(tmp_path: Path) -> None:
+    """WHY: Finding 2 — uncaught signals leave state=in_progress; inspect
+    surfaces it, step refuses with E_SENTINEL_IN_PROGRESS exit 7, clean
+    accepts the dir.
+
+    A real signal-interrupted materialize is hard to simulate
+    cross-platform; the contract under test is the sentinel ``state``
+    surface alone, so mutating the sentinel of a successful plan run-dir
+    is a faithful stand-in.
+    """
+    out = tmp_path / "partial"
+    plan_result = runner.invoke(
+        app, ["plan", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out)]
+    )
+    assert plan_result.exit_code == 0, plan_result.stdout + plan_result.stderr
+    sentinel_path = out / ".chaos-librarian-run"
+    blob = json.loads(sentinel_path.read_text())
+    blob["state"] = "in_progress"
+    sentinel_path.write_text(json.dumps(blob, indent=2) + "\n")
+
+    inspect_result = runner.invoke(app, ["inspect", str(out), "--json"])
+    assert inspect_result.exit_code == 0, inspect_result.stdout + inspect_result.stderr
+    assert json.loads(inspect_result.stdout)["sentinel"]["state"] == "in_progress"
+
+    step_result = runner.invoke(app, ["step", str(out), "--json"])
+    assert step_result.exit_code == 7, step_result.stdout + step_result.stderr
+    step_payload = json.loads(step_result.stderr)
+    assert step_payload["error"] == "E_SENTINEL_IN_PROGRESS"
+
+    clean_result = runner.invoke(app, ["clean", str(out)])
+    assert clean_result.exit_code == 0, clean_result.stdout + clean_result.stderr
+    assert not out.exists()
