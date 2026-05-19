@@ -38,6 +38,13 @@ class RunInput:
         directly, so the frozen dataclass setattr block is bypassed).
         Subsequent accesses return the same object identity.
 
+        The cached Scenario is shared across every consumer that holds
+        the same RunInput (shape pass, ``run_plan``, ``replay_plan_bundle``,
+        ``materialize_scenario``). Mutating it would desync the engine's
+        output from ``raw_bytes`` / the replay bundle's embedded scenario.
+        The Scenario model is ``frozen=True`` at the top level to block
+        attribute reassignment; callers must not mutate nested lists either.
+
         Raises ``pydantic.ValidationError`` on shape-invalid input; the
         validation pipeline's shape pass catches it and converts to
         structured issues. Callers downstream of a passing validation

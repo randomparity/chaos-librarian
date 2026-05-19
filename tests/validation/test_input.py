@@ -118,6 +118,25 @@ class TestRunInputScenarioCache:
         with pytest.raises(ValidationError):
             _ = run_input.scenario
 
+    def test_cached_scenario_is_frozen_against_attribute_reassignment(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """Mutating the cached Scenario's fields must raise.
+
+        WHY: ``RunInput.scenario`` is shared across the validation pipeline,
+        ``run_plan``, ``replay_plan_bundle``, and ``materialize_scenario``.
+        A reassignment between validation and the engine would silently make
+        the engine's output disagree with ``raw_bytes`` (which is what the
+        replay bundle records). The Scenario model is ``frozen=True`` to
+        catch the most common mutation path at the type-system level.
+        """
+        path = tmp_path / "s.yaml"
+        path.write_bytes(self._VALID_BYTES)
+        run_input = prepare_run_input(path)
+        with pytest.raises(ValidationError):
+            run_input.scenario.scenario_id = "tampered"  # type: ignore[misc]
+
     def test_validate_and_plan_parse_scenario_once(
         self,
         tmp_path: Path,

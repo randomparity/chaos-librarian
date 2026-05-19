@@ -221,7 +221,15 @@ TimelineEvent = Annotated[
 
 
 class Scenario(BaseModel):
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    # frozen=True: ``RunInput.scenario`` caches the parsed Scenario and shares
+    # it across the validation pipeline, ``run_plan``, ``replay_plan_bundle``,
+    # and ``materialize_scenario``. A mutation between validation and the
+    # engine would silently produce a fixture whose manifests describe the
+    # mutated scenario while the embedded ``scenario.yaml`` bytes describe
+    # the original. Freezing the top-level model blocks ``scenario.field =
+    # value`` reassignment; deeper list/dict mutation guards are tracked
+    # separately because they would require a wider contract change.
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
     schema_version: Literal[2]
     scenario_id: str
