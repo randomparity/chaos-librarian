@@ -72,3 +72,53 @@ def recipe_solid_color(
         lavfi=f"color=c=#{hex_color}:s={width}x{height}:r={fps}",
         extra_flags=("-t", str(duration_s)),
     )
+
+
+_CHANNEL_COUNTS = {"mono": 1, "stereo": 2, "5.1": 6}
+# Distinct base frequencies — pattern: doubles per channel.
+_CHANNEL_TONE_BASE = (220, 440, 880, 1760, 3520, 7040)
+
+
+def _frequency_from_seed(seed: int) -> int:
+    """Map seed to a sine frequency in the 100-1000 Hz human-audible band."""
+    return 100 + (abs(seed) % 901)
+
+
+def recipe_sine(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+    """A single sine tone — frequency derived from seed; channel layout
+    set via the lavfi source so the muxer sees the right channel count."""
+    del channels  # sine is mono-by-construction; ffmpeg upmixes via the muxer
+    freq = _frequency_from_seed(seed)
+    return FFmpegInput(
+        lavfi=f"sine=frequency={freq}:duration={duration_s}:sample_rate=48000",
+        extra_flags=(),
+    )
+
+
+def recipe_silence(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+    """anullsrc — zero-amplitude audio at the requested channel layout."""
+    del seed  # silence is fully determined by channels + duration
+    return FFmpegInput(
+        lavfi=f"anullsrc=channel_layout={channels}:sample_rate=48000",
+        extra_flags=("-t", str(duration_s)),
+    )
+
+
+def recipe_channel_tones(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+    """One distinct sine frequency per channel — debugging signal.
+
+    Frequencies start from the seed-derived base and double per channel.
+    """
+    count = _CHANNEL_COUNTS[channels]
+    base_index = abs(seed) % len(_CHANNEL_TONE_BASE)
+    sources = []
+    for offset in range(count):
+        freq = _CHANNEL_TONE_BASE[(base_index + offset) % len(_CHANNEL_TONE_BASE)]
+        sources.append(f"sine=frequency={freq}:duration={duration_s}:sample_rate=48000")
+    if count == 1:
+        lavfi = sources[0]
+    else:
+        # amerge requires inputs= count; build the amerge filter graph inline
+        sep = "|".join(sources)
+        lavfi = f"{sep}|amerge=inputs={count}"
+    return FFmpegInput(lavfi=lavfi, extra_flags=())

@@ -6,8 +6,11 @@ import pytest
 
 from chaos_librarian.materializer.recipes import (
     FFmpegInput,
+    recipe_channel_tones,
     recipe_color_bars,
     recipe_mandelbrot,
+    recipe_silence,
+    recipe_sine,
     recipe_solid_color,
 )
 
@@ -65,3 +68,33 @@ def test_every_video_recipe_carries_duration_flag(seed: int) -> None:
         recipe_solid_color(**kwargs),
     ):
         assert "-t" in fi.extra_flags
+
+
+def test_sine_frequency_derives_from_seed():
+    fi = recipe_sine(channels="mono", duration_s=2.0, seed=440)
+    assert fi.lavfi is not None
+    assert fi.lavfi.startswith("sine=frequency=")
+    assert ":sample_rate=48000" in fi.lavfi
+    assert ":duration=2.0" in fi.lavfi
+
+
+def test_silence_uses_channel_layout():
+    fi = recipe_silence(channels="5.1", duration_s=1.0, seed=0)
+    assert fi.lavfi == "anullsrc=channel_layout=5.1:sample_rate=48000"
+    assert ("-t", "1.0") in tuple(_pairs(fi.extra_flags))
+
+
+def test_channel_tones_emits_one_frequency_per_channel():
+    """WHY: channel_tones is the materializer's debugging signal — each
+    channel carries a distinct frequency so a downstream listener can tell
+    them apart. Stereo must produce exactly two frequencies."""
+    fi = recipe_channel_tones(channels="stereo", duration_s=1.0, seed=1)
+    assert fi.lavfi is not None
+    # Stereo => 2 sine sources merged with amerge or join
+    assert fi.lavfi.count("sine=frequency=") == 2
+
+
+def test_channel_tones_5_1_emits_six_frequencies():
+    fi = recipe_channel_tones(channels="5.1", duration_s=1.0, seed=1)
+    assert fi.lavfi is not None
+    assert fi.lavfi.count("sine=frequency=") == 6
