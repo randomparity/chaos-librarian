@@ -1,0 +1,155 @@
+"""Tests for the unified CLI error envelope (issue #15).
+
+The envelope policy is one shape for every command:
+- JSON key ``error_code`` (not ``error``)
+- Output stream is stderr (both JSON and human)
+- Human format is multi-line: ``chaos-librarian: failed (CODE)`` followed
+  by indented key/value rows
+- Per-exception ``payload`` content is nested under a ``details`` key so it
+  cannot collide with the structured top-level fields
+  (``error_code``, ``message``, ``asset_id``, ``field``).
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from typer.testing import CliRunner
+
+from chaos_librarian.cli import app as app_mod
+from chaos_librarian.cli.app import app
+from chaos_librarian.materializer import (
+    MaterializeArtifacts,
+    UnsupportedMaterializationError,
+)
+
+FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "scenarios"
+
+runner = CliRunner()
+
+
+def _materialize_with_unsupported_codec(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    json_output: bool,
+) -> tuple[int, str, str]:
+    """Run materialize with an injected ``UnsupportedMaterializationError``.
+
+    Returns ``(exit_code, stdout, stderr)``. ``UnsupportedMaterializationError``
+    has every interesting envelope field populated (``asset_id``, ``field``,
+    ``payload``) so a single fixture covers the full envelope contract.
+    """
+
+    def raise_unsupported(*_a: object, **_k: object) -> MaterializeArtifacts:
+        raise UnsupportedMaterializationError(
+            "opus not supported",
+            asset_id="a0",
+            field="audio[0].codec",
+            payload={"supported": ["aac"]},
+        )
+
+    monkeypatch.setattr(app_mod, "materialize_scenario", raise_unsupported)
+    out = tmp_path / "absent"
+    args = ["materialize", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out)]
+    if json_output:
+        args.append("--json")
+    result = runner.invoke(app, args)
+    return result.exit_code, result.stdout, result.stderr
+
+
+class TestUnifiedEnvelopeJsonShape:
+    """JSON envelope: ``error_code`` (not ``error``), stderr stream, details nested.
+
+    WHY: downstream agents (voom-v2) parse the JSON; a single canonical key
+    + stream is the contract that lets them avoid per-command branching.
+    """
+
+    def test_uses_error_code_key_not_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        code, _stdout, stderr = _materialize_with_unsupported_codec(
+            monkeypatch, tmp_path, json_output=True
+        )
+        assert code == 5
+        payload = json.loads(stderr)
+        assert "error_code" in payload
+        assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
+        assert "error" not in payload, "legacy `error` key must be removed"
+
+    def test_json_envelope_goes_to_stderr_not_stdout(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        code, stdout, stderr = _materialize_with_unsupported_codec(
+            monkeypatch, tmp_path, json_output=True
+        )
+        assert code == 5
+        assert stdout == "", f"stdout should be empty for errors, got: {stdout!r}"
+        assert stderr.strip(), "stderr should carry the JSON envelope"
+
+    def test_payload_nests_under_details(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """``exc.payload`` content must live under ``details`` so it can't
+        collide with the top-level structured fields."""
+        _code, _stdout, stderr = _materialize_with_unsupported_codec(
+            monkeypatch, tmp_path, json_output=True
+        )
+        payload = json.loads(stderr)
+        assert "details" in payload, f"expected details key, got {payload.keys()}"
+        assert payload["details"] == {"supported": ["aac"]}
+        # And nothing leaks to top level.
+        assert "supported" not in payload, (
+            "exc.payload fields must NOT be shallow-merged into the top level"
+        )
+
+
+class TestUnifiedEnvelopeHumanFormat:
+    """Human format: multi-line ``chaos-librarian: failed (CODE)`` + rows.
+
+    WHY: a single human format means operators see the same shape for every
+    failure regardless of which command failed.
+    """
+
+    def test_human_format_multiline_to_stderr(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        code, stdout, stderr = _materialize_with_unsupported_codec(
+            monkeypatch, tmp_path, json_output=False
+        )
+        assert code == 5
+        assert stdout == "", "human-format errors must not write to stdout"
+        # Banner is the unified shape, not the old per-command "materialize failed".
+        assert "chaos-librarian: failed (E_MATERIALIZE_UNSUPPORTED)" in stderr
+        # Structured rows are indented.
+        assert "  message:" in stderr
+        assert "  asset:" in stderr
+        assert "  field:" in stderr
+
+
+class TestStepCommandUsesUnifiedEnvelope:
+    """The step command now emits the same envelope as materialize.
+
+    WHY: the original ``_emit_step_error`` used a ``"error"`` key, single-line
+    human format, and stderr. Unifying it means every command's failure
+    record has the same key.
+    """
+
+    def test_step_sentinel_error_uses_error_code_key(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / "no-sentinel"
+        run_dir.mkdir()
+        result = runner.invoke(app, ["step", str(run_dir), "--json"])
+        assert result.exit_code == 7
+        payload = json.loads(result.stderr)
+        assert "error_code" in payload, f"step must use error_code key, got {list(payload.keys())}"
+        assert "error" not in payload

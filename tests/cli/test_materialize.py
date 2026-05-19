@@ -105,13 +105,13 @@ def test_materialize_exit_four_on_capability_gate(monkeypatch, tmp_path: Path) -
         ["materialize", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out), "--json"],
     )
     assert result.exit_code == 4
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_CAPABILITY_GATE"
 
 
 def test_materialize_exit_five_on_unsupported_lazy_allocation(monkeypatch, tmp_path: Path) -> None:
     """WHY: lazy allocation guarantee (Finding 3) — pre-synthesis failures
-    leave NO on-disk artifact and the stdout JSON omits
+    leave NO on-disk artifact and the stderr JSON omits
     materialization_report_path."""
 
     def raise_unsupported(*_a: object, **_k: object) -> MaterializeArtifacts:
@@ -129,7 +129,7 @@ def test_materialize_exit_five_on_unsupported_lazy_allocation(monkeypatch, tmp_p
         ["materialize", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out), "--json"],
     )
     assert result.exit_code == 5
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
     assert "materialization_report_path" not in payload
     assert not out.exists()
@@ -148,14 +148,14 @@ def test_materialize_exit_five_on_timeline(monkeypatch, tmp_path: Path) -> None:
         ["materialize", str(FIXTURE_DIR / "slow-copy.yaml"), "--out", str(out), "--json"],
     )
     assert result.exit_code == 5
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
 
 
 def test_materialize_exit_three_on_validation_failure(monkeypatch, tmp_path: Path) -> None:
     """WHY: Finding 1 — the materialize entry must mirror ``plan``'s
     exit-3 convention for semantic-validation failures so agents can
-    disambiguate "scenario rejected" from "tool failed". The stdout JSON
+    disambiguate "scenario rejected" from "tool failed". The stderr JSON
     carries E_MATERIALIZE_VALIDATION_FAILED and omits
     materialization_report_path (no run-dir allocated)."""
     bad_report = ValidationReport(
@@ -190,7 +190,7 @@ def test_materialize_exit_three_on_validation_failure(monkeypatch, tmp_path: Pat
         ["materialize", str(FIXTURE_DIR / "bundle-sidecars.yaml"), "--out", str(out), "--json"],
     )
     assert result.exit_code == 3
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_VALIDATION_FAILED"
     assert "materialization_report_path" not in payload
     assert not out.exists()

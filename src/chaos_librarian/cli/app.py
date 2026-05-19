@@ -214,34 +214,72 @@ def materialize(
         typer.echo(f"materialize: wrote {out}")
 
 
+def _emit_cli_error(
+    *,
+    error_code: str,
+    message: str,
+    json_output: bool,
+    asset_id: str | None = None,
+    field: str | None = None,
+    extra_top_level: dict[str, object] | None = None,
+    details: dict[str, object] | None = None,
+) -> None:
+    """Single error envelope for every command (issue #15).
+
+    Shape: ``error_code`` + ``message`` (always present), ``asset_id`` /
+    ``field`` when applicable, ``extra_top_level`` for adjunct paths
+    (e.g. ``materialization_report_path``), and ``details`` carrying the
+    originating exception's payload. Both JSON and human-format output
+    are written to stderr; stdout is reserved for success output so a
+    pipe consumer can disambiguate ``ok`` from ``error`` purely by stream.
+    """
+    if json_output:
+        payload: dict[str, object] = {
+            "error_code": error_code,
+            "message": message,
+        }
+        if asset_id is not None:
+            payload["asset_id"] = asset_id
+        if field is not None:
+            payload["field"] = field
+        if extra_top_level:
+            payload.update(extra_top_level)
+        if details:
+            payload["details"] = details
+        typer.echo(json.dumps(payload, sort_keys=True), err=True)
+        return
+    typer.echo(f"chaos-librarian: failed ({error_code})", err=True)
+    typer.echo(f"  message: {message}", err=True)
+    if asset_id is not None:
+        typer.echo(f"  asset:   {asset_id}", err=True)
+    if field is not None:
+        typer.echo(f"  field:   {field}", err=True)
+    if extra_top_level:
+        for key in sorted(extra_top_level):
+            typer.echo(f"  {key}: {extra_top_level[key]}", err=True)
+    if details:
+        for key in sorted(details):
+            typer.echo(f"  {key}: {details[key]}", err=True)
+
+
 def _emit_materialize_error(
     exc: MaterializationError,
     *,
     json_output: bool,
     run_dir: Path | None,
 ) -> None:
-    payload: dict[str, object] = {
-        "error_code": exc.error_code,
-        "message": exc.message,
-    }
-    if exc.asset_id is not None:
-        payload["asset_id"] = exc.asset_id
-    if exc.field is not None:
-        payload["field"] = exc.field
-    payload.update(exc.payload)
+    extra: dict[str, object] | None = None
     if run_dir is not None:
-        payload["materialization_report_path"] = str(run_dir / "materialization.json")
-    if json_output:
-        typer.echo(json.dumps(payload, sort_keys=True))
-    else:
-        typer.echo(f"chaos-librarian: materialize failed ({exc.error_code})", err=True)
-        typer.echo(f"  message: {exc.message}", err=True)
-        if exc.asset_id is not None:
-            typer.echo(f"  asset:   {exc.asset_id}", err=True)
-        if exc.field is not None:
-            typer.echo(f"  field:   {exc.field}", err=True)
-        if run_dir is not None:
-            typer.echo(f"  report:  {run_dir / 'materialization.json'}", err=True)
+        extra = {"materialization_report_path": str(run_dir / "materialization.json")}
+    _emit_cli_error(
+        error_code=exc.error_code,
+        message=exc.message,
+        json_output=json_output,
+        asset_id=exc.asset_id,
+        field=exc.field,
+        extra_top_level=extra,
+        details=dict(exc.payload) if exc.payload else None,
+    )
 
 
 @app.command()
@@ -330,13 +368,16 @@ def _emit_step_error(
     json_output: bool,
     extra: dict[str, object] | None = None,
 ) -> None:
-    if json_output:
-        payload: dict[str, object] = {"error": error_code, "message": message}
-        if extra:
-            payload.update(extra)
-        typer.echo(json.dumps(payload, sort_keys=True), err=True)
-    else:
-        typer.echo(f"{error_code}: {message}", err=True)
+    """Compat wrapper that routes step/clean/inspect through the unified
+    envelope. ``extra`` (recorded_run_id, kind, line, …) lands under
+    ``details`` so it can't collide with the top-level structured keys.
+    """
+    _emit_cli_error(
+        error_code=error_code,
+        message=message,
+        json_output=json_output,
+        details=extra,
+    )
 
 
 @app.command()
@@ -360,16 +401,12 @@ def replay(
     try:
         artifacts = replay_plan_bundle(parsed_bundle)
     except ReplayIntegrityError as exc:
-        payload = {
-            "error": "replay_divergence",
-            "kind": "integrity",
-            "recorded_run_id": str(parsed_bundle.run_id),
-            "message": str(exc),
-        }
-        if json_output:
-            typer.echo(json.dumps(payload, sort_keys=True), err=True)
-        else:
-            typer.echo(f"replay_divergence: {exc}", err=True)
+        _emit_cli_error(
+            error_code="replay_divergence",
+            message=str(exc),
+            json_output=json_output,
+            details={"kind": "integrity", "recorded_run_id": str(parsed_bundle.run_id)},
+        )
         raise typer.Exit(code=6) from exc
 
     write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
@@ -378,31 +415,30 @@ def replay(
     if target is not None:
         diff = compare_fixtures(target, out)
         if not diff.is_clean():
-            payload = {
-                "error": "replay_divergence",
-                "kind": "artifact_diff",
-                "run_id": str(parsed_bundle.run_id),
-                "left_dir": str(target.resolve()),
-                "right_dir": str(out.resolve()),
-                "files": [
-                    {
-                        "path": f.path,
-                        "kind": f.kind,
-                        "left_bytes": f.left_bytes,
-                        "right_bytes": f.right_bytes,
-                        "first_diff_line": f.first_diff_line,
-                        "preview_left": f.preview_left,
-                        "preview_right": f.preview_right,
-                    }
-                    for f in diff.files
-                ],
-            }
-            if json_output:
-                typer.echo(json.dumps(payload, sort_keys=True), err=True)
-            else:
-                typer.echo(f"replay_divergence: {len(diff.files)} files differ", err=True)
-                for f in diff.files:
-                    typer.echo(f"  - {f.path} [{f.kind}]", err=True)
+            file_summaries: list[dict[str, object]] = [
+                {
+                    "path": f.path,
+                    "kind": f.kind,
+                    "left_bytes": f.left_bytes,
+                    "right_bytes": f.right_bytes,
+                    "first_diff_line": f.first_diff_line,
+                    "preview_left": f.preview_left,
+                    "preview_right": f.preview_right,
+                }
+                for f in diff.files
+            ]
+            _emit_cli_error(
+                error_code="replay_divergence",
+                message=f"{len(diff.files)} files differ",
+                json_output=json_output,
+                details={
+                    "kind": "artifact_diff",
+                    "run_id": str(parsed_bundle.run_id),
+                    "left_dir": str(target.resolve()),
+                    "right_dir": str(out.resolve()),
+                    "files": file_summaries,
+                },
+            )
             raise typer.Exit(code=6)
 
     if json_output:
