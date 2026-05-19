@@ -23,9 +23,12 @@ from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.engine import (
     JournalCorruptError,
     PlanArtifacts,
+    ReplayIntegrityError,
     ScenarioTamperedError,
     SentinelInvalidError,
     StepResult,
+    compare_fixtures,
+    replay_plan_bundle,
     run_plan,
     step_fixture,
 )
@@ -252,10 +255,112 @@ def _emit_step_error(
 def replay(
     bundle: Annotated[Path, typer.Argument(exists=True, dir_okay=False)],
     out: Annotated[Path, typer.Option("--out", callback=_validate_new_out_path)],
+    against: Annotated[Path | None, typer.Option("--against", exists=True, file_okay=False)] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Replay a recorded run."""
-    _stub("replay")
+    """Replay a recorded run from its replay.json bundle."""
+    parsed_bundle = PlanOnlyReplayBundle.model_validate_json(bundle.read_text())
+    try:
+        artifacts = replay_plan_bundle(parsed_bundle)
+    except ReplayIntegrityError as exc:
+        payload = {
+            "error": "replay_divergence",
+            "kind": "integrity",
+            "recorded_run_id": str(parsed_bundle.run_id),
+            "message": str(exc),
+        }
+        if json_output:
+            typer.echo(json.dumps(payload, sort_keys=True), err=True)
+        else:
+            typer.echo(f"replay_divergence: {exc}", err=True)
+        raise typer.Exit(code=6) from exc
+
+    write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
+
+    target = against or _infer_original(bundle, parsed_bundle.run_id, parsed_bundle.applied_events)
+    if target is not None:
+        diff = compare_fixtures(target, out)
+        if not diff.is_clean():
+            payload = {
+                "error": "replay_divergence",
+                "kind": "artifact_diff",
+                "run_id": str(parsed_bundle.run_id),
+                "left_dir": str(target.resolve()),
+                "right_dir": str(out.resolve()),
+                "files": [
+                    {
+                        "path": f.path,
+                        "kind": f.kind,
+                        "left_bytes": f.left_bytes,
+                        "right_bytes": f.right_bytes,
+                        "first_diff_line": f.first_diff_line,
+                        "preview_left": f.preview_left,
+                        "preview_right": f.preview_right,
+                    }
+                    for f in diff.files
+                ],
+            }
+            if json_output:
+                typer.echo(json.dumps(payload, sort_keys=True), err=True)
+            else:
+                typer.echo(f"replay_divergence: {len(diff.files)} files differ", err=True)
+                for f in diff.files:
+                    typer.echo(f"  - {f.path} [{f.kind}]", err=True)
+            raise typer.Exit(code=6)
+
+    if json_output:
+        typer.echo(
+            json.dumps(
+                {
+                    "out": str(out.resolve()),
+                    "run_id": str(parsed_bundle.run_id),
+                    "compared_against": str(target) if target else None,
+                },
+                sort_keys=True,
+            )
+        )
+    else:
+        suffix = f" (matches {target})" if target else ""
+        typer.echo(f"replay: wrote {out}{suffix}")
+
+
+def _infer_original(bundle_path: Path, run_id: object, applied_events: int) -> Path | None:
+    """Return ``bundle_path.parent`` when it is the bundle's original fixture.
+
+    Two bundles of the same scenario+seed at different truncation points share
+    a ``run_id``; the cross-check on ``applied_events`` ensures auto-discover
+    does not match a different-length sibling fixture. Returns ``None`` when
+    the sentinel is missing, the sentinel is unparseable, the sibling
+    ``replay.json`` is missing or unparseable, or either field disagrees.
+    """
+    parent = bundle_path.parent
+    sentinel = _load_sentinel(parent / ".chaos-librarian-run")
+    if sentinel is None or sentinel.run_id != run_id:
+        return None
+    parent_bundle = _load_replay_bundle(parent / "replay.json")
+    if parent_bundle is None or parent_bundle.applied_events != applied_events:
+        return None
+    return parent
+
+
+def _load_sentinel(path: Path) -> RunSentinel | None:
+    """Parse a sentinel file, returning ``None`` when absent or malformed."""
+    if not path.exists():
+        return None
+    try:
+        return RunSentinel.model_validate_json(path.read_text())
+    except (ValidationError, ValueError):
+        return None
+
+
+def _load_replay_bundle(path: Path) -> PlanOnlyReplayBundle | None:
+    """Parse a plan-only replay bundle, returning ``None`` when absent or malformed."""
+    if not path.exists():
+        return None
+    try:
+        return PlanOnlyReplayBundle.model_validate_json(path.read_text())
+    except (ValidationError, ValueError):
+        return None
 
 
 @app.command()
