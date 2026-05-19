@@ -133,7 +133,7 @@ def run_plan(
     journal_digest = hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
     bundle = PlanOnlyReplayBundle(
-        schema_version=2,
+        schema_version=3,
         chaos_librarian_version=_chaos_librarian_version,
         scenario=run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,

@@ -20,6 +20,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract import CHAOS_LIBRARIAN_NAMESPACE_UUID
+from chaos_librarian.contract.materialization import ToolchainInfo
 
 
 class ExecutionTraceKind(enum.StrEnum):
@@ -87,7 +88,7 @@ ExecutionTraceEntry = Annotated[
 class _ReplayBundleBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     chaos_librarian_version: str
     scenario: str  # verbatim YAML
     run_id: uuid.UUID
@@ -106,12 +107,15 @@ class PlanOnlyReplayBundle(_ReplayBundleBase):
 class MaterializeReplayBundle(_ReplayBundleBase):
     """Replay bundle in materialize or run mode.
 
+    ``applied_events`` is pinned to 0 in Sprint 5 because every materialize
+    timeline is empty; the base class constraint will widen again in Sprint 6.
     ``created_at`` and ``toolchain`` are both required (non-null).
     """
 
     execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN]
+    applied_events: Literal[0] = 0
     created_at: datetime
-    toolchain: dict[str, str]
+    toolchain: ToolchainInfo
 
 
 ReplayBundle = Annotated[
