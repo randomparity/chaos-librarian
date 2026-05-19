@@ -23,7 +23,6 @@ from chaos_librarian.contract.replay_bundle import (
     compute_plan_only_run_id,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.determinism import (
     IdAllocator,
@@ -85,7 +84,7 @@ def run_plan(
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
-    parsed = Scenario.model_validate(run_input.raw_data)
+    parsed = run_input.scenario
     resolved_seed = (
         resolved_seed_override if resolved_seed_override is not None else resolve_seed(parsed.seed)
     )
@@ -226,7 +225,7 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
         raise RuntimeError(f"replay scenario re-validation failed: {errors}")
 
-    parsed = Scenario.model_validate(run_input.raw_data)
+    parsed = run_input.scenario
     resolved_timeline = resolve_timeline(parsed)
     boundaries = step_boundaries(resolved_timeline)
     valid_boundaries = {0, *boundaries}

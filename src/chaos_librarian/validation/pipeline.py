@@ -93,8 +93,8 @@ def run_validation(run_input: RunInput) -> ValidationReport:
         )
         return _assemble_report(scenario_id="<unknown>", collector=collector)
 
-    # Step 2: shape pass.
-    run_shape_pass(raw_data, line_index, collector)
+    # Step 2: shape pass (also primes ``RunInput.scenario`` cache on success).
+    run_shape_pass(run_input, collector)
 
     # Step 3: semantic pass (runs even if shape produced issues; rules guard).
     run_semantic_pass(raw_data, line_index, collector)

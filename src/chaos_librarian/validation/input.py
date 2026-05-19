@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from typing import Any
 
+from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError, parse_scenario_bytes
 
 
@@ -26,6 +28,22 @@ class RunInput:
     content_hash: str
     raw_data: Any
     line_index: LineIndex
+
+    @cached_property
+    def scenario(self) -> Scenario:
+        """Parsed Scenario, computed once per RunInput.
+
+        First access invokes ``Scenario.model_validate`` and caches the
+        result in the instance ``__dict__`` (cached_property writes there
+        directly, so the frozen dataclass setattr block is bypassed).
+        Subsequent accesses return the same object identity.
+
+        Raises ``pydantic.ValidationError`` on shape-invalid input; the
+        validation pipeline's shape pass catches it and converts to
+        structured issues. Callers downstream of a passing validation
+        report may assume the access succeeds.
+        """
+        return Scenario.model_validate(self.raw_data)
 
 
 def prepare_run_input(path: Path) -> RunInput:

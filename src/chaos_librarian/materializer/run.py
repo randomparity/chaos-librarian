@@ -119,7 +119,6 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     """Run the 8-step pipeline. Raises on any failure (caught by the CLI)."""
     started_at = datetime.now(UTC)
     run_input = prepare_run_input(scenario_path)
-    scenario = Scenario.model_validate(run_input.raw_data)
     # Run semantic validation BEFORE the timeline scope check so
     # containment/lifecycle errors surface as ScenarioValidationError
     # (exit 3) instead of being shadowed by TimelineUnsupportedError when an
@@ -133,6 +132,9 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
             },
             validation_report=validation_report,
         )
+    # Validation succeeded → ``RunInput.scenario`` cache is primed by the
+    # shape pass; access the cached parse instead of re-validating.
+    scenario = run_input.scenario
     if scenario.timeline:
         raise TimelineUnsupportedError(
             "materialize accepts static scenarios only; remove timeline events.",
