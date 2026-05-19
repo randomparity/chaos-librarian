@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
@@ -191,6 +192,46 @@ class TestReplayOfSteppedFixture:
         )
         step_result = runner.invoke(app, ["step", str(paused), "--next", "1"])
         assert step_result.exit_code == 0
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            ["replay", str(paused / "replay.json"), "--out", str(out), "--against", str(paused)],
+        )
+        assert result.exit_code == 0, result.stdout + result.stderr
+
+    @pytest.mark.parametrize("scenario_name", ["version-evolution.yaml", "bundle-sidecars.yaml"])
+    def test_replay_of_stepped_id_allocating_fixture(
+        self, scenario_name: str, tmp_path: Path
+    ) -> None:
+        """A fixture advanced via step over ID-allocating events replays clean.
+
+        WHY: Codex round 4 finding 1. step_fixture previously dropped
+        the IdAllocator's TraceRecorder on the floor, so the persisted
+        bundle's execution_trace was stale on any scenario that
+        allocates a version/location/sidecar/mutation id at runtime.
+        Replay regenerated the trace from scratch and byte-diffed
+        against the on-disk replay.json.
+        """
+        paused = tmp_path / "paused"
+        assert (
+            runner.invoke(
+                app,
+                [
+                    "plan",
+                    str(FIXTURE_DIR / scenario_name),
+                    "--out",
+                    str(paused),
+                    "--steps",
+                    "0",
+                ],
+            ).exit_code
+            == 0
+        )
+        for _ in range(20):
+            step_result = runner.invoke(app, ["step", str(paused), "--next", "1", "--json"])
+            assert step_result.exit_code == 0, step_result.stdout + step_result.stderr
+            if json.loads(step_result.stdout)["done"]:
+                break
         out = tmp_path / "replay"
         result = runner.invoke(
             app,

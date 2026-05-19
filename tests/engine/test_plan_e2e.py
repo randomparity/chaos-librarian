@@ -141,6 +141,12 @@ class TestStepVsPlanByteIdentical:
         assert (plan_dir / "manifest.current.json").read_bytes() == (
             step_dir / "manifest.current.json"
         ).read_bytes()
+        # replay.json must also be byte-identical: the stepped bundle's
+        # execution_trace has to carry every alloc/rng entry the full plan
+        # recorded, or replay against the stepped fixture byte-diffs.
+        # Codex round 4 finding 1 — version-evolution and bundle-sidecars
+        # in the pack scenarios are the load-bearing cases.
+        assert (plan_dir / "replay.json").read_bytes() == (step_dir / "replay.json").read_bytes()
         for sub in ("assets", "works", "variants", "bundles"):
             plan_files = sorted((plan_dir / "reports" / sub).iterdir())
             step_files = sorted((step_dir / "reports" / sub).iterdir())

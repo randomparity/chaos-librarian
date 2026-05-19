@@ -10,6 +10,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
 from chaos_librarian.engine import (
     JournalCorruptError,
     ScenarioTamperedError,
@@ -252,3 +253,26 @@ class TestStepFixtureRoundThree:
             )
         ).hexdigest()
         assert result.new_replay_bundle.journal_digest == expected
+
+
+class TestStepFixtureRoundFour:
+    """Round-4 regression: step_fixture preserves the full execution_trace.
+
+    WHY: Codex round 4 finding 1. ID-allocating events (reencode_video,
+    reencode_audio, add_file, create_sidecar) record AllocTraceEntry
+    values during cursor recovery + advancement. Before the fix
+    _finalize_step_result built the new bundle via model_copy(update=...)
+    without execution_trace, so the on-disk replay.json carried the
+    original (often empty) trace — making the stepped fixture
+    byte-diff against a full plan and breaking replay.
+    """
+
+    def test_step_preserves_full_execution_trace(self, tmp_path: Path) -> None:
+        paused = _make_fixture(tmp_path / "paused", "version-evolution.yaml", steps_limit=0)
+        result = step_fixture(paused, n_events=1)
+        # reencode_video allocates a version id, so the trace must be non-empty
+        assert len(result.new_replay_bundle.execution_trace) > 0
+        # And must match what a full plan of the same prefix would produce
+        full = _make_fixture(tmp_path / "full", "version-evolution.yaml", steps_limit=1)
+        full_bundle = PlanOnlyReplayBundle.model_validate_json((full / "replay.json").read_text())
+        assert result.new_replay_bundle.execution_trace == full_bundle.execution_trace

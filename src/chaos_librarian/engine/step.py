@@ -127,7 +127,8 @@ def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
         source_label=f"step:{run_dir}",
     )
     scenario = Scenario.model_validate(run_input.raw_data)
-    ids = IdAllocator(TraceRecorder())
+    recorder = TraceRecorder()
+    ids = IdAllocator(recorder)
     state = build_initial_state(scenario, ids)
     initial_manifest = state.to_manifest()
 
@@ -158,6 +159,7 @@ def step_fixture(run_dir: Path, *, n_events: int) -> StepResult:
         new_entries_list=new_entries_list,
         initial_manifest=initial_manifest,
         state=state,
+        recorder=recorder,
         target_raw=target_raw,
         steps_applied=target_step - step_at_cursor,
         steps_remaining=len(boundaries) - target_step,
@@ -171,6 +173,7 @@ def _finalize_step_result(
     new_entries_list: list[JournalEntry],
     initial_manifest: Manifest,
     state: WorldState,
+    recorder: TraceRecorder,
     target_raw: int,
     steps_applied: int,
     steps_remaining: int,
@@ -187,6 +190,7 @@ def _finalize_step_result(
         update={
             "applied_events": target_raw,
             "journal_digest": _compute_journal_digest(full_journal),
+            "execution_trace": list(recorder.entries()),
         }
     )
     return StepResult(
