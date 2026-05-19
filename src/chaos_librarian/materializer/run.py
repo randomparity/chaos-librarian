@@ -41,6 +41,7 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     Scenario,
+    SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
     VideoSource,
@@ -130,7 +131,23 @@ class RunContext:
 
 
 def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtifacts:
-    """Run the 8-step pipeline. Raises on any failure (caught by the CLI)."""
+    """Run the 8-step pipeline. Raises on any failure (caught by the CLI).
+
+    Raises:
+        ScenarioLoadError: ``scenario_path`` cannot be read or parsed.
+        ScenarioValidationError: scenario fails semantic validation.
+        TimelineUnsupportedError: scenario carries a timeline (Sprint 5
+            supports static scenarios only).
+        UnsupportedMaterializationError: scenario declares a codec,
+            container, or subtitle mode outside the Sprint 5 matrix.
+        CapabilityGateError: ffmpeg / ffprobe / mkvtoolnix missing or
+            below the minimum version.
+        ContainmentViolationError: a path escapes ``<out_dir>/library/``.
+        ToolFailedError: ffmpeg or mkvtoolnix exited non-zero during
+            synthesis.
+        ProbeParseError: ffprobe output is malformed or missing required
+            fields.
+    """
     started_at = datetime.now(UTC)
     run_input = prepare_run_input(scenario_path)
     # Run semantic validation BEFORE the timeline scope check so
@@ -332,7 +349,7 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
                 field=f"subtitle[{index}].source",
                 payload={"supported": [SubtitleSource.GENERATED_SRT.value]},
             )
-        if sub.mode != "sidecar":
+        if sub.mode is not SubtitleMode.SIDECAR:
             raise UnsupportedMaterializationError(
                 f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",

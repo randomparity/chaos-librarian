@@ -6,9 +6,18 @@ etc.). Does NOT describe application policy outcomes.
 
 from __future__ import annotations
 
+import enum
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class StreamKind(enum.StrEnum):
+    """Kind of a probed media stream."""
+
+    VIDEO = "video"
+    AUDIO = "audio"
+    SUBTITLE = "subtitle"
 
 
 class ProbedStream(BaseModel):
@@ -21,7 +30,7 @@ class ProbedStream(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["video", "audio", "subtitle"]
+    kind: StreamKind
     codec: str
     language: str | None = None
     width: int | None = None  # video-only

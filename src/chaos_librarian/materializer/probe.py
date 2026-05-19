@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Final
 
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.materializer.errors import ProbeParseError
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
@@ -97,7 +97,7 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
     codec = str(blob.get("codec_name") or "")
     if codec_type == "video":
         return ProbedStream(
-            kind="video",
+            kind=StreamKind.VIDEO,
             codec=codec,
             width=_opt_int(blob, "width"),
             height=_opt_int(blob, "height"),
@@ -106,7 +106,7 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
         )
     if codec_type == "audio":
         return ProbedStream(
-            kind="audio",
+            kind=StreamKind.AUDIO,
             codec=codec,
             channels=_opt_int(blob, "channels"),
             sample_rate=_opt_int(blob, "sample_rate"),

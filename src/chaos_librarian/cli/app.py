@@ -21,7 +21,11 @@ from chaos_librarian.contract.replay_bundle import (
     PlanOnlyReplayBundle,
     ReplayBundle,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
+from chaos_librarian.contract.run_sentinel import (
+    SENTINEL_FILENAME,
+    RunSentinel,
+    RunSentinelState,
+)
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.engine import (
     JournalCorruptError,
@@ -37,6 +41,7 @@ from chaos_librarian.engine import (
     run_plan,
     step_boundaries,
     step_fixture,
+    verify_sentinel,
     write_fixture,
 )
 from chaos_librarian.materializer import (
@@ -503,7 +508,7 @@ def _infer_original(bundle_path: Path, run_id: uuid.UUID, applied_events: int) -
     ``replay.json`` is missing or unparseable, or either field disagrees.
     """
     parent = bundle_path.parent
-    sentinel = _load_sentinel(parent / ".chaos-librarian-run")
+    sentinel = _load_sentinel(parent / SENTINEL_FILENAME)
     if sentinel is None or sentinel.run_id != run_id:
         return None
     parent_bundle = _load_replay_bundle(parent / "replay.json")
@@ -621,15 +626,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     }
 
 
-def _verify_sentinel(run_dir: Path) -> RunSentinel:
-    """Return the parsed sentinel; raise ``SentinelInvalidError`` if missing or unparseable."""
-    sentinel_path = run_dir / ".chaos-librarian-run"
-    if not sentinel_path.exists():
-        raise SentinelInvalidError(f"sentinel missing: {sentinel_path}")
-    try:
-        return RunSentinel.model_validate_json(sentinel_path.read_text())
-    except ValidationError as exc:
-        raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
+_verify_sentinel = verify_sentinel
 
 
 def _render_inspect_human(summary: dict[str, object]) -> None:

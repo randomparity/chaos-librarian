@@ -25,6 +25,7 @@ from chaos_librarian.engine.step import (
     SentinelInvalidError,
     StepResult,
     step_fixture,
+    verify_sentinel,
 )
 from chaos_librarian.engine.writer import append_step, write_fixture
 
@@ -46,5 +47,6 @@ __all__ = [
     "run_plan",
     "step_boundaries",
     "step_fixture",
+    "verify_sentinel",
     "write_fixture",
 ]

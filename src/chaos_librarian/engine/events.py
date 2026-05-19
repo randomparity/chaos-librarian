@@ -42,6 +42,7 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 
 def apply_event(
@@ -175,7 +176,7 @@ def _handle_add_file(
     # case for CLI-driven runs, but the assertion stays as defense in depth
     # for library-level callers that bypass validation.
     if state.has_location(event.target):
-        raise ValueError(
+        raise ChaosLibrarianValueError(
             f"add_file: asset {event.target!r} already has a location; "
             f"use move_asset or rename_file to relocate"
         )

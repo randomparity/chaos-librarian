@@ -44,6 +44,21 @@ class VideoSource(enum.StrEnum):
     NOISE = "noise"  # passes validate; not yet supported by materialize
 
 
+class SubtitleMode(enum.StrEnum):
+    """How a subtitle track is delivered."""
+
+    EMBEDDED = "embedded"
+    SIDECAR = "sidecar"
+
+
+class DurationScale(enum.StrEnum):
+    """Scenario duration scale family."""
+
+    SHORT = "short"
+    NORMAL = "normal"
+    LONG = "long"
+
+
 class AudioSource(enum.StrEnum):
     """Synthesis recipe for an audio stream."""
 
@@ -104,7 +119,7 @@ class SubtitleTrack(BaseModel):
     source: SubtitleSource = SubtitleSource.GENERATED_SRT
     codec: str
     language: str
-    mode: Literal["embedded", "sidecar"]
+    mode: SubtitleMode
 
 
 # ---- Asset / Bundle / Variant / Work ----------------------------------------
@@ -241,7 +256,7 @@ class Scenario(BaseModel):
     schema_version: Literal[3]
     scenario_id: str
     seed: int | Literal["random"]
-    duration_scale: Literal["short", "normal", "long"]
+    duration_scale: DurationScale
     library: Library
     works: tuple[Work, ...]
     timeline: tuple[TimelineEvent, ...]

@@ -11,6 +11,7 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     Bundle,
+    DurationScale,
     Library,
     LibraryRoot,
     MoveAssetEvent,
@@ -18,6 +19,7 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
+    SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
     Variant,
@@ -32,7 +34,7 @@ def _minimal_scenario() -> Scenario:
         schema_version=SCENARIO_SCHEMA_VERSION,
         scenario_id="t",
         seed=1,
-        duration_scale="short",
+        duration_scale=DurationScale.SHORT,
         library=Library(roots=(LibraryRoot(id="movies_hd", path="movies-hd"),)),
         works=(
             Work(
@@ -152,7 +154,7 @@ def test_audio_track_source_defaults_to_sine() -> None:
 
 
 def test_subtitle_track_source_defaults_to_generated_srt() -> None:
-    track = SubtitleTrack(codec="srt", language="eng", mode="sidecar")
+    track = SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR)
     assert track.source is SubtitleSource.GENERATED_SRT
 
 

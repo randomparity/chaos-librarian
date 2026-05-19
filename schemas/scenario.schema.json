@@ -219,6 +219,16 @@
       "title": "DeleteFileEvent",
       "type": "object"
     },
+    "DurationScale": {
+      "description": "Scenario duration scale family.",
+      "enum": [
+        "short",
+        "normal",
+        "long"
+      ],
+      "title": "DurationScale",
+      "type": "string"
+    },
     "Library": {
       "additionalProperties": false,
       "properties": {
@@ -480,6 +490,15 @@
       "title": "SlowCopyStartEvent",
       "type": "object"
     },
+    "SubtitleMode": {
+      "description": "How a subtitle track is delivered.",
+      "enum": [
+        "embedded",
+        "sidecar"
+      ],
+      "title": "SubtitleMode",
+      "type": "string"
+    },
     "SubtitleSource": {
       "description": "Synthesis recipe for a subtitle track.",
       "enum": [
@@ -500,12 +519,7 @@
           "type": "string"
         },
         "mode": {
-          "enum": [
-            "embedded",
-            "sidecar"
-          ],
-          "title": "Mode",
-          "type": "string"
+          "$ref": "#/$defs/SubtitleMode"
         },
         "source": {
           "$ref": "#/$defs/SubtitleSource",
@@ -608,13 +622,7 @@
   "additionalProperties": false,
   "properties": {
     "duration_scale": {
-      "enum": [
-        "short",
-        "normal",
-        "long"
-      ],
-      "title": "Duration Scale",
-      "type": "string"
+      "$ref": "#/$defs/DurationScale"
     },
     "library": {
       "$ref": "#/$defs/Library"

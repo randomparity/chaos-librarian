@@ -10,9 +10,11 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict
+
+SENTINEL_FILENAME: Final = ".chaos-librarian-run"
 
 
 class RunSentinelState(enum.StrEnum):

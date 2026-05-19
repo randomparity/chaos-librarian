@@ -34,6 +34,7 @@ from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.reports import ReportSet, build_report_set
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import (
     RunInput,
     prepare_run_input_from_bytes,
@@ -96,11 +97,9 @@ def run_plan(
 
     resolved_timeline = resolve_timeline(parsed)
     boundaries = step_boundaries(resolved_timeline)
-    if steps_limit is None:
-        applied_events = boundaries[-1] if boundaries else 0
-    elif steps_limit <= 0:
+    if steps_limit is not None and steps_limit <= 0:
         applied_events = 0
-    elif steps_limit >= len(boundaries):
+    elif steps_limit is None or steps_limit >= len(boundaries):
         applied_events = boundaries[-1] if boundaries else 0
     else:
         applied_events = boundaries[steps_limit - 1]
@@ -162,7 +161,7 @@ def run_plan(
     )
 
 
-class ReplayIntegrityError(RuntimeError):
+class ReplayIntegrityError(ChaosLibrarianError):
     """Raised when a replay bundle's integrity check fails.
 
     Three independent checks live in ``replay_plan_bundle``:

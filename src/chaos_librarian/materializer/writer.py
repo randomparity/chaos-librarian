@@ -21,7 +21,6 @@ import shutil
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import Manifest
@@ -33,7 +32,7 @@ from chaos_librarian.contract.reports import (
     VariantReport,
     WorkReport,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.writer import (
@@ -42,7 +41,14 @@ from chaos_librarian.engine.writer import (
     replace_atomic_text,
 )
 
-SENTINEL_FILENAME: Final = ".chaos-librarian-run"
+__all__ = [
+    "SENTINEL_FILENAME",
+    "MaterializeMetadata",
+    "MaterializeReports",
+    "begin_materialize_run",
+    "cleanup_failed_run",
+    "finalize_materialize_run",
+]
 
 
 @dataclass(frozen=True, slots=True)

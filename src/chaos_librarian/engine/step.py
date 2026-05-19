@@ -28,7 +28,7 @@ from chaos_librarian.contract.replay_bundle import (
     PlanOnlyReplayBundle,
     compute_plan_only_run_id,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
@@ -208,14 +208,24 @@ def _compute_journal_digest(journal: list[JournalEntry]) -> str:
     return hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
 
-def _verify_sentinel(run_dir: Path) -> None:
-    target = run_dir / ".chaos-librarian-run"
+def verify_sentinel(run_dir: Path) -> RunSentinel:
+    """Return the parsed sentinel; raise ``SentinelInvalidError`` on missing/unparseable.
+
+    The CLI step/inspect/clean handlers use the parsed value for
+    state checks; the engine layer only needs the validation side-effect
+    and discards the return value.
+    """
+    target = run_dir / SENTINEL_FILENAME
     if not target.exists():
         raise SentinelInvalidError(f"sentinel missing: {target}")
     try:
-        RunSentinel.model_validate_json(target.read_text())
+        return RunSentinel.model_validate_json(target.read_text())
     except ValidationError as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
+
+
+def _verify_sentinel(run_dir: Path) -> None:
+    verify_sentinel(run_dir)
 
 
 def _verify_scenario_integrity(scenario_bytes: bytes, bundle: PlanOnlyReplayBundle) -> None:

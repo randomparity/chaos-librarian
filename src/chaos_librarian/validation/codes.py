@@ -40,6 +40,11 @@ PYDANTIC_TO_CODE: Final[dict[str, str]] = {
     "missing": E_FIELD_MISSING,
     "extra_forbidden": E_FIELD_UNKNOWN,
     "literal_error": E_FIELD_LITERAL,
+    # StrEnum-backed fields (SubtitleMode, DurationScale, StreamKind, etc.)
+    # raise ``enum`` rather than ``literal_error`` even though the closed-set
+    # semantic is identical — fold both into E_FIELD_LITERAL so consumers see
+    # one stable code regardless of which annotation form the contract uses.
+    "enum": E_FIELD_LITERAL,
     # Type-shape errors: every Pydantic primitive type-check funnels to E_FIELD_TYPE.
     "string_type": E_FIELD_TYPE,
     "int_type": E_FIELD_TYPE,

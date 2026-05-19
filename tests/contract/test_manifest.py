@@ -17,6 +17,7 @@ from chaos_librarian.contract.manifest import (
     ManifestWork,
     ProbedMedia,
     ProbedStream,
+    StreamKind,
 )
 
 
@@ -73,7 +74,7 @@ def test_probed_stream_video_only_fields():
     """WHY: Stream subtype fields (width/height/fps for video, channels for
     audio, default/forced for subtitle) must coexist on one model so the
     same `streams[]` array can hold heterogeneous entries from ffprobe."""
-    stream = ProbedStream(kind="video", codec="h264", width=1920, height=1080, fps=24.0)
+    stream = ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1920, height=1080, fps=24.0)
     assert stream.channels is None
     assert stream.sample_rate is None
 
@@ -84,8 +85,8 @@ def test_probed_media_round_trip():
         duration_seconds=2.0,
         size_bytes=12345,
         streams=[
-            ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0),
-            ProbedStream(kind="audio", codec="aac", channels=2, sample_rate=48000),
+            ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480, fps=24.0),
+            ProbedStream(kind=StreamKind.AUDIO, codec="aac", channels=2, sample_rate=48000),
         ],
     )
     payload = media.model_dump_json(exclude_none=True)

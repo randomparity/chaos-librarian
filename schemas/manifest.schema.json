@@ -339,13 +339,7 @@
           "title": "Height"
         },
         "kind": {
-          "enum": [
-            "video",
-            "audio",
-            "subtitle"
-          ],
-          "title": "Kind",
-          "type": "string"
+          "$ref": "#/$defs/StreamKind"
         },
         "language": {
           "anyOf": [
@@ -390,6 +384,16 @@
       ],
       "title": "ProbedStream",
       "type": "object"
+    },
+    "StreamKind": {
+      "description": "Kind of a probed media stream.",
+      "enum": [
+        "video",
+        "audio",
+        "subtitle"
+      ],
+      "title": "StreamKind",
+      "type": "string"
     }
   },
   "additionalProperties": false,

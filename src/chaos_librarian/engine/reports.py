@@ -32,6 +32,7 @@ from chaos_librarian.contract.reports import (
     VariantReport,
     WorkReport,
 )
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 
 @dataclass(frozen=True)
@@ -124,7 +125,7 @@ def _build_asset_report(
 ) -> AssetReport:
     initial_snapshot = _snapshot_for(asset_id, initial)
     if initial_snapshot is None:
-        raise ValueError(f"asset {asset_id} missing from initial manifest")
+        raise ChaosLibrarianValueError(f"asset {asset_id} missing from initial manifest")
     history = [
         AssetHistoryEntry(
             logical_time_ns=entry.logical_time_ns,
@@ -169,7 +170,7 @@ def _build_variant_report(variant: ManifestVariant, initial: Manifest) -> Varian
         None,
     )
     if bundle is None:
-        raise ValueError(f"variant {variant.id} has no bundle")
+        raise ChaosLibrarianValueError(f"variant {variant.id} has no bundle")
     asset_ids = sorted(a.id for a in initial.assets if a.bundle_id == bundle.id)
     return VariantReport(
         schema_version=1,

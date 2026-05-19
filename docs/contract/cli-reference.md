@@ -25,7 +25,8 @@ All commands support `--json`. Exit codes:
 | `6`  | replay diverged                                               |
 | `7`  | filesystem safety violation (containment or sentinel)         |
 
-Sprint 0 ships every command as a stub returning `1`. `validate`
-(Sprint 1) and `plan` (Sprint 3) are real commands. The remaining seven
-commands still exit `1`. See
+`validate` (Sprint 1), `plan` (Sprint 3), and the plan-mode follow-ups —
+`step`, `inspect`, `clean`, `replay` (Sprint 4) — are real commands.
+`materialize` and `capabilities` (Sprint 5) are also implemented. `run`
+remains a stub that exits `1`. See
 [`chaos-librarian-design.md` "CLI Contract"](../specs/chaos-librarian-design.md).

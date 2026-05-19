@@ -10,9 +10,10 @@ from __future__ import annotations
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.validation import ValidationReport
+from chaos_librarian.errors import ChaosLibrarianError
 
 
-class MaterializationError(Exception):
+class MaterializationError(ChaosLibrarianError):
     """Base for every materializer-raised error.
 
     ``error_code`` is a class attribute set on each concrete subclass.
