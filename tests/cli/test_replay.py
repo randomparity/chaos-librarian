@@ -267,5 +267,5 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     result = runner.invoke(app, ["replay", str(bundle_path), "--out", str(out), "--json"])
     assert result.exit_code == 1
     payload = json.loads(result.stderr)
-    assert payload["error"] == "materialize_replay_not_implemented"
-    assert payload["execution_mode"] == "materialize"
+    assert payload["error_code"] == "materialize_replay_not_implemented"
+    assert payload["details"]["execution_mode"] == "materialize"

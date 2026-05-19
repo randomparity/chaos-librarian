@@ -127,4 +127,4 @@ class TestStepErrors:
         result = runner.invoke(app, ["step", str(out), "--json"])
         assert result.exit_code == 7
         payload = json.loads(result.stderr)
-        assert payload["error"] == "E_SENTINEL_IN_PROGRESS"
+        assert payload["error_code"] == "E_SENTINEL_IN_PROGRESS"

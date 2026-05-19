@@ -164,7 +164,7 @@ def _install_failing_ffmpeg(bin_dir: Path) -> None:
 
 def test_materialize_unsupported_codec(tmp_path: Path) -> None:
     """WHY: lazy allocation (Finding 3) — pre-synthesis rejection must
-    leave NO on-disk artifact; the stdout JSON must omit
+    leave NO on-disk artifact; the stderr JSON must omit
     materialization_report_path."""
     bad_yaml = (
         (FIXTURE_DIR / "static-library.yaml").read_text().replace("codec: aac", "codec: opus", 1)
@@ -174,7 +174,7 @@ def test_materialize_unsupported_codec(tmp_path: Path) -> None:
     out = tmp_path / "no_run_dir_please"
     result = runner.invoke(app, ["materialize", str(scenario_path), "--out", str(out), "--json"])
     assert result.exit_code == 5
-    payload = json.loads(result.stdout)
+    payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
     assert "materialization_report_path" not in payload
     assert not out.exists()
@@ -273,7 +273,7 @@ def test_materialize_interrupted_recovery(tmp_path: Path) -> None:
     step_result = runner.invoke(app, ["step", str(out), "--json"])
     assert step_result.exit_code == 7, step_result.stdout + step_result.stderr
     step_payload = json.loads(step_result.stderr)
-    assert step_payload["error"] == "E_SENTINEL_IN_PROGRESS"
+    assert step_payload["error_code"] == "E_SENTINEL_IN_PROGRESS"
 
     clean_result = runner.invoke(app, ["clean", str(out)])
     assert clean_result.exit_code == 0, clean_result.stdout + clean_result.stderr
