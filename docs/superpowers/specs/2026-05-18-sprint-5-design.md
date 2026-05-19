@@ -45,7 +45,7 @@ The source design doc leaves several Sprint-5 specifics open. Each is resolved b
    ```
    `ready_for` is a forward-looking signal so adapter authors can skip Sprint 6/7 tests cleanly when the toolchain isn't ready.
 
-5. **Manifest schema strategy.** Sprint 0 already placed `content_hash: str | None = None` on `ManifestVersion` (`src/chaos_librarian/contract/manifest.py:47`) — Sprint 5 is the first sprint to *populate* it but does not add it. The new field is `probed: ProbedMedia | None = None`, also on `ManifestVersion` (versions identify concrete bytes; hashes and probed facts belong together). Adding `probed` is structural, so `MANIFEST_SCHEMA_VERSION` bumps `1 → 2`. Plan-only manifests serialize both fields as absent (Pydantic `model_dump(exclude_none=True)` — already the writer's convention), preserving Sprint 3's bit-identical-plan-only guarantee. Materialize manifests populate both. Both modes share one model.
+5. **Manifest schema strategy.** Sprint 0 already placed `content_hash: str | None = None` on `ManifestVersion` (`src/chaos_librarian/contract/manifest.py:47`) — Sprint 5 is the first sprint to *populate* it but does not add it. The new field is `probed: ProbedMedia | None = None`, also on `ManifestVersion` (versions identify concrete bytes; hashes and probed facts belong together). Adding `probed` is structural, so `MANIFEST_SCHEMA_VERSION` bumps `1 → 2`. Plan-only manifests serialize both fields as absent (Pydantic `model_dump(exclude_none=True)` — already the writer's convention), preserving Sprint 3's bit-identical-plan-only guarantee. Materialize manifests populate both. Both modes share one model. `ManifestSidecar` also gains `content_hash: str | None = None` so SRT sidecars carry hash provenance; the field stays None in plan-only and on non-text sidecars.
 
 6. **`ProbedMedia` shape.** Drawn from `ffprobe -show_format -show_streams -of json`:
    ```python
@@ -96,6 +96,8 @@ The source design doc leaves several Sprint-5 specifics open. Each is resolved b
 
 12. **Reports — `AssetReport` bumps, others unchanged.** `reports/` is still built by Sprint 4's `engine.reports.build_report_set(initial, current, journal)` helper. `AssetSnapshot` (the leaf type embedded in `AssetReport`) gains `content_hash: str | None = None` and `probed: ProbedMedia | None = None` so adapter consumers see the materialized facts without joining back through `manifest.versions[]`. That structural change bumps `ASSET_REPORT_SCHEMA_VERSION: 1 → 2`. `WorkReport`, `VariantReport`, and `BundleReport` carry only id lists (no embedded snapshots) and stay at v1. Sprint 4's `reports.py` module docstring explicitly anticipates this (`src/chaos_librarian/contract/reports.py:4-5`).
 
+13. **Run-dir recovery from crashes.** `RunSentinel` gains a `state: Literal['in_progress', 'complete'] = 'complete'` field. Sprint 0's plan-only flow writes `state: 'complete'` directly (no in-progress phase for plan-only — it writes everything in one staging-rename). Materialize writes `state: 'in_progress'` at the start of synthesis and replaces it with `state: 'complete'` as part of the final atomic batch. `RUN_SENTINEL_SCHEMA_VERSION` bumps 1 → 2. Consumers: `inspect` reports the state; `clean` accepts both states; `step` refuses `in_progress` with an `E_SENTINEL_IN_PROGRESS` error (exit 7); `materialize <run-dir>` refuses an existing `in_progress` directory (user must `clean` it first).
+
 ## Architecture
 
 Single PR on `feat/sprint-5`. The engine stays pure plan-only; a new `materializer/` sibling package adds byte production. Composition is one-directional: materializer imports engine, never the reverse.
@@ -129,6 +131,7 @@ src/chaos_librarian/contract/
                                #   REPLAY_BUNDLE_SCHEMA_VERSION    2 -> 3
                                #   SCENARIO_SCHEMA_VERSION         1 -> 2
                                #   ASSET_REPORT_SCHEMA_VERSION     1 -> 2
+                               #   RUN_SENTINEL_SCHEMA_VERSION     1 -> 2
                                # (WORK_/VARIANT_/BUNDLE_REPORT_SCHEMA_VERSION stay at 1)
   scenario.py                  # VideoSource/AudioSource/SubtitleSource enums; source fields on
                                # AudioTrack and SubtitleTrack with defaults; VideoTrack.source enum-narrowed
@@ -140,11 +143,12 @@ src/chaos_librarian/contract/
                                # union; schema_version Literal[3]; ReplayBundle TypeAdapter union extended
   reports.py                   # AssetSnapshot gains content_hash + probed; AssetReport.schema_version
                                # Literal[2]; other three report classes unchanged
+  run_sentinel.py              # adds state field; schema_version Literal[2]
 
 src/chaos_librarian/schema_export.py
                                # adds capabilities.schema.json to the drift gate; regenerates the
-                               # five bumped schemas (manifest, materialization, replay-bundle,
-                               # scenario, asset-report)
+                               # six bumped schemas (manifest, materialization, replay-bundle,
+                               # scenario, asset-report, run-sentinel)
 
 src/chaos_librarian/cli/app.py
                                # real `capabilities` body; real `materialize` body; both reach into
@@ -161,6 +165,7 @@ schemas/
   replay-bundle.schema.json    # REGEN: v3 with MaterializeReplayBundle variant in oneOf
   scenario.schema.json         # REGEN: v2 with audio/subtitle source enums
   asset-report.schema.json     # REGEN: v2 with content_hash + probed on AssetSnapshot
+  run-sentinel.schema.json     # REGEN: v2 with state field
   # work-report / variant-report / bundle-report stay at v1
 ```
 
@@ -209,8 +214,15 @@ Failure at any subprocess step in step 6: stop the loop, record the failure, `sh
    - ffmpeg: `r"^ffmpeg version (\S+)"` — matches `ffmpeg version 7.1.1 Copyright ...` and `ffmpeg version n7.1-0ubuntu1`.
    - ffprobe: `r"^ffprobe version (\S+)"`.
    - mkvtoolnix: `r"^mkvmerge v(\S+)"` (we probe `mkvmerge` as the canonical front-end and report as `mkvtoolnix`).
-4. Normalize the captured string with `packaging.version.Version(...)`; on parse failure, treat as a malformed-output not-found case.
-5. `meets_minimum = parsed_version >= MIN_VERSIONS[tool]`.
+4. Extract the upstream-version triplet from the captured group via `_canonical_version_from_tool_output(raw: str) -> Version | None`. The helper applies in order:
+   ```python
+   m = re.match(r"^[nN]?(\d+(?:\.\d+){0,2})", raw)
+   if not m:
+       return None        # unparseable — treat as malformed-output not-found
+   return Version(m.group(1))
+   ```
+   This handles `7.1.1`, `n7.1-0ubuntu1` → `7.1`, `7.0.2-3ubuntu1` → `7.0.2`, `n7.0` → `7.0`. Git-snapshot builds like `N-118412-g0ce1c8f7c5` return `None` and the tool is reported as found-but-malformed (`meets_minimum: false`).
+5. `meets_minimum = parsed_version >= MIN_VERSIONS[tool]` — only evaluated when the helper returned a `Version`; a `None` result short-circuits to `meets_minimum: false`.
 
 ```python
 MIN_VERSIONS: Final = {
@@ -313,18 +325,19 @@ version.probed       = probe_file(asset_path)
 
 `probe.probe_file(path)` invokes `ffprobe -show_format -show_streams -of json` and maps the result into the `ProbedMedia` Pydantic model. Stream subtype fields (width/height for video, channels for audio, default/forced for subtitle) are set only on the matching `kind`; the others stay `None`.
 
-For sidecar subtitles, the SRT file is tracked through the existing `ManifestSidecar` records. Sprint 5 does not extend `ManifestSidecar` with hash/probed fields — the sidecar is text, hashing it is straightforward but not required by any exit criterion. (Sprint 6/7 will likely add a sidecar-level hash when sidecar mutations land.) The SRT's contribution to the asset's `probed` shows up as a `ProbedStream(kind="subtitle", codec="srt", language=...)` entry when ffprobe sees it through a referenced subtitle track; we do not run ffprobe on the standalone .srt file.
+For each sidecar produced during synthesis (SRT subtitles in Sprint 5), the materializer writes the file to `<run-dir>/library/<path>`, then sets `ManifestSidecar.content_hash` to `sha256:<hex>` of the file bytes. Sprint 5 does NOT run ffprobe on sidecars and does NOT add subtitle streams to the asset's `probed.streams[]` — sidecar subtitles are separate files, not embedded streams. The asset's `probed.streams[]` includes only video and audio streams in Sprint 5; embedded subtitles arrive in Sprint 7 when `subtitle_mode: embedded` becomes a supported value.
 
 ## Atomic Write And Failure Cleanup
 
 `materializer/writer.py` composes `engine.writer` (which writes metadata files to a temp directory and renames into place) and adds the materialize-specific bits: the `library/` tree (FFmpeg writes there directly during synthesis) and `materialization.json`.
 
-**Run-dir allocation is lazy.** Steps 1-5 of the orchestrator (timeline scope, containment, capability gate, engine pass, matrix pre-flight) run entirely in memory. They emit stdout JSON on failure and exit without ever touching the filesystem under `out_dir`. The run-dir is created at the start of step 6, with the sentinel written first, just before the synthesis loop begins to spawn FFmpeg subprocesses. This means:
+**Run-dir allocation is lazy.** Steps 1-5 of the orchestrator (timeline scope, containment, capability gate, engine pass, matrix pre-flight) run entirely in memory. They emit stdout JSON on failure and exit without ever touching the filesystem under `out_dir`. The run-dir is created at the start of step 6, with the sentinel written first **with `state: 'in_progress'`**, just before the synthesis loop begins to spawn FFmpeg subprocesses. Synthesis runs. On success, the final atomic batch writes all metadata files AND replaces the sentinel with `state: 'complete'` via the same temp-dir-rename mechanism. On a clean failure path (caught subprocess error or probe error), the cleanup wipes `library/` and writes the metadata files; the sentinel is replaced with `state: 'complete'` because the materialization terminated cleanly with a recorded failure. Only an uncaught crash (signal, power loss) leaves the sentinel at `state: 'in_progress'`; this is the marker future tooling uses to detect interrupted runs. This means:
 
 - Pre-synthesis failures (exits 3, 4, 5-from-timeline, 5-from-matrix, 7-from-containment) leave **no on-disk artifact**. The user sees the failure on stdout and there is nothing to `clean` up.
-- Synthesis-time failures (exit 5 from tool failure or probe parse error) leave a partial run-dir with a valid sentinel, an empty `library/` tree (wiped per the cleanup rule), and a `materialization.json` describing what happened.
+- Synthesis-time failures (exit 5 from tool failure or probe parse error) leave a partial run-dir with a valid `state: 'complete'` sentinel, an empty `library/` tree (wiped per the cleanup rule), and a `materialization.json` describing what happened.
+- Uncaught crashes (SIGTERM, power loss) leave the sentinel at `state: 'in_progress'` with whatever partial library bytes had been written; `inspect` reports the state, `step` refuses with `E_SENTINEL_IN_PROGRESS` (exit 7), and `clean` accepts the directory for removal.
 
-The "atomic" guarantee for the success path: **if `manifest.current.json` is present, all of metadata is present**, and the library bytes it references are present. During synthesis, partial library bytes may exist on disk but no consumer can mistake the run for finished — `manifest.current.json` is written last, in one atomic rename batch.
+The "atomic" guarantee for the success path: **if `manifest.current.json` is present, all of metadata is present**, and the library bytes it references are present. During synthesis, partial library bytes may exist on disk but no consumer can mistake the run for finished — `manifest.current.json` is written last, in one atomic rename batch that also flips the sentinel to `state: 'complete'`.
 
 ### Failure cleanup
 
@@ -347,20 +360,22 @@ On any exit-5 failure during synthesis:
 | 3    | scenario validation failed                            | E_* from validation pipeline |
 | 4    | required tool missing or below minimum                | E_MATERIALIZE_CAPABILITY_GATE |
 | 5    | materializer ran but produced an error                | E_MATERIALIZE_TIMELINE_UNSUPPORTED, E_MATERIALIZE_UNSUPPORTED, E_MATERIALIZE_TOOL_FAILED, E_MATERIALIZE_PROBE_PARSE_FAILED |
-| 7    | containment violation                                 | E_PATH_CONTAINMENT |
+| 7    | containment violation; or in-progress sentinel        | E_PATH_CONTAINMENT, E_SENTINEL_IN_PROGRESS |
 
 Exits 1 and 6 are not reachable from Sprint 5 production paths (`replay <materialize-bundle>` returns exit 1 only because there's nothing else to do; divergence is plan-only-only).
 
 ### Exit-5 outcome mapping in `materialization.json`
 
-| error_code                            | `outcome` field |
-|---------------------------------------|-----------------|
-| E_MATERIALIZE_TIMELINE_UNSUPPORTED    | `unsupported`   |
-| E_MATERIALIZE_UNSUPPORTED             | `unsupported`   |
-| E_MATERIALIZE_TOOL_FAILED             | `tool_failed`   |
-| E_MATERIALIZE_PROBE_PARSE_FAILED      | `tool_failed`   |
-| E_MATERIALIZE_CAPABILITY_GATE         | `tool_missing`  |
-| E_PATH_CONTAINMENT (at materialize)   | `containment_violation` |
+`outcome` values that never `write` in Sprint 5 are reserved in the schema for forward compatibility — Sprint 6+ may introduce synthesis-time matrix rejection that would write them.
+
+| error_code                            | `outcome` field         | writes materialization.json? |
+|---------------------------------------|-------------------------|------------------------------|
+| E_MATERIALIZE_TIMELINE_UNSUPPORTED    | `unsupported`           | no (pre-flight)              |
+| E_MATERIALIZE_UNSUPPORTED             | `unsupported`           | no (pre-flight)              |
+| E_MATERIALIZE_TOOL_FAILED             | `tool_failed`           | yes                          |
+| E_MATERIALIZE_PROBE_PARSE_FAILED      | `tool_failed`           | yes                          |
+| E_MATERIALIZE_CAPABILITY_GATE         | `tool_missing`          | no (pre-flight, exit 4)      |
+| E_PATH_CONTAINMENT (at materialize)   | `containment_violation` | no (pre-flight, exit 7)      |
 
 ### JSON failure payload (stdout under `--json`)
 
@@ -375,7 +390,7 @@ Exits 1 and 6 are not reachable from Sprint 5 production paths (`replay <materia
 }
 ```
 
-`materialization_report_path` is present **only when a run-dir was allocated** — i.e., for synthesis-time failures (tool failure, probe parse error). Pre-synthesis failures (timeline rejection, matrix unsupported, capability gate, containment) omit the field because no on-disk report exists.
+`materialization_report_path` is omitted whenever the row in the "writes materialization.json?" column above is "no" — that is, for every pre-synthesis failure (timeline rejection, matrix unsupported, capability gate, containment). It is present only for the synthesis-time failures (tool failure, probe parse error) where a run-dir has been allocated and a report has been written to disk.
 
 The full `MaterializationReport` lives on disk; the stdout payload is the fast diagnostic for agents that don't want to re-read the file.
 
@@ -424,6 +439,7 @@ Five test layers, mirroring source layout under `tests/`.
 - `replay-bundle.schema.json` (regenerated at v3)
 - `scenario.schema.json` (regenerated at v2)
 - `asset-report.schema.json` (regenerated at v2)
+- `run-sentinel.schema.json` (regenerated at v2)
 
 `tests/contract/test_contract_constants.py` gains an assertion for `CAPABILITIES_SCHEMA_VERSION`.
 
@@ -447,6 +463,14 @@ tests/materializer/test_capabilities.py
   - cases: all three tools at minimum, ffmpeg below minimum, mkvtoolnix missing (ready_for static
     is still True), all tools missing, malformed version output, subprocess timeout
   - one assertion per case on the resulting Capabilities model
+  - version-normalization cases for _canonical_version_from_tool_output (Finding 4):
+      * `ffmpeg version 7.1.1 Copyright (c) 2000-2024 ...`        -> ok
+      * `ffmpeg version n7.1-0ubuntu1`                            -> ok (normalizes to 7.1)
+      * `ffmpeg version 7.0.2-3ubuntu1`                           -> ok (normalizes to 7.0.2)
+      * `ffmpeg version n7.0 Copyright ...`                       -> ok (normalizes to 7.0)
+      * `ffmpeg version 6.1.1 Copyright ...`                      -> below minimum
+      * `ffmpeg version N-118412-g0ce1c8f7c5 (git build)`         -> malformed-output, meets_minimum=false
+      * `ffmpeg version <garbage>`                                -> malformed-output, meets_minimum=false
 ```
 
 ### Layer 3 — Materializer orchestrator unit tests (mocked subprocess)
@@ -471,7 +495,10 @@ tests/integration/test_materialize_real.py
   - test_materialize_static_library_smoke:
       fixture with three assets covering mkv+h264+srt and mp4+aac+stereo;
       materialize, then assert every asset exists, ffprobe(file) returns parseable JSON,
-      manifest content_hash matches sha256_hex(file_bytes), no entries in materialization.failures
+      manifest content_hash matches sha256_hex(file_bytes), no entries in materialization.failures;
+      asset.probed.streams[] contains only kind="video"/"audio" entries (no subtitle stream);
+      for every sidecar in manifest.current.sidecars, the sidecar file exists at
+      library/<path> and its sha256 matches sidecar.content_hash
 
   - test_materialize_bitexact_same_toolchain:
       materialize the same scenario twice into different out-dirs;
@@ -485,11 +512,21 @@ tests/integration/test_materialize_real.py
 
   - test_materialize_unsupported_codec:
       hand-crafted scenario with audio codec opus;
-      assert exit 5, error_code E_MATERIALIZE_UNSUPPORTED, materialization.json outcome="unsupported"
+      assert exit 5, stdout JSON error_code: E_MATERIALIZE_UNSUPPORTED,
+      materialization_report_path is absent from stdout JSON, and
+      <out-dir> does not exist on disk (lazy allocation guarantee)
 
   - test_materialize_tool_failure:
       monkeypatch ffmpeg binary path to a script that exits 1;
       assert exit 5, error_code E_MATERIALIZE_TOOL_FAILED, library/ wiped, sentinel intact
+      (state="complete" because the failure was caught), materialization.json present
+
+  - test_materialize_interrupted_recovery:
+      synthesize a partial fixture (mock FFmpeg to write bytes then receive SIGTERM mid-run);
+      assert sentinel exists with state="in_progress";
+      run `chaos-librarian inspect <run-dir>`; assert it reports state="in_progress" and exits 0;
+      run `chaos-librarian step <run-dir>`; assert it exits 7 with E_SENTINEL_IN_PROGRESS;
+      run `chaos-librarian clean <run-dir>`; assert it succeeds and removes the dir
 
   - test_capabilities_real:
       run `chaos-librarian capabilities --json` as a subprocess;
@@ -552,7 +589,7 @@ Plus the additions resolved during brainstorming:
 - `chaos-librarian capabilities --json` returns valid `Capabilities` JSON and the right exit code.
 - `chaos-librarian materialize` rejects non-empty timelines with the right error code.
 - Same-toolchain materialize is byte-deterministic (asserted by `test_materialize_bitexact_same_toolchain`).
-- All five schema artifacts in the drift gate validate after `--write`.
+- All seven schema artifacts in the drift gate validate after `--write` (capabilities new at v1; manifest, materialization, replay-bundle, scenario, asset-report, and run-sentinel regenerated at their bumped versions).
 
 ## Alternatives Rejected
 
@@ -563,6 +600,15 @@ Plus the additions resolved during brainstorming:
 - **Ship materialize replay this sprint.** Implements the canonicalizer end-to-end. Rejected because the canonicalizer has nothing meaty to compare against until Sprint 6/7 mutations land; designing it now risks reworking when real mutation data forces edge cases.
 - **Approach B (everything in `engine/`)** and **Approach C (capabilities standalone + materializer package).** Rejected in favor of Approach A — keeping the engine pure plan-only and putting subprocess concerns in a sibling package.
 
+## Adversarial Review Log
+
+The Codex adversarial review of this spec (2026-05-18) returned a `needs-attention` verdict with four findings. Each is resolved by the edits in this revision; the spec now reflects those resolutions.
+
+- **Finding 1 (HIGH) — Sidecar subtitle probing.** The original spec implied that SRT sidecar facts would surface in `asset.probed.streams[]`, but `ffprobe(asset_path)` cannot see standalone `.srt` files, so any implementation would either lie or silently drop them. Resolution: `ManifestSidecar` gains `content_hash: str | None = None` (Decision 5); the materializer hashes each sidecar's bytes and records `sha256:<hex>` there. Sprint 5 explicitly does not run ffprobe on sidecars and does not add subtitle streams to `asset.probed`; embedded subtitles arrive in Sprint 7. The Layer 4 smoke test now asserts sidecar existence and hash agreement instead of subtitle streams on the asset.
+- **Finding 2 (HIGH) — Crash leaves "trusted" partial run-dir.** The original sentinel was written at the start of synthesis with no marker distinguishing in-progress from complete state. A signal between sentinel write and metadata write would leave a "trusted" partial directory with no metadata. Resolution: `RunSentinel` gains `state: Literal['in_progress', 'complete'] = 'complete'` (Decision 13); `RUN_SENTINEL_SCHEMA_VERSION` bumps 1 → 2. Materialize writes `state: 'in_progress'` first and flips to `state: 'complete'` in the final atomic batch (or on caught-failure cleanup); only uncaught crashes leave `in_progress`. `inspect` reports the state; `step` refuses `in_progress` with `E_SENTINEL_IN_PROGRESS` (exit 7); `clean` accepts both. New Layer 4 `test_materialize_interrupted_recovery` exercises the full crash-detect-clean loop.
+- **Finding 3 (MEDIUM) — Unsupported-matrix contradiction.** Three places in the spec disagreed on whether `E_MATERIALIZE_UNSUPPORTED` produces a `materialization.json`. Resolution: the lazy-allocation contract wins — pre-synthesis failures write nothing on disk. The Exit-5 outcome mapping table now carries an explicit "writes materialization.json?" column making the rule machine-checkable; the JSON failure payload note points back to the same column; the Layer 4 `test_materialize_unsupported_codec` asserts the run-dir does not exist on disk.
+- **Finding 4 (MEDIUM) — Distro-tagged FFmpeg version strings.** Passing strings like `n7.1-0ubuntu1` directly into `packaging.version.Version(...)` raises `InvalidVersion`, which the original spec said to treat as "malformed-output not-found" — meaning a working Ubuntu-packaged FFmpeg would fail the gate. Resolution: a normalization helper `_canonical_version_from_tool_output(raw)` strips a leading `n`/`N` and any trailing distro suffix, retaining only the `MAJOR[.MINOR[.PATCH]]` triplet before constructing a `Version`. Git-snapshot builds (`N-118412-g0ce1c8f7c5`) still return `None`. The Layer 2 case list pins the seven accepted/rejected input forms.
+
 ## Open Questions
 
-None. All design decisions were resolved during brainstorming.
+None. All design decisions were resolved during brainstorming and the four findings above are closed.
