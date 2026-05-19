@@ -40,7 +40,7 @@ def _minimal_scenario(
 ) -> dict[str, object]:
     """Build a minimal valid-shape scenario. Overrides can add duplicates."""
     base: dict[str, object] = {
-        "schema_version": 1,
+        "schema_version": 2,
         "scenario_id": "t",
         "seed": 1,
         "duration_scale": "short",

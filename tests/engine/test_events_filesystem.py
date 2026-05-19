@@ -19,7 +19,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "fs",
             "seed": 1,
             "duration_scale": "short",

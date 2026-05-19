@@ -20,7 +20,7 @@ class TestShapePassMissingFields:
     """
 
     def test_missing_scenario_id(self) -> None:
-        raw = {"schema_version": 1}  # minimal — many fields missing
+        raw = {"schema_version": 2}  # minimal — many fields missing
         collector = IssueCollector()
         run_shape_pass(raw, _empty_index(), collector)
         codes_emitted = {i.code for i in collector.issues}
@@ -36,7 +36,7 @@ class TestShapePassUnknownField:
 
     def test_unknown_top_level_field(self) -> None:
         raw = {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -59,7 +59,7 @@ class TestShapePassLiteralValue:
 
     def test_wrong_duration_scale(self) -> None:
         raw = {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "extremely_long",  # not in Literal
@@ -82,7 +82,7 @@ class TestShapePassDiscriminatorTag:
 
     def test_unknown_action(self) -> None:
         raw = {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -107,7 +107,7 @@ class TestShapePassJSONPathStripping:
 
     def test_for_alias_under_slow_copy_commit(self) -> None:
         raw = {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -139,7 +139,7 @@ class TestShapePassNoErrorsForValidScenario:
 
     def test_valid_scenario_produces_no_issues(self) -> None:
         raw = {
-            "schema_version": 1,
+            "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
