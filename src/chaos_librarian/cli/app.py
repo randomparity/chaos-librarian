@@ -10,14 +10,18 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Final, cast
 
 import typer
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest
-from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.replay_bundle import (
+    MaterializeReplayBundle,
+    PlanOnlyReplayBundle,
+    ReplayBundle,
+)
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationIssue
@@ -35,7 +39,18 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.engine.writer import append_step, write_fixture
-from chaos_librarian.materializer import detect_capabilities
+from chaos_librarian.materializer import (
+    CapabilityGateError,
+    ContainmentViolationError,
+    MaterializationError,
+    ProbeParseError,
+    ScenarioValidationError,
+    TimelineUnsupportedError,
+    ToolFailedError,
+    UnsupportedMaterializationError,
+    detect_capabilities,
+    materialize_scenario,
+)
 from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     ValidationReport,
@@ -51,6 +66,8 @@ app = typer.Typer(
     help="Scenario-driven synthetic media library simulator.",
     no_args_is_help=True,
 )
+
+_REPLAY_BUNDLE_ADAPTER: Final = TypeAdapter(ReplayBundle)
 
 
 def _stub(command: str) -> None:
@@ -168,7 +185,66 @@ def materialize(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Materialize a scenario (creates real media files)."""
-    _stub("materialize")
+    try:
+        artifacts = materialize_scenario(scenario, out)
+    except CapabilityGateError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=4) from exc
+    except ScenarioValidationError as exc:
+        # Mirror ``plan``'s exit code (3) for semantic-validation failures so
+        # downstream agents key off the same convention (Finding 1).
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=3) from exc
+    except TimelineUnsupportedError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=5) from exc
+    except UnsupportedMaterializationError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=5) from exc
+    except ToolFailedError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=out)
+        raise typer.Exit(code=5) from exc
+    except ProbeParseError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=out)
+        raise typer.Exit(code=5) from exc
+    except ContainmentViolationError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=7) from exc
+
+    if json_output:
+        typer.echo(artifacts.materialization_report.model_dump_json(indent=2, exclude_none=True))
+    else:
+        typer.echo(f"materialize: wrote {out}")
+
+
+def _emit_materialize_error(
+    exc: MaterializationError,
+    *,
+    json_output: bool,
+    run_dir: Path | None,
+) -> None:
+    payload: dict[str, object] = {
+        "error_code": exc.error_code,
+        "message": exc.message,
+    }
+    if exc.asset_id is not None:
+        payload["asset_id"] = exc.asset_id
+    if exc.field is not None:
+        payload["field"] = exc.field
+    payload.update(exc.payload)
+    if run_dir is not None:
+        payload["materialization_report_path"] = str(run_dir / "materialization.json")
+    if json_output:
+        typer.echo(json.dumps(payload, sort_keys=True))
+    else:
+        typer.echo(f"chaos-librarian: materialize failed ({exc.error_code})", err=True)
+        typer.echo(f"  message: {exc.message}", err=True)
+        if exc.asset_id is not None:
+            typer.echo(f"  asset:   {exc.asset_id}", err=True)
+        if exc.field is not None:
+            typer.echo(f"  field:   {exc.field}", err=True)
+        if run_dir is not None:
+            typer.echo(f"  report:  {run_dir / 'materialization.json'}", err=True)
 
 
 @app.command()
@@ -274,7 +350,16 @@ def replay(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Replay a recorded run from its replay.json bundle."""
-    parsed_bundle = PlanOnlyReplayBundle.model_validate_json(bundle.read_text())
+    parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle.read_bytes())
+    if isinstance(parsed_any, MaterializeReplayBundle):
+        _emit_step_error(
+            "materialize_replay_not_implemented",
+            "materialize replay lands in Sprint 9 (voom-v2 adapter)",
+            json_output=json_output,
+            extra={"execution_mode": parsed_any.execution_mode.value},
+        )
+        raise typer.Exit(code=1)
+    parsed_bundle = parsed_any
     try:
         artifacts = replay_plan_bundle(parsed_bundle)
     except ReplayIntegrityError as exc:
