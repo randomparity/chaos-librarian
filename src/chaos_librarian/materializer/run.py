@@ -295,7 +295,7 @@ def _preflight_asset(
         video_input=video_input,
         audios=audios,
         audio_inputs=audio_inputs,
-        output_path=Path(f"/tmp/preflight.{container}"),
+        output_path=Path(f"preflight.{container}"),
     )
 
 
