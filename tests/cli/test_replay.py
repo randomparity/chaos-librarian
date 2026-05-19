@@ -249,7 +249,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     bundle_path.write_text(
         json.dumps(
             {
-                "schema_version": 3,
+                "schema_version": 4,
                 "chaos_librarian_version": "0.1.0",
                 "scenario": "schema_version: 3\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",

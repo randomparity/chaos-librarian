@@ -129,16 +129,8 @@
           "type": "string"
         },
         "language": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Language"
+          "title": "Language",
+          "type": "string"
         },
         "path": {
           "title": "Path",
@@ -149,7 +141,8 @@
         "id",
         "asset_id",
         "kind",
-        "path"
+        "path",
+        "language"
       ],
       "title": "ManifestSidecar",
       "type": "object"

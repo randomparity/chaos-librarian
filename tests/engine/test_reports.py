@@ -144,6 +144,7 @@ class TestBuildReportSet:
                 asset_id="asset_hd_main",
                 kind="subtitles",
                 path="movies-hd/a.eng.srt",
+                language="eng",
             )
         )
         rs = build_report_set(initial=m, current=m, journal=[])

@@ -45,6 +45,7 @@ def _manifest(*, content_hash: str | None, probed: ProbedMedia | None) -> Manife
                 asset_id="a0",
                 kind="srt",
                 path="library/w0/va0/main.eng.srt",
+                language="eng",
                 content_hash="sha256:" + "f" * 64,
             )
         ],

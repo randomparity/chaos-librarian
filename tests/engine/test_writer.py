@@ -40,7 +40,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sidecars=[],
     )
     bundle = PlanOnlyReplayBundle(
-        schema_version=3,
+        schema_version=4,
         chaos_librarian_version="0.0.0",
         scenario="schema_version: 1\n",
         run_id=_RUN_ID,

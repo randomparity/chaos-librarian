@@ -68,27 +68,6 @@ def test_lookup_distinguishes_substring_colliding_languages() -> None:
     assert _find_sidecar_for(manifest, "a0", "eng") is eng
 
 
-def test_lookup_returns_none_for_engine_created_sidecar_without_language() -> None:
-    """Sidecars created by the ``create_sidecar`` engine event carry
-    ``language=None`` (no scenario-declared language hint). The
-    materializer's lookup must not match these against any language
-    string, so the materializer treats them as fresh inserts (the engine
-    event handler is the source of truth for path; materialize-created
-    rows are the source of truth for ``language`` + ``content_hash``).
-    """
-    legacy = ManifestSidecar(
-        id="sidecar_legacy",
-        asset_id="a0",
-        kind="subtitle",
-        path="library/a0.fra.srt",
-        language=None,
-    )
-    manifest = _manifest_with_sidecars(legacy)
-
-    assert _find_sidecar_for(manifest, "a0", "fra") is None
-    assert _find_sidecar_for(manifest, "a0", "en") is None
-
-
 def test_lookup_filters_by_asset_id() -> None:
     """Two assets can independently carry the same language tag."""
     a0_en = ManifestSidecar(

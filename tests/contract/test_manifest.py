@@ -103,7 +103,9 @@ def test_manifest_version_probed_defaults_none():
 
 
 def test_manifest_sidecar_content_hash_optional():
-    sidecar = ManifestSidecar(id="s0", asset_id="a0", kind="srt", path="library/a/0.srt")
+    sidecar = ManifestSidecar(
+        id="s0", asset_id="a0", kind="srt", path="library/a/0.eng.srt", language="eng"
+    )
     assert sidecar.content_hash is None
     payload = sidecar.model_dump(exclude_none=True)
     assert "content_hash" not in payload

@@ -99,15 +99,15 @@ class ManifestSidecar(BaseModel):
     asset_id: str
     kind: str
     path: str
-    # Language tag (e.g. "en", "eng", "fr"). Optional so engine-created
-    # sidecars (via the ``create_sidecar`` timeline event) that carry no
-    # structured language hint can still be persisted. The materializer
-    # populates this from the scenario's subtitle declarations; the
+    # Language tag (e.g. "en", "eng", "fr"), required from manifest v3.
+    # Every producer carries one: materializer takes it from the
+    # scenario's subtitle declarations, and the engine's ``create_sidecar``
+    # handler reads ``event.language`` (required from scenario v3). The
     # ``(asset_id, language)`` pair is the lookup key in
-    # ``_find_sidecar_for`` (replaces a path-substring match that
-    # mis-resolved when two languages collided as substrings of each
-    # other, e.g. "en"/"eng").
-    language: str | None = None
+    # ``_find_sidecar_for`` and replaces a path-substring match that
+    # mis-resolved when two language tags collided as substrings of each
+    # other (e.g. "en"/"eng").
+    language: str
     content_hash: str | None = None
 
 

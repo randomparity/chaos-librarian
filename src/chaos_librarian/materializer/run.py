@@ -496,9 +496,8 @@ def _find_sidecar_for(manifest: Manifest, asset_id: str, language: str) -> Manif
     Matches on the explicit ``language`` field (manifest v3+). The previous
     substring-match on ``sidecar.path`` (``language in path``) mis-resolved
     whenever one language tag appeared as a substring of another (e.g.
-    looking up ``"en"`` would match a ``"library/x.eng.srt"`` row).
-    Engine-created sidecars (via the ``create_sidecar`` event) currently
-    carry ``language=None`` and are skipped here.
+    looking up ``"en"`` would match a ``"library/x.eng.srt"`` row). The
+    field is required from v3 so every row has a comparable key.
     """
     for sidecar in manifest.sidecars:
         if sidecar.asset_id == asset_id and sidecar.language == language:
