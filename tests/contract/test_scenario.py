@@ -156,5 +156,5 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_two() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 2
+def test_scenario_schema_version_is_three() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 3

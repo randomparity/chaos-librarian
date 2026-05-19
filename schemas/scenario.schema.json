@@ -166,6 +166,10 @@
           "title": "Id",
           "type": "string"
         },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
         "target": {
           "title": "Target",
           "type": "string"
@@ -179,7 +183,8 @@
         "id",
         "at",
         "target",
-        "to"
+        "to",
+        "language"
       ],
       "title": "CreateSidecarEvent",
       "type": "object"
@@ -619,7 +624,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 2,
+      "const": 3,
       "title": "Schema Version",
       "type": "integer"
     },

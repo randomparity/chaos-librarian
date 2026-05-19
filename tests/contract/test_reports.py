@@ -76,7 +76,7 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 2,
+            "schema_version": 3,
             "asset_id": "asset_hd_main",
             "initial": self._snapshot().model_dump(),
             "history": [],

@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 2
+schema_version: 3
 scenario_id: lifecycle-sidecar-after-delete
 seed: 1
 duration_scale: short
@@ -33,3 +33,4 @@ timeline:
     action: create_sidecar
     target: a0
     to: movies-hd/a0.eng.srt
+    language: eng
