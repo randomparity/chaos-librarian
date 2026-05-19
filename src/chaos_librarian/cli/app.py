@@ -506,6 +506,31 @@ def clean(
         )
         raise typer.Exit(code=7) from exc
 
+    replay_path = run_dir / "replay.json"
+    if not replay_path.exists():
+        _emit_step_error(
+            "fixture_inconsistent",
+            f"replay.json missing: {replay_path}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7)
+    try:
+        bundle = PlanOnlyReplayBundle.model_validate_json(replay_path.read_text())
+    except (ValidationError, ValueError) as exc:
+        _emit_step_error(
+            "fixture_inconsistent",
+            f"replay.json unparseable: {exc}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7) from exc
+    if bundle.run_id != sentinel.run_id:
+        _emit_step_error(
+            "fixture_inconsistent",
+            f"sentinel.run_id {sentinel.run_id} != replay.json run_id {bundle.run_id}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7)
+
     resolved = run_dir.resolve()
     shutil.rmtree(run_dir)
 
