@@ -26,7 +26,11 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.recipes import FFmpegInput
 
-BITEXACT_FLAGS: Final[tuple[str, ...]] = (
+_BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
+    # ``-fflags +bitexact`` MUST appear on the output side: that's the only
+    # position where it propagates to the matroska muxer, which otherwise
+    # writes a random ``SegmentUID`` and ``WritingApp`` string per file and
+    # breaks same-toolchain bit-exactness on ``.mkv`` outputs.
     "-fflags",
     "+bitexact",
     "-flags",
@@ -36,6 +40,7 @@ BITEXACT_FLAGS: Final[tuple[str, ...]] = (
     "-metadata",
     "creation_time=1970-01-01T00:00:00Z",
 )
+BITEXACT_FLAGS: Final[tuple[str, ...]] = _BITEXACT_OUTPUT_FLAGS
 
 _SUPPORTED_CONTAINERS: Final[frozenset[str]] = frozenset({"mkv", "mp4"})
 _SUPPORTED_RESOLUTIONS: Final[frozenset[str]] = frozenset({"sd", "hd", "1080p"})
@@ -94,18 +99,28 @@ def _validate_audios(audios: list[AudioTrack]) -> None:
 
 
 def _video_input_args(video_input: FFmpegInput) -> list[str]:
-    """Argv slice for the video input — lavfi is mandatory in Sprint 5."""
+    """Argv slice for the video input — lavfi is mandatory in Sprint 5.
+
+    ``extra_flags`` (e.g. ``-t 2.0``) are emitted BEFORE ``-i`` because
+    ffmpeg treats them as per-input options only when they precede the
+    ``-i`` they qualify. Emitted after ``-i`` they bind to the next
+    output (or input), which truncates the wrong stream.
+    """
     if video_input.lavfi is None:
         raise UnsupportedMaterializationError(
             "video FFmpegInput must carry a lavfi expression",
             field="video.source",
             payload={},
         )
-    return ["-f", "lavfi", "-i", video_input.lavfi, *video_input.extra_flags]
+    return [*video_input.extra_flags, "-f", "lavfi", "-i", video_input.lavfi]
 
 
 def _audio_input_args(audio_inputs: list[FFmpegInput]) -> list[str]:
-    """Argv slice covering all audio inputs — lavfi mandatory."""
+    """Argv slice covering all audio inputs — lavfi mandatory.
+
+    Same input-option ordering rule as ``_video_input_args``: extra_flags
+    precede ``-i``.
+    """
     args: list[str] = []
     for audio_input in audio_inputs:
         if audio_input.lavfi is None:
@@ -114,7 +129,7 @@ def _audio_input_args(audio_inputs: list[FFmpegInput]) -> list[str]:
                 field="audio.source",
                 payload={},
             )
-        args.extend(["-f", "lavfi", "-i", audio_input.lavfi, *audio_input.extra_flags])
+        args.extend([*audio_input.extra_flags, "-f", "lavfi", "-i", audio_input.lavfi])
     return args
 
 
@@ -140,11 +155,12 @@ def build_command(
     _resolve_container(output_path)
     _validate_video(video)
     _validate_audios(audios)
-    argv: list[str] = ["ffmpeg", "-hide_banner", "-y", *BITEXACT_FLAGS]
+    argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(["-c:v", "libx264", "-preset", "medium"])
     argv.extend(["-c:a", "aac"])
+    argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")
     argv.append(str(output_path))
     return argv

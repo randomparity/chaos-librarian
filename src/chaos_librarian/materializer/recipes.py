@@ -108,19 +108,21 @@ def recipe_channel_tones(*, channels: str, duration_s: float, seed: int) -> FFmp
     """One distinct sine frequency per channel — debugging signal.
 
     Frequencies start from the seed-derived base and double per channel.
+    Multi-channel layouts build a filtergraph with one sine source per
+    channel linked into ``amerge=inputs=N``.
     """
     count = _CHANNEL_COUNTS[channels]
     base_index = abs(seed) % len(_CHANNEL_TONE_BASE)
-    sources = []
+    sources: list[str] = []
     for offset in range(count):
         freq = _CHANNEL_TONE_BASE[(base_index + offset) % len(_CHANNEL_TONE_BASE)]
         sources.append(f"sine=frequency={freq}:duration={duration_s}:sample_rate=48000")
     if count == 1:
         lavfi = sources[0]
     else:
-        # amerge requires inputs= count; build the amerge filter graph inline
-        sep = "|".join(sources)
-        lavfi = f"{sep}|amerge=inputs={count}"
+        labeled = [f"{src}[a{i}]" for i, src in enumerate(sources)]
+        merge_inputs = "".join(f"[a{i}]" for i in range(count))
+        lavfi = ";".join([*labeled, f"{merge_inputs}amerge=inputs={count}"])
     return FFmpegInput(lavfi=lavfi, extra_flags=())
 
 
