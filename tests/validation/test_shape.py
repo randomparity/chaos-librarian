@@ -144,6 +144,63 @@ class TestShapePassJSONPathStripping:
         assert any(p == "$.timeline[0].for" for p in paths)
 
 
+class TestShapePassTupleType:
+    """Pydantic 'tuple_type' → E_FIELD_TYPE.
+
+    WHY: Scenario collection fields (``library.roots``, ``works``,
+    ``timeline``, etc.) are ``tuple[X, ...]`` so the cached parse can't be
+    mutated via list methods. A non-sequence value supplied for one of
+    these fields surfaces as Pydantic ``tuple_type`` and must map to the
+    same stable ``E_FIELD_TYPE`` contract that ``list_type`` does;
+    otherwise the change from list to tuple would silently regress the
+    public error-code contract to ``E_FIELD_SHAPE``.
+    """
+
+    def test_non_sequence_for_roots_emits_field_type(self) -> None:
+        raw = {
+            "schema_version": 2,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": {}},  # dict where tuple is required
+            "works": [],
+            "timeline": [],
+        }
+        collector = IssueCollector()
+        run_shape_pass(_run_input_from_dict(raw), collector)
+        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues), (
+            f"expected E_FIELD_TYPE, got {[i.code for i in collector.issues]}"
+        )
+
+    def test_non_sequence_for_works_emits_field_type(self) -> None:
+        raw = {
+            "schema_version": 2,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": {},  # dict where tuple is required
+            "timeline": [],
+        }
+        collector = IssueCollector()
+        run_shape_pass(_run_input_from_dict(raw), collector)
+        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues)
+
+    def test_non_sequence_for_timeline_emits_field_type(self) -> None:
+        raw = {
+            "schema_version": 2,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": []},
+            "works": [],
+            "timeline": "not-a-sequence",  # str where tuple is required
+        }
+        collector = IssueCollector()
+        run_shape_pass(_run_input_from_dict(raw), collector)
+        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues)
+
+
 class TestShapePassNoErrorsForValidScenario:
     """A valid raw dict produces zero issues from the shape pass.
 

@@ -166,6 +166,36 @@ class TestRunInputScenarioCache:
         assert isinstance(run_input.scenario.timeline, tuple)
         assert not hasattr(run_input.scenario.works, "append")
 
+    def test_validation_invalidates_stale_cache_after_raw_data_mutation(
+        self,
+        tmp_path: Path,
+    ) -> None:
+        """A stale cache from pre-validation access must not bypass shape errors.
+
+        WHY: Codex round 3 finding. If a caller accesses ``run_input.scenario``
+        first (populating the cache), then mutates ``run_input.raw_data`` to
+        shape-invalid content, ``run_validation`` previously returned ``ok=True``
+        because the shape pass read the cached (valid) Scenario instead of
+        re-validating raw_data. The shape pass now parses raw_data directly
+        and rewrites the cache slot on each call, so the mutation is caught.
+        """
+        path = tmp_path / "s.yaml"
+        path.write_bytes(self._VALID_BYTES)
+        run_input = prepare_run_input(path)
+
+        # Step 1: pre-populate the cache via direct property access.
+        assert isinstance(run_input.scenario, Scenario)
+
+        # Step 2: mutate raw_data to a shape-invalid value (works must be a list).
+        run_input.raw_data["works"] = {}
+
+        # Step 3: validation must catch the mutation, not return the stale parse.
+        report = run_validation(run_input)
+        assert report.ok is False
+        assert any(i.code == "E_FIELD_TYPE" for i in report.issues), (
+            f"expected E_FIELD_TYPE issue, got {[i.code for i in report.issues]}"
+        )
+
     def test_validate_and_plan_parse_scenario_once(
         self,
         tmp_path: Path,
