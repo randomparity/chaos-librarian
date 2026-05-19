@@ -15,12 +15,21 @@ from chaos_librarian.errors import ChaosLibrarianValueError
 
 _I64_MAX_NS: Final[int] = 2**63 - 1
 
+# Canonical nanosecond-per-unit table. Re-exported and reused by
+# ``chaos_librarian.determinism.clock`` so the parser and the formatter
+# stay byte-identity round-trippable.
+NS_PER_HOUR: Final[int] = 3_600_000_000_000
+NS_PER_MINUTE: Final[int] = 60_000_000_000
+NS_PER_SECOND: Final[int] = 1_000_000_000
+NS_PER_MS: Final[int] = 1_000_000
+NS_PER_US: Final[int] = 1_000
+
 _UNITS_DESCENDING: Final[tuple[tuple[str, int], ...]] = (
-    ("h", 3_600_000_000_000),
-    ("m", 60_000_000_000),
-    ("s", 1_000_000_000),
-    ("ms", 1_000_000),
-    ("us", 1_000),
+    ("h", NS_PER_HOUR),
+    ("m", NS_PER_MINUTE),
+    ("s", NS_PER_SECOND),
+    ("ms", NS_PER_MS),
+    ("us", NS_PER_US),
     ("ns", 1),
 )
 

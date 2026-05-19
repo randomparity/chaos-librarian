@@ -35,8 +35,11 @@ class TraceRecorder:
     def record_materializer(self, stream: str, value: str, exit_code: int) -> None:
         """Append a MaterializerTraceEntry for one materializer subprocess.
 
-        Declared in Sprint 2 to close the recorder API; Sprint 5 is the first
-        consumer.
+        Completes the recorder's coverage of the three ExecutionTraceEntry
+        variants the contract defines (rng / alloc / materializer). Sprint 5
+        builds the materializer's replay bundle directly rather than via
+        recorder hand-off; callers that need a recorder-mediated trace path
+        for ffmpeg/ffprobe invocations can use this entry point.
         """
         self._entries.append(
             MaterializerTraceEntry(

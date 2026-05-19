@@ -175,7 +175,7 @@ class TestReplayBundleParseFailure:
         result = runner.invoke(app, ["replay", str(bundle_path), "--out", str(out), "--json"])
         assert result.exit_code == 1
         payload = json.loads(result.stderr)
-        assert payload["error_code"] == "replay_bundle_invalid"
+        assert payload["error_code"] == "E_REPLAY_BUNDLE_INVALID"
         assert payload["bundle_path"] == str(bundle_path)
 
 

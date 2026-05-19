@@ -92,7 +92,7 @@ def _validate_video(video: VideoTrack) -> None:
     _require(video.resolution, _SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
-def _validate_audios(audios: Sequence[AudioTrack]) -> None:
+def _validate_audio(audios: Sequence[AudioTrack]) -> None:
     """Reject any audio track outside the supported matrix."""
     for index, audio in enumerate(audios):
         _require(audio.source, _SUPPORTED_AUDIO_SOURCES, f"audio[{index}].source")
@@ -155,7 +155,7 @@ def build_command(
     """
     _resolve_container(output_path)
     _validate_video(video)
-    _validate_audios(audios)
+    _validate_audio(audios)
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))

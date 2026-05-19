@@ -14,18 +14,20 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-_NS_PER_HOUR = 3_600_000_000_000
-_NS_PER_MINUTE = 60_000_000_000
-_NS_PER_SECOND = 1_000_000_000
-_NS_PER_MS = 1_000_000
-_NS_PER_US = 1_000
+from chaos_librarian.clock import (
+    NS_PER_HOUR,
+    NS_PER_MINUTE,
+    NS_PER_MS,
+    NS_PER_SECOND,
+    NS_PER_US,
+)
 
 _HUMAN_UNITS: tuple[tuple[str, int], ...] = (
-    ("h", _NS_PER_HOUR),
-    ("m", _NS_PER_MINUTE),
-    ("s", _NS_PER_SECOND),
-    ("ms", _NS_PER_MS),
-    ("us", _NS_PER_US),
+    ("h", NS_PER_HOUR),
+    ("m", NS_PER_MINUTE),
+    ("s", NS_PER_SECOND),
+    ("ms", NS_PER_MS),
+    ("us", NS_PER_US),
     ("ns", 1),
 )
 

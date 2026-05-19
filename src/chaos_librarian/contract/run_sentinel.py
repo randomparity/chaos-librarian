@@ -7,11 +7,23 @@ this tool. See docs/specs/chaos-librarian-design.md "Run-Directory Sentinel".
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+
+class RunSentinelState(enum.StrEnum):
+    """Run-directory lifecycle state.
+
+    Plan-only callers default to ``COMPLETE``; only the materializer
+    ever writes ``IN_PROGRESS``.
+    """
+
+    IN_PROGRESS = "in_progress"
+    COMPLETE = "complete"
 
 
 class RunSentinel(BaseModel):
@@ -26,7 +38,4 @@ class RunSentinel(BaseModel):
     schema_version: Literal[2]
     created_by: str
     created_at: datetime | None = None
-    # ``state`` lets future tooling distinguish a completed run from a
-    # partially-written materialize run-dir. Plan-only callers default to
-    # ``complete``; only the materializer ever writes ``in_progress``.
-    state: Literal["in_progress", "complete"] = "complete"
+    state: RunSentinelState = RunSentinelState.COMPLETE

@@ -93,10 +93,10 @@ def build_report_set(
 
 
 def _snapshot_for(asset_id: str, manifest: Manifest) -> AssetSnapshot | None:
-    version = _find_version(asset_id, manifest.versions)
+    version = _find_by_asset_id(asset_id, manifest.versions)
     if version is None:
         return None
-    location = _find_location(asset_id, manifest.locations)
+    location = _find_by_asset_id(asset_id, manifest.locations)
     if location is None:
         return None
     return AssetSnapshot(
@@ -106,17 +106,13 @@ def _snapshot_for(asset_id: str, manifest: Manifest) -> AssetSnapshot | None:
     )
 
 
-def _find_version(asset_id: str, versions: list[ManifestVersion]) -> ManifestVersion | None:
-    for v in versions:
-        if v.asset_id == asset_id:
-            return v
-    return None
-
-
-def _find_location(asset_id: str, locations: list[ManifestLocation]) -> ManifestLocation | None:
-    for loc in locations:
-        if loc.asset_id == asset_id:
-            return loc
+def _find_by_asset_id[T: ManifestVersion | ManifestLocation](
+    asset_id: str, items: list[T]
+) -> T | None:
+    """Linear search by ``asset_id`` over a manifest sub-collection."""
+    for item in items:
+        if item.asset_id == asset_id:
+            return item
     return None
 
 
