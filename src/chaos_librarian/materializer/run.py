@@ -35,12 +35,6 @@ from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     MaterializeReplayBundle,
 )
-from chaos_librarian.contract.reports import (
-    AssetReport,
-    BundleReport,
-    VariantReport,
-    WorkReport,
-)
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import (
     Asset,
@@ -79,6 +73,8 @@ from chaos_librarian.materializer.recipes import (
     srt_payload,
 )
 from chaos_librarian.materializer.writer import (
+    MaterializeMetadata,
+    MaterializeReports,
     begin_materialize_run,
     cleanup_failed_run,
     finalize_materialize_run,
@@ -116,6 +112,24 @@ class MaterializeArtifacts:
     replay_bundle: MaterializeReplayBundle
 
 
+@dataclass(frozen=True, slots=True)
+class RunContext:
+    """Per-run invariants set once at the top of ``materialize_scenario``.
+
+    Threaded through synthesis/finalize/cleanup so each helper depends
+    on a single immutable object instead of repeating the same 7-9
+    kwargs (issue #12).
+    """
+
+    run_input: RunInput
+    out_dir: Path
+    run_id: uuid.UUID
+    started_at: datetime
+    caps: Capabilities
+    validation_report: ValidationReport
+    plan_artifacts: PlanArtifacts
+
+
 def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtifacts:
     """Run the 8-step pipeline. Raises on any failure (caught by the CLI)."""
     started_at = datetime.now(UTC)
@@ -151,38 +165,27 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     )
     for asset in _iter_assets(scenario):
         _preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
-    run_id = uuid.uuid4()
-    sentinel_in_progress = RunSentinel(
-        run_id=run_id,
-        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
-        created_by=_CREATED_BY,
-        created_at=started_at,
-        state="in_progress",
-    )
-    begin_materialize_run(out_dir, sentinel_in_progress)
-    return _run_synthesis(
-        scenario=scenario,
+    ctx = RunContext(
         run_input=run_input,
+        out_dir=out_dir,
+        run_id=uuid.uuid4(),
+        started_at=started_at,
+        caps=caps,
         validation_report=validation_report,
         plan_artifacts=plan_artifacts,
-        caps=caps,
-        out_dir=out_dir,
-        run_id=run_id,
-        started_at=started_at,
     )
+    sentinel_in_progress = RunSentinel(
+        run_id=ctx.run_id,
+        schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+        created_by=_CREATED_BY,
+        created_at=ctx.started_at,
+        state="in_progress",
+    )
+    begin_materialize_run(ctx.out_dir, sentinel_in_progress)
+    return _run_synthesis(ctx, scenario)
 
 
-def _run_synthesis(
-    *,
-    scenario: Scenario,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    plan_artifacts: PlanArtifacts,
-    caps: Capabilities,
-    out_dir: Path,
-    run_id: uuid.UUID,
-    started_at: datetime,
-) -> MaterializeArtifacts:
+def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     """Steps 7-8: per-asset synthesis loop and finalize/cleanup."""
     invocations: list[ToolInvocation] = []
     materialized: list[MaterializedAsset] = []
@@ -190,15 +193,15 @@ def _run_synthesis(
         for invocation_index, asset in enumerate(_iter_assets(scenario)):
             invocation, materialized_asset, probed, sidecar_hashes = _materialize_one_asset(
                 asset,
-                plan_artifacts.replay_bundle.resolved_seed,
-                out_dir,
-                caps,
+                ctx.plan_artifacts.replay_bundle.resolved_seed,
+                ctx.out_dir,
+                ctx.caps,
                 invocation_index,
             )
             invocations.append(invocation)
             materialized.append(materialized_asset)
             _augment_manifest(
-                plan_artifacts.current_manifest,
+                ctx.plan_artifacts.current_manifest,
                 asset,
                 materialized_asset,
                 probed,
@@ -207,42 +210,13 @@ def _run_synthesis(
     except (ToolFailedError, ProbeParseError) as exc:
         if isinstance(exc, ToolFailedError):
             invocations.append(exc.invocation)
-        _finalize_failure(
-            exc,
-            out_dir=out_dir,
-            outcome=Outcome.TOOL_FAILED,
-            started_at=started_at,
-            run_id=run_id,
-            caps=caps,
-            invocations=invocations,
-            materialized=materialized,
-            run_input=run_input,
-            validation_report=validation_report,
-            plan_artifacts=plan_artifacts,
-        )
+        _finalize_failure(ctx, exc, Outcome.TOOL_FAILED, invocations, materialized)
         raise
-    return _finalize_success(
-        run_input=run_input,
-        validation_report=validation_report,
-        plan_artifacts=plan_artifacts,
-        caps=caps,
-        out_dir=out_dir,
-        run_id=run_id,
-        started_at=started_at,
-        invocations=invocations,
-        materialized=materialized,
-    )
+    return _finalize_success(ctx, invocations, materialized)
 
 
 def _finalize_success(
-    *,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    plan_artifacts: PlanArtifacts,
-    caps: Capabilities,
-    out_dir: Path,
-    run_id: uuid.UUID,
-    started_at: datetime,
+    ctx: RunContext,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
 ) -> MaterializeArtifacts:
@@ -250,46 +224,35 @@ def _finalize_success(
     finished_at = datetime.now(UTC)
     materialization_report = _build_report(
         outcome=Outcome.SUCCESS,
-        run_id=run_id,
-        caps=caps,
-        started_at=started_at,
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
         finished_at=finished_at,
         invocations=invocations,
         materialized=materialized,
         failures=[],
     )
     replay_bundle = _build_replay_bundle(
-        run_id=run_id,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        plan_artifacts=plan_artifacts,
-        caps=caps,
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=ctx.plan_artifacts,
+        caps=ctx.caps,
         created_at=finished_at,
     )
     sentinel_complete = RunSentinel(
-        run_id=run_id,
+        run_id=ctx.run_id,
         schema_version=RUN_SENTINEL_SCHEMA_VERSION,
         created_by=_CREATED_BY,
-        created_at=started_at,
+        created_at=ctx.started_at,
         state="complete",
     )
-    asset_reports, work_reports, variant_reports, bundle_reports = _reports_as_dicts(plan_artifacts)
     finalize_materialize_run(
-        out_dir,
-        initial_manifest=plan_artifacts.initial_manifest,
-        current_manifest=plan_artifacts.current_manifest,
-        journal_entries=plan_artifacts.journal,
-        validation_report=validation_report,
-        materialization_report=materialization_report,
-        replay_bundle=replay_bundle,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        sentinel=sentinel_complete,
-        asset_reports=asset_reports,
-        work_reports=work_reports,
-        variant_reports=variant_reports,
-        bundle_reports=bundle_reports,
+        ctx.out_dir,
+        _build_metadata(ctx, materialization_report, replay_bundle, sentinel_complete),
+        _build_reports(ctx.plan_artifacts),
     )
     return MaterializeArtifacts(
-        current_manifest=plan_artifacts.current_manifest,
+        current_manifest=ctx.plan_artifacts.current_manifest,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
     )
@@ -588,25 +551,18 @@ def _build_replay_bundle(
 
 
 def _finalize_failure(
+    ctx: RunContext,
     exc: MaterializationError,
-    *,
-    out_dir: Path,
     outcome: Outcome,
-    started_at: datetime,
-    run_id: uuid.UUID,
-    caps: Capabilities,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    plan_artifacts: PlanArtifacts,
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
     The failed run-dir must remain readable by ``inspect`` and removable
     by ``clean``. Both commands hard-require ``replay.json``; ``inspect``
     additionally hard-requires ``manifest.current.json``. The un-augmented
-    plan-only manifest from ``plan_artifacts`` is correct here —
+    plan-only manifest from ``ctx.plan_artifacts`` is correct here —
     synthesis aborted, so no version has ``content_hash``/``probed``.
     """
     finished_at = datetime.now(UTC)
@@ -621,54 +577,59 @@ def _finalize_failure(
     )
     report = _build_report(
         outcome=outcome,
-        run_id=run_id,
-        caps=caps,
-        started_at=started_at,
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
         finished_at=finished_at,
         invocations=invocations,
         materialized=materialized,
         failures=[failure],
     )
     replay_bundle = _build_replay_bundle(
-        run_id=run_id,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        plan_artifacts=plan_artifacts,
-        caps=caps,
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=ctx.plan_artifacts,
+        caps=ctx.caps,
         created_at=finished_at,
     )
     sentinel_complete = RunSentinel(
-        run_id=run_id,
+        run_id=ctx.run_id,
         schema_version=RUN_SENTINEL_SCHEMA_VERSION,
         created_by=_CREATED_BY,
-        created_at=started_at,
+        created_at=ctx.started_at,
         state="complete",
     )
     cleanup_failed_run(
-        out_dir,
-        initial_manifest=plan_artifacts.initial_manifest,
-        current_manifest=plan_artifacts.current_manifest,
-        journal_entries=plan_artifacts.journal,
-        validation_report=validation_report,
-        materialization_report=report,
-        replay_bundle=replay_bundle,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        sentinel=sentinel_complete,
+        ctx.out_dir,
+        _build_metadata(ctx, report, replay_bundle, sentinel_complete),
     )
 
 
-def _reports_as_dicts(
-    plan_artifacts: PlanArtifacts,
-) -> tuple[
-    dict[str, AssetReport],
-    dict[str, WorkReport],
-    dict[str, VariantReport],
-    dict[str, BundleReport],
-]:
+def _build_metadata(
+    ctx: RunContext,
+    materialization_report: MaterializationReport,
+    replay_bundle: MaterializeReplayBundle,
+    sentinel: RunSentinel,
+) -> MaterializeMetadata:
+    """Assemble the shared writer payload (success and failure paths)."""
+    return MaterializeMetadata(
+        initial_manifest=ctx.plan_artifacts.initial_manifest,
+        current_manifest=ctx.plan_artifacts.current_manifest,
+        journal_entries=ctx.plan_artifacts.journal,
+        validation_report=ctx.validation_report,
+        materialization_report=materialization_report,
+        replay_bundle=replay_bundle,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        sentinel=sentinel,
+    )
+
+
+def _build_reports(plan_artifacts: PlanArtifacts) -> MaterializeReports:
     """Convert the engine's tuple-of-reports into the writer's id→report dicts."""
     reports = plan_artifacts.reports
-    return (
-        {r.asset_id: r for r in reports.assets},
-        {r.work_id: r for r in reports.works},
-        {r.variant_id: r for r in reports.variants},
-        {r.bundle_id: r for r in reports.bundles},
+    return MaterializeReports(
+        assets={r.asset_id: r for r in reports.assets},
+        works={r.work_id: r for r in reports.works},
+        variants={r.variant_id: r for r in reports.variants},
+        bundles={r.bundle_id: r for r in reports.bundles},
     )
