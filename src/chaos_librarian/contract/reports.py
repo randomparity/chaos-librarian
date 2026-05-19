@@ -16,6 +16,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.manifest import ProbedMedia
+
 
 class AssetSnapshot(BaseModel):
     """A point-in-time view of one asset's location + version binding."""
@@ -25,6 +27,8 @@ class AssetSnapshot(BaseModel):
     location_path: str | None  # None if the asset is currently deleted
     version_id: str
     version_index: int
+    content_hash: str | None = None
+    probed: ProbedMedia | None = None
 
 
 class AssetHistoryEntry(BaseModel):
@@ -47,7 +51,7 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     asset_id: str
     initial: AssetSnapshot
     history: list[AssetHistoryEntry] = Field(default_factory=list)
