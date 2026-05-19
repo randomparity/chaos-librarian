@@ -2,8 +2,24 @@
 
 from __future__ import annotations
 
-from chaos_librarian.contract.scenario import Scenario, TimelineActionName
-from chaos_librarian.engine.resolution import resolve_timeline
+from pathlib import Path
+
+from chaos_librarian.contract.scenario import (
+    MoveAssetEvent,
+    Scenario,
+    SlowCopyCommitEvent,
+    SlowCopyStartEvent,
+    TimelineActionName,
+)
+from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline, step_boundaries
+from chaos_librarian.validation import prepare_run_input
+
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
+
+
+def _resolve_fixture(scenario_name: str) -> list[ResolvedEvent]:
+    run_input = prepare_run_input(FIXTURE_DIR / scenario_name)
+    return resolve_timeline(Scenario.model_validate(run_input.raw_data))
 
 
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
@@ -131,3 +147,46 @@ class TestResolveTimeline:
         )
         resolved = resolve_timeline(scenario)
         assert resolved[0].at_ns == 0
+
+
+class TestStepBoundaries:
+    """step_boundaries pairs adjacent slow_copy halves into single step units.
+
+    WHY: step_boundaries is the single source of truth for step-unit
+    semantics across run_plan, step_fixture, replay_plan_bundle, and
+    inspect. Wrong boundaries here mean ``--steps N`` and ``--next N``
+    count the wrong thing — exactly the Codex round 3 finding 1 failure
+    mode.
+    """
+
+    def test_atomic_only_scenario(self) -> None:
+        resolved = _resolve_fixture("identity-move-rename.yaml")
+        assert step_boundaries(resolved) == [1, 2]
+
+    def test_slow_copy_adjacent_pair_is_one_step(self) -> None:
+        resolved = _resolve_fixture("slow-copy.yaml")
+        assert step_boundaries(resolved) == [2]
+
+    def test_non_adjacent_slow_copy_degrades_to_singles(self) -> None:
+        # A slow_copy_start with an atomic move between it and the commit half,
+        # plus a non-matching ``for_`` on the commit, must NOT pair: each event
+        # becomes its own single-event step.
+        start = SlowCopyStartEvent(
+            id="copy_start_001",
+            at="1s",
+            target="a0",
+            to="movies-hd/x.mkv",
+            temp_path="movies-hd/x.mkv.part",
+            duration="3s",
+        )
+        move = MoveAssetEvent(id="move_001", at="2s", target="a0", to="movies-hd/y.mkv")
+        commit = SlowCopyCommitEvent(id="copy_commit_001", at="3s", for_="other_start")
+        resolved = [
+            ResolvedEvent(at_ns=1_000_000_000, declared_index=0, event=start),
+            ResolvedEvent(at_ns=2_000_000_000, declared_index=1, event=move),
+            ResolvedEvent(at_ns=3_000_000_000, declared_index=2, event=commit),
+        ]
+        assert step_boundaries(resolved) == [1, 2, 3]
+
+    def test_empty_timeline(self) -> None:
+        assert step_boundaries([]) == []

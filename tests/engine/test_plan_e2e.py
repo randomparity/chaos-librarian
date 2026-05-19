@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -22,6 +23,11 @@ _PACK_SCENARIOS = [
     "duplicate-variant.yaml",
     "slow-copy.yaml",
 ]
+
+
+def _relative_files(root: Path) -> list[Path]:
+    """All files under ``root`` as paths relative to ``root``, sorted."""
+    return sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
 
 
 @pytest.mark.parametrize("scenario_name", _PACK_SCENARIOS)
@@ -56,10 +62,11 @@ def test_pack_scenario_bit_identical_across_runs(scenario_name: str, tmp_path: P
     assert result_a.exit_code == 0, result_a.stdout + result_a.stderr
     assert result_b.exit_code == 0, result_b.stdout + result_b.stderr
 
-    file_names = sorted(p.name for p in out_a.iterdir())
-    assert file_names == sorted(p.name for p in out_b.iterdir())
-    for name in file_names:
-        assert (out_a / name).read_bytes() == (out_b / name).read_bytes(), name
+    rel_a = _relative_files(out_a)
+    rel_b = _relative_files(out_b)
+    assert rel_a == rel_b
+    for rel in rel_a:
+        assert (out_a / rel).read_bytes() == (out_b / rel).read_bytes(), str(rel)
 
 
 def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
@@ -89,16 +96,106 @@ def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
     replayed = replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
-    for name in [
-        ".chaos-librarian-run",
-        "manifest.current.json",
-        "manifest.initial.json",
-        "replay.json",
-        "scenario.yaml",
-        "validation.json",
-        "journal.jsonl",
-    ]:
-        assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name
+    rel_original = _relative_files(out_original)
+    rel_replay = _relative_files(out_replay)
+    assert rel_original == rel_replay
+    for rel in rel_original:
+        assert (out_original / rel).read_bytes() == (out_replay / rel).read_bytes(), str(rel)
+
+
+class TestStepVsPlanByteIdentical:
+    """step from t=0 produces a journal identical to plan.
+
+    WHY: headline exit criterion. Step mode and plan mode are equivalent
+    constructions of the same fixture.
+    """
+
+    @pytest.mark.parametrize("scenario_name", _PACK_SCENARIOS)
+    def test_step_and_plan_journals_match(self, scenario_name: str, tmp_path: Path) -> None:
+        plan_dir = tmp_path / "plan"
+        step_dir = tmp_path / "step"
+        assert (
+            runner.invoke(
+                app,
+                ["plan", str(FIXTURE_DIR / scenario_name), "--out", str(plan_dir)],
+            ).exit_code
+            == 0
+        )
+        assert (
+            runner.invoke(
+                app,
+                ["plan", str(FIXTURE_DIR / scenario_name), "--out", str(step_dir), "--steps", "0"],
+            ).exit_code
+            == 0
+        )
+        # Advance the empty fixture through every event
+        for _ in range(20):  # generous cap; --next is idempotent at done
+            result = runner.invoke(app, ["step", str(step_dir), "--next", "1", "--json"])
+            payload = json.loads(result.stdout)
+            if payload["done"]:
+                break
+        # Compare the two fixtures
+        assert (plan_dir / "journal.jsonl").read_bytes() == (
+            step_dir / "journal.jsonl"
+        ).read_bytes()
+        assert (plan_dir / "manifest.current.json").read_bytes() == (
+            step_dir / "manifest.current.json"
+        ).read_bytes()
+        # replay.json must also be byte-identical: the stepped bundle's
+        # execution_trace has to carry every alloc/rng entry the full plan
+        # recorded, or replay against the stepped fixture byte-diffs.
+        # Codex round 4 finding 1 — version-evolution and bundle-sidecars
+        # in the pack scenarios are the load-bearing cases.
+        assert (plan_dir / "replay.json").read_bytes() == (step_dir / "replay.json").read_bytes()
+        for sub in ("assets", "works", "variants", "bundles"):
+            plan_files = sorted((plan_dir / "reports" / sub).iterdir())
+            step_files = sorted((step_dir / "reports" / sub).iterdir())
+            assert [p.name for p in plan_files] == [p.name for p in step_files]
+            for pf, sf in zip(plan_files, step_files, strict=True):
+                assert pf.read_bytes() == sf.read_bytes(), pf.name
+
+
+class TestPartialReplayRoundTripCLI:
+    """A --steps K fixture replays byte-identical via the CLI.
+
+    WHY: partial fixtures must be first-class — decision #12 / Codex
+    finding 1.
+    """
+
+    @pytest.mark.parametrize(
+        ("scenario_name", "k"),
+        [
+            ("identity-move-rename.yaml", 0),
+            ("identity-move-rename.yaml", 1),
+            ("identity-move-rename.yaml", 2),
+            ("slow-copy.yaml", 0),
+            ("slow-copy.yaml", 1),  # one step = entire pair
+        ],
+    )
+    def test_partial_fixture_round_trip(self, scenario_name: str, k: int, tmp_path: Path) -> None:
+        original = tmp_path / "original"
+        replay_out = tmp_path / "replay"
+        plan_args = [
+            "plan",
+            str(FIXTURE_DIR / scenario_name),
+            "--out",
+            str(original),
+            "--steps",
+            str(k),
+        ]
+        assert runner.invoke(app, plan_args).exit_code == 0
+        result = runner.invoke(
+            app,
+            [
+                "replay",
+                str(original / "replay.json"),
+                "--out",
+                str(replay_out),
+                "--against",
+                str(original),
+            ],
+        )
+        assert result.exit_code == 0, result.stdout + result.stderr
 
 
 def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
@@ -128,13 +225,8 @@ def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
     replayed = replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
-    for name in [
-        ".chaos-librarian-run",
-        "manifest.current.json",
-        "manifest.initial.json",
-        "replay.json",
-        "scenario.yaml",
-        "validation.json",
-        "journal.jsonl",
-    ]:
-        assert (out_original / name).read_bytes() == (out_replay / name).read_bytes(), name
+    rel_original = _relative_files(out_original)
+    rel_replay = _relative_files(out_replay)
+    assert rel_original == rel_replay
+    for rel in rel_original:
+        assert (out_original / rel).read_bytes() == (out_replay / rel).read_bytes(), str(rel)

@@ -1,0 +1,164 @@
+"""Tests for chaos_librarian.engine.reports.build_report_set."""
+
+from __future__ import annotations
+
+import uuid
+
+from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
+from chaos_librarian.contract.manifest import (
+    Manifest,
+    ManifestAsset,
+    ManifestBundle,
+    ManifestLocation,
+    ManifestSidecar,
+    ManifestVariant,
+    ManifestVersion,
+    ManifestWork,
+)
+from chaos_librarian.engine.reports import ReportSet, build_report_set
+
+_RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
+
+
+def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -> Manifest:
+    locations = (
+        [
+            ManifestLocation(
+                id="location_0001",
+                asset_id="asset_hd_main",
+                path=location_path,
+            )
+        ]
+        if location_path is not None
+        else []
+    )
+    return Manifest(
+        schema_version=1,
+        works=[ManifestWork(id="work_blazar", title="Synthetic Blazar")],
+        variants=[ManifestVariant(id="variant_hd", work_id="work_blazar", label="hd")],
+        bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
+        assets=[
+            ManifestAsset(
+                id="asset_hd_main",
+                bundle_id="bundle_hd",
+                role="primary_video",
+                container="mkv",
+                duration_seconds=12.0,
+            )
+        ],
+        versions=[ManifestVersion(id="version_0001", asset_id="asset_hd_main", index=0)],
+        locations=locations,
+        sidecars=[],
+    )
+
+
+def _atomic_entry(
+    *, event_id: str, action: str, target: str, delta: dict[str, object]
+) -> AtomicJournalEntry:
+    return AtomicJournalEntry(
+        schema_version=1,
+        event_id=event_id,
+        scenario_id="t",
+        run_id=_RUN_ID,
+        logical_time_ns=1_000_000_000,
+        action=action,
+        target_ids=[target],
+        state_delta=delta,
+        phase=JournalPhase.ATOMIC,
+    )
+
+
+class TestBuildReportSet:
+    """Reports describe the asset/work/variant/bundle cross-cuts of a run.
+
+    WHY: this is the adapter-facing contract; every cross-cut listed in
+    the design must populate.
+    """
+
+    def test_empty_journal_yields_initial_history(self) -> None:
+        m = _manifest_with_one_asset()
+        rs = build_report_set(initial=m, current=m, journal=[])
+        assert isinstance(rs, ReportSet)
+        assert len(rs.assets) == 1
+        assert rs.assets[0].history == []
+        assert rs.assets[0].current == rs.assets[0].initial
+
+    def test_history_filters_to_asset_target(self) -> None:
+        m = _manifest_with_one_asset()
+        entry = _atomic_entry(
+            event_id="move_001",
+            action="move_asset",
+            target="asset_hd_main",
+            delta={"to": "movies-hd/Blazar.mkv"},
+        )
+        non_matching = _atomic_entry(
+            event_id="move_002",
+            action="move_asset",
+            target="asset_other",
+            delta={"to": "movies-hd/Other.mkv"},
+        )
+        rs = build_report_set(initial=m, current=m, journal=[entry, non_matching])
+        asset_report = rs.assets[0]
+        assert len(asset_report.history) == 1
+        assert asset_report.history[0].event_id == "move_001"
+        assert asset_report.history[0].action == "move_asset"
+        assert asset_report.history[0].state_delta == {"to": "movies-hd/Blazar.mkv"}
+
+    def test_deleted_asset_has_none_current(self) -> None:
+        initial = _manifest_with_one_asset()
+        current = _manifest_with_one_asset(location_path=None)
+        # In a real run the current manifest would also drop the location row;
+        # here the snapshot lookup falls back to "no location" → current is None.
+        entry = _atomic_entry(
+            event_id="del_001",
+            action="delete_file",
+            target="asset_hd_main",
+            delta={},
+        )
+        rs = build_report_set(initial=initial, current=current, journal=[entry])
+        assert rs.assets[0].current is None
+        assert any(h.action == "delete_file" for h in rs.assets[0].history)
+
+    def test_work_lists_variants_and_transitive_assets(self) -> None:
+        m = _manifest_with_one_asset()
+        rs = build_report_set(initial=m, current=m, journal=[])
+        wr = rs.works[0]
+        assert wr.work_id == "work_blazar"
+        assert wr.variant_ids == ["variant_hd"]
+        assert wr.asset_ids == ["asset_hd_main"]
+
+    def test_variant_links_bundle_and_work(self) -> None:
+        m = _manifest_with_one_asset()
+        rs = build_report_set(initial=m, current=m, journal=[])
+        vr = rs.variants[0]
+        assert vr.variant_id == "variant_hd"
+        assert vr.work_id == "work_blazar"
+        assert vr.bundle_id == "bundle_hd"
+        assert vr.asset_ids == ["asset_hd_main"]
+
+    def test_bundle_lists_assets_and_sidecars(self) -> None:
+        m = _manifest_with_one_asset()
+        m.sidecars.append(
+            ManifestSidecar(
+                id="sidecar_0001",
+                asset_id="asset_hd_main",
+                kind="subtitles",
+                path="movies-hd/a.eng.srt",
+            )
+        )
+        rs = build_report_set(initial=m, current=m, journal=[])
+        br = rs.bundles[0]
+        assert br.bundle_id == "bundle_hd"
+        assert br.asset_ids == ["asset_hd_main"]
+        assert br.sidecar_ids == ["sidecar_0001"]
+
+    def test_iteration_order_is_stable(self) -> None:
+        """Reports sort by id lexicographically.
+
+        WHY: report files are written one per id; bit-identical fixtures
+        require deterministic enumeration.
+        """
+        m = _manifest_with_one_asset()
+        rs1 = build_report_set(initial=m, current=m, journal=[])
+        rs2 = build_report_set(initial=m, current=m, journal=[])
+        assert [a.asset_id for a in rs1.assets] == [a.asset_id for a in rs2.assets]

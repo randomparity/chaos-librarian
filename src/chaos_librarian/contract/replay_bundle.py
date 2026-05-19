@@ -87,11 +87,13 @@ ExecutionTraceEntry = Annotated[
 class _ReplayBundleBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     chaos_librarian_version: str
     scenario: str  # verbatim YAML
     run_id: uuid.UUID
     resolved_seed: int
+    applied_events: int = Field(ge=0)
+    journal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     execution_trace: list[ExecutionTraceEntry] = Field(default_factory=list)
 
 

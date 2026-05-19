@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "description": "Per-work report \u2014 variants + transitive asset ids.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "variant_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Variant Ids",
+      "type": "array"
+    },
+    "work_id": {
+      "title": "Work Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "work_id",
+    "title",
+    "variant_ids",
+    "asset_ids"
+  ],
+  "title": "WorkReport",
+  "type": "object"
+}

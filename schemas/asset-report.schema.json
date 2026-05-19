@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "AssetHistoryEntry": {
+      "additionalProperties": false,
+      "description": "One journal event that targets this asset, verbatim.",
+      "properties": {
+        "action": {
+          "title": "Action",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "state_delta": {
+          "additionalProperties": true,
+          "title": "State Delta",
+          "type": "object"
+        }
+      },
+      "required": [
+        "logical_time_ns",
+        "event_id",
+        "action",
+        "state_delta"
+      ],
+      "title": "AssetHistoryEntry",
+      "type": "object"
+    },
+    "AssetSnapshot": {
+      "additionalProperties": false,
+      "description": "A point-in-time view of one asset's location + version binding.",
+      "properties": {
+        "location_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Location Path"
+        },
+        "version_id": {
+          "title": "Version Id",
+          "type": "string"
+        },
+        "version_index": {
+          "title": "Version Index",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "location_path",
+        "version_id",
+        "version_index"
+      ],
+      "title": "AssetSnapshot",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Per-asset history report \u2014 initial snapshot, ordered history, current snapshot.\n\n``current`` is ``None`` if the asset has been deleted; ``history``\nstill includes the ``delete_file`` entry in that case.",
+  "properties": {
+    "asset_id": {
+      "title": "Asset Id",
+      "type": "string"
+    },
+    "current": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AssetSnapshot"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "history": {
+      "items": {
+        "$ref": "#/$defs/AssetHistoryEntry"
+      },
+      "title": "History",
+      "type": "array"
+    },
+    "initial": {
+      "$ref": "#/$defs/AssetSnapshot"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "asset_id",
+    "initial",
+    "current"
+  ],
+  "title": "AssetReport",
+  "type": "object"
+}

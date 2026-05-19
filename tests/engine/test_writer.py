@@ -12,11 +12,20 @@ from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine import PlanArtifacts, run_plan
 from chaos_librarian.engine import writer as writer_mod
-from chaos_librarian.engine.writer import write_fixture
+from chaos_librarian.engine.reports import ReportSet
+from chaos_librarian.engine.writer import append_step, write_fixture
+from chaos_librarian.validation import RunInput, prepare_run_input, run_validation
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
+
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
+
+
+def _prepare(scenario_name: str) -> tuple[RunInput, ValidationReport]:
+    run_input = prepare_run_input(FIXTURE_DIR / scenario_name)
+    return run_input, run_validation(run_input)
 
 
 def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
@@ -31,11 +40,13 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sidecars=[],
     )
     bundle = PlanOnlyReplayBundle(
-        schema_version=1,
+        schema_version=2,
         chaos_librarian_version="0.0.0",
         scenario="schema_version: 1\n",
         run_id=_RUN_ID,
         resolved_seed=1,
+        applied_events=0,
+        journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
         execution_mode=ExecutionMode.PLAN_ONLY,
     )
@@ -52,15 +63,17 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         replay_bundle=bundle,
         validation_report=ValidationReport(schema_version=1, scenario_id="t", ok=True, issues=[]),
         sentinel=sentinel,
+        reports=ReportSet(assets=(), works=(), variants=(), bundles=()),
     )
     return artifacts, b"schema_version: 1\n"
 
 
 class TestWriteFixtureFileSet:
-    """write_fixture writes exactly seven files at the run directory.
+    """write_fixture writes the contracted artifacts at the run directory.
 
-    WHY: any extra file becomes part of the contract; any missing file
-    breaks the fixture-layout doc. The seven-file set is the contract.
+    WHY: any extra entry becomes part of the contract; any missing entry
+    breaks the fixture-layout doc. The set (seven files plus the
+    ``reports/`` tree added in Sprint 4) is the contract.
     """
 
     def test_creates_expected_files(self, tmp_path: Path) -> None:
@@ -74,6 +87,7 @@ class TestWriteFixtureFileSet:
             "manifest.current.json",
             "manifest.initial.json",
             "replay.json",
+            "reports",
             "scenario.yaml",
             "validation.json",
         ]
@@ -196,3 +210,79 @@ class TestWriteFixtureIsTransactional:
         with pytest.raises(OSError, match="boom"):
             write_fixture(out, artifacts, scenario_bytes)
         assert not out.exists()
+
+
+class TestWriterEmitsReports:
+    """write_fixture stages reports/ subdirs before the atomic rename.
+
+    WHY: reports are part of every plan-only fixture; adapter consumers
+    rely on them. The subdir layout (assets/works/variants/bundles) is
+    public contract.
+    """
+
+    def test_reports_subdirs_exist(self, tmp_path: Path) -> None:
+        run_input, report = _prepare("identity-move-rename.yaml")
+        artifacts = run_plan(run_input=run_input, validation_report=report)
+        out = tmp_path / "run"
+        write_fixture(out, artifacts, run_input.raw_bytes)
+        assert (out / "reports" / "assets").is_dir()
+        assert (out / "reports" / "works").is_dir()
+        assert (out / "reports" / "variants").is_dir()
+        assert (out / "reports" / "bundles").is_dir()
+
+    def test_asset_report_file_per_id(self, tmp_path: Path) -> None:
+        run_input, report = _prepare("identity-move-rename.yaml")
+        artifacts = run_plan(run_input=run_input, validation_report=report)
+        out = tmp_path / "run"
+        write_fixture(out, artifacts, run_input.raw_bytes)
+        assert (out / "reports" / "assets" / "asset_hd_main.json").exists()
+
+    def test_two_writes_byte_identical(self, tmp_path: Path) -> None:
+        run_input, report = _prepare("identity-move-rename.yaml")
+        artifacts = run_plan(run_input=run_input, validation_report=report)
+        a = tmp_path / "a"
+        b = tmp_path / "b"
+        write_fixture(a, artifacts, run_input.raw_bytes)
+        write_fixture(b, artifacts, run_input.raw_bytes)
+        for report_dir in ["assets", "works", "variants", "bundles"]:
+            a_files = sorted((a / "reports" / report_dir).iterdir())
+            b_files = sorted((b / "reports" / report_dir).iterdir())
+            assert [p.name for p in a_files] == [p.name for p in b_files]
+            for fa, fb in zip(a_files, b_files, strict=True):
+                assert fa.read_bytes() == fb.read_bytes(), fa.name
+
+
+class TestAppendStep:
+    """append_step updates manifest.current/replay.json/reports atomically.
+
+    WHY: step mode mutates a fixture in-place; the updated files must
+    appear consistently or not at all.
+    """
+
+    def test_journal_grows(self, tmp_path: Path) -> None:
+        run_input, report = _prepare("identity-move-rename.yaml")
+        artifacts = run_plan(
+            run_input=run_input,
+            validation_report=report,
+            steps_limit=0,
+        )
+        out = tmp_path / "run"
+        write_fixture(out, artifacts, run_input.raw_bytes)
+        # Journal starts empty
+        assert (out / "journal.jsonl").read_text() == ""
+        # Re-plan with the first event applied
+        artifacts_after = run_plan(
+            run_input=run_input,
+            validation_report=report,
+            steps_limit=1,
+        )
+        new_entries = artifacts_after.journal
+        append_step(
+            out,
+            new_entries=new_entries,
+            new_current_manifest=artifacts_after.current_manifest,
+            new_report_set=artifacts_after.reports,
+            new_replay_bundle=artifacts_after.replay_bundle,
+        )
+        # One line now present in the journal
+        assert sum(1 for _ in (out / "journal.jsonl").read_text().splitlines()) == 1
