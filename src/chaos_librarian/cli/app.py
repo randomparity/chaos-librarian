@@ -184,6 +184,17 @@ def materialize(
     """Materialize a scenario (creates real media files)."""
     try:
         artifacts = materialize_scenario(scenario, out)
+    except ScenarioLoadError as exc:
+        # Mirror ``validate`` / ``plan``: unparseable or unreadable YAML
+        # fails fast with E_YAML_PARSE and exit 3, routed through the
+        # unified envelope.
+        _emit_cli_error(
+            error_code=E_YAML_PARSE,
+            message=str(exc),
+            json_output=json_output,
+            extra_top_level={"scenario_path": str(scenario)},
+        )
+        raise typer.Exit(code=3) from exc
     except CapabilityGateError as exc:
         _emit_materialize_error(exc, json_output=json_output, run_dir=None)
         raise typer.Exit(code=4) from exc

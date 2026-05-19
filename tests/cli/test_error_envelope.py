@@ -137,6 +137,26 @@ class TestUnifiedEnvelopeHumanFormat:
         assert "  field:" in stderr
 
 
+class TestMaterializeOnUnparseableYaml:
+    """Materialize on unparseable YAML routes through the envelope.
+
+    WHY: ``materialize_scenario`` calls ``prepare_run_input`` which raises
+    ``ScenarioLoadError`` for unreadable files or invalid YAML. Without an
+    explicit catch in the CLI handler the exception escapes Typer and the
+    caller gets a raw traceback instead of an ``error_code`` envelope.
+    """
+
+    def test_invalid_yaml_emits_unified_envelope(self, tmp_path: Path) -> None:
+        scenario = tmp_path / "broken.yaml"
+        scenario.write_text("key: : value\n")  # invalid YAML
+        out = tmp_path / "absent"
+        result = runner.invoke(app, ["materialize", str(scenario), "--out", str(out), "--json"])
+        assert result.exit_code == 3
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_YAML_PARSE"
+        assert payload["scenario_path"] == str(scenario)
+
+
 class TestReplayBundleParseFailure:
     """A malformed replay bundle must route through the unified envelope.
 
