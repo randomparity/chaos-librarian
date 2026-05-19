@@ -230,8 +230,15 @@ def _emit_cli_error(
     ``field`` when applicable, ``extra_top_level`` for adjunct paths
     (e.g. ``materialization_report_path``), and ``details`` carrying the
     originating exception's payload. Both JSON and human-format output
-    are written to stderr; stdout is reserved for success output so a
-    pipe consumer can disambiguate ``ok`` from ``error`` purely by stream.
+    are written to stderr.
+
+    Carve-out: ``validate --json`` and ``plan --json`` on a shape-invalid
+    scenario emit a ``ValidationReport`` (with ``ok: false``) on stdout
+    rather than this envelope. The report is structured output describing
+    the scenario, not a message about an error condition — agents that
+    request ``--json`` from those commands are asking for the report,
+    not the envelope. Every other failure path on every command routes
+    through here.
     """
     if json_output:
         payload: dict[str, object] = {
@@ -389,7 +396,19 @@ def replay(
 ) -> None:
     """Replay a recorded run from its replay.json bundle."""
     try:
-        parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle.read_bytes())
+        bundle_bytes = bundle.read_bytes()
+    except OSError as exc:
+        # Typer's ``exists=True`` is pre-checked, but the file can become
+        # unreadable (race, permission drop) between that check and here.
+        _emit_cli_error(
+            error_code="replay_bundle_invalid",
+            message=f"replay bundle is not readable: {exc}",
+            json_output=json_output,
+            extra_top_level={"bundle_path": str(bundle)},
+        )
+        raise typer.Exit(code=1) from exc
+    try:
+        parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle_bytes)
     except (ValidationError, ValueError) as exc:
         _emit_cli_error(
             error_code="replay_bundle_invalid",

@@ -159,6 +159,40 @@ class TestReplayBundleParseFailure:
         assert payload["bundle_path"] == str(bundle_path)
 
 
+class TestValidationReportCarveOut:
+    """``validate --json`` and ``plan --json`` are exempt from the envelope.
+
+    WHY: a failing validation emits a ``ValidationReport`` (with ``ok: false``),
+    not an error envelope. The report describes the scenario, not the
+    command's failure — agents that ask for ``--json`` from these commands
+    want the report. This test pins the carve-out so a future "unify
+    everything" refactor cannot silently break the contract that downstream
+    agents key on (``ok`` field, ``issues`` array, on stdout).
+    """
+
+    def test_validate_failure_json_writes_report_to_stdout(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("not a mapping at the top level\n")
+        result = runner.invoke(app, ["validate", str(bad), "--json"])
+        assert result.exit_code == 3
+        report = json.loads(result.stdout)
+        assert report["ok"] is False
+        assert "issues" in report
+        # No error envelope on stderr — this is a report, not an error.
+        assert "error_code" not in result.stdout
+        assert result.stderr == ""
+
+    def test_plan_failure_json_writes_report_to_stdout(self, tmp_path: Path) -> None:
+        bad = tmp_path / "bad.yaml"
+        bad.write_text("not a mapping at the top level\n")
+        out = tmp_path / "absent"
+        result = runner.invoke(app, ["plan", str(bad), "--out", str(out), "--json"])
+        assert result.exit_code == 3
+        report = json.loads(result.stdout)
+        assert report["ok"] is False
+        assert result.stderr == ""
+
+
 class TestStepCommandUsesUnifiedEnvelope:
     """The step command now emits the same envelope as materialize.
 
