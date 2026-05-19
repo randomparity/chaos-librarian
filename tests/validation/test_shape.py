@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation import RunInput, codes
 from chaos_librarian.validation.pipeline import IssueCollector
@@ -156,49 +158,37 @@ class TestShapePassTupleType:
     public error-code contract to ``E_FIELD_SHAPE``.
     """
 
-    def test_non_sequence_for_roots_emits_field_type(self) -> None:
-        raw = {
+    @pytest.mark.parametrize(
+        ("mutation_path", "bad_value"),
+        [
+            (("library", "roots"), {}),
+            (("works",), {}),
+            (("timeline",), "not-a-sequence"),
+        ],
+    )
+    def test_non_sequence_for_collection_field_emits_field_type(
+        self,
+        mutation_path: tuple[str, ...],
+        bad_value: object,
+    ) -> None:
+        raw: dict[str, Any] = {
             "schema_version": 2,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
-            "library": {"roots": {}},  # dict where tuple is required
+            "library": {"roots": []},
             "works": [],
             "timeline": [],
         }
+        target = raw
+        for key in mutation_path[:-1]:
+            target = target[key]
+        target[mutation_path[-1]] = bad_value
         collector = IssueCollector()
         run_shape_pass(_run_input_from_dict(raw), collector)
         assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues), (
-            f"expected E_FIELD_TYPE, got {[i.code for i in collector.issues]}"
+            f"expected E_FIELD_TYPE at {mutation_path!r}, got {[i.code for i in collector.issues]}"
         )
-
-    def test_non_sequence_for_works_emits_field_type(self) -> None:
-        raw = {
-            "schema_version": 2,
-            "scenario_id": "t",
-            "seed": 1,
-            "duration_scale": "short",
-            "library": {"roots": []},
-            "works": {},  # dict where tuple is required
-            "timeline": [],
-        }
-        collector = IssueCollector()
-        run_shape_pass(_run_input_from_dict(raw), collector)
-        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues)
-
-    def test_non_sequence_for_timeline_emits_field_type(self) -> None:
-        raw = {
-            "schema_version": 2,
-            "scenario_id": "t",
-            "seed": 1,
-            "duration_scale": "short",
-            "library": {"roots": []},
-            "works": [],
-            "timeline": "not-a-sequence",  # str where tuple is required
-        }
-        collector = IssueCollector()
-        run_shape_pass(_run_input_from_dict(raw), collector)
-        assert any(i.code == codes.E_FIELD_TYPE for i in collector.issues)
 
 
 class TestShapePassNoErrorsForValidScenario:

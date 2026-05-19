@@ -5,11 +5,10 @@ Parses ``RunInput.raw_data`` via ``Scenario.model_validate`` and maps each
 code, a JSONPath, and a line/column resolved via the ``LineIndex``.
 
 The shape pass is authoritative for ``RunInput.scenario``: on success it
-writes the freshly parsed Scenario into the RunInput cache slot; on
-failure it invalidates any prior cache entry. Reading the cached
-property directly here would let a caller that pre-populated the cache
-and then mutated ``raw_data`` bypass validation entirely (Codex round 3
-finding).
+primes the cache from a fresh parse; on failure it invalidates any prior
+entry. Reading the cached property directly would let a caller that
+pre-populated the cache and then mutated ``raw_data`` bypass validation
+entirely.
 """
 
 from __future__ import annotations
@@ -30,25 +29,20 @@ __all__ = ["run_shape_pass"]
 
 
 def run_shape_pass(run_input: RunInput, collector: IssueCollector) -> None:
-    """Parse ``run_input.raw_data`` fresh; populate the cache on success.
+    """Parse ``run_input.raw_data`` fresh; prime the cache on success.
 
-    Parses ``Scenario.model_validate(run_input.raw_data)`` directly rather
-    than reading ``run_input.scenario``. This guarantees the shape pass
-    sees the *current* ``raw_data`` even if a caller pre-populated the
-    cache by accessing ``run_input.scenario`` before validation ran.
+    Parses directly rather than reading ``run_input.scenario`` so the
+    shape pass sees the *current* ``raw_data`` even if a caller warmed
+    the cache before validation ran.
 
-    On success: the cache slot in ``run_input.__dict__["scenario"]`` is
-    overwritten with the fresh parse so downstream consumers reuse it.
-    On failure: the cache slot is removed (if any) so subsequent
-    ``run_input.scenario`` access re-parses (and re-raises) rather than
-    returning a stale value.
+    On success: ``_prime_scenario_cache`` writes the fresh parse.
+    On failure: ``_invalidate_scenario_cache`` drops any prior entry so
+    subsequent ``run_input.scenario`` access re-parses (and re-raises).
     """
     try:
         parsed = Scenario.model_validate(run_input.raw_data)
     except ValidationError as e:
-        # Invalidate any stale cache from prior access. cached_property
-        # stores results in __dict__ keyed by the attribute name.
-        run_input.__dict__.pop("scenario", None)
+        run_input._invalidate_scenario_cache()
         for entry in e.errors(include_url=False, include_context=True):
             pydantic_type = entry["type"]
             code = PYDANTIC_TO_CODE.get(pydantic_type, E_FIELD_SHAPE)
@@ -65,5 +59,4 @@ def run_shape_pass(run_input: RunInput, collector: IssueCollector) -> None:
                 line_index=run_input.line_index,
             )
         return
-    # Authoritative cache write: overwrites any pre-existing value.
-    run_input.__dict__["scenario"] = parsed
+    run_input._prime_scenario_cache(parsed)

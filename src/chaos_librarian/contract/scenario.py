@@ -61,17 +61,13 @@ class SubtitleSource(enum.StrEnum):
 # ---- Library ----------------------------------------------------------------
 
 
-# Every model in the Scenario subtree below is ``frozen=True`` and uses
-# ``tuple[X, ...]`` for collection fields. Rationale: ``RunInput.scenario``
-# caches one parsed Scenario object across the validation pipeline,
-# ``run_plan``, ``replay_plan_bundle``, and ``materialize_scenario``. A
-# mutation between validation and the engine would silently desync the
-# generated artifacts from the bytes the replay bundle records.
-# ``frozen=True`` blocks attribute reassignment; tuple collection fields
-# block list mutators (``append``/``extend``/index assignment). Together
-# they make the cached subtree effectively immutable. Pydantic coerces
-# YAML/JSON lists into tuples at validation time, so input shape is
-# unchanged.
+# Every model in the Scenario subtree below is frozen with tuple
+# collection fields. ``RunInput.scenario`` caches one parsed Scenario
+# across the validation pipeline, plan, replay, and materialize; any
+# mutation between validation and the engine would desync generated
+# artifacts from the bytes the replay bundle records. Pydantic still
+# accepts list input and coerces to tuple at validation time, so the
+# wire format is unchanged.
 
 
 class LibraryRoot(BaseModel):

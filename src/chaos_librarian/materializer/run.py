@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -296,8 +297,8 @@ def _finalize_success(
 
 def _preflight_asset(
     video: VideoTrack | None,
-    audios: list[AudioTrack],
-    subtitles: list[SubtitleTrack],
+    audios: Sequence[AudioTrack],
+    subtitles: Sequence[SubtitleTrack],
     container: str,
 ) -> None:
     """Run build_command in a dry mode — raises UnsupportedMaterializationError fast.
@@ -333,7 +334,7 @@ def _preflight_asset(
     )
 
 
-def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
+def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
     """Build the audio FFmpegInput list at preflight time, raising on unknown sources."""
     inputs: list[FFmpegInput] = []
     for audio in audios:
@@ -348,7 +349,7 @@ def _preflight_audio_inputs(audios: list[AudioTrack]) -> list[FFmpegInput]:
     return inputs
 
 
-def _preflight_subtitles(subtitles: list[SubtitleTrack]) -> None:
+def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
     """Subtitle matrix: SRT + generated + sidecar only."""
     for index, sub in enumerate(subtitles):
         if sub.codec != "srt":

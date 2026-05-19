@@ -14,6 +14,7 @@ from chaos_librarian.engine import run_plan
 from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     RunInput,
+    codes,
     prepare_run_input,
     prepare_run_input_from_bytes,
     run_validation,
@@ -172,12 +173,11 @@ class TestRunInputScenarioCache:
     ) -> None:
         """A stale cache from pre-validation access must not bypass shape errors.
 
-        WHY: Codex round 3 finding. If a caller accesses ``run_input.scenario``
-        first (populating the cache), then mutates ``run_input.raw_data`` to
-        shape-invalid content, ``run_validation`` previously returned ``ok=True``
-        because the shape pass read the cached (valid) Scenario instead of
-        re-validating raw_data. The shape pass now parses raw_data directly
-        and rewrites the cache slot on each call, so the mutation is caught.
+        WHY: if a caller accesses ``run_input.scenario`` first (populating
+        the cache), then mutates ``run_input.raw_data`` to shape-invalid
+        content, the shape pass must still catch the mutation. The pass
+        parses ``raw_data`` directly and primes the cache from that fresh
+        parse, so a stale cache cannot silently produce ``ok=True``.
         """
         path = tmp_path / "s.yaml"
         path.write_bytes(self._VALID_BYTES)
@@ -192,7 +192,7 @@ class TestRunInputScenarioCache:
         # Step 3: validation must catch the mutation, not return the stale parse.
         report = run_validation(run_input)
         assert report.ok is False
-        assert any(i.code == "E_FIELD_TYPE" for i in report.issues), (
+        assert any(i.code == codes.E_FIELD_TYPE for i in report.issues), (
             f"expected E_FIELD_TYPE issue, got {[i.code for i in report.issues]}"
         )
 
