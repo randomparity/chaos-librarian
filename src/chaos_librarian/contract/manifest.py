@@ -99,13 +99,22 @@ class ManifestSidecar(BaseModel):
     asset_id: str
     kind: str
     path: str
+    # Language tag (e.g. "en", "eng", "fr"). Optional so engine-created
+    # sidecars (via the ``create_sidecar`` timeline event) that carry no
+    # structured language hint can still be persisted. The materializer
+    # populates this from the scenario's subtitle declarations; the
+    # ``(asset_id, language)`` pair is the lookup key in
+    # ``_find_sidecar_for`` (replaces a path-substring match that
+    # mis-resolved when two languages collided as substrings of each
+    # other, e.g. "en"/"eng").
+    language: str | None = None
     content_hash: str | None = None
 
 
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]

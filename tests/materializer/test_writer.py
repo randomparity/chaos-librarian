@@ -83,7 +83,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=2,
+        schema_version=3,
         works=[],
         variants=[],
         bundles=[],

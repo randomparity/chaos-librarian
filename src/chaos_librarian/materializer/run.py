@@ -482,6 +482,7 @@ def _augment_manifest(
                     asset_id=asset.id,
                     kind=sub.codec,
                     path=sidecar_path,
+                    language=sub.language,
                     content_hash=content_hash,
                 )
             )
@@ -490,10 +491,17 @@ def _augment_manifest(
 
 
 def _find_sidecar_for(manifest: Manifest, asset_id: str, language: str) -> ManifestSidecar | None:
-    """Return the existing ``ManifestSidecar`` row for ``(asset_id, language)``,
-    or ``None`` if the engine has not pre-populated one."""
+    """Return the ``ManifestSidecar`` for ``(asset_id, language)``, or ``None``.
+
+    Matches on the explicit ``language`` field (manifest v3+). The previous
+    substring-match on ``sidecar.path`` (``language in path``) mis-resolved
+    whenever one language tag appeared as a substring of another (e.g.
+    looking up ``"en"`` would match a ``"library/x.eng.srt"`` row).
+    Engine-created sidecars (via the ``create_sidecar`` event) currently
+    carry ``language=None`` and are skipped here.
+    """
     for sidecar in manifest.sidecars:
-        if sidecar.asset_id == asset_id and language in sidecar.path:
+        if sidecar.asset_id == asset_id and sidecar.language == language:
             return sidecar
     return None
 

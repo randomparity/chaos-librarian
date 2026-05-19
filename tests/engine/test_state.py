@@ -78,7 +78,7 @@ class TestBuildInitialState:
         state = build_initial_state(scenario, ids)
         manifest = state.to_manifest()
         assert isinstance(manifest, Manifest)
-        assert manifest.schema_version == 2
+        assert manifest.schema_version == 3
         assert [w.id for w in manifest.works] == ["w0"]
         assert [v.id for v in manifest.variants] == ["v0"]
         assert [b.id for b in manifest.bundles] == ["b0"]

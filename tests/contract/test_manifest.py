@@ -109,5 +109,5 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_two():
-    assert MANIFEST_SCHEMA_VERSION == 2
+def test_manifest_schema_version_is_three():
+    assert MANIFEST_SCHEMA_VERSION == 3
