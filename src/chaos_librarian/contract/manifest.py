@@ -11,6 +11,39 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class ProbedStream(BaseModel):
+    """One stream from ``ffprobe -show_streams``.
+
+    Optional fields are populated only for the matching ``kind``; ffprobe
+    silently omits the others, and ``exclude_none=True`` keeps the serialized
+    output compact.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["video", "audio", "subtitle"]
+    codec: str
+    language: str | None = None
+    width: int | None = None  # video-only
+    height: int | None = None  # video-only
+    fps: float | None = None  # video-only
+    channels: int | None = None  # audio-only
+    sample_rate: int | None = None  # audio-only
+    default: bool | None = None  # subtitle-only
+    forced: bool | None = None  # subtitle-only
+
+
+class ProbedMedia(BaseModel):
+    """Output of ``ffprobe -show_format -show_streams`` mapped into a model."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    container: str
+    duration_seconds: float
+    size_bytes: int
+    streams: list[ProbedStream]
+
+
 class ManifestWork(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -41,10 +74,12 @@ class ManifestAsset(BaseModel):
 
 class ManifestVersion(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
     id: str
     asset_id: str
     index: int
     content_hash: str | None = None
+    probed: ProbedMedia | None = None
 
 
 class ManifestLocation(BaseModel):
@@ -59,16 +94,18 @@ class ManifestLocation(BaseModel):
 
 class ManifestSidecar(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
     id: str
     asset_id: str
     kind: str
     path: str
+    content_hash: str | None = None
 
 
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]

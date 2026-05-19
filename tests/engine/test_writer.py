@@ -30,7 +30,7 @@ def _prepare(scenario_name: str) -> tuple[RunInput, ValidationReport]:
 
 def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     empty_manifest = Manifest(
-        schema_version=1,
+        schema_version=2,
         works=[],
         variants=[],
         bundles=[],
