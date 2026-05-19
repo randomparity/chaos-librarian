@@ -1026,7 +1026,7 @@ def _rule_sidecar_language_consistent(
 
     seen: dict[tuple[str, str], int] = {}
     for index, event in _iter_timeline_events(raw):
-        if event.get("action") != TimelineActionName.CREATE_SIDECAR.value:
+        if event.get("action") != TimelineActionName.CREATE_SIDECAR:
             continue
         target = event.get("target")
         language = event.get("language")
