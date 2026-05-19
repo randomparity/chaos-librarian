@@ -137,6 +137,28 @@ class TestUnifiedEnvelopeHumanFormat:
         assert "  field:" in stderr
 
 
+class TestReplayBundleParseFailure:
+    """A malformed replay bundle must route through the unified envelope.
+
+    WHY: ``_REPLAY_BUNDLE_ADAPTER.validate_json`` runs before any of the
+    command's structured error paths. If it raises an unguarded
+    ``ValidationError``, a downstream agent gets no ``error_code`` JSON
+    and no exit-code-mapped envelope — just a raw exception traceback
+    from typer's default exception handler. The replay command catches
+    this and emits ``replay_bundle_invalid`` so the contract holds.
+    """
+
+    def test_malformed_bundle_emits_unified_envelope(self, tmp_path: Path) -> None:
+        bundle_path = tmp_path / "bad.json"
+        bundle_path.write_bytes(b"")
+        out = tmp_path / "out"
+        result = runner.invoke(app, ["replay", str(bundle_path), "--out", str(out), "--json"])
+        assert result.exit_code == 1
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "replay_bundle_invalid"
+        assert payload["bundle_path"] == str(bundle_path)
+
+
 class TestStepCommandUsesUnifiedEnvelope:
     """The step command now emits the same envelope as materialize.
 

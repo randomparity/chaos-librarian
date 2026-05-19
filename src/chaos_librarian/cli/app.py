@@ -388,7 +388,16 @@ def replay(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Replay a recorded run from its replay.json bundle."""
-    parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle.read_bytes())
+    try:
+        parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle.read_bytes())
+    except (ValidationError, ValueError) as exc:
+        _emit_cli_error(
+            error_code="replay_bundle_invalid",
+            message=f"replay bundle is not parseable: {exc}",
+            json_output=json_output,
+            extra_top_level={"bundle_path": str(bundle)},
+        )
+        raise typer.Exit(code=1) from exc
     if isinstance(parsed_any, MaterializeReplayBundle):
         _emit_step_error(
             "materialize_replay_not_implemented",
