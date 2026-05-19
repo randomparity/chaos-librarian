@@ -23,6 +23,10 @@ class RunSentinel(BaseModel):
     # ty rejects ``Literal[CONSTANT]`` (PEP 586 indirect form); hardcode the
     # value here. test_rejects_unknown_schema_version locks the linkage to
     # RUN_SENTINEL_SCHEMA_VERSION via the constant value.
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     created_by: str
     created_at: datetime | None = None
+    # ``state`` lets future tooling distinguish a completed run from a
+    # partially-written materialize run-dir. Plan-only callers default to
+    # ``complete``; only the materializer ever writes ``in_progress``.
+    state: Literal["in_progress", "complete"] = "complete"

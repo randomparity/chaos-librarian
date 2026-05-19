@@ -1,8 +1,6 @@
 """Typer app exposing the chaos-librarian CLI surface.
 
-Sprint 0 freezes the command surface. Every command prints a not-implemented
-notice and exits with code 1. Later sprints replace these stubs with real
-implementations. See docs/specs/chaos-librarian-design.md "CLI Contract".
+See docs/specs/chaos-librarian-design.md "CLI Contract".
 """
 
 from __future__ import annotations
@@ -10,13 +8,18 @@ from __future__ import annotations
 import json
 import shutil
 from pathlib import Path
-from typing import Annotated, cast
+from typing import Annotated, Final, cast
 
 import typer
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
+from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest
-from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.replay_bundle import (
+    MaterializeReplayBundle,
+    PlanOnlyReplayBundle,
+    ReplayBundle,
+)
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.contract.validation import ValidationIssue
@@ -34,6 +37,18 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.engine.writer import append_step, write_fixture
+from chaos_librarian.materializer import (
+    CapabilityGateError,
+    ContainmentViolationError,
+    MaterializationError,
+    ProbeParseError,
+    ScenarioValidationError,
+    TimelineUnsupportedError,
+    ToolFailedError,
+    UnsupportedMaterializationError,
+    detect_capabilities,
+    materialize_scenario,
+)
 from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     ValidationReport,
@@ -49,6 +64,8 @@ app = typer.Typer(
     help="Scenario-driven synthetic media library simulator.",
     no_args_is_help=True,
 )
+
+_REPLAY_BUNDLE_ADAPTER: Final = TypeAdapter(ReplayBundle)
 
 
 def _stub(command: str) -> None:
@@ -89,10 +106,10 @@ def validate(
 
 
 def _synthesize_yaml_parse_report(scenario_path: Path, exc: ScenarioLoadError) -> ValidationReport:
-    """Wrap a ScenarioLoadError as the Sprint 1 E_YAML_PARSE report.
+    """Wrap a ScenarioLoadError as the E_YAML_PARSE validation report.
 
-    The byte-binding factory raises now; the CLI maps the exception to the
-    structured report shape Sprint 1 promised for unparseable input.
+    The byte-binding factory raises now; the CLI maps the exception to
+    the structured report shape promised for unparseable input.
     """
     return ValidationReport(
         schema_version=1,
@@ -166,7 +183,66 @@ def materialize(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Materialize a scenario (creates real media files)."""
-    _stub("materialize")
+    try:
+        artifacts = materialize_scenario(scenario, out)
+    except CapabilityGateError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=4) from exc
+    except ScenarioValidationError as exc:
+        # Mirror ``plan``'s exit code (3) for semantic-validation failures so
+        # downstream agents key off the same convention.
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=3) from exc
+    except TimelineUnsupportedError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=5) from exc
+    except UnsupportedMaterializationError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=5) from exc
+    except ToolFailedError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=out)
+        raise typer.Exit(code=5) from exc
+    except ProbeParseError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=out)
+        raise typer.Exit(code=5) from exc
+    except ContainmentViolationError as exc:
+        _emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=7) from exc
+
+    if json_output:
+        typer.echo(artifacts.materialization_report.model_dump_json(indent=2, exclude_none=True))
+    else:
+        typer.echo(f"materialize: wrote {out}")
+
+
+def _emit_materialize_error(
+    exc: MaterializationError,
+    *,
+    json_output: bool,
+    run_dir: Path | None,
+) -> None:
+    payload: dict[str, object] = {
+        "error_code": exc.error_code,
+        "message": exc.message,
+    }
+    if exc.asset_id is not None:
+        payload["asset_id"] = exc.asset_id
+    if exc.field is not None:
+        payload["field"] = exc.field
+    payload.update(exc.payload)
+    if run_dir is not None:
+        payload["materialization_report_path"] = str(run_dir / "materialization.json")
+    if json_output:
+        typer.echo(json.dumps(payload, sort_keys=True))
+    else:
+        typer.echo(f"chaos-librarian: materialize failed ({exc.error_code})", err=True)
+        typer.echo(f"  message: {exc.message}", err=True)
+        if exc.asset_id is not None:
+            typer.echo(f"  asset:   {exc.asset_id}", err=True)
+        if exc.field is not None:
+            typer.echo(f"  field:   {exc.field}", err=True)
+        if run_dir is not None:
+            typer.echo(f"  report:  {run_dir / 'materialization.json'}", err=True)
 
 
 @app.command()
@@ -188,6 +264,19 @@ def step(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Advance a step-mode run by ``--next`` resolved events (default 1)."""
+    try:
+        sentinel = _verify_sentinel(run_dir)
+    except SentinelInvalidError as exc:
+        _emit_step_error("sentinel_invalid", str(exc), json_output=json_output)
+        raise typer.Exit(code=7) from exc
+    if sentinel.state == "in_progress":
+        _emit_step_error(
+            "E_SENTINEL_IN_PROGRESS",
+            f"sentinel state is in_progress; clean the run-dir before stepping: {run_dir}",
+            json_output=json_output,
+        )
+        raise typer.Exit(code=7)
+
     try:
         result = step_fixture(run_dir, n_events=next_count)
     except SentinelInvalidError as exc:
@@ -259,7 +348,16 @@ def replay(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Replay a recorded run from its replay.json bundle."""
-    parsed_bundle = PlanOnlyReplayBundle.model_validate_json(bundle.read_text())
+    parsed_any = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle.read_bytes())
+    if isinstance(parsed_any, MaterializeReplayBundle):
+        _emit_step_error(
+            "materialize_replay_not_implemented",
+            "materialize replay is not implemented in this CLI build",
+            json_output=json_output,
+            extra={"execution_mode": parsed_any.execution_mode.value},
+        )
+        raise typer.Exit(code=1)
+    parsed_bundle = parsed_any
     try:
         artifacts = replay_plan_bundle(parsed_bundle)
     except ReplayIntegrityError as exc:
@@ -399,16 +497,16 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     Raises:
         SentinelInvalidError: sentinel missing or unparseable.
     """
-    _verify_sentinel(run_dir)
+    sentinel = _verify_sentinel(run_dir)
 
-    bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
+    bundle = _REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
     manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
-    journal_path = run_dir / "journal.jsonl"
-    journal_entries = (
-        sum(1 for line in journal_path.read_text().splitlines() if line.strip())
-        if journal_path.exists()
-        else 0
-    )
+    try:
+        journal_text = (run_dir / "journal.jsonl").read_text()
+    except FileNotFoundError:
+        journal_entries = 0
+    else:
+        journal_entries = sum(1 for line in journal_text.splitlines() if line.strip())
 
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     run_input = prepare_run_input_from_bytes(
@@ -444,16 +542,21 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
             "sidecars": len(manifest_current.sidecars),
         },
         "created_at": None,
+        "sentinel": {
+            "state": sentinel.state,
+            "created_at": sentinel.created_at.isoformat() if sentinel.created_at else None,
+            "run_id": str(sentinel.run_id),
+        },
     }
 
 
-def _verify_sentinel(run_dir: Path) -> None:
-    """Raise ``SentinelInvalidError`` if the run sentinel is missing or unparseable."""
+def _verify_sentinel(run_dir: Path) -> RunSentinel:
+    """Return the parsed sentinel; raise ``SentinelInvalidError`` if missing or unparseable."""
     sentinel_path = run_dir / ".chaos-librarian-run"
     if not sentinel_path.exists():
         raise SentinelInvalidError(f"sentinel missing: {sentinel_path}")
     try:
-        RunSentinel.model_validate_json(sentinel_path.read_text())
+        return RunSentinel.model_validate_json(sentinel_path.read_text())
     except (ValidationError, ValueError) as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
 
@@ -472,6 +575,8 @@ def _render_inspect_human(summary: dict[str, object]) -> None:
         f"counts:           works={counts['works']} variants={counts['variants']} "
         f"bundles={counts['bundles']} assets={counts['assets']} sidecars={counts['sidecars']}"
     )
+    sentinel = cast("dict[str, object]", summary["sentinel"])
+    typer.echo(f"sentinel:         state={sentinel['state']} run_id={sentinel['run_id']}")
 
 
 @app.command()
@@ -479,7 +584,34 @@ def capabilities(
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Detect available media tools (ffmpeg, ffprobe, mkvtoolnix)."""
-    _stub("capabilities")
+    caps = detect_capabilities()
+    if json_output:
+        typer.echo(caps.model_dump_json(indent=2, exclude_none=True))
+    else:
+        _render_capabilities_human(caps)
+    exit_code = 0 if (caps.ffmpeg.meets_minimum and caps.ffprobe.meets_minimum) else 4
+    raise typer.Exit(code=exit_code)
+
+
+def _render_capabilities_human(caps: Capabilities) -> None:
+    """Echo the capabilities payload as a plain key:value block to stdout."""
+    typer.echo(f"platform:   {caps.platform}")
+    for name, tool in (
+        ("ffmpeg", caps.ffmpeg),
+        ("ffprobe", caps.ffprobe),
+        ("mkvtoolnix", caps.mkvtoolnix),
+    ):
+        if not tool.found:
+            typer.echo(f"  {name:<11} missing")
+            continue
+        status = "OK" if tool.meets_minimum else "BELOW MINIMUM"
+        typer.echo(f"  {name:<11} {tool.version} ({tool.path}) [{status}]")
+    typer.echo("ready_for:")
+    typer.echo(f"  materialize_static:               {caps.ready_for.materialize_static}")
+    typer.echo(
+        f"  materialize_filesystem_mutations: {caps.ready_for.materialize_filesystem_mutations}"
+    )
+    typer.echo(f"  materialize_media_mutations:      {caps.ready_for.materialize_media_mutations}")
 
 
 @app.command()
@@ -515,7 +647,7 @@ def clean(
         )
         raise typer.Exit(code=7)
     try:
-        bundle = PlanOnlyReplayBundle.model_validate_json(replay_path.read_text())
+        bundle = _REPLAY_BUNDLE_ADAPTER.validate_json(replay_path.read_bytes())
     except (ValidationError, ValueError) as exc:
         _emit_step_error(
             "fixture_inconsistent",

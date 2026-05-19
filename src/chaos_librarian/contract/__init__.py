@@ -13,17 +13,18 @@ from typing import Final
 # Literal[1]`` or ``Literal[2]``) rather than referencing the constant —
 # ``ty`` rejects indirect ``Literal[]`` forms. The test in
 # test_contract_constants.py asserts ``isinstance(v, int)``.
-SCENARIO_SCHEMA_VERSION: Final = 1
-MANIFEST_SCHEMA_VERSION: Final = 1
+SCENARIO_SCHEMA_VERSION: Final = 2
+MANIFEST_SCHEMA_VERSION: Final = 2
 JOURNAL_SCHEMA_VERSION: Final = 1
-REPLAY_BUNDLE_SCHEMA_VERSION: Final = 2
+REPLAY_BUNDLE_SCHEMA_VERSION: Final = 3
 VALIDATION_SCHEMA_VERSION: Final = 1
-MATERIALIZATION_SCHEMA_VERSION: Final = 1
-RUN_SENTINEL_SCHEMA_VERSION: Final = 1
-ASSET_REPORT_SCHEMA_VERSION: Final = 1
+MATERIALIZATION_SCHEMA_VERSION: Final = 2
+RUN_SENTINEL_SCHEMA_VERSION: Final = 2
+ASSET_REPORT_SCHEMA_VERSION: Final = 2
 WORK_REPORT_SCHEMA_VERSION: Final = 1
 VARIANT_REPORT_SCHEMA_VERSION: Final = 1
 BUNDLE_REPORT_SCHEMA_VERSION: Final = 1
+CAPABILITIES_SCHEMA_VERSION: Final = 1
 
 # Namespace UUID used to derive deterministic UUIDv5 run_ids in plan-only mode.
 # Derived once from a stable DNS-style string so the value is reproducible

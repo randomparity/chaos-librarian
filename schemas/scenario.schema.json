@@ -89,6 +89,16 @@
       "title": "Asset",
       "type": "object"
     },
+    "AudioSource": {
+      "description": "Synthesis recipe for an audio stream.",
+      "enum": [
+        "sine",
+        "silence",
+        "channel_tones"
+      ],
+      "title": "AudioSource",
+      "type": "string"
+    },
     "AudioTrack": {
       "additionalProperties": false,
       "properties": {
@@ -103,6 +113,10 @@
         "language": {
           "title": "Language",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/AudioSource",
+          "default": "sine"
         }
       },
       "required": [
@@ -461,6 +475,14 @@
       "title": "SlowCopyStartEvent",
       "type": "object"
     },
+    "SubtitleSource": {
+      "description": "Synthesis recipe for a subtitle track.",
+      "enum": [
+        "generated_srt"
+      ],
+      "title": "SubtitleSource",
+      "type": "string"
+    },
     "SubtitleTrack": {
       "additionalProperties": false,
       "properties": {
@@ -479,6 +501,10 @@
           ],
           "title": "Mode",
           "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/SubtitleSource",
+          "default": "generated_srt"
         }
       },
       "required": [
@@ -512,6 +538,17 @@
       "title": "Variant",
       "type": "object"
     },
+    "VideoSource": {
+      "description": "Synthesis recipe for the video stream of an asset.",
+      "enum": [
+        "mandelbrot",
+        "color_bars",
+        "solid_color",
+        "noise"
+      ],
+      "title": "VideoSource",
+      "type": "string"
+    },
     "VideoTrack": {
       "additionalProperties": false,
       "properties": {
@@ -524,8 +561,7 @@
           "type": "string"
         },
         "source": {
-          "title": "Source",
-          "type": "string"
+          "$ref": "#/$defs/VideoSource"
         }
       },
       "required": [
@@ -583,7 +619,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
     },

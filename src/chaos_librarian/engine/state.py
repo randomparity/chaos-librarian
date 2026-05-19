@@ -84,7 +84,7 @@ class WorldState:
     def to_manifest(self) -> Manifest:
         """Serialize back to the immutable Pydantic Manifest."""
         return Manifest(
-            schema_version=1,
+            schema_version=2,
             works=list(self.works.values()),
             variants=list(self.variants.values()),
             bundles=list(self.bundles.values()),

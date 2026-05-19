@@ -14,6 +14,7 @@ from chaos_librarian.contract import (
     CHAOS_LIBRARIAN_NAMESPACE_UUID,
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
+from chaos_librarian.contract.materialization import ToolchainInfo
 from chaos_librarian.contract.replay_bundle import (
     AllocTraceEntry,
     ExecutionMode,
@@ -134,7 +135,7 @@ def test_materialize_bundle_has_created_at_and_toolchain() -> None:
         applied_events=0,
         journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
-        toolchain={"ffmpeg": "7.1", "ffprobe": "7.1", "platform": "darwin-arm64"},
+        toolchain=ToolchainInfo(ffmpeg="7.1", ffprobe="7.1"),
     )
     loaded = TypeAdapter(ReplayBundle).validate_json(b.model_dump_json())
     assert loaded.created_at == b.created_at
@@ -283,3 +284,52 @@ def test_trace_entry_rejects_unknown_kind() -> None:
     bad = _trace_base("io")
     with pytest.raises(ValidationError):
         TypeAdapter(ExecutionTraceEntry).validate_python(bad)
+
+
+def _materialize_payload(**overrides: object) -> dict[str, object]:
+    base: dict[str, object] = {
+        "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
+        "chaos_librarian_version": "0.1.0",
+        "scenario": "schema_version: 2\nscenario_id: x\n",
+        "run_id": "00000000-0000-4000-8000-000000000000",
+        "resolved_seed": 1,
+        "applied_events": 0,
+        "journal_digest": "0" * 64,
+        "execution_mode": "materialize",
+        "created_at": "2026-05-18T00:00:00Z",
+        "toolchain": {"ffmpeg": "7.1.1"},
+    }
+    base.update(overrides)
+    return base
+
+
+def test_materialize_bundle_rejects_nonzero_applied_events():
+    """WHY: Sprint 5 timelines are always empty; the schema must lock
+    applied_events at 0 so a future code regression that emits a non-zero
+    value is caught at parse time, not silently round-tripped."""
+    payload = _materialize_payload(applied_events=1)
+    with pytest.raises(ValidationError):
+        MaterializeReplayBundle.model_validate(payload)
+
+
+def test_materialize_bundle_accepts_zero_applied_events():
+    bundle = MaterializeReplayBundle.model_validate(_materialize_payload())
+    assert bundle.applied_events == 0
+
+
+def test_materialize_bundle_toolchain_is_structured():
+    """WHY: Sprint 5 unifies the toolchain shape with MaterializationReport
+    via ToolchainInfo; the bundle's toolchain must be the same model."""
+    bundle = MaterializeReplayBundle.model_validate(_materialize_payload())
+    assert isinstance(bundle.toolchain, ToolchainInfo)
+    assert bundle.toolchain.ffmpeg == "7.1.1"
+
+
+def test_materialize_bundle_toolchain_rejects_unknown_tool():
+    payload = _materialize_payload(toolchain={"ffmpeg": "7.1.1", "imagemagick": "7.0"})
+    with pytest.raises(ValidationError):
+        MaterializeReplayBundle.model_validate(payload)
+
+
+def test_replay_bundle_schema_version_is_three():
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 3

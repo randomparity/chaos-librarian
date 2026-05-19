@@ -25,9 +25,18 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "state": {
+      "default": "complete",
+      "enum": [
+        "in_progress",
+        "complete"
+      ],
+      "title": "State",
+      "type": "string"
     }
   },
   "required": [

@@ -98,11 +98,6 @@ def test_top_level_help_lists_all_commands() -> None:
         assert command in result.stdout
 
 
-def test_capabilities_stub_exits_one() -> None:
-    """capabilities is argless; ensure the stub returns 1 (not implemented)."""
-    assert runner.invoke(app, ["capabilities"]).exit_code == 1
-
-
 # ---- file-argument commands: positional rejections -------------------------
 
 

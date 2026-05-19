@@ -1,8 +1,9 @@
 """Journal entry schema (one JSONL line per timeline event).
 
-The journal is append-only and is the source of truth for the oracle. Sprint 0
-freezes the multi-phase fields (``phase``, ``temp_path``, ``related_event_id``)
-so adding multi-phase mutations after V1 does not force a schema version bump.
+The journal is append-only and is the source of truth for the oracle.
+The multi-phase fields (``phase``, ``temp_path``, ``related_event_id``)
+are present from V1 so adding multi-phase mutations later does not force
+a schema version bump.
 The journal entry type is a discriminated union on ``phase`` so impossible
 combinations (e.g. ``committed`` without ``related_event_id``, ``atomic`` with
 ``temp_path``) are rejected by Pydantic AND by the exported JSON Schema's

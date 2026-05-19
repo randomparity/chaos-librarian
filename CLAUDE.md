@@ -63,11 +63,22 @@ If you think a convention is harmful, surface it. Don't fork silently.
 "Tests pass" is wrong if any were skipped.
 Default to surfacing uncertainty, not hiding it.
 
+## Rule 13 — File deferred work as GitHub issues
+Anything you notice but won't fix in the current change must be filed as a
+GitHub issue before the change merges. This includes review findings you
+chose to defer, latent bugs flagged in code comments, "future-sprint"
+notes, and architectural concerns that need a separate PR.
+
+A bullet in a PR body or commit message is not tracking — it disappears
+the moment the next change lands. File the issue with: a one-line title,
+2-3 sentences on the concern, a file:line pointer if applicable, and the
+sprint/PR that surfaced it.
+
 ## Project state
 
 Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface. `validate` ships in Sprint 1 (`feat/sprint-1`); `plan` ships in Sprint 3 (`feat/sprint-3`). Sprint 3 also extends Sprint 1's validation pipeline with `E_LIFECYCLE_INVALID`, which rejects shape-valid timelines that the engine cannot execute (add-on-placed, move-after-delete, double slow-copy). Sprint 4 (`feat/sprint-4`) extends `plan` with `--steps N`, ships the remaining four plan-mode commands (`step`, `inspect`, `clean`, `replay`), and adds four per-entity report schemas (`asset-report`, `work-report`, `variant-report`, `bundle-report`). `PlanOnlyReplayBundle` gains `applied_events` (raw event count, constrained to land on a step boundary) and `journal_digest` (sha256 of the serialized journal) as bundle metadata. A new `step_boundaries(resolved_timeline)` helper makes `--steps N` and `--next N` count user-visible step units (a `slow_copy_start` + `slow_copy_commit` adjacent pair = one step). `REPLAY_BUNDLE_SCHEMA_VERSION` bumps to `2` for both field-adds. The remaining three CLI commands (`materialize`, `run`, `capabilities`) are stubs that exit 1.
 
-Active per-sprint implementation plans live at `docs/superpowers/plans/`. No deferred-work issues are currently open.
+Active per-sprint implementation plans live at `docs/superpowers/plans/`. Open deferred-work issues: #12 (materializer RunContext refactor), #13 (ManifestSidecar.language field), #14 (triple scenario parse), #15 (CLI error-envelope unification) — all surfaced by the Sprint 5 `/simplify` review.
 
 ## Architecture
 

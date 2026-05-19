@@ -238,3 +238,34 @@ class TestReplayOfSteppedFixture:
             ["replay", str(paused / "replay.json"), "--out", str(out), "--against", str(paused)],
         )
         assert result.exit_code == 0, result.stdout + result.stderr
+
+
+def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
+    """WHY: Sprint 5 ships the MaterializeReplayBundle variant for schema
+    stability but does NOT implement materialize replay. The CLI must
+    refuse with exit 1 and a structured payload so agents know to expect
+    this in Sprint 9, not silently parse it as plan-only."""
+    bundle_path = tmp_path / "replay.json"
+    bundle_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 3,
+                "chaos_librarian_version": "0.1.0",
+                "scenario": "schema_version: 2\nscenario_id: x\n",
+                "run_id": "00000000-0000-4000-8000-000000000001",
+                "resolved_seed": 1,
+                "applied_events": 0,
+                "journal_digest": "0" * 64,
+                "execution_trace": [],
+                "execution_mode": "materialize",
+                "created_at": "2026-05-18T00:00:00Z",
+                "toolchain": {"ffmpeg": "7.1.1"},
+            }
+        )
+    )
+    out = tmp_path / "out"
+    result = runner.invoke(app, ["replay", str(bundle_path), "--out", str(out), "--json"])
+    assert result.exit_code == 1
+    payload = json.loads(result.stderr)
+    assert payload["error"] == "materialize_replay_not_implemented"
+    assert payload["execution_mode"] == "materialize"

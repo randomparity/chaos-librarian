@@ -108,6 +108,18 @@
           "title": "Asset Id",
           "type": "string"
         },
+        "content_hash": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -180,6 +192,17 @@
         "index": {
           "title": "Index",
           "type": "integer"
+        },
+        "probed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbedMedia"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -208,6 +231,160 @@
       ],
       "title": "ManifestWork",
       "type": "object"
+    },
+    "ProbedMedia": {
+      "additionalProperties": false,
+      "description": "Output of ``ffprobe -show_format -show_streams`` mapped into a model.",
+      "properties": {
+        "container": {
+          "title": "Container",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "streams": {
+          "items": {
+            "$ref": "#/$defs/ProbedStream"
+          },
+          "title": "Streams",
+          "type": "array"
+        }
+      },
+      "required": [
+        "container",
+        "duration_seconds",
+        "size_bytes",
+        "streams"
+      ],
+      "title": "ProbedMedia",
+      "type": "object"
+    },
+    "ProbedStream": {
+      "additionalProperties": false,
+      "description": "One stream from ``ffprobe -show_streams``.\n\nOptional fields are populated only for the matching ``kind``; ffprobe\nsilently omits the others, and ``exclude_none=True`` keeps the serialized\noutput compact.",
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "forced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced"
+        },
+        "fps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fps"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "kind": {
+          "enum": [
+            "video",
+            "audio",
+            "subtitle"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "required": [
+        "kind",
+        "codec"
+      ],
+      "title": "ProbedStream",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -234,7 +411,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
     },

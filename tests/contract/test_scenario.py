@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
 from chaos_librarian.contract.scenario import (
     Asset,
+    AudioSource,
     AudioTrack,
     Bundle,
     Library,
@@ -17,8 +18,10 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
-    SubtitleTrack,  # noqa: F401  -- verifies public re-export of subtitle track type
+    SubtitleSource,
+    SubtitleTrack,
     Variant,
+    VideoSource,
     VideoTrack,
     Work,
 )
@@ -48,7 +51,7 @@ def _minimal_scenario() -> Scenario:
                                     container="mkv",
                                     duration_seconds=12,
                                     video=VideoTrack(
-                                        source="mandelbrot",
+                                        source=VideoSource.MANDELBROT,
                                         codec="h264",
                                         resolution="1080p",
                                     ),
@@ -123,3 +126,35 @@ def test_slow_copy_commit_uses_for_alias() -> None:
     s = SlowCopyCommitEvent(id="c1", at="9s", for_="s1")
     blob = s.model_dump_json(by_alias=True)
     assert '"for":"s1"' in blob
+
+
+def test_video_track_source_accepts_enum_values() -> None:
+    """WHY: Sprint 5 narrows VideoTrack.source from str to a fixed enum.
+
+    The schema authors must not silently typo `mandlebrot` and have it
+    pass; an unknown value must raise ValidationError at parse time.
+    """
+    track = VideoTrack(source=VideoSource.MANDELBROT, codec="h264", resolution="hd")
+    assert track.source is VideoSource.MANDELBROT
+
+
+def test_video_track_source_rejects_unknown_value() -> None:
+    payload = {"source": "mandlebrot", "codec": "h264", "resolution": "hd"}
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_audio_track_source_defaults_to_sine() -> None:
+    """WHY: existing fixtures don't set AudioTrack.source; the default
+    must preserve their parse without edits."""
+    track = AudioTrack(codec="aac", channels="stereo", language="eng")
+    assert track.source is AudioSource.SINE
+
+
+def test_subtitle_track_source_defaults_to_generated_srt() -> None:
+    track = SubtitleTrack(codec="srt", language="eng", mode="sidecar")
+    assert track.source is SubtitleSource.GENERATED_SRT
+
+
+def test_scenario_schema_version_is_two() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 2

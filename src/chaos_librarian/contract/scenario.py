@@ -34,6 +34,30 @@ class TimelineActionName(enum.StrEnum):
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
 
+
+class VideoSource(enum.StrEnum):
+    """Synthesis recipe for the video stream of an asset."""
+
+    MANDELBROT = "mandelbrot"
+    COLOR_BARS = "color_bars"
+    SOLID_COLOR = "solid_color"
+    NOISE = "noise"  # passes validate; not yet supported by materialize
+
+
+class AudioSource(enum.StrEnum):
+    """Synthesis recipe for an audio stream."""
+
+    SINE = "sine"
+    SILENCE = "silence"
+    CHANNEL_TONES = "channel_tones"
+
+
+class SubtitleSource(enum.StrEnum):
+    """Synthesis recipe for a subtitle track."""
+
+    GENERATED_SRT = "generated_srt"
+
+
 # ---- Library ----------------------------------------------------------------
 
 
@@ -53,13 +77,14 @@ class Library(BaseModel):
 
 class VideoTrack(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    source: str
+    source: VideoSource
     codec: str
     resolution: str
 
 
 class AudioTrack(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    source: AudioSource = AudioSource.SINE
     codec: str
     channels: str
     language: str
@@ -67,6 +92,7 @@ class AudioTrack(BaseModel):
 
 class SubtitleTrack(BaseModel):
     model_config = ConfigDict(extra="forbid")
+    source: SubtitleSource = SubtitleSource.GENERATED_SRT
     codec: str
     language: str
     mode: Literal["embedded", "sidecar"]
@@ -197,7 +223,7 @@ TimelineEvent = Annotated[
 class Scenario(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: Literal["short", "normal", "long"]

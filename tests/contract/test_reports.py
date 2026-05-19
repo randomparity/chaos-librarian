@@ -19,6 +19,7 @@ from chaos_librarian.contract import (
     VARIANT_REPORT_SCHEMA_VERSION,
     WORK_REPORT_SCHEMA_VERSION,
 )
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream
 from chaos_librarian.contract.reports import (
     AssetHistoryEntry,
     AssetReport,
@@ -53,7 +54,7 @@ class TestAssetReport:
 
     def test_round_trip(self) -> None:
         report = AssetReport(
-            schema_version=1,
+            schema_version=2,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -64,7 +65,7 @@ class TestAssetReport:
 
     def test_current_may_be_none(self) -> None:
         report = AssetReport(
-            schema_version=1,
+            schema_version=2,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -75,19 +76,19 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "asset_id": "asset_hd_main",
             "initial": self._snapshot().model_dump(),
             "history": [],
             "current": None,
-            "content_hash": "abc",  # Sprint 5 field — must be rejected at Sprint 4
+            "not_a_real_field": "abc",  # extra="forbid" rejects unknown keys
         }
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_one(self) -> None:
+    def test_schema_version_constant_is_two(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 1
+        assert ASSET_REPORT_SCHEMA_VERSION == 2
 
 
 class TestOtherReports:
@@ -133,3 +134,46 @@ class TestOtherReports:
         assert WORK_REPORT_SCHEMA_VERSION == 1
         assert VARIANT_REPORT_SCHEMA_VERSION == 1
         assert BUNDLE_REPORT_SCHEMA_VERSION == 1
+
+
+def test_asset_snapshot_carries_content_hash_and_probed():
+    """WHY: adapter consumers see materialized facts on AssetReport without
+    joining back through manifest.versions[]; if the fields aren't carried,
+    consumers re-implement the join and drift apart."""
+    snap = AssetSnapshot(
+        location_path="library/movie/main.mkv",
+        version_id="v0",
+        version_index=0,
+        content_hash="sha256:" + "0" * 64,
+        probed=ProbedMedia(
+            container="matroska,webm",
+            duration_seconds=2.0,
+            size_bytes=12345,
+            streams=[ProbedStream(kind="video", codec="h264", width=640, height=480, fps=24.0)],
+        ),
+    )
+    blob = snap.model_dump_json(exclude_none=True)
+    loaded = AssetSnapshot.model_validate_json(blob)
+    assert loaded == snap
+
+
+def test_asset_snapshot_omits_new_fields_when_none():
+    """WHY: plan-only reports stay byte-stable post-bump; the writer's
+    exclude_none=True relies on the defaults being None."""
+    snap = AssetSnapshot(location_path=None, version_id="v0", version_index=0)
+    rendered = snap.model_dump(exclude_none=True)
+    assert "content_hash" not in rendered
+    assert "probed" not in rendered
+
+
+def test_asset_report_schema_version_is_two():
+    assert ASSET_REPORT_SCHEMA_VERSION == 2
+
+
+def test_other_report_schema_versions_stay_at_one():
+    """WHY: only AssetReport bumps; Work/Variant/Bundle carry id lists, not
+    embedded snapshots. If one of them silently bumps to 2, voom-v2 will
+    fail at the discriminator."""
+    assert WORK_REPORT_SCHEMA_VERSION == 1
+    assert VARIANT_REPORT_SCHEMA_VERSION == 1
+    assert BUNDLE_REPORT_SCHEMA_VERSION == 1

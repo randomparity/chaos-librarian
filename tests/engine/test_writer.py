@@ -30,7 +30,7 @@ def _prepare(scenario_name: str) -> tuple[RunInput, ValidationReport]:
 
 def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     empty_manifest = Manifest(
-        schema_version=1,
+        schema_version=2,
         works=[],
         variants=[],
         bundles=[],
@@ -40,7 +40,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sidecars=[],
     )
     bundle = PlanOnlyReplayBundle(
-        schema_version=2,
+        schema_version=3,
         chaos_librarian_version="0.0.0",
         scenario="schema_version: 1\n",
         run_id=_RUN_ID,
@@ -52,7 +52,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     )
     sentinel = RunSentinel(
         run_id=_RUN_ID,
-        schema_version=1,
+        schema_version=2,
         created_by="chaos-librarian 0.0.0",
         created_at=None,
     )

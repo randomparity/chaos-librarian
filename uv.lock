@@ -25,6 +25,7 @@ name = "chaos-librarian"
 version = "0.0.0"
 source = { editable = "." }
 dependencies = [
+    { name = "packaging" },
     { name = "pydantic" },
     { name = "ruamel-yaml" },
     { name = "typer" },
@@ -41,6 +42,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "packaging", specifier = ">=24" },
     { name = "pydantic", specifier = ">=2.10" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
     { name = "typer", specifier = ">=0.13" },

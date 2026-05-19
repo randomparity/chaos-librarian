@@ -140,7 +140,7 @@ def _build_asset_report(
         if asset_id in entry.target_ids
     ]
     return AssetReport(
-        schema_version=1,
+        schema_version=2,
         asset_id=asset_id,
         initial=initial_snapshot,
         history=history,

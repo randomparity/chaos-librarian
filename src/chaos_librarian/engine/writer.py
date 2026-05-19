@@ -83,17 +83,33 @@ def write_fixture(
         raise
 
 
+def canonical_json(model: BaseModel) -> str:
+    """Canonical text form of a Pydantic model: indent=2, by_alias, no None, trailing newline."""
+    return model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
+
+
+def replace_atomic_text(target: Path, content: str) -> None:
+    """Write ``content`` to a sibling tempfile and rename onto ``target`` (per-file atomic)."""
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_text(content)
+    tmp.replace(target)
+
+
+def replace_atomic_bytes(target: Path, content: bytes) -> None:
+    """Write ``content`` bytes to a sibling tempfile and rename onto ``target``."""
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    tmp.write_bytes(content)
+    tmp.replace(target)
+
+
 def _emit_sentinel(out_dir: Path, sentinel: RunSentinel) -> None:
     """Write the sentinel into the staging directory last."""
-    target = out_dir / ".chaos-librarian-run"
-    payload = sentinel.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
-    target.write_text(payload)
+    (out_dir / ".chaos-librarian-run").write_text(canonical_json(sentinel))
 
 
 def _emit_json(model: BaseModel, target: Path) -> None:
     """Write one Pydantic model as canonical JSON with trailing newline."""
-    payload = model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
-    target.write_text(payload)
+    target.write_text(canonical_json(model))
 
 
 def _emit_jsonl(entries: Iterable[JournalEntry], target: Path) -> None:
@@ -142,45 +158,33 @@ def append_step(
         new_replay_bundle: Replay bundle with updated applied_events and
             recomputed run_id.
     """
-    _replace_atomic(run_dir / "manifest.current.json", _emit_to_str(new_current_manifest))
-    _replace_atomic(run_dir / "replay.json", _emit_to_str(new_replay_bundle))
+    replace_atomic_text(run_dir / "manifest.current.json", canonical_json(new_current_manifest))
+    replace_atomic_text(run_dir / "replay.json", canonical_json(new_replay_bundle))
     _replace_atomic_reports(run_dir / "reports", new_report_set)
     _append_journal_lines(run_dir / "journal.jsonl", new_entries)
-
-
-def _emit_to_str(model: BaseModel) -> str:
-    """Same canonical JSON form as ``_emit_json`` but returned as text."""
-    return model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
-
-
-def _replace_atomic(target: Path, content: str) -> None:
-    """Write ``content`` to a sibling tempfile and rename onto ``target``."""
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text(content)
-    tmp.replace(target)
 
 
 def _replace_atomic_reports(reports_root: Path, reports: ReportSet) -> None:
     """Per-file atomic rewrite of every report under ``reports_root``."""
     for asset_report in reports.assets:
-        _replace_atomic(
+        replace_atomic_text(
             reports_root / "assets" / f"{asset_report.asset_id}.json",
-            _emit_to_str(asset_report),
+            canonical_json(asset_report),
         )
     for work_report in reports.works:
-        _replace_atomic(
+        replace_atomic_text(
             reports_root / "works" / f"{work_report.work_id}.json",
-            _emit_to_str(work_report),
+            canonical_json(work_report),
         )
     for variant_report in reports.variants:
-        _replace_atomic(
+        replace_atomic_text(
             reports_root / "variants" / f"{variant_report.variant_id}.json",
-            _emit_to_str(variant_report),
+            canonical_json(variant_report),
         )
     for bundle_report in reports.bundles:
-        _replace_atomic(
+        replace_atomic_text(
             reports_root / "bundles" / f"{bundle_report.bundle_id}.json",
-            _emit_to_str(bundle_report),
+            canonical_json(bundle_report),
         )
 
 
