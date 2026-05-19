@@ -12,6 +12,7 @@ from chaos_librarian.materializer.recipes import (
     recipe_silence,
     recipe_sine,
     recipe_solid_color,
+    srt_payload,
 )
 
 
@@ -98,3 +99,27 @@ def test_channel_tones_5_1_emits_six_frequencies():
     fi = recipe_channel_tones(channels="5.1", duration_s=1.0, seed=1)
     assert fi.lavfi is not None
     assert fi.lavfi.count("sine=frequency=") == 6
+
+
+def test_srt_payload_is_deterministic_for_seed():
+    """WHY: SRT bytes must be bit-stable across runs for the manifest
+    sidecar content_hash to compare equal. Inline the expected value so a
+    future format change is caught."""
+    body = srt_payload(language="eng", duration_s=2.0, seed=42)
+    expected = (
+        "1\n00:00:00,000 --> 00:00:02,000\nchaos-librarian fixture subtitle (lang=eng, seed=42)\n\n"
+    )
+    assert body == expected
+
+
+def test_srt_payload_seed_changes_body():
+    a = srt_payload(language="eng", duration_s=1.0, seed=1)
+    b = srt_payload(language="eng", duration_s=1.0, seed=2)
+    assert a != b
+
+
+def test_srt_payload_duration_formats_to_3dp_milliseconds():
+    """WHY: SRT timestamps are HH:MM:SS,mmm — a fractional duration must
+    serialize without floating-point noise."""
+    body = srt_payload(language="eng", duration_s=2.5, seed=1)
+    assert "00:00:02,500" in body

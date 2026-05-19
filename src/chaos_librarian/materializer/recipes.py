@@ -122,3 +122,26 @@ def recipe_channel_tones(*, channels: str, duration_s: float, seed: int) -> FFmp
         sep = "|".join(sources)
         lavfi = f"{sep}|amerge=inputs={count}"
     return FFmpegInput(lavfi=lavfi, extra_flags=())
+
+
+def _srt_timestamp(seconds: float) -> str:
+    """Format ``HH:MM:SS,mmm`` from a float of seconds."""
+    total_ms = round(seconds * 1000)
+    hh, rem = divmod(total_ms, 3_600_000)
+    mm, rem = divmod(rem, 60_000)
+    ss, ms = divmod(rem, 1000)
+    return f"{hh:02d}:{mm:02d}:{ss:02d},{ms:03d}"
+
+
+def srt_payload(*, language: str, duration_s: float, seed: int) -> str:
+    """Return SRT body for one subtitle cue spanning [0, duration_s).
+
+    Single-cue, single-line body that includes the seed so adapters can
+    distinguish fixtures at a glance. Trailing blank line required by SRT.
+    """
+    return (
+        "1\n"
+        f"00:00:00,000 --> {_srt_timestamp(duration_s)}\n"
+        f"chaos-librarian fixture subtitle (lang={language}, seed={seed})\n"
+        "\n"
+    )
