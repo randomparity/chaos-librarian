@@ -27,6 +27,7 @@ from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
+    MaterializeMetadata,
     begin_materialize_run,
     cleanup_failed_run,
 )
@@ -122,14 +123,16 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     )
     cleanup_failed_run(
         out_dir,
-        initial_manifest=manifest,
-        current_manifest=manifest,
-        journal_entries=(),
-        validation_report=validation_report,
-        materialization_report=materialization_report,
-        replay_bundle=replay_bundle,
-        scenario_yaml_bytes=b"schema_version: 2\nscenario_id: static\n",
-        sentinel=_sentinel("complete"),
+        MaterializeMetadata(
+            initial_manifest=manifest,
+            current_manifest=manifest,
+            journal_entries=(),
+            validation_report=validation_report,
+            materialization_report=materialization_report,
+            replay_bundle=replay_bundle,
+            scenario_yaml_bytes=b"schema_version: 2\nscenario_id: static\n",
+            sentinel=_sentinel("complete"),
+        ),
     )
     # library/ wiped to empty, sentinel flipped.
     assert list((out_dir / "library").iterdir()) == []
