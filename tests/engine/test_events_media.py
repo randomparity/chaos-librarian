@@ -344,3 +344,78 @@ class TestRemuxContainerHandler:
         assert to_path.endswith(".mp4")
         assert input_path == from_path
         assert output_path == to_path
+
+
+class TestEditMetadataHandler:
+    """edit_metadata allocates a new version and copies the fields dict into state_delta.
+
+    WHY: metadata changes don't move bytes around but they DO change the
+    asset's identity (the ffprobe output differs); voom-v2 treats them
+    as a new version.
+    """
+
+    def test_edit_metadata_allocates_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"title": "X", "year": "2026"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entry = entries[0]
+        assert entry.input_version_ids == [prior_version_id]
+        new_version_id = entry.output_version_ids[0]
+        assert new_version_id != prior_version_id
+
+    def test_edit_metadata_records_fields(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"title": "Pulsar", "year": "2026"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        fields = delta["fields"]
+        assert isinstance(fields, dict)
+        assert fields == {"title": "Pulsar", "year": "2026"}
+        input_path = delta["input_path"]
+        output_path = delta["output_path"]
+        assert input_path == output_path
+
+    def test_edit_metadata_does_not_change_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"k": "v"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        loc_id = state.location_id_for_asset("a0")
+        old_path = state.locations[loc_id].path
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        assert state.locations[loc_id].path == old_path
