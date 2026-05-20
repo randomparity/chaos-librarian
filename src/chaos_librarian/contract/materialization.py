@@ -1,9 +1,9 @@
-"""Materialization report schema (v3).
+"""Materialization report schema (v4).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
-records, per-phase-B FilesystemAction audit records, and an Outcome enum
-that includes an explicit ``success`` signal.
+records, per-phase-B FilesystemAction and MediaAction audit records, and
+an Outcome enum that includes an explicit ``success`` signal.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ class Outcome(enum.StrEnum):
     TOOL_MISSING = "tool_missing"
     CONTAINMENT_VIOLATION = "containment_violation"
     FS_FAILED = "fs_failed"
+    MEDIA_FAILED = "media_failed"
 
 
 class FailureStage(enum.StrEnum):
@@ -40,6 +41,7 @@ class FailureStage(enum.StrEnum):
     FFMPEG = "ffmpeg"
     FFPROBE = "ffprobe"
     FILESYSTEM = "filesystem"
+    MEDIA = "media"
 
 
 class ToolchainInfo(BaseModel):
@@ -118,12 +120,38 @@ class FilesystemAction(BaseModel):
     duration_ns: int
 
 
+class MediaAction(BaseModel):
+    """One phase-B media operation audit record.
+
+    Parallel to ``FilesystemAction``: one record per journal entry that
+    produced a real byte / probed-metadata change via ffmpeg or
+    sidecar-regeneration. ``tool_invocation_index`` cross-refs into
+    ``MaterializationReport.invocations`` so consumers can join the two
+    audit streams.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: TimelineActionName
+    target_asset_id: str
+    input_path: str
+    output_path: str
+    input_version_id: str | None = None
+    output_version_id: str | None = None
+    output_sidecar_id: str | None = None
+    input_content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    output_content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    tool_invocation_index: int | None = None
+    duration_ns: int
+
+
 class MaterializationReport(BaseModel):
     """Top-level ``materialization.json`` body."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -134,3 +162,4 @@ class MaterializationReport(BaseModel):
     materialized: list[MaterializedAsset] = Field(default_factory=list)
     failures: list[MaterializationFailure] = Field(default_factory=list)
     filesystem_actions: list[FilesystemAction] = Field(default_factory=list)
+    media_actions: list[MediaAction] = Field(default_factory=list)
