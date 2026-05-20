@@ -73,15 +73,7 @@ def rule_root_unknown(
     library = _as_mapping(raw.get("library"))
     if library is None:
         return  # Pydantic owns shape
-    roots = _list_at_path(raw, ("library", "roots")) or []
-    declared_ids: set[str] = set()
-    for root_obj in roots:
-        root = _as_mapping(root_obj)
-        if root is None:
-            continue
-        root_id = root.get("id")
-        if isinstance(root_id, str):
-            declared_ids.add(root_id)
+    declared_ids = _collect_declared_root_ids(raw)
 
     archive_root = library.get("archive_root")
     if (
@@ -95,9 +87,30 @@ def rule_root_unknown(
             loc=("library", "archive_root"),
         )
 
+    _check_move_between_roots(raw, declared_ids, reporter)
+
+
+def _collect_declared_root_ids(raw: Mapping[str, object]) -> set[str]:
+    """Return the set of well-shaped ``library.roots[].id`` values."""
+    declared_ids: set[str] = set()
+    for root_obj in _list_at_path(raw, ("library", "roots")) or []:
+        root = _as_mapping(root_obj)
+        if root is None:
+            continue
+        root_id = root.get("id")
+        if isinstance(root_id, str):
+            declared_ids.add(root_id)
+    return declared_ids
+
+
+def _check_move_between_roots(
+    raw: Mapping[str, object],
+    declared_ids: set[str],
+    reporter: Reporter,
+) -> None:
+    """Emit E_ROOT_UNKNOWN for each move_between_roots field outside ``declared_ids``."""
     for idx, event in _iter_timeline_events(raw):
-        action = event.get("action")
-        if action != TimelineActionName.MOVE_BETWEEN_ROOTS:
+        if event.get("action") != TimelineActionName.MOVE_BETWEEN_ROOTS:
             continue
         for field in ("from_root_id", "to_root_id"):
             value = event.get(field)
