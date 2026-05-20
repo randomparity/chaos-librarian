@@ -29,10 +29,6 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
-              subtitles:
-                - codec: srt
-                  language: eng
-                  mode: sidecar
 
 timeline:
   - id: create_subs_001

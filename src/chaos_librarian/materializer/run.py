@@ -21,7 +21,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinelState
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import CreateSidecarEvent, Scenario
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.capabilities import (
@@ -136,11 +136,15 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     # so the on-disk file lives where phase B's ``state_delta['from_path']``
     # expects to find it.
     primary_root_path = scenario.library.roots[0].path
+    timeline_sidecar_languages = _timeline_sidecar_languages(scenario)
     try:
-        # Phase A — per-asset synthesis (unchanged from Sprint 5 except for
-        # the explicit ``root_path`` so the on-disk layout follows
-        # ``INITIAL_PATH_TEMPLATE``).
+        # Phase A — per-asset synthesis. ``skip_languages`` defers the
+        # write to phase B for any (asset, language) the timeline will
+        # produce; otherwise phase A would write an orphan SRT that the
+        # manifest cannot reference (manifest v3 uniqueness collapses
+        # the row onto the timeline-allocated id).
         for invocation_index, asset in enumerate(iter_assets(scenario)):
+            skip_languages = timeline_sidecar_languages.get(asset.id, frozenset())
             invocation, materialized_asset, probed, sidecar_hashes = materialize_one_asset(
                 asset,
                 ctx.plan_artifacts.replay_bundle.resolved_seed,
@@ -148,6 +152,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                 ctx.caps,
                 invocation_index,
                 root_path=primary_root_path,
+                skip_languages=skip_languages,
             )
             invocations.append(invocation)
             materialized.append(materialized_asset)
@@ -157,6 +162,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                 materialized_asset,
                 probed,
                 sidecar_hashes,
+                skip_languages=skip_languages,
             )
         # Phase B — timeline application (new in Sprint 6).
         filesystem_actions, phase_b_sidecar_hashes = apply_phase_b(
@@ -175,3 +181,19 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         finalize_failure_filesystem(ctx, exc, invocations, materialized, filesystem_actions)
         raise
     return finalize_success(ctx, invocations, materialized, filesystem_actions)
+
+
+def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
+    """Map each asset_id to the set of languages a timeline ``create_sidecar`` will write.
+
+    Phase A consults this set to skip declared subtitles whose language
+    the timeline overrides; otherwise both phases would emit a file for
+    the same ``(asset_id, language)`` and the manifest v3 uniqueness
+    collapse would orphan the phase-A file (#39).
+    """
+    per_asset: dict[str, set[str]] = {}
+    for event in scenario.timeline:
+        if not isinstance(event, CreateSidecarEvent):
+            continue
+        per_asset.setdefault(event.target, set()).add(event.language)
+    return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}

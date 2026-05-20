@@ -17,6 +17,8 @@ def augment_manifest(
     materialized: MaterializedAsset,
     probed: ProbedMedia,
     sidecar_hashes: dict[tuple[str, str], str],
+    *,
+    skip_languages: frozenset[str] = frozenset(),
 ) -> None:
     """Stamp ``content_hash`` + ``probed`` onto the version record and
     append/update ``ManifestSidecar`` rows for materialized sidecars.
@@ -27,6 +29,12 @@ def augment_manifest(
     consumers see the bytes they were promised; we append one
     ``ManifestSidecar`` per materialized language with a deterministic id
     derived from the asset and language.
+
+    ``skip_languages`` mirrors the same kwarg on ``write_sidecars``:
+    languages a timeline ``create_sidecar`` will produce are skipped here
+    so the manifest carries the timeline row (with the engine-allocated
+    sidecar_id), not a phase-A row that would be hidden by the manifest
+    v3 ``(asset_id, language)`` uniqueness collapse.
 
     ``probed`` is passed in by ``materialize_one_asset`` (which already
     ran ffprobe on the absolute output path). Re-probing via
@@ -40,6 +48,8 @@ def augment_manifest(
             version.probed = probed
             break
     for sub in asset.subtitles:
+        if sub.language in skip_languages:
+            continue
         key = (asset.id, sub.language)
         content_hash = sidecar_hashes.get(key)
         if content_hash is None:

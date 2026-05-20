@@ -208,13 +208,10 @@ def test_create_sidecar_real_via_timeline(tmp_path: Path) -> None:
     match the id the engine allocated (recorded in the journal's
     ``state_delta['sidecar_id']``).
 
-    ``E_SIDECAR_LANGUAGE_INVALID`` requires the asset to declare the
-    timeline event's language in ``asset.subtitles``; the fixture
-    therefore declares one eng subtitle. The engine collapses the
-    declared + timeline pair into a single ``ManifestSidecar`` row keyed
-    by the timeline-allocated id (manifest v3 ``(asset_id, language)``
-    uniqueness). The row's ``content_hash`` is the timeline (phase-B)
-    file's hash, since ``augment_timeline_sidecars`` runs last.
+    Post-#39 the rule no longer requires the timeline language to be
+    declared on the asset; this fixture is a "timeline-only" sidecar
+    (no declared subtitles). The manifest carries one row with the
+    engine-allocated id and the phase-B content hash.
     """
     out_dir = tmp_path / "run-001"
     artifacts = materialize_scenario(
@@ -250,16 +247,12 @@ def test_create_sidecar_real_via_timeline(tmp_path: Path) -> None:
 
 def test_create_sidecar_collides_with_declared_subtitle(tmp_path: Path) -> None:
     """WHY: when an asset declares a sidecar AND the timeline emits a
-    ``create_sidecar`` for the same ``(asset_id, language)``, BOTH files
-    must land on disk — the declared one at
-    ``library/<asset_id>.<lang>.srt`` (phase A) and the timeline one at
-    the event's ``to:`` path (phase B). The manifest v3 invariant pins
-    ``(asset_id, language)`` to a single ``ManifestSidecar`` row, so the
-    two files share a single row whose ``content_hash`` reflects the
-    phase-B bytes (``augment_timeline_sidecars`` runs last in
-    ``run.py``). This collapse is correct per the manifest contract,
-    but it leaves the phase-A file orphaned from the manifest — tracked
-    as a follow-up issue.
+    ``create_sidecar`` for the same ``(asset_id, language)``, phase A
+    defers to phase B (#39): the timeline ``create_sidecar`` is the
+    authoritative writer for that language, so phase A skips the
+    declared write to avoid orphaning a file on disk. The manifest
+    carries one row keyed by the engine-allocated sidecar_id; the
+    phase-A declared file does NOT exist on disk.
     """
     out_dir = tmp_path / "run-001"
     artifacts = materialize_scenario(
@@ -271,14 +264,12 @@ def test_create_sidecar_collides_with_declared_subtitle(tmp_path: Path) -> None:
     library = out_dir / "library"
     declared_srt = library / "asset_main.eng.srt"
     timeline_srt = library / "movies-hd" / "Meridian.eng.timeline.srt"
-    assert declared_srt.exists()
+    # Phase A skipped the declared write; only the timeline file landed.
+    assert not declared_srt.exists()
     assert timeline_srt.exists()
 
     manifest = _load_current_manifest(out_dir)
     matching = [s for s in manifest.sidecars if s.asset_id == "asset_main" and s.language == "eng"]
-    # Manifest v3 keys ``ManifestSidecar`` uniquely on
-    # ``(asset_id, language)``; the engine+materializer collapse the
-    # declared + timeline pair into a single row.
     assert len(matching) == 1
     row = matching[0]
     # Engine-allocated id (``sidecar_<NNNN>``), NOT the synthetic
@@ -286,8 +277,6 @@ def test_create_sidecar_collides_with_declared_subtitle(tmp_path: Path) -> None:
     # a declared-only sidecar.
     assert row.id != "sidecar_asset_main_eng"
     assert row.path == "movies-hd/Meridian.eng.timeline.srt"
-    # Manifest row's ``content_hash`` reflects the phase-B bytes
-    # (``augment_timeline_sidecars`` overwrote any phase-A value).
     assert row.content_hash == "sha256:" + hashlib.sha256(timeline_srt.read_bytes()).hexdigest()
 
 

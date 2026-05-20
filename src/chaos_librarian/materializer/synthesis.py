@@ -39,6 +39,7 @@ def materialize_one_asset(
     invocation_index: int,
     *,
     root_path: str,
+    skip_languages: frozenset[str] = frozenset(),
 ) -> tuple[
     ToolInvocation,
     MaterializedAsset,
@@ -108,7 +109,7 @@ def materialize_one_asset(
             },
             invocation=invocation,
         )
-    sidecar_hashes = write_sidecars(asset, library_dir, seed)
+    sidecar_hashes = write_sidecars(asset, library_dir, seed, skip_languages=skip_languages)
     probed = probe_file(output_path)
     with output_path.open("rb") as fh:
         content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
@@ -123,12 +124,22 @@ def materialize_one_asset(
     return invocation, materialized_asset, probed, sidecar_hashes
 
 
-def write_sidecars(asset: Asset, library_dir: Path, seed: int) -> dict[tuple[str, str], str]:
+def write_sidecars(
+    asset: Asset,
+    library_dir: Path,
+    seed: int,
+    *,
+    skip_languages: frozenset[str] = frozenset(),
+) -> dict[tuple[str, str], str]:
     """Write each declared SRT sidecar and return its sha256 hash.
 
     Preflight already rejected non-sidecar modes, so every subtitle here
     is sidecar; hash the bytes so ``augment_manifest`` can populate
     ``ManifestSidecar.content_hash``.
+
+    ``skip_languages`` is the set of languages a timeline ``create_sidecar``
+    will write in phase B; declared sidecars for those languages are
+    skipped here so phase A does not leave an orphan file on disk.
 
     The SRT body is written directly to ``library_dir`` (not via a staging
     tempdir + ``Path.replace``). Materialize mode's recovery model is
@@ -140,6 +151,8 @@ def write_sidecars(asset: Asset, library_dir: Path, seed: int) -> dict[tuple[str
     """
     sidecar_hashes: dict[tuple[str, str], str] = {}
     for sub in asset.subtitles:
+        if sub.language in skip_languages:
+            continue
         sidecar_path = library_dir / f"{asset.id}.{sub.language}.srt"
         body = srt_payload(language=sub.language, duration_s=asset.duration_seconds, seed=seed)
         sidecar_path.write_text(body)

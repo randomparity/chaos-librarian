@@ -236,7 +236,9 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
     # The fix is "drop ignore_errors=True"; with it passed, real rmtree
     # would silently swallow the OSError and the test would not surface
     # any failure.
-    assert "ignore_errors" not in captured["kwargs"]  # type: ignore[operator]
+    captured_kwargs = captured["kwargs"]
+    assert isinstance(captured_kwargs, dict)
+    assert "ignore_errors" not in captured_kwargs
     # Sentinel is still in_progress because the cleanup raised before flipping.
     sentinel_payload = json.loads((out_dir / SENTINEL_FILENAME).read_text())
     assert sentinel_payload["state"] == "in_progress"
