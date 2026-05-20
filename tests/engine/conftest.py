@@ -10,6 +10,8 @@ every call site.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
+from typing import Final
 
 from chaos_librarian.contract.scenario import (
     ArchiveFileEvent,
@@ -27,6 +29,24 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState, build_initial_state
+
+type _TerminalEvent = (
+    MoveAssetEvent
+    | RenameFileEvent
+    | DeleteFileEvent
+    | CreateSidecarEvent
+    | SlowCopyStartEvent
+    | SlowCopyCommitEvent
+    | ArchiveFileEvent
+    | MoveBetweenRootsEvent
+)
+
+# Shared id linking the pre-applied slow_copy_start event to the commit
+# event the registry produces. Used by both `_prepare_pending_slow_copy`
+# (as the start event's id) and the SLOW_COPY_COMMIT builder
+# (as `for_=`); the engine resolves the commit by matching this string,
+# so the two must stay in sync.
+_PENDING_COPY_ID: Final = "start"
 
 
 def _build_minimal_scenario(
@@ -144,6 +164,71 @@ def _resolve_move_between_roots(
     return ResolvedEvent(at_ns=1, declared_index=0, event=event)
 
 
+_TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalEvent]]] = {
+    TimelineActionName.MOVE_ASSET: lambda: MoveAssetEvent(
+        id="ev", at="0ns", target="asset_hd_main", to="movies-hd/new.mkv"
+    ),
+    TimelineActionName.RENAME_FILE: lambda: RenameFileEvent(
+        id="ev", at="0ns", target="asset_hd_main", to="movies-hd/renamed.mkv"
+    ),
+    TimelineActionName.DELETE_FILE: lambda: DeleteFileEvent(
+        id="ev", at="0ns", target="asset_hd_main"
+    ),
+    TimelineActionName.CREATE_SIDECAR: lambda: CreateSidecarEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        to="movies-hd/asset_hd_main.en.srt",
+        language="en",
+    ),
+    TimelineActionName.SLOW_COPY_START: lambda: SlowCopyStartEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        to="movies-hd/final.mkv",
+        temp_path="movies-hd/temp.mkv",
+        duration="1ns",
+    ),
+    TimelineActionName.SLOW_COPY_COMMIT: lambda: SlowCopyCommitEvent(
+        id="ev", at="1ns", for_=_PENDING_COPY_ID
+    ),
+    TimelineActionName.ARCHIVE_FILE: lambda: ArchiveFileEvent(
+        id="ev", at="0ns", target="asset_hd_main"
+    ),
+    TimelineActionName.MOVE_BETWEEN_ROOTS: lambda: MoveBetweenRootsEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        from_root_id="movies-hd",
+        to_root_id="cold-storage",
+    ),
+}
+
+
+def _prepare_pending_slow_copy(state: WorldState) -> None:
+    """Pre-apply slow_copy_start so ``state.pending_slow_copies`` carries the id.
+
+    The matching builder in ``_TERMINAL_EVENT_BUILDERS`` returns a
+    ``SlowCopyCommitEvent`` referencing ``_PENDING_COPY_ID``; without this
+    prerequisite the handler's lookup would KeyError.
+    """
+    start_event = SlowCopyStartEvent(
+        id=_PENDING_COPY_ID,
+        at="0ns",
+        target="asset_hd_main",
+        to="movies-hd/final.mkv",
+        temp_path="movies-hd/temp.mkv",
+        duration="1ns",
+    )
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(at_ns=0, declared_index=0, event=start_event),
+        ids=IdAllocator(TraceRecorder()),
+        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+        scenario_id="sc_test",
+    )
+
+
 def _minimal_scenario_for_action(
     action: TimelineActionName,
 ) -> tuple[Scenario, WorldState, ResolvedEvent]:
@@ -163,73 +248,11 @@ def _minimal_scenario_for_action(
         archive_root=None,
     )
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
-    ids = IdAllocator(TraceRecorder())
-    run_id = uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01")
+    if action is TimelineActionName.SLOW_COPY_COMMIT:
+        _prepare_pending_slow_copy(state)
 
-    event: (
-        MoveAssetEvent
-        | RenameFileEvent
-        | DeleteFileEvent
-        | CreateSidecarEvent
-        | SlowCopyStartEvent
-        | SlowCopyCommitEvent
-        | ArchiveFileEvent
-        | MoveBetweenRootsEvent
-    )
-    if action is TimelineActionName.MOVE_ASSET:
-        event = MoveAssetEvent(id="ev", at="0ns", target="asset_hd_main", to="movies-hd/new.mkv")
-    elif action is TimelineActionName.RENAME_FILE:
-        event = RenameFileEvent(
-            id="ev", at="0ns", target="asset_hd_main", to="movies-hd/renamed.mkv"
-        )
-    elif action is TimelineActionName.DELETE_FILE:
-        event = DeleteFileEvent(id="ev", at="0ns", target="asset_hd_main")
-    elif action is TimelineActionName.CREATE_SIDECAR:
-        event = CreateSidecarEvent(
-            id="ev",
-            at="0ns",
-            target="asset_hd_main",
-            to="movies-hd/asset_hd_main.en.srt",
-            language="en",
-        )
-    elif action is TimelineActionName.SLOW_COPY_START:
-        event = SlowCopyStartEvent(
-            id="ev",
-            at="0ns",
-            target="asset_hd_main",
-            to="movies-hd/final.mkv",
-            temp_path="movies-hd/temp.mkv",
-            duration="1ns",
-        )
-    elif action is TimelineActionName.SLOW_COPY_COMMIT:
-        start_event = SlowCopyStartEvent(
-            id="start",
-            at="0ns",
-            target="asset_hd_main",
-            to="movies-hd/final.mkv",
-            temp_path="movies-hd/temp.mkv",
-            duration="1ns",
-        )
-        apply_event(
-            state=state,
-            resolved=ResolvedEvent(at_ns=0, declared_index=0, event=start_event),
-            ids=ids,
-            run_id=run_id,
-            scenario_id="sc_test",
-        )
-        event = SlowCopyCommitEvent(id="ev", at="1ns", for_="start")
-    elif action is TimelineActionName.ARCHIVE_FILE:
-        event = ArchiveFileEvent(id="ev", at="0ns", target="asset_hd_main")
-    elif action is TimelineActionName.MOVE_BETWEEN_ROOTS:
-        event = MoveBetweenRootsEvent(
-            id="ev",
-            at="0ns",
-            target="asset_hd_main",
-            from_root_id="movies-hd",
-            to_root_id="cold-storage",
-        )
-    else:
+    builder = _TERMINAL_EVENT_BUILDERS.get(action)
+    if builder is None:
         raise AssertionError(f"unhandled action: {action!r}")
-
-    resolved = ResolvedEvent(at_ns=1, declared_index=0, event=event)
-    return scenario, state, resolved
+    event = builder()
+    return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=event)
