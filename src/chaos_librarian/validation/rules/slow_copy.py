@@ -1,20 +1,32 @@
-"""Rules 5a + 5b: E_SLOW_COPY_UNPAIRED and E_SLOW_COPY_TIMING.
+"""Rules 5a + 5b + 5c: slow-copy structural / timing / path-collision checks.
 
-Both rules walk the same start/commit index, so they share the
-``_index_starts_and_commits`` helper in this module.
+5a (E_SLOW_COPY_UNPAIRED) and 5b (E_SLOW_COPY_TIMING) walk the same
+start/commit index, so they share the ``_index_starts_and_commits``
+helper in this module. 5c (E_SLOW_COPY_PATH_COLLISION) walks each
+``slow_copy_start`` event independently and joins against the asset's
+declared container to compute the initial path.
 """
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.validation.codes import E_SLOW_COPY_TIMING, E_SLOW_COPY_UNPAIRED
+from chaos_librarian.validation.codes import (
+    E_SLOW_COPY_PATH_COLLISION,
+    E_SLOW_COPY_TIMING,
+    E_SLOW_COPY_UNPAIRED,
+)
 from chaos_librarian.validation.rules._common import (
     Reporter,
+    _as_list,
+    _as_mapping,
     _iter_timeline_events,
     _RawMapping,
+    iter_assets_with_loc,
     try_parse_duration,
 )
 
@@ -22,7 +34,11 @@ if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["rule_slow_copy_timing", "rule_slow_copy_unpaired"]
+__all__ = [
+    "rule_slow_copy_path_collision",
+    "rule_slow_copy_timing",
+    "rule_slow_copy_unpaired",
+]
 
 
 def rule_slow_copy_unpaired(
@@ -146,3 +162,115 @@ def _check_pair_timing(
             ),
             loc=("timeline", c_idx, "at"),
         )
+
+
+def _normalize(path: str) -> str:
+    """Canonicalize a YAML-authored path for equality comparison.
+
+    Uses ``os.path.normpath`` -- stdlib, no filesystem I/O, no symlink
+    resolution. We compare normalized forms because the run-dir doesn't
+    exist at validation time, but two scenario paths that differ only by
+    ``.`` / ``..`` / trailing slash describe the same on-disk location.
+    """
+    return os.path.normpath(path)
+
+
+def rule_slow_copy_path_collision(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """5c: reject ``temp_path == to`` and ``temp_path == initial_path``.
+
+    Phase B's commit helper unlinks ``initial_path`` and then ``replace``s
+    ``temp_path -> final_path``. If ``temp_path == to`` the multi-phase
+    visibility contract collapses; if ``temp_path == initial_path`` the
+    unlink wipes the temp before the replace runs. Both cases emit
+    ``E_SLOW_COPY_PATH_COLLISION``.
+
+    Path equality is checked on the ``os.path.normpath``-normalized form
+    so a ``.``-segment or trailing-slash variant cannot slip past the
+    rule. Normalization is purely lexical -- no I/O, no symlink resolution.
+
+    Initial paths are derived via ``contract.paths.INITIAL_PATH_TEMPLATE``
+    formatted with the asset's primary-root path and container -- no other
+    source of truth.
+    """
+    reporter = Reporter(collector=collector, line_index=line_index)
+    primary_root_path, asset_containers = _index_asset_paths(raw)
+    if primary_root_path is None:
+        return  # Pydantic owns shape on missing roots[0]
+    for idx, event in _iter_timeline_events(raw):
+        if event.get("action") != TimelineActionName.SLOW_COPY_START:
+            continue
+        target = event.get("target")
+        temp_path = event.get("temp_path")
+        final_path = event.get("to")
+        if not isinstance(target, str) or not isinstance(temp_path, str):
+            continue
+        if isinstance(final_path, str) and _normalize(temp_path) == _normalize(final_path):
+            reporter.error(
+                code=E_SLOW_COPY_PATH_COLLISION,
+                message=(
+                    f"slow_copy_start temp_path equals to (final): "
+                    f"{temp_path!r}; the multi-phase visibility contract "
+                    f"requires the three paths to be pairwise distinct"
+                ),
+                loc=("timeline", idx, "temp_path"),
+            )
+            continue  # one error per event
+        container = asset_containers.get(target)
+        if container is None:
+            continue  # asset undeclared; rule_target_unknown owns that
+        initial_path = INITIAL_PATH_TEMPLATE.format(
+            root_path=primary_root_path,
+            asset_id=target,
+            container=container,
+        )
+        if _normalize(temp_path) == _normalize(initial_path):
+            reporter.error(
+                code=E_SLOW_COPY_PATH_COLLISION,
+                message=(
+                    f"slow_copy_start temp_path equals the asset's initial "
+                    f"path {initial_path!r}; the commit's unlink(initial) "
+                    f"would wipe the temp file before the replace runs"
+                ),
+                loc=("timeline", idx, "temp_path"),
+            )
+
+
+def _index_asset_paths(
+    raw: Mapping[str, object],
+) -> tuple[str | None, dict[str, str]]:
+    """Return ``(primary_root_path, asset_id -> container)``.
+
+    Shape-defensive: returns ``(None, {})`` if the library subtree is missing
+    or malformed (Pydantic flags that case). Reuses ``iter_assets_with_loc``
+    so the works -> variants -> bundle -> assets walk stays single-sourced
+    in ``_common.py``.
+    """
+    primary_path = _primary_root_path(raw)
+    if primary_path is None:
+        return (None, {})
+    containers: dict[str, str] = {}
+    for asset, _ in iter_assets_with_loc(raw):
+        asset_id = asset.get("id")
+        container = asset.get("container")
+        if isinstance(asset_id, str) and isinstance(container, str):
+            containers[asset_id] = container
+    return (primary_path, containers)
+
+
+def _primary_root_path(raw: Mapping[str, object]) -> str | None:
+    """Return ``library.roots[0].path`` if well-shaped, else None."""
+    library = _as_mapping(raw.get("library"))
+    if library is None:
+        return None
+    roots = _as_list(library.get("roots"))
+    if not roots:
+        return None
+    primary = _as_mapping(roots[0])
+    if primary is None:
+        return None
+    primary_path = primary.get("path")
+    return primary_path if isinstance(primary_path, str) else None

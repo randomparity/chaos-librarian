@@ -1,0 +1,44 @@
+schema_version: 4
+scenario_id: mixed-supported-unsupported
+seed: 11
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_orbit
+    title: Synthetic Orbit
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 720p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: move_001
+    at: 1s
+    action: move_asset
+    target: asset_main
+    to: movies-hd/Orbit.mkv
+  - id: reencode_001
+    at: 2s
+    action: reencode_video
+    target: asset_main
+    resolution: 720p
+    codec: h264

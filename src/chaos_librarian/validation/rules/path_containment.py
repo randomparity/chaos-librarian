@@ -6,15 +6,22 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
+from chaos_librarian.contract.paths import (
+    INITIAL_PATH_TEMPLATE,
+    PathContainmentError,
+    resolve_under_library,
+)
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from chaos_librarian.validation.rules._common import (
     Reporter,
+    _as_list,
     _as_mapping,
     _iter_timeline_events,
     _list_at_path,
     _Loc,
+    _RawMapping,
+    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:
@@ -53,6 +60,7 @@ def rule_path_containment(
     reporter = Reporter(collector=collector, line_index=line_index)
     _check_root_paths(raw, reporter)
     _check_timeline_paths(raw, reporter)
+    _check_synthesized_timeline_paths(raw, reporter)
 
 
 def _check_root_paths(raw: Mapping[str, object], reporter: Reporter) -> None:
@@ -79,6 +87,149 @@ def _check_timeline_paths(raw: Mapping[str, object], reporter: Reporter) -> None
             value = event.get(field_name)
             if isinstance(value, str):
                 _check_containment(value, loc=("timeline", idx, field_name), reporter=reporter)
+
+
+def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> None:
+    """Containment-check synthesized destinations for actions with no ``to:`` field.
+
+    ``archive_file`` and ``move_between_roots`` derive their destination
+    from library config (the archive root / target root path plus the
+    asset container) the same way the engine handlers do via
+    ``state.archive_path_for`` and ``state.root_path_for``. The rule
+    must run the synthesized path through containment so an escape via
+    library config is caught at validate-time, not at materialize-time.
+    """
+    declared_roots = _declared_root_paths(raw)
+    archive_base = _archive_base_path(raw, declared_roots)
+    asset_containers = _asset_containers(raw)
+
+    for idx, event in _iter_timeline_events(raw):
+        action = event.get("action")
+        if action == TimelineActionName.ARCHIVE_FILE:
+            _check_archive_file(
+                event,
+                idx=idx,
+                archive_base=archive_base,
+                asset_containers=asset_containers,
+                reporter=reporter,
+            )
+        elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
+            _check_move_between_roots(
+                event,
+                idx=idx,
+                declared_roots=declared_roots,
+                asset_containers=asset_containers,
+                reporter=reporter,
+            )
+
+
+def _check_archive_file(
+    event: _RawMapping,
+    *,
+    idx: int,
+    archive_base: str | None,
+    asset_containers: Mapping[str, str],
+    reporter: Reporter,
+) -> None:
+    """Synthesize and check the archive destination for one ``archive_file``."""
+    target = event.get("target")
+    if not isinstance(target, str) or archive_base is None:
+        return
+    container = asset_containers.get(target)
+    if container is None:
+        return
+    synthesized = INITIAL_PATH_TEMPLATE.format(
+        root_path=archive_base, asset_id=target, container=container
+    )
+    _check_containment(synthesized, loc=("timeline", idx, "target"), reporter=reporter)
+
+
+def _check_move_between_roots(
+    event: _RawMapping,
+    *,
+    idx: int,
+    declared_roots: Mapping[str, str],
+    asset_containers: Mapping[str, str],
+    reporter: Reporter,
+) -> None:
+    """Synthesize and check the destination for one ``move_between_roots``."""
+    target = event.get("target")
+    to_root_id = event.get("to_root_id")
+    if not isinstance(target, str) or not isinstance(to_root_id, str):
+        return
+    to_root_path = declared_roots.get(to_root_id)
+    container = asset_containers.get(target)
+    if to_root_path is None or container is None:
+        return
+    synthesized = INITIAL_PATH_TEMPLATE.format(
+        root_path=to_root_path, asset_id=target, container=container
+    )
+    _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
+
+
+def _declared_root_paths(raw: _RawMapping) -> dict[str, str]:
+    """Return ``{root_id: path}`` for every well-shaped declared root."""
+    declared: dict[str, str] = {}
+    roots = _list_at_path(raw, ("library", "roots")) or []
+    for root_obj in roots:
+        root = _as_mapping(root_obj)
+        if root is None:
+            continue
+        root_id = root.get("id")
+        path = root.get("path")
+        if isinstance(root_id, str) and isinstance(path, str):
+            declared[root_id] = path
+    return declared
+
+
+def _archive_base_path(
+    raw: _RawMapping,
+    declared_roots: Mapping[str, str],
+) -> str | None:
+    """Return the archive base path, mirroring ``build_initial_state``.
+
+    Sentinel ``"archive"`` and ``None`` both resolve to
+    ``<primary_root.path>/archive``. A named ``archive_root`` resolves to
+    that declared root's path. Returns ``None`` when the library subtree
+    is malformed enough to defeat the lookup — the shape pass (or
+    ``rule_root_unknown``) owns those error reports.
+    """
+    primary_path = _primary_root_path(raw)
+    if primary_path is None:
+        return None
+    library = _as_mapping(raw.get("library"))
+    archive_root = library.get("archive_root") if library is not None else None
+    if archive_root is None or archive_root == "archive":
+        return f"{primary_path}/archive"
+    if isinstance(archive_root, str):
+        return declared_roots.get(archive_root)
+    return None
+
+
+def _primary_root_path(raw: _RawMapping) -> str | None:
+    """Return ``library.roots[0].path`` if well-shaped, else ``None``."""
+    library = _as_mapping(raw.get("library"))
+    if library is None:
+        return None
+    roots = _as_list(library.get("roots"))
+    if not roots:
+        return None
+    primary = _as_mapping(roots[0])
+    if primary is None:
+        return None
+    primary_path = primary.get("path")
+    return primary_path if isinstance(primary_path, str) else None
+
+
+def _asset_containers(raw: _RawMapping) -> dict[str, str]:
+    """Return ``{asset_id: container}`` for every well-shaped declared asset."""
+    containers: dict[str, str] = {}
+    for asset, _ in iter_assets_with_loc(raw):
+        asset_id = asset.get("id")
+        container = asset.get("container")
+        if isinstance(asset_id, str) and isinstance(container, str):
+            containers[asset_id] = container
+    return containers
 
 
 def _check_containment(raw_path: str, *, loc: _Loc, reporter: Reporter) -> None:

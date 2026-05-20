@@ -1,0 +1,39 @@
+schema_version: 4
+scenario_id: sc_move_between_roots
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies-hd
+      path: library/movies-hd
+    - id: cold-storage
+      path: library/cold-storage
+works:
+  - id: work_001
+    title: Test Movie For Move-Between-Roots
+    variants:
+      - id: variant_001
+        label: hd
+        bundle:
+          id: bundle_001
+          assets:
+            - id: asset_hd_main
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: en
+timeline:
+  - id: ev_mbr_001
+    at: 0ns
+    action: move_between_roots
+    target: asset_hd_main
+    from_root_id: movies-hd
+    to_root_id: cold-storage

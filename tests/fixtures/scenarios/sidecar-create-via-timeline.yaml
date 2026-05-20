@@ -1,0 +1,39 @@
+schema_version: 4
+scenario_id: sidecar-create-via-timeline
+seed: 17
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_pulsar
+    title: Synthetic Pulsar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: create_subs_001
+    at: 1s
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Pulsar.eng.srt
+    language: eng

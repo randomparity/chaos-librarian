@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from chaos_librarian.contract.materialization import ToolInvocation
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import (
     ValidationIssue,
     ValidationReport,
@@ -11,6 +12,7 @@ from chaos_librarian.contract.validation import (
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     ContainmentViolationError,
+    FilesystemActionError,
     MaterializationError,
     ProbeParseError,
     ScenarioValidationError,
@@ -29,6 +31,7 @@ def test_every_subclass_carries_an_error_code():
         UnsupportedMaterializationError,
         ToolFailedError,
         ProbeParseError,
+        FilesystemActionError,
         ContainmentViolationError,
         CapabilityGateError,
         ScenarioValidationError,
@@ -105,3 +108,44 @@ def test_scenario_validation_error_carries_report():
     assert err.error_code == "E_MATERIALIZE_VALIDATION_FAILED"
     assert err.validation_report.ok is False
     assert err.validation_report.issues[0].code == "E_PATH_CONTAINMENT"
+
+
+def test_filesystem_action_error_carries_event_id_action_errno() -> None:
+    """WHY: phase-B helpers raise OSError mid-mutation; the orchestrator wraps
+    it with the originating event_id, the TimelineActionName, and the errno so
+    the CLI can emit a structured JSON payload at exit 4 without
+    introspecting __cause__ — and so reviewers see exactly which mutation
+    failed when library/ has been wiped."""
+    cause = OSError(2, "No such file or directory")
+    err = FilesystemActionError(
+        "move_asset failed for event move_001: no such file",
+        event_id="move_001",
+        cause=cause,
+        action=TimelineActionName.MOVE_ASSET,
+        asset_id="asset_hd_main",
+    )
+    assert err.error_code == "E_MATERIALIZE_FS_FAILED"
+    assert err.event_id == "move_001"
+    assert err.cause is cause
+    assert err.action is TimelineActionName.MOVE_ASSET
+    assert err.payload["event_id"] == "move_001"
+    assert err.payload["action"] == "move_asset"
+    assert err.payload["errno"] == 2
+
+
+def test_filesystem_action_error_accepts_non_oserror_cause() -> None:
+    """WHY: the dispatcher widened its trap from ``OSError`` to ``Exception``
+    so contract-drift bugs (KeyError from scenario_assets lookup, AssertionError
+    from a malformed journal entry) still route through cleanup + exit 5
+    instead of escaping unwrapped. Non-OSError causes carry ``errno=None``."""
+    cause = KeyError("asset_does_not_exist")
+    err = FilesystemActionError(
+        "create_sidecar failed for event cs_unknown",
+        event_id="cs_unknown",
+        cause=cause,
+        action=TimelineActionName.CREATE_SIDECAR,
+        asset_id="asset_does_not_exist",
+    )
+    assert err.cause is cause
+    assert err.payload["errno"] is None
+    assert err.payload["action"] == "create_sidecar"

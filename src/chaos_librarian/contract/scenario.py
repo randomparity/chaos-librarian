@@ -30,6 +30,8 @@ class TimelineActionName(enum.StrEnum):
     CREATE_SIDECAR = "create_sidecar"
     SLOW_COPY_START = "slow_copy_start"
     SLOW_COPY_COMMIT = "slow_copy_commit"
+    ARCHIVE_FILE = "archive_file"
+    MOVE_BETWEEN_ROOTS = "move_between_roots"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -94,6 +96,7 @@ class LibraryRoot(BaseModel):
 class Library(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     roots: tuple[LibraryRoot, ...]
+    archive_root: str | None = None
 
 
 # ---- Tracks -----------------------------------------------------------------
@@ -232,6 +235,18 @@ class SlowCopyCommitEvent(_TimelineEventBase):
     )
 
 
+class ArchiveFileEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.ARCHIVE_FILE] = TimelineActionName.ARCHIVE_FILE
+    target: str
+
+
+class MoveBetweenRootsEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.MOVE_BETWEEN_ROOTS] = TimelineActionName.MOVE_BETWEEN_ROOTS
+    target: str
+    from_root_id: str
+    to_root_id: str
+
+
 TimelineEvent = Annotated[
     MoveAssetEvent
     | RenameFileEvent
@@ -241,7 +256,9 @@ TimelineEvent = Annotated[
     | ReencodeAudioEvent
     | CreateSidecarEvent
     | SlowCopyStartEvent
-    | SlowCopyCommitEvent,
+    | SlowCopyCommitEvent
+    | ArchiveFileEvent
+    | MoveBetweenRootsEvent,
     Field(discriminator="action"),
 ]
 
@@ -253,7 +270,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

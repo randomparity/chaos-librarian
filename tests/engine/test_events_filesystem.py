@@ -7,11 +7,16 @@ import uuid
 import pytest
 
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import Scenario, TimelineActionName
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
+from tests.engine.conftest import (
+    _build_minimal_scenario,
+    _resolve_archive_file,
+    _resolve_move_between_roots,
+)
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -19,7 +24,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 3,
+            "schema_version": 4,
             "scenario_id": "fs",
             "seed": 1,
             "duration_scale": "short",
@@ -185,3 +190,107 @@ class TestAddFileHandler:
         (resolved,) = resolve_timeline(scenario)
         with pytest.raises(ValueError, match="already has a location"):
             apply_event(state, resolved, ids, _RUN_ID, "fs")
+
+
+class TestArchiveFileHandler:
+    """archive_file moves the asset to its archive destination.
+
+    WHY: archive operations are the same shape as a move (path mutation,
+    asset stays placed) but resolve their destination from the scenario's
+    declared archive root rather than an inline ``to``. The handler must
+    record both endpoints so adapters can verify the archive landed where
+    the contract said it would.
+    """
+
+    def test_archive_file_handler_moves_location_to_archive_path(self) -> None:
+        scenario = _build_minimal_scenario(
+            roots=[("movies-hd", "library/movies-hd")],
+            works=[("work_001", "asset_hd_main", "mkv")],
+        )
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        resolved = _resolve_archive_file(scenario, event_id="ev_arch_001", target="asset_hd_main")
+        entries = apply_event(
+            state=state,
+            resolved=resolved,
+            ids=IdAllocator(TraceRecorder()),
+            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+            scenario_id="sc_test",
+        )
+        loc_id = state.location_id_for_asset("asset_hd_main")
+        assert state.locations[loc_id].path == "library/movies-hd/archive/asset_hd_main.mkv"
+        assert state.has_location("asset_hd_main"), "archive keeps the asset placed"
+        assert len(entries) == 1
+        (entry,) = entries
+        assert entry.action == TimelineActionName.ARCHIVE_FILE
+        assert entry.target_ids == ["asset_hd_main"]
+        assert entry.state_delta == {
+            "from_path": "library/movies-hd/asset_hd_main.mkv",
+            "to_path": "library/movies-hd/archive/asset_hd_main.mkv",
+        }
+
+    def test_archive_file_handler_uses_explicit_archive_root(self) -> None:
+        scenario = _build_minimal_scenario(
+            roots=[
+                ("movies-hd", "library/movies-hd"),
+                ("cold-storage", "library/cold-storage"),
+            ],
+            works=[("work_001", "asset_hd_main", "mkv")],
+            archive_root="cold-storage",
+        )
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        resolved = _resolve_archive_file(scenario, event_id="ev_arch_001", target="asset_hd_main")
+        apply_event(
+            state=state,
+            resolved=resolved,
+            ids=IdAllocator(TraceRecorder()),
+            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+            scenario_id="sc_test",
+        )
+        loc_id = state.location_id_for_asset("asset_hd_main")
+        assert state.locations[loc_id].path == "library/cold-storage/asset_hd_main.mkv"
+
+
+class TestMoveBetweenRootsHandler:
+    """move_between_roots relocates an asset across two declared roots.
+
+    WHY: a same-shape move can be expressed as ``move_asset``, but
+    cross-root moves carry the originating and destination root ids in the
+    journal so adapters can tell a move-between-roots from an in-root
+    rename without parsing path prefixes.
+    """
+
+    def test_move_between_roots_handler_crosses_roots(self) -> None:
+        scenario = _build_minimal_scenario(
+            roots=[
+                ("movies-hd", "library/movies-hd"),
+                ("staging", "library/staging"),
+            ],
+            works=[("work_001", "asset_hd_main", "mkv")],
+        )
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        resolved = _resolve_move_between_roots(
+            scenario,
+            event_id="ev_mbr_001",
+            target="asset_hd_main",
+            from_root_id="movies-hd",
+            to_root_id="staging",
+        )
+        entries = apply_event(
+            state=state,
+            resolved=resolved,
+            ids=IdAllocator(TraceRecorder()),
+            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+            scenario_id="sc_test",
+        )
+        loc_id = state.location_id_for_asset("asset_hd_main")
+        assert state.locations[loc_id].path == "library/staging/asset_hd_main.mkv"
+        assert len(entries) == 1
+        (entry,) = entries
+        assert entry.action == TimelineActionName.MOVE_BETWEEN_ROOTS
+        assert entry.target_ids == ["asset_hd_main"]
+        assert entry.state_delta == {
+            "from_path": "library/movies-hd/asset_hd_main.mkv",
+            "to_path": "library/staging/asset_hd_main.mkv",
+            "from_root_id": "movies-hd",
+            "to_root_id": "staging",
+        }

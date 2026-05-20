@@ -153,6 +153,39 @@ class TestBuildReportSet:
         assert br.asset_ids == ["asset_hd_main"]
         assert br.sidecar_ids == ["sidecar_0001"]
 
+    def test_path_history_empty_for_static_scenario(self) -> None:
+        """WHY: AssetReport.path_history must default to [] when no filesystem events ran.
+
+        Sprint 6 added the field; reports for static scenarios must not
+        invent path_history rows that didn't happen.
+        """
+        m = _manifest_with_one_asset()
+        rs = build_report_set(initial=m, current=m, journal=[])
+        assert rs.assets[0].path_history == []
+
+    def test_path_history_populated_for_move_asset(self) -> None:
+        """WHY: a filesystem-affecting journal event must surface in path_history.
+
+        Drift-locks AssetReport's Sprint 6 wiring against a future refactor
+        that forgets to call ``derive_path_history``.
+        """
+        m = _manifest_with_one_asset()
+        entry = _atomic_entry(
+            event_id="move_001",
+            action="move_asset",
+            target="asset_hd_main",
+            delta={
+                "from_path": "movies-hd/a.mkv",
+                "to_path": "movies-hd/Blazar.mkv",
+            },
+        )
+        rs = build_report_set(initial=m, current=m, journal=[entry])
+        path_history = rs.assets[0].path_history
+        assert len(path_history) == 1
+        assert path_history[0].event_id == "move_001"
+        assert path_history[0].from_path == "movies-hd/a.mkv"
+        assert path_history[0].to_path == "movies-hd/Blazar.mkv"
+
     def test_iteration_order_is_stable(self) -> None:
         """Reports sort by id lexicographically.
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from typing import Final
 
 from chaos_librarian.contract.journal import (
     AtomicJournalEntry,
@@ -29,9 +30,11 @@ from chaos_librarian.contract.manifest import (
 )
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
+    ArchiveFileEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     MoveAssetEvent,
+    MoveBetweenRootsEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RenameFileEvent,
@@ -43,6 +46,33 @@ from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 from chaos_librarian.errors import ChaosLibrarianValueError
+
+_STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
+    TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
+    TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
+    TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
+    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id", "language"}),
+    TimelineActionName.SLOW_COPY_START: frozenset(
+        {"final_path", "temp_path", "initial_path_at_start"}
+    ),
+    TimelineActionName.SLOW_COPY_COMMIT: frozenset({"final_path"}),
+    TimelineActionName.ARCHIVE_FILE: frozenset({"from_path", "to_path"}),
+    TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
+        {"from_path", "to_path", "from_root_id", "to_root_id"}
+    ),
+}
+"""Per-action contract for emitted ``state_delta`` keys.
+
+Each handler MUST emit at least these keys; extras are allowed for forward
+compatibility. ``add_file`` is intentionally absent (deferred to Sprint 7);
+``move_between_roots`` lands alongside its handler. ``create_sidecar``
+includes ``language`` and ``slow_copy_start`` includes
+``initial_path_at_start`` so Phase B and ``derive_path_history`` can drive
+purely from the journal.
+
+The parametrized test ``test_state_delta_keys_match_contract`` enforces this
+contract by invoking each handler against a minimal scenario.
+"""
 
 
 def apply_event(
@@ -282,7 +312,11 @@ def _handle_create_sidecar(
         action=TimelineActionName.CREATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"sidecar_path": event.to, "sidecar_id": sidecar_id},
+        state_delta={
+            "sidecar_path": event.to,
+            "sidecar_id": sidecar_id,
+            "language": event.language,
+        },
     )
     return (entry,)
 
@@ -309,7 +343,11 @@ def _handle_slow_copy_start(
         action=TimelineActionName.SLOW_COPY_START,
         target_ids=[event.target],
         location_ids=[loc_id],
-        state_delta={"final_path": event.to, "temp_path": event.temp_path},
+        state_delta={
+            "final_path": event.to,
+            "temp_path": event.temp_path,
+            "initial_path_at_start": previous.path,
+        },
         phase=JournalPhase.STARTED,
         temp_path=event.temp_path,
     )
@@ -344,6 +382,74 @@ def _handle_slow_copy_commit(
     return (entry,)
 
 
+def _handle_archive_file(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Move ``target`` to its archive destination.
+
+    The destination is ``state.archive_path_for(target)``; validation has
+    already proven the archive root exists. ``location.path`` updates;
+    the asset stays placed.
+    """
+    event = resolved.event
+    assert isinstance(event, ArchiveFileEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    archive_path = state.archive_path_for(event.target)
+    state.locations[loc_id] = previous.model_copy(update={"path": archive_path})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.ARCHIVE_FILE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={"from_path": previous.path, "to_path": archive_path},
+    )
+    return (entry,)
+
+
+def _handle_move_between_roots(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Move ``target`` from ``from_root_id`` to ``to_root_id``.
+
+    The destination is ``<to_root.path>/<asset_id>.<container>``. Validation
+    has already proven both root ids exist.
+    """
+    event = resolved.event
+    assert isinstance(event, MoveBetweenRootsEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    asset = state.assets[event.target]
+    to_root_path = state.root_path_for(event.to_root_id)
+    destination = f"{to_root_path}/{event.target}.{asset.container}"
+    state.locations[loc_id] = previous.model_copy(update={"path": destination})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.MOVE_BETWEEN_ROOTS,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={
+            "from_path": previous.path,
+            "to_path": destination,
+            "from_root_id": event.from_root_id,
+            "to_root_id": event.to_root_id,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -354,4 +460,6 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.CREATE_SIDECAR: _handle_create_sidecar,
     TimelineActionName.SLOW_COPY_START: _handle_slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
+    TimelineActionName.ARCHIVE_FILE: _handle_archive_file,
+    TimelineActionName.MOVE_BETWEEN_ROOTS: _handle_move_between_roots,
 }

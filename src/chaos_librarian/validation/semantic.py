@@ -20,10 +20,14 @@ from chaos_librarian.validation.rules.path_containment import rule_path_containm
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
 from chaos_librarian.validation.rules.sidecar_language import rule_sidecar_language_consistent
 from chaos_librarian.validation.rules.slow_copy import (
+    rule_slow_copy_path_collision,
     rule_slow_copy_timing,
     rule_slow_copy_unpaired,
 )
-from chaos_librarian.validation.rules.target_unknown import rule_target_unknown
+from chaos_librarian.validation.rules.target_unknown import (
+    rule_root_unknown,
+    rule_target_unknown,
+)
 from chaos_librarian.validation.rules.timeline_lifecycle import rule_timeline_lifecycle
 from chaos_librarian.validation.rules.timeline_order import rule_timeline_order
 
@@ -37,8 +41,10 @@ _RULES: list[Rule] = [
     rule_path_duplicate,
     rule_duration_syntax,
     rule_target_unknown,
+    rule_root_unknown,
     rule_slow_copy_unpaired,
     rule_slow_copy_timing,
+    rule_slow_copy_path_collision,
     rule_path_containment,
     rule_timeline_order,
     rule_timeline_lifecycle,

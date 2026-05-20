@@ -1,4 +1,4 @@
-"""Contract round-trip tests for MaterializationReport v2."""
+"""Contract round-trip tests for MaterializationReport v3."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract.materialization import (
     FailureStage,
+    FilesystemAction,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -18,6 +19,7 @@ from chaos_librarian.contract.materialization import (
     ToolchainInfo,
     ToolInvocation,
 )
+from chaos_librarian.contract.scenario import TimelineActionName
 
 
 def _minimal_report(**overrides: object) -> MaterializationReport:
@@ -108,5 +110,62 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_two():
-    assert MATERIALIZATION_SCHEMA_VERSION == 2
+def test_materialization_schema_version_is_three() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 3
+
+
+def test_filesystem_action_round_trip() -> None:
+    payload = {
+        "event_id": "ev_move_001",
+        "action": "move_asset",
+        "target_asset_id": "asset_hd_main",
+        "from_path": "movies-hd/old.mkv",
+        "to_path": "movies-hd/new.mkv",
+        "temp_path": None,
+        "duration_ns": 1_500_000,
+    }
+    action = FilesystemAction.model_validate(payload)
+    assert action.action == TimelineActionName.MOVE_ASSET
+    assert action.duration_ns == 1_500_000
+
+
+def test_outcome_fs_failed_present() -> None:
+    assert Outcome("fs_failed") is Outcome.FS_FAILED
+
+
+def test_failure_stage_filesystem_present() -> None:
+    assert FailureStage("filesystem") is FailureStage.FILESYSTEM
+
+
+def test_materialization_failure_round_trips_with_none_optional_fields() -> None:
+    """WHY: filesystem-stage failures populate stage + stderr_tail but leave
+    asset_id, exit_code, and invocation_index None. ``canonical_json`` is
+    serialized with ``exclude_none=True``; the resulting JSON must re-validate
+    without callers having to backfill defaults. Issue #36."""
+    failure = MaterializationFailure(
+        asset_id=None,
+        stage=FailureStage.FILESYSTEM,
+        exit_code=None,
+        stderr_tail="rmtree failed: [Errno 13] Permission denied",
+        invocation_index=None,
+    )
+    blob = failure.model_dump_json(exclude_none=True)
+    parsed = MaterializationFailure.model_validate_json(blob)
+    assert parsed == failure
+
+
+def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
+    payload = {
+        "schema_version": 3,
+        "run_id": "1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01",
+        "outcome": "success",
+        "platform": "darwin",
+        "started_at": "2026-05-19T00:00:00Z",
+        "finished_at": "2026-05-19T00:00:01Z",
+        "toolchain": {},
+        "invocations": [],
+        "materialized": [],
+        "failures": [],
+    }
+    report = MaterializationReport.model_validate(payload)
+    assert report.filesystem_actions == []

@@ -13,6 +13,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.materializer import (
     CapabilityGateError,
     ContainmentViolationError,
+    FilesystemActionError,
     ProbeParseError,
     ScenarioValidationError,
     TimelineUnsupportedError,
@@ -62,6 +63,12 @@ def materialize(
         emit_materialize_error(exc, json_output=json_output, run_dir=out)
         raise typer.Exit(code=5) from exc
     except ProbeParseError as exc:
+        emit_materialize_error(exc, json_output=json_output, run_dir=out)
+        raise typer.Exit(code=5) from exc
+    except FilesystemActionError as exc:
+        # Phase B has already wiped library/ and written the failure
+        # report; surface E_MATERIALIZE_FS_FAILED with run_dir=out so the
+        # envelope advertises materialization_report_path.
         emit_materialize_error(exc, json_output=json_output, run_dir=out)
         raise typer.Exit(code=5) from exc
     except ContainmentViolationError as exc:

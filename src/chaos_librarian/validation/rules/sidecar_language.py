@@ -1,16 +1,15 @@
 """Rule 10: E_SIDECAR_LANGUAGE_INVALID — keep manifest sidecar keys unique.
 
 The manifest v3 keys ``ManifestSidecar`` lookups on ``(asset_id, language)``.
-Two failure modes break that invariant:
+Duplicate ``(target, language)`` across ``create_sidecar`` events in the
+same scenario would produce two sidecar rows with the same composite key,
+leaving the key ambiguous; this rule rejects that.
 
-1. Duplicate ``(target, language)`` across ``create_sidecar`` events in the
-   same scenario would produce two sidecar rows with the same composite
-   key, leaving the key ambiguous.
-2. ``language`` that doesn't appear in the target asset's declared
-   ``subtitles[*].language`` is a typo or oversight — the materializer
-   hashes subtitles from ``asset.subtitles`` by declared language, so a
-   mismatched event-language would either leave the plan-created row
-   hashless or append a second row for the same on-disk file.
+The rule deliberately does NOT require the timeline's ``language`` to
+appear in ``asset.subtitles[*].language``. A timeline-only sidecar (no
+declared subtitle) is legal; so is overriding a declared subtitle with a
+timeline ``create_sidecar`` (phase A defers to phase B by skipping
+languages the timeline will write).
 """
 
 from __future__ import annotations
@@ -22,10 +21,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_SIDECAR_LANGUAGE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_list,
-    _as_mapping,
     _iter_timeline_events,
-    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:
@@ -40,13 +36,12 @@ def rule_sidecar_language_consistent(
     line_index: LineIndex,
     collector: IssueCollector,
 ) -> None:
-    """Reject ``create_sidecar`` events that break the manifest v3 key invariant.
+    """Reject duplicate ``(target, language)`` ``create_sidecar`` events.
 
-    See module docstring for the two failure modes flagged.
+    See module docstring for the rationale and the deliberately-allowed
+    cases (timeline-only sidecars, overrides of declared subtitles).
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    declared_by_asset = _index_declared_languages(raw)
-
     seen: dict[tuple[str, str], int] = {}
     for index, event in _iter_timeline_events(raw):
         if event.get("action") != TimelineActionName.CREATE_SIDECAR:
@@ -67,33 +62,3 @@ def rule_sidecar_language_consistent(
             )
         else:
             seen[key] = index
-        declared = declared_by_asset.get(target)
-        if declared is not None and language not in declared:
-            reporter.error(
-                code=E_SIDECAR_LANGUAGE_INVALID,
-                message=(
-                    f"create_sidecar language {language!r} not declared on "
-                    f"target asset {target!r} (declared: {sorted(declared)!r})"
-                ),
-                loc=("timeline", index, "language"),
-            )
-
-
-def _index_declared_languages(raw: Mapping[str, object]) -> dict[str, set[str]]:
-    """Build a lookup of declared subtitle languages per asset id."""
-    declared_by_asset: dict[str, set[str]] = {}
-    for asset, _loc in iter_assets_with_loc(raw):
-        asset_id = asset.get("id")
-        if not isinstance(asset_id, str):
-            continue
-        subs = _as_list(asset.get("subtitles")) or []
-        languages: set[str] = set()
-        for sub_obj in subs:
-            sub = _as_mapping(sub_obj)
-            if sub is None:
-                continue
-            lang = sub.get("language")
-            if isinstance(lang, str):
-                languages.add(lang)
-        declared_by_asset[asset_id] = languages
-    return declared_by_asset

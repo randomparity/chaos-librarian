@@ -51,9 +51,15 @@ def test_materialize_static_library_smoke(tmp_path: Path) -> None:
     assert materialization["outcome"] == "success"
     assert materialization["failures"] == []
 
+    library_root = out / "library"
     for version in manifest.versions:
         location = next(loc for loc in manifest.locations if loc.asset_id == version.asset_id)
-        path = out / location.path
+        # ManifestLocation.path is relative to <run-dir>/library/ (spec
+        # "Path Containment"). Sprint 5 happened to put files at
+        # ``out / location.path`` because synthesis ignored the asset's
+        # primary root path; Sprint 6 fixes that and the assertion follows
+        # the documented contract.
+        path = library_root / location.path
         assert path.exists()
         assert version.content_hash is not None
         actual = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
@@ -62,7 +68,7 @@ def test_materialize_static_library_smoke(tmp_path: Path) -> None:
         assert all(s.kind != "subtitle" for s in version.probed.streams)
 
     for sidecar in manifest.sidecars:
-        path = out / sidecar.path
+        path = library_root / sidecar.path
         assert path.exists()
         assert sidecar.content_hash is not None
         actual = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()

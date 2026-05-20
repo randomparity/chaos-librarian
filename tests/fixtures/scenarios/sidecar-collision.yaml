@@ -1,0 +1,43 @@
+schema_version: 4
+scenario_id: sidecar-collision
+seed: 23
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_meridian
+    title: Synthetic Meridian
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+              subtitles:
+                - codec: srt
+                  language: eng
+                  mode: sidecar
+
+timeline:
+  - id: create_subs_001
+    at: 1s
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Meridian.eng.timeline.srt
+    language: eng

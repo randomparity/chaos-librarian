@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import shutil
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+
+import pytest
 
 from chaos_librarian.contract import (
     MATERIALIZATION_SCHEMA_VERSION,
@@ -28,6 +31,7 @@ from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
     MaterializeMetadata,
     begin_materialize_run,
+    cleanup_failed_filesystem_run,
     cleanup_failed_run,
 )
 
@@ -112,9 +116,10 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 3\nscenario_id: static\n",
+        scenario="schema_version: 4\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
+        applied_events=0,
         journal_digest="0" * 64,
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
@@ -129,7 +134,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
             validation_report=validation_report,
             materialization_report=materialization_report,
             replay_bundle=replay_bundle,
-            scenario_yaml_bytes=b"schema_version: 3\nscenario_id: static\n",
+            scenario_yaml_bytes=b"schema_version: 4\nscenario_id: static\n",
             sentinel=_sentinel(RunSentinelState.COMPLETE),
         ),
     )
@@ -148,3 +153,92 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         "replay.json",
     ):
         assert (out_dir / name).exists(), name
+
+
+def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WHY: the asymmetric ``ignore_errors=True`` on the fs_failed wipe
+    silently swallowed ``rmtree`` failures and still flipped the sentinel
+    to ``complete``, even though ``library/`` was still partially
+    populated. Downstream tooling reads ``outcome=fs_failed`` + a
+    consistent sentinel and assumes the tree was wiped. Fail loud
+    instead: surface the OSError so library/'s forensic state is
+    preserved for investigation.
+
+    Spy on ``shutil.rmtree``: assert ``ignore_errors=True`` is NOT
+    passed (so a real ``shutil.rmtree`` would raise on a real error)
+    AND that the simulated raise reaches the caller (so the sentinel
+    is not flipped to ``complete``)."""
+    out_dir = tmp_path / "fs_failed_run"
+    in_progress = _sentinel(RunSentinelState.IN_PROGRESS)
+    begin_materialize_run(out_dir, in_progress)
+    (out_dir / "library" / "stale.bin").write_bytes(b"x")
+
+    boom = OSError(13, "Permission denied")
+    captured: dict[str, object] = {}
+
+    def _spy_rmtree(path: object, *args: object, **kwargs: object) -> None:
+        captured["path"] = path
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        raise boom
+
+    monkeypatch.setattr(shutil, "rmtree", _spy_rmtree)
+
+    run_id = uuid.uuid4()
+    manifest = Manifest(
+        schema_version=3,
+        works=[],
+        variants=[],
+        bundles=[],
+        assets=[],
+        versions=[],
+        locations=[],
+        sidecars=[],
+    )
+    validation_report = ValidationReport(schema_version=1, ok=True, scenario_id="static", issues=[])
+    materialization_report = MaterializationReport(
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
+        run_id=run_id,
+        outcome=Outcome.FS_FAILED,
+        platform="test",
+        started_at=datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+    )
+    replay_bundle = MaterializeReplayBundle(
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+        chaos_librarian_version="0.1.0",
+        scenario="schema_version: 4\nscenario_id: static\n",
+        run_id=run_id,
+        resolved_seed=1,
+        applied_events=0,
+        journal_digest="0" * 64,
+        execution_mode=ExecutionMode.MATERIALIZE,
+        created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+    )
+    metadata = MaterializeMetadata(
+        initial_manifest=manifest,
+        current_manifest=manifest,
+        journal_entries=(),
+        validation_report=validation_report,
+        materialization_report=materialization_report,
+        replay_bundle=replay_bundle,
+        scenario_yaml_bytes=b"schema_version: 4\nscenario_id: static\n",
+        sentinel=_sentinel(RunSentinelState.COMPLETE),
+    )
+    with pytest.raises(OSError, match="Permission denied") as exc_info:
+        cleanup_failed_filesystem_run(out_dir, metadata)
+    assert exc_info.value is boom
+    # The fix is "drop ignore_errors=True"; with it passed, real rmtree
+    # would silently swallow the OSError and the test would not surface
+    # any failure.
+    captured_kwargs = captured["kwargs"]
+    assert isinstance(captured_kwargs, dict)
+    assert "ignore_errors" not in captured_kwargs
+    # Sentinel is still in_progress because the cleanup raised before flipping.
+    sentinel_payload = json.loads((out_dir / SENTINEL_FILENAME).read_text())
+    assert sentinel_payload["state"] == "in_progress"

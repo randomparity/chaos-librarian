@@ -9,6 +9,7 @@ stdout JSON.
 from __future__ import annotations
 
 from chaos_librarian.contract.materialization import ToolInvocation
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.errors import ChaosLibrarianError
 
@@ -75,6 +76,40 @@ class ProbeParseError(MaterializationError):
     """ffprobe stdout could not be parsed into ProbedMedia."""
 
     error_code: str = "E_MATERIALIZE_PROBE_PARSE_FAILED"
+
+
+class FilesystemActionError(MaterializationError):
+    """A phase-B helper raised; library/ must be wiped.
+
+    ``cause`` is typed ``BaseException`` rather than ``OSError`` so the
+    dispatcher can wrap contract-drift bugs (e.g. ``KeyError`` from a
+    handler looking up an asset that isn't in the scenario) into the
+    same structured exit-5 payload the CLI emits for syscall failures.
+    ``errno`` is populated only when ``cause`` is an ``OSError``; for
+    non-OSError causes it is ``None``.
+    """
+
+    error_code: str = "E_MATERIALIZE_FS_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        event_id: str,
+        cause: BaseException,
+        action: TimelineActionName,
+        asset_id: str | None = None,
+        field: str | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        merged_payload: dict[str, object] = dict(payload or {})
+        merged_payload.setdefault("event_id", event_id)
+        merged_payload.setdefault("action", action.value)
+        merged_payload.setdefault("errno", cause.errno if isinstance(cause, OSError) else None)
+        super().__init__(message, asset_id=asset_id, field=field, payload=merged_payload)
+        self.event_id = event_id
+        self.cause = cause
+        self.action = action
 
 
 class ContainmentViolationError(MaterializationError):

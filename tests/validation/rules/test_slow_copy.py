@@ -167,3 +167,155 @@ class TestRule5bSlowCopyTiming:
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         assert not any(i.code == codes.E_SLOW_COPY_TIMING for i in collector.issues)
+
+
+def _scenario_with_movies_hd(
+    minimal_scenario,
+    timeline: list[dict[str, object]],
+) -> dict[str, object]:
+    """Build a Rule 5c scenario whose primary root is ``library/movies-hd``.
+
+    Rule 5c needs the primary root's ``path`` to format the asset's initial
+    path via ``INITIAL_PATH_TEMPLATE``. The default ``minimal_scenario``
+    fixture uses ``path: r`` which doesn't match the plan's test inputs,
+    so we override ``library`` and ``works`` to keep the rule's
+    asset_id → container index aligned with the timeline targets.
+    """
+    return minimal_scenario(
+        timeline=timeline,
+        library={"roots": [{"id": "movies-hd", "path": "library/movies-hd"}]},
+        works=[
+            {
+                "id": "w",
+                "title": "t",
+                "variants": [
+                    {
+                        "id": "v",
+                        "label": "l",
+                        "bundle": {
+                            "id": "b",
+                            "assets": [
+                                {
+                                    "id": "asset_hd_main",
+                                    "role": "primary_video",
+                                    "container": "mkv",
+                                    "duration_seconds": 1,
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+    )
+
+
+class TestRule5cSlowCopyPathCollision:
+    """Reject ``temp_path`` that collides with the final or initial path.
+
+    WHY: phase-B commit unlinks ``initial_path`` and then ``replace()``s
+    ``temp_path → final_path``. If ``temp_path == to`` the multi-phase
+    visibility contract collapses; if ``temp_path == initial_path`` the
+    unlink wipes the temp before the replace runs. Both are unrecoverable
+    in the materializer, so we surface them at validation time.
+    """
+
+    def test_slow_copy_rejects_temp_equals_final(self, minimal_scenario, empty_index) -> None:
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "movies-hd/final.mkv",
+                    "temp_path": "movies-hd/final.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        collisions = [i for i in collector.issues if i.code == codes.E_SLOW_COPY_PATH_COLLISION]
+        assert collisions, (
+            f"expected E_SLOW_COPY_PATH_COLLISION in {[i.code for i in collector.issues]}"
+        )
+        assert "temp_path equals to" in collisions[0].message
+
+    def test_slow_copy_rejects_temp_equals_initial_path(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/asset_hd_main.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        collisions = [i for i in collector.issues if i.code == codes.E_SLOW_COPY_PATH_COLLISION]
+        assert collisions, (
+            f"expected E_SLOW_COPY_PATH_COLLISION in {[i.code for i in collector.issues]}"
+        )
+        assert "initial path" in collisions[0].message.lower()
+
+    def test_slow_copy_path_collision_allows_distinct_paths(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "movies-hd/final.mkv",
+                    "temp_path": "movies-hd/temp.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_rejects_temp_equals_initial_via_dot_segment(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """A ``.`` segment in temp_path must not let it slip past the rule.
+
+        Without normalization, raw ``==`` would treat
+        ``library/./movies-hd/...`` as distinct from ``library/movies-hd/...``
+        even though they describe the same on-disk path.
+        """
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "movies-hd/final.mkv",
+                    "temp_path": "library/./movies-hd/asset_hd_main.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)

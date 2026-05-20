@@ -15,6 +15,7 @@ import hashlib
 from dataclasses import dataclass
 
 from chaos_librarian import __version__ as _chaos_librarian_version
+from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import (
@@ -131,7 +132,7 @@ def run_plan(
     journal_digest = hashlib.sha256(serialize_journal_bytes(journal)).hexdigest()
 
     bundle = PlanOnlyReplayBundle(
-        schema_version=4,
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version=_chaos_librarian_version,
         scenario=run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,

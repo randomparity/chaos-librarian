@@ -1,8 +1,9 @@
-"""Materialization report schema (v2).
+"""Materialization report schema (v3).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
-records, and an Outcome enum that includes an explicit ``success`` signal.
+records, per-phase-B FilesystemAction audit records, and an Outcome enum
+that includes an explicit ``success`` signal.
 """
 
 from __future__ import annotations
@@ -13,6 +14,8 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from chaos_librarian.contract.scenario import TimelineActionName
 
 
 class Outcome(enum.StrEnum):
@@ -28,6 +31,7 @@ class Outcome(enum.StrEnum):
     TOOL_FAILED = "tool_failed"
     TOOL_MISSING = "tool_missing"
     CONTAINMENT_VIOLATION = "containment_violation"
+    FS_FAILED = "fs_failed"
 
 
 class FailureStage(enum.StrEnum):
@@ -35,6 +39,7 @@ class FailureStage(enum.StrEnum):
 
     FFMPEG = "ffmpeg"
     FFPROBE = "ffprobe"
+    FILESYSTEM = "filesystem"
 
 
 class ToolchainInfo(BaseModel):
@@ -88,11 +93,29 @@ class MaterializationFailure(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asset_id: str | None
+    asset_id: str | None = None
     stage: FailureStage
-    exit_code: int | None
+    exit_code: int | None = None
     stderr_tail: str
-    invocation_index: int | None
+    invocation_index: int | None = None
+
+
+class FilesystemAction(BaseModel):
+    """One phase-B filesystem operation audit record.
+
+    Mirrors ``ToolInvocation``'s role for subprocesses: one record per
+    journal entry that produced a real disk change.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: TimelineActionName
+    target_asset_id: str
+    from_path: str | None = None
+    to_path: str | None = None
+    temp_path: str | None = None
+    duration_ns: int
 
 
 class MaterializationReport(BaseModel):
@@ -100,7 +123,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -110,3 +133,4 @@ class MaterializationReport(BaseModel):
     invocations: list[ToolInvocation] = Field(default_factory=list)
     materialized: list[MaterializedAsset] = Field(default_factory=list)
     failures: list[MaterializationFailure] = Field(default_factory=list)
+    filesystem_actions: list[FilesystemAction] = Field(default_factory=list)

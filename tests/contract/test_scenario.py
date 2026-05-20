@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
 from chaos_librarian.contract.scenario import (
+    ArchiveFileEvent,
     Asset,
     AudioSource,
     AudioTrack,
@@ -15,6 +16,7 @@ from chaos_librarian.contract.scenario import (
     Library,
     LibraryRoot,
     MoveAssetEvent,
+    MoveBetweenRootsEvent,
     ReencodeVideoEvent,
     Scenario,
     SlowCopyCommitEvent,
@@ -22,6 +24,7 @@ from chaos_librarian.contract.scenario import (
     SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
+    TimelineActionName,
     Variant,
     VideoSource,
     VideoTrack,
@@ -158,5 +161,110 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_three() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 3
+def test_scenario_schema_version_is_four() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 4
+
+
+def test_archive_file_event_round_trip():
+    payload = {
+        "id": "ev_arch_001",
+        "at": "0ns",
+        "action": "archive_file",
+        "target": "asset_hd_main",
+    }
+    event = ArchiveFileEvent.model_validate(payload)
+    assert event.target == "asset_hd_main"
+    assert event.action == TimelineActionName.ARCHIVE_FILE
+    assert event.model_dump(mode="json")["action"] == "archive_file"
+
+
+def test_archive_file_event_rejects_to_field():
+    payload = {
+        "id": "ev_arch_001",
+        "at": "0ns",
+        "action": "archive_file",
+        "target": "asset_hd_main",
+        "to": "movies-hd/archive/asset_hd_main.mkv",
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        ArchiveFileEvent.model_validate(payload)
+    assert any(err["type"] == "extra_forbidden" for err in exc_info.value.errors())
+
+
+def test_move_between_roots_event_round_trip():
+    payload = {
+        "id": "ev_mbr_001",
+        "at": "0ns",
+        "action": "move_between_roots",
+        "target": "asset_hd_main",
+        "from_root_id": "movies-hd",
+        "to_root_id": "movies-archive",
+    }
+    event = MoveBetweenRootsEvent.model_validate(payload)
+    assert event.from_root_id == "movies-hd"
+    assert event.to_root_id == "movies-archive"
+
+
+def test_move_between_roots_requires_both_root_ids():
+    payload = {
+        "id": "ev_mbr_001",
+        "at": "0ns",
+        "action": "move_between_roots",
+        "target": "asset_hd_main",
+        "from_root_id": "movies-hd",
+    }
+    with pytest.raises(ValidationError) as exc_info:
+        MoveBetweenRootsEvent.model_validate(payload)
+    assert any(
+        err["type"] == "missing" and err["loc"] == ("to_root_id",)
+        for err in exc_info.value.errors()
+    )
+
+
+def test_library_archive_root_defaults_to_none():
+    library = Library(roots=(LibraryRoot(id="movies-hd", path="library/movies-hd"),))
+    assert library.archive_root is None
+
+
+def test_library_archive_root_accepts_sentinel_string():
+    library = Library(
+        roots=(LibraryRoot(id="movies-hd", path="library/movies-hd"),),
+        archive_root="archive",
+    )
+    assert library.archive_root == "archive"
+
+
+def test_library_archive_root_accepts_real_root_id():
+    library = Library(
+        roots=(
+            LibraryRoot(id="movies-hd", path="library/movies-hd"),
+            LibraryRoot(id="staging", path="library/staging"),
+        ),
+        archive_root="staging",
+    )
+    assert library.archive_root == "staging"
+
+
+def test_scenario_v4_round_trip_with_new_events():
+    payload = {
+        "schema_version": 4,
+        "scenario_id": "sc_arch_001",
+        "seed": 42,
+        "duration_scale": "short",
+        "library": {
+            "roots": [{"id": "movies-hd", "path": "library/movies-hd"}],
+            "archive_root": None,
+        },
+        "works": [],
+        "timeline": [
+            {
+                "id": "ev_arch_001",
+                "at": "0ns",
+                "action": "archive_file",
+                "target": "asset_hd_main",
+            },
+        ],
+    }
+    scenario = Scenario.model_validate(payload)
+    assert scenario.schema_version == 4
+    assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE

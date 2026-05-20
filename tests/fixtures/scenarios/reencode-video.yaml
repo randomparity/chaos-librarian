@@ -1,0 +1,39 @@
+schema_version: 4
+scenario_id: reencode-video-rejected
+seed: 11
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_quasar
+    title: Synthetic Quasar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 5
+              video:
+                source: color_bars
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: reencode_001
+    at: 2s
+    action: reencode_video
+    target: asset_main
+    resolution: sd
+    codec: h264

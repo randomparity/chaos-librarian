@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,14 +12,21 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
+from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
+    FailureStage,
+    FilesystemAction,
+    MaterializationReport,
     Outcome,
     ToolInvocation,
 )
+from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.materializer import filesystem as filesystem_mod
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
+    FilesystemActionError,
     ScenarioValidationError,
     TimelineUnsupportedError,
     ToolFailedError,
@@ -81,18 +89,89 @@ def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(synthesis_mod, "probe_file", fake_probe)
 
 
-def test_orchestrator_refuses_non_empty_timeline(
+def test_materialize_filesystem_only_timeline_runs_phase_b(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Sprint 5 supports only static scenarios. The orchestrator
-    rejects with E_MATERIALIZE_TIMELINE_UNSUPPORTED before any subprocess
-    starts, and the spec's lazy-allocation guarantee means no run-dir
-    exists on exit."""
+    """WHY: Sprint 6 wires phase B into the orchestrator. The fixture
+    moves then renames an asset, and the final on-disk layout must match
+    the rename target. The report must record one ``FilesystemAction``
+    per journal event that produced a disk change (2 events here)."""
     _patch_success(monkeypatch)
-    out = tmp_path / "run"
-    with pytest.raises(TimelineUnsupportedError):
-        materialize_scenario(FIXTURE_DIR / "slow-copy.yaml", out)
-    assert not out.exists()
+    out = tmp_path / "run-001"
+    artifacts = materialize_scenario(FIXTURE_DIR / "identity-move-rename.yaml", out)
+    assert artifacts.materialization_report.outcome is Outcome.SUCCESS
+    library = out / "library"
+    # Move places the asset under movies-hd/<title>.mkv; rename then
+    # renames the file to movies-hd/Blazar.mkv (the fixture's final step).
+    assert (library / "movies-hd" / "Blazar.mkv").exists()
+    report = _load_materialization_report(out)
+    assert len(report.filesystem_actions) == 2
+
+
+def test_materialize_reencode_video_rejected_at_preflight(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WHY: ``reencode_video`` is outside Sprint 6's supported action set.
+    ``preflight_timeline`` rejects with E_MATERIALIZE_TIMELINE_UNSUPPORTED
+    before any run-dir allocation — the lazy-allocation invariant."""
+    _patch_success(monkeypatch)
+    out = tmp_path / "run-001"
+    with pytest.raises(TimelineUnsupportedError) as exc_info:
+        materialize_scenario(FIXTURE_DIR / "reencode-video.yaml", out)
+    assert not out.exists()  # lazy allocation invariant
+    assert exc_info.value.payload["action"] == "reencode_video"
+
+
+def test_materialize_phase_b_oserror_aborts_and_cleans_up(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WHY: an OSError from a phase-B helper must wrap to
+    ``FilesystemActionError`` and route through the fs_failed cleanup
+    path: ``library/`` is wiped, the report records outcome=fs_failed,
+    and a ``MaterializationFailure`` with stage=filesystem is recorded.
+    The 3rd ``_move_asset`` call is patched to crash; the fixture emits
+    two move-shaped journal entries, so the failure lands on the second
+    one (event_id ``rename_001``)."""
+    _patch_success(monkeypatch)
+    call_count = {"n": 0}
+    original = filesystem_mod._move_asset
+
+    def crashing_move(ctx: filesystem_mod._PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise OSError(2, "No such file or directory")
+        return original(ctx, entry)
+
+    monkeypatch.setattr(filesystem_mod, "_move_asset", crashing_move)
+    # ``_DISPATCH`` captured a direct reference to ``_move_asset`` at module
+    # import; replace both entries so dispatch picks up the crashing shim.
+    monkeypatch.setitem(filesystem_mod._DISPATCH, TimelineActionName.MOVE_ASSET, crashing_move)
+    monkeypatch.setitem(filesystem_mod._DISPATCH, TimelineActionName.RENAME_FILE, crashing_move)
+    out = tmp_path / "run-001"
+    with pytest.raises(FilesystemActionError):
+        materialize_scenario(FIXTURE_DIR / "identity-move-rename.yaml", out)
+    assert not (out / "library").exists()  # library/ wiped on cleanup
+    report = _load_materialization_report(out)
+    assert report.outcome is Outcome.FS_FAILED
+    assert any(f.stage is FailureStage.FILESYSTEM for f in report.failures)
+
+
+def _load_materialization_report(out_dir: Path) -> MaterializationReport:
+    """Load ``materialization.json`` and re-hydrate as a pydantic model.
+
+    ``canonical_json`` strips ``None`` fields (``exclude_none=True``), so
+    the on-disk payload omits ``exit_code`` / ``invocation_index`` for
+    filesystem failures. Backfill them as ``None`` before validating so
+    the round-trip succeeds without forcing the contract to declare
+    defaults for fields that are conceptually required for ffmpeg-stage
+    failures.
+    """
+    payload = json.loads((out_dir / "materialization.json").read_text())
+    for failure in payload.get("failures", []):
+        failure.setdefault("exit_code", None)
+        failure.setdefault("invocation_index", None)
+        failure.setdefault("asset_id", None)
+    return MaterializationReport.model_validate(payload)
 
 
 def test_orchestrator_refuses_unsupported_audio_codec(
@@ -266,7 +345,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 3
+schema_version: 4
 scenario_id: static-test
 seed: 1
 duration_scale: short

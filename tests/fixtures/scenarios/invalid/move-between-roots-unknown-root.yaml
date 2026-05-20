@@ -1,0 +1,33 @@
+# expected: E_ROOT_UNKNOWN
+schema_version: 4
+scenario_id: sc_invalid_root
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies-hd
+      path: library/movies-hd
+works:
+  - id: work_001
+    title: Test Movie
+    variants:
+      - id: variant_001
+        label: hd
+        bundle:
+          id: bundle_001
+          assets:
+            - id: asset_hd_main
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+timeline:
+  - id: ev_mbr_001
+    at: 0ns
+    action: move_between_roots
+    target: asset_hd_main
+    from_root_id: movies-hd
+    to_root_id: missing-root
