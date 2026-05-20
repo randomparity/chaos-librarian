@@ -14,7 +14,7 @@ from typing import Final
 # ``ty`` rejects indirect ``Literal[]`` forms. The test in
 # test_contract_constants.py asserts ``isinstance(v, int)``.
 SCENARIO_SCHEMA_VERSION: Final = 5
-MANIFEST_SCHEMA_VERSION: Final = 3
+MANIFEST_SCHEMA_VERSION: Final = 4
 JOURNAL_SCHEMA_VERSION: Final = 1
 REPLAY_BUNDLE_SCHEMA_VERSION: Final = 5
 VALIDATION_SCHEMA_VERSION: Final = 1

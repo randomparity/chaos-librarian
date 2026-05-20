@@ -86,7 +86,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[],
         variants=[],
         bundles=[],
@@ -189,7 +189,7 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[],
         variants=[],
         bundles=[],

@@ -34,6 +34,10 @@ def test_scenario_schema_version_bumped_to_5():
     assert SCENARIO_SCHEMA_VERSION == 5
 
 
+def test_manifest_schema_version_bumped_to_4():
+    assert MANIFEST_SCHEMA_VERSION == 4
+
+
 def test_replay_bundle_schema_version_bumped_to_5() -> None:
     assert REPLAY_BUNDLE_SCHEMA_VERSION == 5
 

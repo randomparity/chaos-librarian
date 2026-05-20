@@ -108,22 +108,18 @@ class ManifestSidecar(BaseModel):
     asset_id: str
     kind: str
     path: str
-    # Language tag (e.g. "en", "eng", "fr"), required from manifest v3.
-    # Every producer carries one: materializer takes it from the
-    # scenario's subtitle declarations, and the engine's ``create_sidecar``
-    # handler reads ``event.language`` (required from scenario v3). The
-    # ``(asset_id, language)`` pair is the lookup key in
-    # ``_find_sidecar_for`` and replaces a path-substring match that
-    # mis-resolved when two language tags collided as substrings of each
-    # other (e.g. "en"/"eng").
-    language: str
+    # Optional from manifest v4 (Sprint 7): poster / NFO sidecars carry
+    # no language. Subtitle sidecars still always carry one — enforced
+    # at the scenario layer by CreateSidecarEvent.model_validator and at
+    # the materializer layer by per-handler defaults.
+    language: str | None = None
     content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]

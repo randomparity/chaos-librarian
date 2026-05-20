@@ -49,7 +49,7 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 def _success() -> MaterializeArtifacts:
     return MaterializeArtifacts(
         current_manifest=Manifest(
-            schema_version=3,
+            schema_version=4,
             works=[],
             variants=[],
             bundles=[],
