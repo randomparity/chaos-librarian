@@ -263,3 +263,127 @@ class TestRuleLifecycleDuringPendingSlowCopy:
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         assert not any(i.code == codes.E_LIFECYCLE_INVALID for i in collector.issues)
+
+
+class TestRuleLifecycleArchiveFile:
+    """Lifecycle rule covers ``archive_file`` as a path-mutating passthrough.
+
+    WHY: ``archive_file`` keeps the asset placed but moves bytes on disk
+    (location-id swap to the archive root). The engine's handler would
+    KeyError on ``state._asset_to_location`` for an unplaced asset, and a
+    pending ``slow_copy_start`` references the same location id the archive
+    would relocate. Both failure modes belong in validation, not engine.
+    """
+
+    def test_archive_file_on_unplaced_asset_emits(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(
+            timeline=[
+                {"id": "ev_del", "at": "0", "action": "delete_file", "target": "a"},
+                {"id": "ev_arch", "at": "1s", "action": "archive_file", "target": "a"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_LIFECYCLE_INVALID]
+        assert any("archive_file" in i.message and "unplaced" in i.message for i in issues)
+
+    def test_archive_file_keeps_asset_placed(self, minimal_scenario, empty_index) -> None:
+        """archive_file is a passthrough — the asset remains placed afterward."""
+        raw = minimal_scenario(
+            timeline=[
+                {"id": "ev_arch", "at": "0", "action": "archive_file", "target": "a"},
+                {
+                    "id": "ev_move",
+                    "at": "1s",
+                    "action": "move_asset",
+                    "target": "a",
+                    "to": "r/new.mkv",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_LIFECYCLE_INVALID for i in collector.issues)
+
+    def test_archive_file_on_pending_slow_copy_emits(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "r/final.mkv",
+                    "temp_path": "r/temp.mkv",
+                    "duration": "1s",
+                },
+                {"id": "ev_arch", "at": "0", "action": "archive_file", "target": "a"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_LIFECYCLE_INVALID]
+        assert any("archive_file" in i.message and "pending slow_copy" in i.message for i in issues)
+
+
+class TestRuleLifecycleMoveBetweenRoots:
+    """Lifecycle rule covers ``move_between_roots`` as a path-mutating passthrough.
+
+    WHY: parallel to ``archive_file`` — the engine relocates bytes between
+    two roots, so an unplaced target or a pending ``slow_copy`` would crash
+    the handler. Validation rejects both upfront with E_LIFECYCLE_INVALID.
+    """
+
+    def test_move_between_roots_on_unplaced_asset_emits(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            library={"roots": [{"id": "r", "path": "r"}, {"id": "r2", "path": "r2"}]},
+            timeline=[
+                {"id": "ev_del", "at": "0", "action": "delete_file", "target": "a"},
+                {
+                    "id": "ev_mbr",
+                    "at": "1s",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "r",
+                    "to_root_id": "r2",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_LIFECYCLE_INVALID]
+        assert any("move_between_roots" in i.message and "unplaced" in i.message for i in issues)
+
+    def test_move_between_roots_on_pending_slow_copy_emits(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            library={"roots": [{"id": "r", "path": "r"}, {"id": "r2", "path": "r2"}]},
+            timeline=[
+                {
+                    "id": "scs",
+                    "at": "0",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "r/final.mkv",
+                    "temp_path": "r/temp.mkv",
+                    "duration": "1s",
+                },
+                {
+                    "id": "ev_mbr",
+                    "at": "0",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "r",
+                    "to_root_id": "r2",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_LIFECYCLE_INVALID]
+        assert any(
+            "move_between_roots" in i.message and "pending slow_copy" in i.message for i in issues
+        )

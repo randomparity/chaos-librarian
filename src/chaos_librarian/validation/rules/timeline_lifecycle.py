@@ -41,6 +41,17 @@ _LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.REENCODE_VIDEO,
         TimelineActionName.REENCODE_AUDIO,
         TimelineActionName.CREATE_SIDECAR,
+        TimelineActionName.ARCHIVE_FILE,
+        TimelineActionName.MOVE_BETWEEN_ROOTS,
+    }
+)
+# Subset of the passthrough set that mutates the on-disk path. These keep the
+# asset placed but relocate bytes, so they also reject while a slow_copy is
+# pending — same guard the mutation set already applies to move/rename/delete.
+_PATH_MUTATING_PASSTHROUGH: frozenset[str] = frozenset(
+    {
+        TimelineActionName.ARCHIVE_FILE,
+        TimelineActionName.MOVE_BETWEEN_ROOTS,
     }
 )
 
@@ -153,6 +164,8 @@ def _lifecycle_check_passthrough(
 ) -> None:
     if target not in state.placed:
         emit(message=f"{action} on unplaced asset {target!r}", loc=loc)
+    if action in _PATH_MUTATING_PASSTHROUGH and target in state.assets_with_pending_copy:
+        emit(message=f"{action} on asset {target!r} with a pending slow_copy", loc=loc)
 
 
 def _lifecycle_check_slow_copy_start(
