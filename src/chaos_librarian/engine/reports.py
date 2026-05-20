@@ -32,6 +32,7 @@ from chaos_librarian.contract.reports import (
     VariantReport,
     WorkReport,
 )
+from chaos_librarian.engine.path_history import derive_path_history
 from chaos_librarian.errors import ChaosLibrarianValueError
 
 
@@ -142,6 +143,7 @@ def _build_asset_report(
         initial=initial_snapshot,
         history=history,
         current=_snapshot_for(asset_id, current),
+        path_history=derive_path_history(asset_id, journal),
     )
 
 
