@@ -26,10 +26,14 @@ from chaos_librarian.contract.scenario import (
     SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
+    TimelineActionName,
     VideoSource,
     VideoTrack,
 )
-from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.errors import (
+    TimelineUnsupportedError,
+    UnsupportedMaterializationError,
+)
 from chaos_librarian.materializer.ffmpeg import build_command
 from chaos_librarian.materializer.recipes import (
     FFmpegInput,
@@ -45,9 +49,11 @@ __all__ = [
     "AUDIO_RECIPES",
     "FPS_DEFAULT",
     "RESOLUTION_PIXELS",
+    "SUPPORTED_S6_ACTIONS",
     "VIDEO_RECIPES",
     "iter_assets",
     "preflight_asset",
+    "preflight_timeline",
 ]
 
 
@@ -151,4 +157,40 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
                 f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",
                 payload={"supported": ["sidecar"]},
+            )
+
+
+SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.MOVE_ASSET,
+        TimelineActionName.RENAME_FILE,
+        TimelineActionName.DELETE_FILE,
+        TimelineActionName.CREATE_SIDECAR,
+        TimelineActionName.SLOW_COPY_START,
+        TimelineActionName.SLOW_COPY_COMMIT,
+        TimelineActionName.ARCHIVE_FILE,
+        TimelineActionName.MOVE_BETWEEN_ROOTS,
+    }
+)
+# add_file is intentionally excluded; preflight rejects it with
+# E_MATERIALIZE_TIMELINE_UNSUPPORTED (deferred to Sprint 7 alongside
+# recipe-driven byte synthesis).
+
+
+def preflight_timeline(scenario: Scenario) -> None:
+    """Reject any timeline event whose action is outside SUPPORTED_S6_ACTIONS.
+
+    Raised before phase A so the matrix-rejection contract (no run-dir
+    allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
+    """
+    for index, event in enumerate(scenario.timeline):
+        if event.action not in SUPPORTED_S6_ACTIONS:
+            raise TimelineUnsupportedError(
+                f"timeline action {event.action.value!r} not supported in Sprint 6",
+                field=f"timeline[{index}].action",
+                payload={
+                    "event_id": event.id,
+                    "action": event.action.value,
+                    "supported": sorted(a.value for a in SUPPORTED_S6_ACTIONS),
+                },
             )
