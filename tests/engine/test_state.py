@@ -19,7 +19,7 @@ def _scenario_from_dict(data: dict[str, object]) -> Scenario:
 def _minimal_scenario() -> Scenario:
     return _scenario_from_dict(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario_id": "min",
             "seed": 1,
             "duration_scale": "short",
@@ -91,7 +91,7 @@ class TestBuildInitialState:
     def test_two_assets_get_independent_locations(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "scenario_id": "two",
                 "seed": 1,
                 "duration_scale": "short",
@@ -166,7 +166,7 @@ class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
 
     def test_asset_id_traversal_rejected_by_validation(self) -> None:
         yaml_bytes = b"""\
-schema_version: 4
+schema_version: 5
 scenario_id: unsafe-id
 seed: 1
 duration_scale: short

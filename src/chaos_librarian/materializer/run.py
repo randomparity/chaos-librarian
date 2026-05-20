@@ -21,7 +21,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinelState
-from chaos_librarian.contract.scenario import CreateSidecarEvent, Scenario
+from chaos_librarian.contract.scenario import CreateSidecarEvent, Scenario, SidecarKind
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.capabilities import (
@@ -195,5 +195,12 @@ def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]
     for event in scenario.timeline:
         if not isinstance(event, CreateSidecarEvent):
             continue
+        # Sprint 7 widens CreateSidecarEvent.language to ``str | None`` for
+        # poster/NFO kinds; only subtitle kinds participate in declared-
+        # subtitle override tracking, and the model_validator guarantees
+        # subtitle => language is not None.
+        if event.kind is not SidecarKind.SUBTITLE:
+            continue
+        assert event.language is not None
         per_asset.setdefault(event.target, set()).add(event.language)
     return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}

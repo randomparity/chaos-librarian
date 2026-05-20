@@ -60,7 +60,7 @@ def minimal_scenario() -> ScenarioBuilder:
         **overrides: object,
     ) -> dict[str, object]:
         base: dict[str, object] = {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",

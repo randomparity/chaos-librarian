@@ -294,9 +294,13 @@ def _handle_create_sidecar(
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, CreateSidecarEvent)
+    # Sprint 7 widens CreateSidecarEvent.language to ``str | None`` so
+    # poster/NFO kinds can omit it. The engine still only handles subtitle
+    # kinds (Sprint 7 Task 2 widens ManifestSidecar to match); for now,
+    # narrow at the call site. The contract-level model_validator
+    # guarantees subtitle => language is not None.
+    assert event.language is not None, "CreateSidecarEvent of kind=subtitle requires language"
     sidecar_id = ids.next_sidecar_id()
-    # V1: every sidecar is a subtitle file; future kinds (chapters, fanart)
-    # will branch here.
     sidecar = ManifestSidecar(
         id=sidecar_id,
         asset_id=event.target,

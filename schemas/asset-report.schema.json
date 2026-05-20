@@ -317,7 +317,13 @@
         "slow_copy_start",
         "slow_copy_commit",
         "archive_file",
-        "move_between_roots"
+        "move_between_roots",
+        "remux_container",
+        "edit_metadata",
+        "embed_subtitle",
+        "extract_subtitle",
+        "remove_sidecar",
+        "update_sidecar"
       ],
       "title": "TimelineActionName",
       "type": "string"

@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 scenario_id: mixed-supported-unsupported
 seed: 11
 duration_scale: short

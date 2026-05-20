@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 from typing import Annotated, Final, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
 
 class TimelineActionName(enum.StrEnum):
@@ -32,6 +32,12 @@ class TimelineActionName(enum.StrEnum):
     SLOW_COPY_COMMIT = "slow_copy_commit"
     ARCHIVE_FILE = "archive_file"
     MOVE_BETWEEN_ROOTS = "move_between_roots"
+    REMUX_CONTAINER = "remux_container"
+    EDIT_METADATA = "edit_metadata"
+    EMBED_SUBTITLE = "embed_subtitle"
+    EXTRACT_SUBTITLE = "extract_subtitle"
+    REMOVE_SIDECAR = "remove_sidecar"
+    UPDATE_SIDECAR = "update_sidecar"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -73,6 +79,17 @@ class SubtitleSource(enum.StrEnum):
     """Synthesis recipe for a subtitle track."""
 
     GENERATED_SRT = "generated_srt"
+
+
+class SidecarKind(enum.StrEnum):
+    """Kind of a sidecar — extends Sprint 6's subtitle-only assumption.
+
+    Subtitle requires ``language``; poster and NFO forbid it.
+    """
+
+    SUBTITLE = "subtitle"
+    POSTER = "poster"
+    NFO = "nfo"
 
 
 # ---- Library ----------------------------------------------------------------
@@ -209,11 +226,19 @@ class CreateSidecarEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.CREATE_SIDECAR] = TimelineActionName.CREATE_SIDECAR
     target: str
     to: str
-    # Required from scenario v3 (manifest v3 keys ManifestSidecar lookups on
-    # ``(asset_id, language)``). Engine writes this onto the
-    # ``ManifestSidecar`` row so plan-only consumers can resolve the row by
-    # the same key materialized rows use.
-    language: str
+    # Widened in scenario v5: poster/NFO sidecars have no language. The
+    # model_validator below enforces (kind=subtitle, language=...) /
+    # (kind in {poster, nfo}, language=None).
+    language: str | None = None
+    kind: SidecarKind = SidecarKind.SUBTITLE
+
+    @model_validator(mode="after")
+    def _check_language_matches_kind(self) -> CreateSidecarEvent:
+        if self.kind == SidecarKind.SUBTITLE and self.language is None:
+            raise ValueError("subtitle sidecar requires language")
+        if self.kind != SidecarKind.SUBTITLE and self.language is not None:
+            raise ValueError(f"{self.kind.value} sidecar forbids language")
+        return self
 
 
 class SlowCopyStartEvent(_TimelineEventBase):
@@ -247,6 +272,60 @@ class MoveBetweenRootsEvent(_TimelineEventBase):
     to_root_id: str
 
 
+class RemuxContainerEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.REMUX_CONTAINER] = TimelineActionName.REMUX_CONTAINER
+    target: str
+    # "mp4" / "mkv" / "webm" — engine rewrites the path extension;
+    # materializer runs ffmpeg -c copy.
+    to_container: str
+
+
+class EditMetadataEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.EDIT_METADATA] = TimelineActionName.EDIT_METADATA
+    target: str
+    # Opaque key=value pairs; materializer maps each to ffmpeg -metadata.
+    # Empty dict rejected here.
+    fields: dict[str, str]
+
+    @model_validator(mode="after")
+    def _check_fields_non_empty(self) -> EditMetadataEvent:
+        if not self.fields:
+            raise ValueError("edit_metadata.fields must be a non-empty mapping")
+        return self
+
+
+class EmbedSubtitleEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.EMBED_SUBTITLE] = TimelineActionName.EMBED_SUBTITLE
+    target: str
+    # For a DECLARED subtitle, use ``"<asset_id>.<language>.srt"`` (see
+    # Sprint 7 spec §"Declared-sidecar path convention"). For a sidecar
+    # created by ``create_sidecar``, use that event's ``to:`` path.
+    sidecar_path: str
+
+
+class ExtractSubtitleEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.EXTRACT_SUBTITLE] = TimelineActionName.EXTRACT_SUBTITLE
+    target: str
+    to: str
+    language: str
+    # Embedded-track selection: extract the first subtitle track of the
+    # asset whose language matches. If no language match, falls back to
+    # the first subtitle track. Validator rejects if asset has no
+    # subtitle track via E_EXTRACT_TRACK_UNKNOWN.
+
+
+class RemoveSidecarEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.REMOVE_SIDECAR] = TimelineActionName.REMOVE_SIDECAR
+    target: str
+    sidecar_path: str
+
+
+class UpdateSidecarEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.UPDATE_SIDECAR] = TimelineActionName.UPDATE_SIDECAR
+    target: str
+    sidecar_path: str
+
+
 TimelineEvent = Annotated[
     MoveAssetEvent
     | RenameFileEvent
@@ -258,7 +337,13 @@ TimelineEvent = Annotated[
     | SlowCopyStartEvent
     | SlowCopyCommitEvent
     | ArchiveFileEvent
-    | MoveBetweenRootsEvent,
+    | MoveBetweenRootsEvent
+    | RemuxContainerEvent
+    | EditMetadataEvent
+    | EmbedSubtitleEvent
+    | ExtractSubtitleEvent
+    | RemoveSidecarEvent
+    | UpdateSidecarEvent,
     Field(discriminator="action"),
 ]
 
@@ -270,7 +355,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
