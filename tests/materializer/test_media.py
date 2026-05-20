@@ -2,11 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import uuid
+from pathlib import Path
+
 import pytest
 
+from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
+from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.materialization import ToolInvocation
+from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.media import (
     _MediaContext,
     _subtitle_codec_for_container,
+    apply_media_action,
 )
 
 
@@ -49,3 +59,163 @@ def test_media_context_construction(tmp_path):
     assert ctx.library_root == tmp_path
     assert ctx.resolved_seed == 42
     assert ctx.post_phase_b_versions == {}
+
+
+def _atomic_entry(
+    *,
+    event_id,
+    action,
+    target,
+    state_delta,
+    input_version_ids=None,
+    output_version_ids=None,
+):
+    return AtomicJournalEntry(
+        schema_version=1,
+        event_id=event_id,
+        scenario_id="sc",
+        run_id=uuid.UUID("12345678-1234-5678-1234-567812345678"),
+        logical_time_ns=0,
+        action=action.value,
+        target_ids=[target],
+        input_version_ids=input_version_ids or [],
+        output_version_ids=output_version_ids or [],
+        location_ids=[],
+        state_delta=state_delta,
+        phase=JournalPhase.ATOMIC,
+    )
+
+
+@pytest.fixture
+def media_ctx(tmp_path):
+    return _MediaContext(
+        library_root=tmp_path,
+        scenario_assets={},
+        resolved_seed=42,
+        ffmpeg_version="7.0",
+        ffprobe_version="7.0",
+    )
+
+
+def _stub_ffmpeg_writes(monkeypatch, *, stub_bytes=b"x" * 100, exit_code=0):
+    """Mock run_ffmpeg + probe_file: write stub bytes; return canned ProbedMedia."""
+
+    def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+        # The output path is the LAST positional argv element.
+        Path(argv[-1]).write_bytes(stub_bytes)
+        invocation = ToolInvocation(
+            tool="ffmpeg",
+            version=ffmpeg_version,
+            command=list(argv),
+            exit_code=exit_code,
+            duration_ns=1000,
+        )
+        return invocation, ""
+
+    def fake_probe(path, **_kwargs):
+        return ProbedMedia(
+            container="matroska",
+            duration_seconds=1.0,
+            size_bytes=len(stub_bytes),
+            streams=[],
+        )
+
+    monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+    monkeypatch.setattr("chaos_librarian.materializer.media.probe_file", fake_probe)
+
+
+class TestApplyReencodeVideo:
+    def test_apply_reencode_video_writes_output_and_returns_media_action(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"x" * 100)
+        entry = _atomic_entry(
+            event_id="ev_rv_001",
+            action=TimelineActionName.REENCODE_VIDEO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "resolution": "sd",
+                "codec": "h264",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        result = apply_media_action(media_ctx, entry)
+        assert (tmp_path / "x.mkv").read_bytes() == b"x" * 100
+        expected_hash = "sha256:" + hashlib.sha256(b"x" * 100).hexdigest()
+        assert result.output_content_hash == expected_hash
+        assert result.action == TimelineActionName.REENCODE_VIDEO
+        assert result.output_version_id == "v1"
+        assert media_ctx.post_phase_b_versions["v1"][0] == expected_hash
+
+    def test_apply_reencode_video_uses_temp_sibling_for_atomic_write(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured_argv: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv.append(list(argv))
+            Path(argv[-1]).write_bytes(b"x" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_rv_001",
+            action=TimelineActionName.REENCODE_VIDEO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "resolution": "sd",
+                "codec": "h264",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        # The ffmpeg argv's output path should be a temp sibling like
+        # x.mkv.tmp.42 (resolved_seed=42 from the fixture).
+        output_arg = captured_argv[0][-1]
+        assert ".tmp." in output_arg
+
+    def test_apply_reencode_video_nonzero_exit_wraps_in_media_action_error(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, exit_code=1)
+        entry = _atomic_entry(
+            event_id="ev_rv_001",
+            action=TimelineActionName.REENCODE_VIDEO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "resolution": "sd",
+                "codec": "h264",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(media_ctx, entry)
+        assert exc_info.value.event_id == "ev_rv_001"
+        assert exc_info.value.action == TimelineActionName.REENCODE_VIDEO
