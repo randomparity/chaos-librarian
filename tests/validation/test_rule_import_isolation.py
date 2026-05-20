@@ -20,18 +20,7 @@ import importlib
 
 import pytest
 
-RULE_MODULES = [
-    "asset_path_safety",
-    "duration_syntax",
-    "id_duplicate",
-    "path_containment",
-    "path_duplicate",
-    "sidecar_language",
-    "slow_copy",
-    "target_unknown",
-    "timeline_lifecycle",
-    "timeline_order",
-]
+from tests.validation.rule_modules import RULE_MODULES
 
 
 @pytest.mark.parametrize("module_name", RULE_MODULES)
