@@ -131,3 +131,21 @@ def test_filesystem_action_error_carries_event_id_action_errno() -> None:
     assert err.payload["event_id"] == "move_001"
     assert err.payload["action"] == "move_asset"
     assert err.payload["errno"] == 2
+
+
+def test_filesystem_action_error_accepts_non_oserror_cause() -> None:
+    """WHY: the dispatcher widened its trap from ``OSError`` to ``Exception``
+    so contract-drift bugs (KeyError from scenario_assets lookup, AssertionError
+    from a malformed journal entry) still route through cleanup + exit 5
+    instead of escaping unwrapped. Non-OSError causes carry ``errno=None``."""
+    cause = KeyError("asset_does_not_exist")
+    err = FilesystemActionError(
+        "create_sidecar failed for event cs_unknown",
+        event_id="cs_unknown",
+        cause=cause,
+        action=TimelineActionName.CREATE_SIDECAR,
+        asset_id="asset_does_not_exist",
+    )
+    assert err.cause is cause
+    assert err.payload["errno"] is None
+    assert err.payload["action"] == "create_sidecar"

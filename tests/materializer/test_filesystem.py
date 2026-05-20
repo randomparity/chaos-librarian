@@ -402,6 +402,44 @@ def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None
     assert sidecar_hashes == {}
 
 
+def test_apply_non_oserror_also_wraps_into_filesystem_action_error(tmp_path: Path) -> None:
+    """WHY: handlers can raise non-OSError on contract drift -- e.g. an
+    asset_id missing from scenario_assets surfaces as KeyError, an
+    unexpected related_event_id surfaces as KeyError too. The dispatcher
+    must wrap any handler exception into FilesystemActionError so the CLI
+    still produces a structured exit-5 payload (errno=None because there
+    is no underlying syscall errno). Otherwise the bare KeyError escapes
+    the cleanup path and library/ stays partially populated."""
+    library = tmp_path / "library"
+    library.mkdir()
+    journal = [
+        _atomic_entry(
+            event_id="cs_unknown",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="asset_does_not_exist",
+            state_delta={
+                "sidecar_path": "movies-hd/asset_does_not_exist.en.srt",
+                "sidecar_id": "sidecar_0001",
+                "language": "en",
+            },
+        )
+    ]
+    with pytest.raises(FilesystemActionError) as exc_info:
+        apply_phase_b(
+            library_root=library,
+            journal=journal,
+            scenario=_scenario(),
+            resolved_seed=1234,
+        )
+    err = exc_info.value
+    assert err.event_id == "cs_unknown"
+    assert err.action is TimelineActionName.CREATE_SIDECAR
+    assert err.asset_id == "asset_does_not_exist"
+    assert err.payload["errno"] is None
+    assert err.payload["action"] == "create_sidecar"
+    assert err.payload["event_id"] == "cs_unknown"
+
+
 def test_apply_oserror_wraps_into_filesystem_action_error(tmp_path: Path) -> None:
     """WHY: any OSError from a phase-B helper must surface as a typed
     FilesystemActionError carrying the originating event_id, action, and

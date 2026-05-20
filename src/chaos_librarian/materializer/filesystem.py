@@ -13,8 +13,9 @@ the walk: ``pending_slow_copy`` (start->commit bookkeeping),
 its source path from ``entry.state_delta`` -- the journal is the truth
 source -- so there is no cached path-tracking map.
 
-Raises ``FilesystemActionError`` on the first ``OSError`` so the
-orchestrator can route through ``cleanup_failed_run``.
+Raises ``FilesystemActionError`` on the first handler exception (any
+``Exception``, not just ``OSError``) so the orchestrator can route
+through ``cleanup_failed_run``.
 """
 
 from __future__ import annotations
@@ -123,7 +124,11 @@ def _dispatch_one(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction 
     started = time.monotonic_ns()
     try:
         result = handler(ctx, entry)
-    except OSError as exc:
+    except Exception as exc:
+        # Widened from OSError so contract-drift bugs (e.g. KeyError from a
+        # handler reading scenario_assets, or _slow_copy_commit's
+        # ``assert isinstance``) still route through cleanup + exit 5
+        # instead of escaping the dispatcher unwrapped.
         target_asset = entry.target_ids[0] if entry.target_ids else None
         raise FilesystemActionError(
             f"{entry.action} failed for event {entry.event_id}: {exc}",

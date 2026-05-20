@@ -79,7 +79,15 @@ class ProbeParseError(MaterializationError):
 
 
 class FilesystemActionError(MaterializationError):
-    """A phase-B helper raised OSError; library/ must be wiped."""
+    """A phase-B helper raised; library/ must be wiped.
+
+    ``cause`` is typed ``BaseException`` rather than ``OSError`` so the
+    dispatcher can wrap contract-drift bugs (e.g. ``KeyError`` from a
+    handler looking up an asset that isn't in the scenario) into the
+    same structured exit-5 payload the CLI emits for syscall failures.
+    ``errno`` is populated only when ``cause`` is an ``OSError``; for
+    non-OSError causes it is ``None``.
+    """
 
     error_code: str = "E_MATERIALIZE_FS_FAILED"
 
@@ -88,7 +96,7 @@ class FilesystemActionError(MaterializationError):
         message: str,
         *,
         event_id: str,
-        cause: OSError,
+        cause: BaseException,
         action: TimelineActionName,
         asset_id: str | None = None,
         field: str | None = None,
@@ -97,7 +105,7 @@ class FilesystemActionError(MaterializationError):
         merged_payload: dict[str, object] = dict(payload or {})
         merged_payload.setdefault("event_id", event_id)
         merged_payload.setdefault("action", action.value)
-        merged_payload.setdefault("errno", cause.errno)
+        merged_payload.setdefault("errno", cause.errno if isinstance(cause, OSError) else None)
         super().__init__(message, asset_id=asset_id, field=field, payload=merged_payload)
         self.event_id = event_id
         self.cause = cause
