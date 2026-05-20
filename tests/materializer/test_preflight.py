@@ -1,10 +1,10 @@
 """Tests for the materializer preflight gate.
 
-Sprint 6 narrows the timeline-action gate from Sprint 5's "any timeline
-rejected" semantic to an action-set gate: the eight Sprint 6 actions are
-allowed, ``add_file`` (Sprint 7) and the media-mutation actions
-(``reencode_*``) still raise ``TimelineUnsupportedError`` with code
-``E_MATERIALIZE_TIMELINE_UNSUPPORTED`` before phase A allocates a run-dir.
+Sprint 6 introduced the action-set gate over the eight stdlib actions.
+Sprint 7 widens it to ``SUPPORTED_S7_ACTIONS`` (stdlib + remove_sidecar +
+the six media handlers); only ``add_file`` still raises
+``TimelineUnsupportedError`` with code ``E_MATERIALIZE_TIMELINE_UNSUPPORTED``
+before phase A allocates a run-dir.
 """
 
 from __future__ import annotations
@@ -115,18 +115,6 @@ def test_preflight_timeline_rejects_add_file() -> None:
     assert "add_file" not in supported
 
 
-def test_preflight_timeline_rejects_reencode_video() -> None:
-    """WHY: media-mutation actions remain unsupported in Sprint 6 and the
-    matrix-rejection contract applies uniformly across them."""
-    scenario = _scenario_with_timeline(
-        [
-            ("reencode_video", "asset_hd_main", {"resolution": "sd", "codec": "h264"}),
-        ]
-    )
-    with pytest.raises(TimelineUnsupportedError):
-        preflight_timeline(scenario)
-
-
 def test_preflight_timeline_empty_timeline_accepted() -> None:
     """WHY: static scenarios remain valid materialize targets in Sprint 6;
     the action-set gate is a no-op when there are no events."""
@@ -143,3 +131,24 @@ def test_supported_s6_actions_excludes_add_file_and_reencodes() -> None:
     assert "reencode_video" not in supported_values
     assert "reencode_audio" not in supported_values
     assert len(SUPPORTED_S6_ACTIONS) == 8
+
+
+@pytest.mark.parametrize(
+    ("action_name", "extra_fields"),
+    [
+        ("remux_container", {"to_container": "mp4"}),
+        ("edit_metadata", {"fields": {"k": "v"}}),
+        ("embed_subtitle", {"sidecar_path": "a0.eng.srt"}),
+        ("extract_subtitle", {"to": "a0.fra.srt", "language": "fra"}),
+        ("remove_sidecar", {"sidecar_path": "a0.eng.srt"}),
+        ("update_sidecar", {"sidecar_path": "a0.eng.srt"}),
+    ],
+)
+def test_preflight_timeline_accepts_sprint_7_actions(
+    action_name: str, extra_fields: dict[str, object]
+) -> None:
+    """WHY: Sprint 7 widens the gate to allow the six new media/sidecar
+    actions; preflight must let each one through so phase B's media and
+    stdlib dispatchers can execute it."""
+    scenario = _scenario_with_timeline([(action_name, "asset_hd_main", extra_fields)])
+    preflight_timeline(scenario)  # should not raise

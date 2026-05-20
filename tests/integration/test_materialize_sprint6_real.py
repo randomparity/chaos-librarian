@@ -339,5 +339,5 @@ def test_mixed_supported_unsupported_action_rejected(tmp_path: Path) -> None:
     with pytest.raises(TimelineUnsupportedError) as exc_info:
         materialize_scenario(FIXTURE_DIR / "mixed-supported-unsupported.yaml", out_dir)
     assert exc_info.value.error_code == "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
-    assert exc_info.value.payload["action"] == "reencode_video"
+    assert exc_info.value.payload["action"] == "add_file"
     assert not out_dir.exists()
