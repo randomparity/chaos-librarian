@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
@@ -285,11 +285,84 @@ def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaActi
     )
 
 
+def _apply_edit_metadata(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """ffmpeg ``-c copy -map_metadata 0 -metadata k=v ...``.
+
+    In-place edit (``input_path == output_path``). The ``fields`` dict
+    on the journal state_delta is sorted before being emitted so the
+    resulting argv (and therefore the ToolInvocation.command) is
+    deterministic across runs with otherwise-equal inputs.
+    """
+    delta = entry.state_delta
+    input_path = ctx.library_root / str(delta["input_path"])
+    output_path = ctx.library_root / str(delta["output_path"])
+    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    fields = delta["fields"]
+    if not isinstance(fields, dict):
+        raise MediaActionError(
+            f"edit_metadata.fields not a dict for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EDIT_METADATA,
+            cause=TypeError(f"fields type {type(fields).__name__}"),
+        )
+    fields_map = cast(dict[str, str], fields)
+    metadata_args: list[str] = []
+    for key, value in sorted(fields_map.items()):
+        metadata_args.extend(["-metadata", f"{key}={value}"])
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c",
+        "copy",
+        "-map_metadata",
+        "0",
+        *metadata_args,
+        *BITEXACT_FLAGS,
+        str(temp_output),
+    ]
+    started = time.monotonic_ns()
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"edit_metadata failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EDIT_METADATA,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+            tool_invocation_index=invocation_index,
+        )
+    temp_output.replace(output_path)
+    new_hash = _hash_file(output_path)
+    probed = probe_file(output_path)
+    new_version_id = entry.output_version_ids[0]
+    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.EDIT_METADATA,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["output_path"]),
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=new_version_id,
+        output_sidecar_id=None,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
     TimelineActionName.REENCODE_AUDIO: _apply_reencode_audio,
     TimelineActionName.REMUX_CONTAINER: _apply_remux_container,
+    TimelineActionName.EDIT_METADATA: _apply_edit_metadata,
 }
 
 

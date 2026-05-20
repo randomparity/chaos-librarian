@@ -357,3 +357,48 @@ class TestApplyRemuxContainer:
         argv = captured[0]
         assert "-c" in argv
         assert argv[argv.index("-c") + 1] == "copy"
+
+
+class TestApplyEditMetadata:
+    def test_apply_edit_metadata_argv_passes_each_field(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"m" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_em_001",
+            action=TimelineActionName.EDIT_METADATA,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "fields": {"title": "Pulsar", "year": "2026"},
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        # Each field must appear as -metadata key=value
+        assert "title=Pulsar" in argv
+        assert "year=2026" in argv
