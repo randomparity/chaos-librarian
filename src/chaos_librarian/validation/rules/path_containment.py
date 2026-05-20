@@ -15,13 +15,14 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_list,
     _as_mapping,
     _iter_timeline_events,
     _list_at_path,
     _Loc,
     _RawMapping,
     iter_assets_with_loc,
+    iter_declared_roots,
+    primary_root_path,
 )
 
 if TYPE_CHECKING:
@@ -99,7 +100,9 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
     must run the synthesized path through containment so an escape via
     library config is caught at validate-time, not at materialize-time.
     """
-    declared_roots = _declared_root_paths(raw)
+    declared_roots = {
+        root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
+    }
     archive_base = _archive_base_path(raw, declared_roots)
     asset_containers = _asset_containers(raw)
 
@@ -167,21 +170,6 @@ def _check_move_between_roots(
     _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
 
 
-def _declared_root_paths(raw: _RawMapping) -> dict[str, str]:
-    """Return ``{root_id: path}`` for every well-shaped declared root."""
-    declared: dict[str, str] = {}
-    roots = _list_at_path(raw, ("library", "roots")) or []
-    for root_obj in roots:
-        root = _as_mapping(root_obj)
-        if root is None:
-            continue
-        root_id = root.get("id")
-        path = root.get("path")
-        if isinstance(root_id, str) and isinstance(path, str):
-            declared[root_id] = path
-    return declared
-
-
 def _archive_base_path(
     raw: _RawMapping,
     declared_roots: Mapping[str, str],
@@ -194,7 +182,7 @@ def _archive_base_path(
     is malformed enough to defeat the lookup — the shape pass (or
     ``rule_root_unknown``) owns those error reports.
     """
-    primary_path = _primary_root_path(raw)
+    primary_path = primary_root_path(raw)
     if primary_path is None:
         return None
     library = _as_mapping(raw.get("library"))
@@ -204,21 +192,6 @@ def _archive_base_path(
     if isinstance(archive_root, str):
         return declared_roots.get(archive_root)
     return None
-
-
-def _primary_root_path(raw: _RawMapping) -> str | None:
-    """Return ``library.roots[0].path`` if well-shaped, else ``None``."""
-    library = _as_mapping(raw.get("library"))
-    if library is None:
-        return None
-    roots = _as_list(library.get("roots"))
-    if not roots:
-        return None
-    primary = _as_mapping(roots[0])
-    if primary is None:
-        return None
-    primary_path = primary.get("path")
-    return primary_path if isinstance(primary_path, str) else None
 
 
 def _asset_containers(raw: _RawMapping) -> dict[str, str]:
