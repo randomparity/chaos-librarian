@@ -183,6 +183,29 @@ def _delete_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     )
 
 
+def _remove_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+    """Unlink the sidecar at ``state_delta['removed_sidecar_path']``.
+
+    Routed through phase B (not media.py) because there is no ffmpeg
+    work -- the manifest sidecar row is removed by the engine, the file
+    is removed here. Mirrors ``_delete_file``'s shape so consumers can
+    read ``from_path`` for the removed path and treat ``to_path=None``
+    as the audit-log signal that the inode is gone.
+    """
+    asset_id = entry.target_ids[0]
+    removed_path = str(entry.state_delta["removed_sidecar_path"])
+    (ctx.library_root / removed_path).unlink()
+    return FilesystemAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.REMOVE_SIDECAR,
+        target_asset_id=asset_id,
+        from_path=removed_path,
+        to_path=None,
+        temp_path=None,
+        duration_ns=0,
+    )
+
+
 def _create_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Write a deterministic SRT sidecar; remember its sha256 by sidecar id."""
     asset_id = entry.target_ids[0]
@@ -269,6 +292,7 @@ _DISPATCH: Final[
     TimelineActionName.RENAME_FILE: _move_asset,
     TimelineActionName.DELETE_FILE: _delete_file,
     TimelineActionName.CREATE_SIDECAR: _create_sidecar,
+    TimelineActionName.REMOVE_SIDECAR: _remove_sidecar,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _move_asset,

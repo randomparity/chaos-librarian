@@ -378,6 +378,41 @@ def test_apply_slow_copy_commit_unlinks_initial_when_different_from_final(
     assert not (library / "movies-hd" / "asset_hd_main.mkv.partial").exists()
 
 
+def test_apply_remove_sidecar_unlinks_file_and_returns_action(tmp_path: Path) -> None:
+    """WHY: remove_sidecar unlinks the sidecar at removed_sidecar_path; the
+    emitted FilesystemAction carries from_path (the removed path) and a
+    null to_path so the audit log preserves what was lost -- mirroring
+    delete_file's contract for the sidecar case. The materializer routes
+    this here (not media.py) because no ffmpeg work is required."""
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    sidecar = library / "movies-hd" / "asset_hd_main.en.srt"
+    sidecar.write_bytes(b"x")
+    journal = [
+        _atomic_entry(
+            event_id="rs_001",
+            action=TimelineActionName.REMOVE_SIDECAR,
+            target="asset_hd_main",
+            state_delta={
+                "removed_sidecar_id": "sidecar_0001",
+                "removed_sidecar_path": "movies-hd/asset_hd_main.en.srt",
+            },
+        )
+    ]
+    actions, _ = apply_phase_b(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+    assert not sidecar.exists()
+    assert len(actions) == 1
+    assert actions[0].action is TimelineActionName.REMOVE_SIDECAR
+    assert actions[0].from_path == "movies-hd/asset_hd_main.en.srt"
+    assert actions[0].to_path is None
+    assert actions[0].temp_path is None
+
+
 def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None:
     """WHY: Sprint 6 preflight already rejects unsupported actions, but
     the dispatcher must not crash if a future engine-only action (e.g. a
