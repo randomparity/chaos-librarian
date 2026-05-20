@@ -4,10 +4,76 @@
       "description": "Subprocess stage that produced a MaterializationFailure.",
       "enum": [
         "ffmpeg",
-        "ffprobe"
+        "ffprobe",
+        "filesystem"
       ],
       "title": "FailureStage",
       "type": "string"
+    },
+    "FilesystemAction": {
+      "additionalProperties": false,
+      "description": "One phase-B filesystem operation audit record.\n\nMirrors ``ToolInvocation``'s role for subprocesses: one record per\njournal entry that produced a real disk change.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/TimelineActionName"
+        },
+        "duration_ns": {
+          "title": "Duration Ns",
+          "type": "integer"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "from_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Path"
+        },
+        "target_asset_id": {
+          "title": "Target Asset Id",
+          "type": "string"
+        },
+        "temp_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Path"
+        },
+        "to_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Path"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "target_asset_id",
+        "duration_ns"
+      ],
+      "title": "FilesystemAction",
+      "type": "object"
     },
     "MaterializationFailure": {
       "additionalProperties": false,
@@ -111,9 +177,28 @@
         "unsupported",
         "tool_failed",
         "tool_missing",
-        "containment_violation"
+        "containment_violation",
+        "fs_failed"
       ],
       "title": "Outcome",
+      "type": "string"
+    },
+    "TimelineActionName": {
+      "description": "All valid ``action:`` values for a timeline event.\n\nThis is the single source of truth: discriminator literals on the\nvariant classes below, the JSONPath formatter in ``validation.codes``,\nand the per-action path-field map in ``validation.semantic`` all\nreference these members instead of bare strings.",
+      "enum": [
+        "move_asset",
+        "rename_file",
+        "delete_file",
+        "add_file",
+        "reencode_video",
+        "reencode_audio",
+        "create_sidecar",
+        "slow_copy_start",
+        "slow_copy_commit",
+        "archive_file",
+        "move_between_roots"
+      ],
+      "title": "TimelineActionName",
       "type": "string"
     },
     "ToolInvocation": {
@@ -209,6 +294,13 @@
       "title": "Failures",
       "type": "array"
     },
+    "filesystem_actions": {
+      "items": {
+        "$ref": "#/$defs/FilesystemAction"
+      },
+      "title": "Filesystem Actions",
+      "type": "array"
+    },
     "finished_at": {
       "format": "date-time",
       "title": "Finished At",
@@ -241,7 +333,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 2,
+      "const": 3,
       "title": "Schema Version",
       "type": "integer"
     },
