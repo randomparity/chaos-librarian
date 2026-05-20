@@ -1,8 +1,8 @@
 """Rule 3: E_DURATION_SYNTAX — reject unparseable duration strings.
 
-Also exports ``try_parse_duration`` for downstream rules (5b, 7) that
-re-parse durations for arithmetic and need to skip pairs Rule 3 has
-already flagged.
+``try_parse_duration`` (used by Rules 5b and 7 to skip pairs Rule 3 has
+already flagged) lives in ``rules/_common.py`` so rule modules depend on
+each other only through ``semantic.py``'s ``_RULES`` registry.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["rule_duration_syntax", "try_parse_duration"]
+__all__ = ["rule_duration_syntax"]
 
 
 def rule_duration_syntax(
@@ -53,20 +53,6 @@ def rule_duration_syntax(
                     line_index=line_index,
                     collector=collector,
                 )
-
-
-def try_parse_duration(raw_str: str) -> int | None:
-    """Parse a duration string; return None instead of raising.
-
-    Rules that re-parse a duration string for arithmetic (5b: slow-copy
-    timing, 7: timeline order) need to skip pairs where the input is
-    malformed — Rule 3 has already flagged those with E_DURATION_SYNTAX,
-    and re-reporting them as order/timing failures would be noise.
-    """
-    try:
-        return parse_duration(raw_str)
-    except DurationParseError:
-        return None
 
 
 def _check_duration(

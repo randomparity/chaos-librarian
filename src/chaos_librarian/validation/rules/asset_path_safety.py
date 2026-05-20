@@ -2,19 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.paths import is_safe_path_component
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
-from chaos_librarian.validation.rules._common import _as_list, _as_mapping, _Loc, _RawMapping
+from chaos_librarian.validation.rules._common import iter_assets_with_loc
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["iter_assets_with_loc", "rule_asset_id_container_safe"]
+__all__ = ["rule_asset_id_container_safe"]
 
 
 def rule_asset_id_container_safe(
@@ -47,47 +47,3 @@ def rule_asset_id_container_safe(
                     loc=(*asset_loc, field_name),
                     line_index=line_index,
                 )
-
-
-def iter_assets_with_loc(
-    raw: Mapping[str, object],
-) -> Iterator[tuple[_RawMapping, _Loc]]:
-    """Yield ``(asset_mapping, loc)`` for every well-shaped asset.
-
-    Reuses the same walk shape as ``iter_global_namespaces`` but yields
-    the full asset sub-mapping so rules can inspect any field on it.
-    """
-    works = _as_list(raw.get("works"))
-    if works is None:
-        return
-    for w_idx, work_obj in enumerate(works):
-        work = _as_mapping(work_obj)
-        if work is None:
-            continue
-        variants = _as_list(work.get("variants"))
-        if variants is None:
-            continue
-        for v_idx, variant_obj in enumerate(variants):
-            variant = _as_mapping(variant_obj)
-            if variant is None:
-                continue
-            bundle = _as_mapping(variant.get("bundle"))
-            if bundle is None:
-                continue
-            assets = _as_list(bundle.get("assets"))
-            if assets is None:
-                continue
-            for a_idx, asset_obj in enumerate(assets):
-                asset = _as_mapping(asset_obj)
-                if asset is None:
-                    continue
-                loc: _Loc = (
-                    "works",
-                    w_idx,
-                    "variants",
-                    v_idx,
-                    "bundle",
-                    "assets",
-                    a_idx,
-                )
-                yield asset, loc

@@ -25,8 +25,8 @@ from chaos_librarian.validation.rules._common import (
     _as_list,
     _as_mapping,
     _iter_timeline_events,
+    iter_assets_with_loc,
 )
-from chaos_librarian.validation.rules.asset_path_safety import iter_assets_with_loc
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
