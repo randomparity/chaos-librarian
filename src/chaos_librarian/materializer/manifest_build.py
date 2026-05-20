@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset
 
-__all__ = ["augment_manifest", "find_sidecar_for"]
+__all__ = ["augment_manifest", "augment_timeline_sidecars", "find_sidecar_for"]
 
 
 def augment_manifest(
@@ -57,6 +59,27 @@ def augment_manifest(
             )
         else:
             existing.content_hash = content_hash
+
+
+def augment_timeline_sidecars(
+    manifest: Manifest, phase_b_sidecar_hashes: Mapping[str, str]
+) -> None:
+    """Stamp ``content_hash`` on timeline-created sidecar rows by ``sidecar_id``.
+
+    Sprint 5's ``augment_manifest`` covers declared subtitles (keyed by
+    ``(asset_id, language)``); Sprint 6's timeline-created sidecars need
+    a separate path because the engine handler allocates a fresh
+    ``sidecar_id`` and the bytes are hashed inside phase B, not phase A.
+
+    Rows whose ``id`` is not present in ``phase_b_sidecar_hashes`` are
+    left unchanged — declared subtitles stay at their phase-A hash, and
+    timeline sidecars whose hash didn't make it into the map (impossible
+    in practice; defensive) keep ``content_hash=None``.
+    """
+    for sidecar in manifest.sidecars:
+        content_hash = phase_b_sidecar_hashes.get(sidecar.id)
+        if content_hash is not None:
+            sidecar.content_hash = content_hash
 
 
 def find_sidecar_for(manifest: Manifest, asset_id: str, language: str) -> ManifestSidecar | None:
