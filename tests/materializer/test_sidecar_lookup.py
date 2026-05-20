@@ -51,21 +51,21 @@ def test_lookup_distinguishes_substring_colliding_languages() -> None:
     en = ManifestSidecar(
         id="sidecar_a0_en",
         asset_id="a0",
-        kind="srt",
+        kind="subtitle",
         path="library/a0.en.srt",
         language="en",
     )
     eng = ManifestSidecar(
         id="sidecar_a0_eng",
         asset_id="a0",
-        kind="srt",
+        kind="subtitle",
         path="library/a0.eng.srt",
         language="eng",
     )
     manifest = _manifest_with_sidecars(en, eng)
 
-    assert find_sidecar_for(manifest, "a0", "en") is en
-    assert find_sidecar_for(manifest, "a0", "eng") is eng
+    assert find_sidecar_for(manifest, "a0", language="en") is en
+    assert find_sidecar_for(manifest, "a0", language="eng") is eng
 
 
 def test_lookup_filters_by_asset_id() -> None:
@@ -73,18 +73,18 @@ def test_lookup_filters_by_asset_id() -> None:
     a0_en = ManifestSidecar(
         id="sidecar_a0_en",
         asset_id="a0",
-        kind="srt",
+        kind="subtitle",
         path="library/a0.en.srt",
         language="en",
     )
     a1_en = ManifestSidecar(
         id="sidecar_a1_en",
         asset_id="a1",
-        kind="srt",
+        kind="subtitle",
         path="library/a1.en.srt",
         language="en",
     )
     manifest = _manifest_with_sidecars(a0_en, a1_en)
 
-    assert find_sidecar_for(manifest, "a0", "en") is a0_en
-    assert find_sidecar_for(manifest, "a1", "en") is a1_en
+    assert find_sidecar_for(manifest, "a0", language="en") is a0_en
+    assert find_sidecar_for(manifest, "a1", language="en") is a1_en
