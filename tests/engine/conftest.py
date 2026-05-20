@@ -102,6 +102,23 @@ def _build_minimal_scenario(
     )
 
 
+def _resolve_archive_file(
+    scenario: Scenario,
+    *,
+    event_id: str,
+    target: str,
+) -> ResolvedEvent:
+    """Build a ResolvedEvent wrapping an ``ArchiveFileEvent`` for tests.
+
+    Mirrors the shape that ``resolve_timeline`` would produce, without
+    requiring the event to live on the scenario's timeline. Sprint 6 task 17
+    reuses this helper for materializer dispatcher tests.
+    """
+    del scenario  # only present to mirror the engine resolver's call signature
+    event = ArchiveFileEvent(id=event_id, at="0ns", target=target)
+    return ResolvedEvent(at_ns=1, declared_index=0, event=event)
+
+
 def _minimal_scenario_for_action(
     action: TimelineActionName,
 ) -> tuple[Scenario, WorldState, ResolvedEvent]:

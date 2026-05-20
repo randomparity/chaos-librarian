@@ -30,6 +30,7 @@ from chaos_librarian.contract.manifest import (
 )
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
+    ArchiveFileEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     MoveAssetEvent,
@@ -52,15 +53,16 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id"}),
     TimelineActionName.SLOW_COPY_START: frozenset({"final_path", "temp_path"}),
     TimelineActionName.SLOW_COPY_COMMIT: frozenset({"final_path"}),
+    TimelineActionName.ARCHIVE_FILE: frozenset({"from_path", "to_path"}),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
 Each handler MUST emit at least these keys; extras are allowed for forward
 compatibility. ``add_file`` is intentionally absent (deferred to Sprint 7);
-``archive_file`` and ``move_between_roots`` land alongside their handlers.
-The ``language`` key on create_sidecar and ``initial_path_at_start`` on
-slow_copy_start are additive (Task 8); their entries here are bumped to
-include those keys when Task 8 lands.
+``move_between_roots`` lands alongside its handler. The ``language`` key on
+create_sidecar and ``initial_path_at_start`` on slow_copy_start are additive
+(Task 8); their entries here are bumped to include those keys when Task 8
+lands.
 
 The parametrized test ``test_state_delta_keys_match_contract`` enforces this
 contract by invoking each handler against a minimal scenario.
@@ -366,6 +368,37 @@ def _handle_slow_copy_commit(
     return (entry,)
 
 
+def _handle_archive_file(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Move ``target`` to its archive destination.
+
+    The destination is ``state.archive_path_for(target)``; validation has
+    already proven the archive root exists. ``location.path`` updates;
+    the asset stays placed.
+    """
+    event = resolved.event
+    assert isinstance(event, ArchiveFileEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    archive_path = state.archive_path_for(event.target)
+    state.locations[loc_id] = previous.model_copy(update={"path": archive_path})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.ARCHIVE_FILE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={"from_path": previous.path, "to_path": archive_path},
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -376,4 +409,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.CREATE_SIDECAR: _handle_create_sidecar,
     TimelineActionName.SLOW_COPY_START: _handle_slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
+    TimelineActionName.ARCHIVE_FILE: _handle_archive_file,
 }
