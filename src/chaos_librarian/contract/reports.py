@@ -5,10 +5,11 @@ as four parallel sub-trees (``assets/``, ``works/``, ``variants/``,
 ``bundles/``). External consumers (voom-v2) key on ``schema_version`` and
 load the matching exported schema.
 
-Asset reports carry content hashes, probed media facts, and a typed
-projection of filesystem-affecting events at ``schema_version: 3``; the
-other three entity reports remain at ``schema_version: 1`` because they
-describe manifest topology only.
+Asset reports carry content hashes, probed media facts, a typed
+projection of filesystem-affecting events, and a typed projection of
+version-affecting events at ``schema_version: 4``; the other three
+entity reports remain at ``schema_version: 1`` because they describe
+manifest topology only.
 """
 
 from __future__ import annotations
@@ -63,6 +64,27 @@ class PathHistoryEntry(BaseModel):
     temp_path: str | None = None
 
 
+class VersionHistoryEntry(BaseModel):
+    """One version-affecting journal event projected for a single asset.
+
+    Derived from the journal by ``derive_version_history``. Mirrors
+    Sprint 6's ``PathHistoryEntry`` shape for the version-allocating
+    subset of actions (reencode_video / reencode_audio / remux_container
+    / edit_metadata / embed_subtitle). ``extract_subtitle`` does NOT
+    appear here — it's a read-only extract that allocates a sidecar but
+    not a version.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: TimelineActionName
+    logical_time_ns: int
+    input_version_id: str | None = None
+    output_version_id: str | None = None
+    state_delta_summary: dict[str, object] = Field(default_factory=dict)
+
+
 class AssetReport(BaseModel):
     """Per-asset history report — initial snapshot, ordered history, current snapshot.
 
@@ -72,12 +94,13 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     asset_id: str
     initial: AssetSnapshot
     history: list[AssetHistoryEntry] = Field(default_factory=list)
     current: AssetSnapshot | None
     path_history: list[PathHistoryEntry] = Field(default_factory=list)
+    version_history: list[VersionHistoryEntry] = Field(default_factory=list)
 
 
 class WorkReport(BaseModel):
