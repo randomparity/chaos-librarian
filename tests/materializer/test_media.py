@@ -14,6 +14,9 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.media import (
+    _MEDIA_ACTIONS,
+    _STDLIB_ACTIONS,
+    SUPPORTED_S7_ACTIONS,
     _MediaContext,
     _subtitle_codec_for_container,
     apply_media_action,
@@ -628,3 +631,32 @@ class TestApplyUpdateSidecar:
         assert result.output_sidecar_id == "sidecar_0001"
         assert result.tool_invocation_index is None  # subtitle is pure Python
         assert "sidecar_0001" in ctx.post_phase_b_sidecars
+
+
+def test_media_actions_constant_contents():
+    assert (
+        frozenset(
+            {
+                TimelineActionName.REENCODE_VIDEO,
+                TimelineActionName.REENCODE_AUDIO,
+                TimelineActionName.REMUX_CONTAINER,
+                TimelineActionName.EDIT_METADATA,
+                TimelineActionName.EMBED_SUBTITLE,
+                TimelineActionName.EXTRACT_SUBTITLE,
+                TimelineActionName.UPDATE_SIDECAR,
+            }
+        )
+        == _MEDIA_ACTIONS
+    )
+
+
+def test_stdlib_actions_constant_includes_remove_sidecar():
+    # Sprint 6's set plus REMOVE_SIDECAR (stdlib op).
+    assert TimelineActionName.REMOVE_SIDECAR in _STDLIB_ACTIONS
+    assert TimelineActionName.MOVE_ASSET in _STDLIB_ACTIONS  # from S6
+
+
+def test_supported_s7_actions_union():
+    assert SUPPORTED_S7_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS
+    # add_file remains excluded.
+    assert TimelineActionName.ADD_FILE not in SUPPORTED_S7_ACTIONS

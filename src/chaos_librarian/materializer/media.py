@@ -28,13 +28,21 @@ from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
 from chaos_librarian.contract.scenario import Asset, SidecarKind, TimelineActionName
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
+from chaos_librarian.materializer.preflight import SUPPORTED_S6_ACTIONS
 from chaos_librarian.materializer.probe import probe_file
 from chaos_librarian.materializer.sidecar_bytes import regenerate_sidecar
 
 if TYPE_CHECKING:
     from chaos_librarian.contract.manifest import ManifestSidecar
 
-__all__ = ["_MediaContext", "_subtitle_codec_for_container", "apply_media_action"]
+__all__ = [
+    "SUPPORTED_S7_ACTIONS",
+    "_MEDIA_ACTIONS",
+    "_STDLIB_ACTIONS",
+    "_MediaContext",
+    "_subtitle_codec_for_container",
+    "apply_media_action",
+]
 
 
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
@@ -637,3 +645,26 @@ def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
             cause=RuntimeError("no dispatch"),
         )
     return handler(ctx, entry)
+
+
+_MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.REENCODE_VIDEO,
+        TimelineActionName.REENCODE_AUDIO,
+        TimelineActionName.REMUX_CONTAINER,
+        TimelineActionName.EDIT_METADATA,
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.UPDATE_SIDECAR,
+    }
+)
+
+
+_STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = SUPPORTED_S6_ACTIONS | frozenset(
+    {TimelineActionName.REMOVE_SIDECAR}
+)
+
+
+SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
+# add_file remains excluded; preflight rejects it with
+# E_MATERIALIZE_TIMELINE_UNSUPPORTED.
