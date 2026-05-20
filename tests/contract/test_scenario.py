@@ -253,7 +253,7 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_round_trip_with_new_events():
+def test_scenario_v4_actions_round_trip_at_v5():
     payload = {
         "schema_version": 5,
         "scenario_id": "sc_arch_001",
