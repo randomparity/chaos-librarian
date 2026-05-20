@@ -303,11 +303,23 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
     return base
 
 
-def test_materialize_bundle_rejects_nonzero_applied_events():
-    """WHY: Sprint 5 timelines are always empty; the schema must lock
-    applied_events at 0 so a future code regression that emits a non-zero
-    value is caught at parse time, not silently round-tripped."""
-    payload = _materialize_payload(applied_events=1)
+def test_materialize_bundle_accepts_nonzero_applied_events():
+    """WHY: Sprint 6 wires phase B into materialize; the bundle must
+    record the number of timeline events the engine applied so consumers
+    can correlate the journal length with the replay window. The field
+    widened from ``Literal[0]`` back to the base class's
+    ``int = Field(ge=0)`` constraint when timeline-mutating materialize
+    landed."""
+    payload = _materialize_payload(applied_events=3)
+    bundle = MaterializeReplayBundle.model_validate(payload)
+    assert bundle.applied_events == 3
+
+
+def test_materialize_bundle_rejects_negative_applied_events():
+    """WHY: a negative count would imply a journal of negative length;
+    reject at the schema layer so no downstream code has to defend
+    against it. Mirrors the plan-only test of the same invariant."""
+    payload = _materialize_payload(applied_events=-1)
     with pytest.raises(ValidationError):
         MaterializeReplayBundle.model_validate(payload)
 

@@ -73,6 +73,7 @@ def _success() -> MaterializeArtifacts:
             scenario="schema_version: 4\nscenario_id: x\n",
             run_id=uuid.uuid4(),
             resolved_seed=1,
+            applied_events=0,
             journal_digest="0" * 64,
             execution_mode=ExecutionMode.MATERIALIZE,
             created_at=datetime.now(UTC),

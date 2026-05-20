@@ -28,11 +28,10 @@
     },
     "MaterializeReplayBundle": {
       "additionalProperties": false,
-      "description": "Replay bundle in materialize or run mode.\n\n``applied_events`` is currently pinned to 0 because materialize only\naccepts empty timelines; the base class constraint will widen again\nwhen timeline-mutating materialize modes ship. ``created_at`` and\n``toolchain`` are both required (non-null).",
+      "description": "Replay bundle in materialize or run mode.\n\n``applied_events`` was pinned to ``Literal[0]`` while materialize\nrejected non-empty timelines; Sprint 6 wires phase B into the\norchestrator and materialize now applies every resolved event, so the\nfield widens back to the base class's ``int = Field(ge=0)`` constraint\n(the plan-only and materialize modes agree on the same shape again).\n``created_at`` and ``toolchain`` are both required (non-null).",
       "properties": {
         "applied_events": {
-          "const": 0,
-          "default": 0,
+          "minimum": 0,
           "title": "Applied Events",
           "type": "integer"
         },
@@ -111,6 +110,7 @@
         "scenario",
         "run_id",
         "resolved_seed",
+        "applied_events",
         "journal_digest",
         "execution_mode",
         "created_at",

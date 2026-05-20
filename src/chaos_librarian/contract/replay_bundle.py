@@ -113,14 +113,15 @@ class PlanOnlyReplayBundle(_ReplayBundleBase):
 class MaterializeReplayBundle(_ReplayBundleBase):
     """Replay bundle in materialize or run mode.
 
-    ``applied_events`` is currently pinned to 0 because materialize only
-    accepts empty timelines; the base class constraint will widen again
-    when timeline-mutating materialize modes ship. ``created_at`` and
-    ``toolchain`` are both required (non-null).
+    ``applied_events`` was pinned to ``Literal[0]`` while materialize
+    rejected non-empty timelines; Sprint 6 wires phase B into the
+    orchestrator and materialize now applies every resolved event, so the
+    field widens back to the base class's ``int = Field(ge=0)`` constraint
+    (the plan-only and materialize modes agree on the same shape again).
+    ``created_at`` and ``toolchain`` are both required (non-null).
     """
 
     execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN]
-    applied_events: Literal[0] = 0
     created_at: datetime
     toolchain: ToolchainInfo
 

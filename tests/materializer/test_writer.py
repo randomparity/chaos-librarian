@@ -115,6 +115,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         scenario="schema_version: 4\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
+        applied_events=0,
         journal_digest="0" * 64,
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),

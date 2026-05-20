@@ -73,6 +73,7 @@ def build_replay_bundle(
         scenario=scenario_yaml_bytes.decode("utf-8"),
         run_id=run_id,
         resolved_seed=plan_artifacts.replay_bundle.resolved_seed,
+        applied_events=plan_artifacts.replay_bundle.applied_events,
         journal_digest=plan_artifacts.replay_bundle.journal_digest,
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=created_at,
