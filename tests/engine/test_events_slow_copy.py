@@ -94,6 +94,11 @@ class TestSlowCopyStart:
         assert isinstance(entry, StartedJournalEntry)
         assert entry.phase == JournalPhase.STARTED
         assert entry.temp_path == "movies-hd/Nova.mkv.part"
+        assert entry.state_delta == {
+            "final_path": "movies-hd/Nova.mkv",
+            "temp_path": "movies-hd/Nova.mkv.part",
+            "initial_path_at_start": "staging/a0.mkv",
+        }
         loc = state.locations[state.location_id_for_asset("a0")]
         assert loc.temp_path == "movies-hd/Nova.mkv.part"
 

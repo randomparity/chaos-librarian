@@ -51,8 +51,10 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
     TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
     TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
-    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id"}),
-    TimelineActionName.SLOW_COPY_START: frozenset({"final_path", "temp_path"}),
+    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id", "language"}),
+    TimelineActionName.SLOW_COPY_START: frozenset(
+        {"final_path", "temp_path", "initial_path_at_start"}
+    ),
     TimelineActionName.SLOW_COPY_COMMIT: frozenset({"final_path"}),
     TimelineActionName.ARCHIVE_FILE: frozenset({"from_path", "to_path"}),
     TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
@@ -63,10 +65,10 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
 
 Each handler MUST emit at least these keys; extras are allowed for forward
 compatibility. ``add_file`` is intentionally absent (deferred to Sprint 7);
-``move_between_roots`` lands alongside its handler. The ``language`` key on
-create_sidecar and ``initial_path_at_start`` on slow_copy_start are additive
-(Task 8); their entries here are bumped to include those keys when Task 8
-lands.
+``move_between_roots`` lands alongside its handler. ``create_sidecar``
+includes ``language`` and ``slow_copy_start`` includes
+``initial_path_at_start`` so Phase B and ``derive_path_history`` can drive
+purely from the journal.
 
 The parametrized test ``test_state_delta_keys_match_contract`` enforces this
 contract by invoking each handler against a minimal scenario.
@@ -310,7 +312,11 @@ def _handle_create_sidecar(
         action=TimelineActionName.CREATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"sidecar_path": event.to, "sidecar_id": sidecar_id},
+        state_delta={
+            "sidecar_path": event.to,
+            "sidecar_id": sidecar_id,
+            "language": event.language,
+        },
     )
     return (entry,)
 
@@ -337,7 +343,11 @@ def _handle_slow_copy_start(
         action=TimelineActionName.SLOW_COPY_START,
         target_ids=[event.target],
         location_ids=[loc_id],
-        state_delta={"final_path": event.to, "temp_path": event.temp_path},
+        state_delta={
+            "final_path": event.to,
+            "temp_path": event.temp_path,
+            "initial_path_at_start": previous.path,
+        },
         phase=JournalPhase.STARTED,
         temp_path=event.temp_path,
     )

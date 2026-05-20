@@ -153,7 +153,11 @@ class TestCreateSidecarHandler:
         (resolved,) = resolve_timeline(scenario)
         (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
         assert entry.action == "create_sidecar"
-        assert entry.state_delta["sidecar_path"] == "movies-hd/a0.eng.srt"
+        assert entry.state_delta == {
+            "sidecar_path": "movies-hd/a0.eng.srt",
+            "sidecar_id": "sidecar_0001",
+            "language": "eng",
+        }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()
         assert sidecar.asset_id == "a0"
