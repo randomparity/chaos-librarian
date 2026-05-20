@@ -9,6 +9,7 @@ stdout JSON.
 from __future__ import annotations
 
 from chaos_librarian.contract.materialization import ToolInvocation
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.errors import ChaosLibrarianError
 
@@ -75,6 +76,32 @@ class ProbeParseError(MaterializationError):
     """ffprobe stdout could not be parsed into ProbedMedia."""
 
     error_code: str = "E_MATERIALIZE_PROBE_PARSE_FAILED"
+
+
+class FilesystemActionError(MaterializationError):
+    """A phase-B helper raised OSError; library/ must be wiped."""
+
+    error_code: str = "E_MATERIALIZE_FS_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        event_id: str,
+        cause: OSError,
+        action: TimelineActionName,
+        asset_id: str | None = None,
+        field: str | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        merged_payload: dict[str, object] = dict(payload or {})
+        merged_payload.setdefault("event_id", event_id)
+        merged_payload.setdefault("action", action.value)
+        merged_payload.setdefault("errno", cause.errno)
+        super().__init__(message, asset_id=asset_id, field=field, payload=merged_payload)
+        self.event_id = event_id
+        self.cause = cause
+        self.action = action
 
 
 class ContainmentViolationError(MaterializationError):
