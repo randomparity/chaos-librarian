@@ -252,3 +252,93 @@ class TestExtractSubtitleHandler:
         assert input_path.endswith("/a0.mkv")
         # extract has no output_path key — its output IS sidecar_path.
         assert "output_path" not in delta
+
+
+class TestRemoveSidecarHandler:
+    """remove_sidecar removes the sidecar from state; no version change."""
+
+    def test_remove_drops_sidecar(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_rs",
+                    "at": "2s",
+                    "action": "remove_sidecar",
+                    "target": "a0",
+                    "sidecar_path": "a0.eng.srt",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        resolved_events = list(resolve_timeline(scenario))
+        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        assert len(state.sidecars) == 1
+        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        assert len(state.sidecars) == 0
+
+    def test_remove_state_delta_records_id_and_path(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_rs",
+                    "at": "2s",
+                    "action": "remove_sidecar",
+                    "target": "a0",
+                    "sidecar_path": "a0.eng.srt",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        resolved_events = list(resolve_timeline(scenario))
+        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        sidecar_id = next(iter(state.sidecars.keys()))
+        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        assert delta["removed_sidecar_id"] == sidecar_id
+        assert delta["removed_sidecar_path"] == "a0.eng.srt"
+
+    def test_remove_does_not_allocate_version(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_rs",
+                    "at": "2s",
+                    "action": "remove_sidecar",
+                    "target": "a0",
+                    "sidecar_path": "a0.eng.srt",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        resolved_events = list(resolve_timeline(scenario))
+        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        prior_version_id = state.version_id_for_asset("a0")
+        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        assert state.version_id_for_asset("a0") == prior_version_id

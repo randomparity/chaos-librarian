@@ -40,6 +40,7 @@ from chaos_librarian.contract.scenario import (
     MoveBetweenRootsEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
+    RemoveSidecarEvent,
     RemuxContainerEvent,
     RenameFileEvent,
     SidecarKind,
@@ -88,6 +89,7 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.EXTRACT_SUBTITLE: frozenset(
         {"sidecar_id", "sidecar_path", "language", "input_path"}
     ),
+    TimelineActionName.REMOVE_SIDECAR: frozenset({"removed_sidecar_id", "removed_sidecar_path"}),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -694,6 +696,34 @@ def _handle_extract_subtitle(
     return (entry,)
 
 
+def _handle_remove_sidecar(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Drop the named sidecar from state. No version change."""
+    event = resolved.event
+    assert isinstance(event, RemoveSidecarEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    sidecar = state.sidecars[sidecar_id]
+    del state.sidecars[sidecar_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REMOVE_SIDECAR,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={
+            "removed_sidecar_id": sidecar_id,
+            "removed_sidecar_path": sidecar.path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -710,4 +740,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.EDIT_METADATA: _handle_edit_metadata,
     TimelineActionName.EMBED_SUBTITLE: _handle_embed_subtitle,
     TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
+    TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
 }
