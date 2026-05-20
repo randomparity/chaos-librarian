@@ -88,6 +88,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Asset Id"
         },
         "exit_code": {
@@ -99,6 +100,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Exit Code"
         },
         "invocation_index": {
@@ -110,6 +112,7 @@
               "type": "null"
             }
           ],
+          "default": null,
           "title": "Invocation Index"
         },
         "stage": {
@@ -121,11 +124,8 @@
         }
       },
       "required": [
-        "asset_id",
         "stage",
-        "exit_code",
-        "stderr_tail",
-        "invocation_index"
+        "stderr_tail"
       ],
       "title": "MaterializationFailure",
       "type": "object"

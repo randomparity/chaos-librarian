@@ -137,6 +137,23 @@ def test_failure_stage_filesystem_present() -> None:
     assert FailureStage("filesystem") is FailureStage.FILESYSTEM
 
 
+def test_materialization_failure_round_trips_with_none_optional_fields() -> None:
+    """WHY: filesystem-stage failures populate stage + stderr_tail but leave
+    asset_id, exit_code, and invocation_index None. ``canonical_json`` is
+    serialized with ``exclude_none=True``; the resulting JSON must re-validate
+    without callers having to backfill defaults. Issue #36."""
+    failure = MaterializationFailure(
+        asset_id=None,
+        stage=FailureStage.FILESYSTEM,
+        exit_code=None,
+        stderr_tail="rmtree failed: [Errno 13] Permission denied",
+        invocation_index=None,
+    )
+    blob = failure.model_dump_json(exclude_none=True)
+    parsed = MaterializationFailure.model_validate_json(blob)
+    assert parsed == failure
+
+
 def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
     payload = {
         "schema_version": 3,

@@ -4,12 +4,6 @@ The materialize pipeline writes a structured run-dir to disk; tests that
 exercise the real ffmpeg toolchain need to read back into typed Pydantic
 models for assertions. Centralizing the loaders here keeps each test
 focused on behavior, not JSON-shape massaging.
-
-``_load_materialization_report`` backfills ``None`` defaults that
-``canonical_json`` strips via ``exclude_none=True`` (e.g. ``exit_code`` on
-filesystem-stage failures), so round-trip validation succeeds without
-forcing the contract to declare defaults for fields that are
-conceptually required for ffmpeg-stage failures.
 """
 
 from __future__ import annotations
@@ -46,18 +40,8 @@ def _load_asset_report(out_dir: Path, asset_id: str) -> AssetReport:
 
 
 def _load_materialization_report(out_dir: Path) -> MaterializationReport:
-    """Re-hydrate ``materialization.json`` with None backfill for stripped fields.
-
-    ``canonical_json(exclude_none=True)`` drops ``exit_code`` and
-    ``invocation_index`` for filesystem-stage failures; restore them so
-    the contract's required fields validate.
-    """
-    payload = json.loads((out_dir / "materialization.json").read_text())
-    for failure in payload.get("failures", []):
-        failure.setdefault("exit_code", None)
-        failure.setdefault("invocation_index", None)
-        failure.setdefault("asset_id", None)
-    return MaterializationReport.model_validate(payload)
+    """Re-hydrate ``materialization.json``."""
+    return MaterializationReport.model_validate_json((out_dir / "materialization.json").read_text())
 
 
 def _load_replay_bundle(out_dir: Path) -> ReplayBundle:

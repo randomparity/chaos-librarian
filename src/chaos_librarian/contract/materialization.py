@@ -93,11 +93,11 @@ class MaterializationFailure(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    asset_id: str | None
+    asset_id: str | None = None
     stage: FailureStage
-    exit_code: int | None
+    exit_code: int | None = None
     stderr_tail: str
-    invocation_index: int | None
+    invocation_index: int | None = None
 
 
 class FilesystemAction(BaseModel):
