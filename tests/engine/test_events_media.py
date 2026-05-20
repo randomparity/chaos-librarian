@@ -253,3 +253,94 @@ class TestReencodeAudioOnUnplacedAssetCrashes:
         (reencode_resolved,) = resolve_timeline(bad_scenario)
         with pytest.raises(KeyError):
             apply_event(state, reencode_resolved, ids, _RUN_ID, "media")
+
+
+class TestRemuxContainerHandler:
+    """remux_container allocates a new version and rewrites the location path's extension.
+
+    WHY: container changes are observable bytes-affecting changes (codec
+    copy is fine, but the wrapper differs); voom-v2's reconciliation
+    treats this as a new version.
+    """
+
+    def test_remux_allocates_new_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entry = entries[0]
+        assert isinstance(entry, AtomicJournalEntry)
+        assert entry.input_version_ids == [prior_version_id]
+        new_version_id = entry.output_version_ids[0]
+        assert new_version_id != prior_version_id
+        assert state.versions[new_version_id].index == 1
+
+    def test_remux_rewrites_path_extension(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        loc_id = state.location_id_for_asset("a0")
+        old_path = state.locations[loc_id].path
+        assert old_path.endswith(".mkv")
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        new_path = state.locations[loc_id].path
+        assert new_path == old_path[:-4] + ".mp4"
+
+    def test_remux_state_delta_records_paths_and_containers(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        from_container = delta["from_container"]
+        to_container = delta["to_container"]
+        from_path = delta["from_path"]
+        to_path = delta["to_path"]
+        input_path = delta["input_path"]
+        output_path = delta["output_path"]
+        assert isinstance(from_container, str)
+        assert isinstance(to_container, str)
+        assert isinstance(from_path, str)
+        assert isinstance(to_path, str)
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        assert from_container == "mkv"
+        assert to_container == "mp4"
+        assert from_path.endswith(".mkv")
+        assert to_path.endswith(".mp4")
+        assert input_path == from_path
+        assert output_path == to_path

@@ -37,6 +37,7 @@ from chaos_librarian.contract.scenario import (
     MoveBetweenRootsEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
+    RemuxContainerEvent,
     RenameFileEvent,
     SidecarKind,
     SlowCopyCommitEvent,
@@ -66,6 +67,9 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     ),
     TimelineActionName.REENCODE_AUDIO: frozenset(
         {"from_channels", "to_channels", "input_path", "output_path"}
+    ),
+    TimelineActionName.REMUX_CONTAINER: frozenset(
+        {"from_container", "to_container", "from_path", "to_path", "input_path", "output_path"}
     ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
@@ -474,6 +478,71 @@ def _handle_move_between_roots(
     return (entry,)
 
 
+def _swap_extension(path: str, new_ext: str) -> str:
+    """Replace the path's file extension with ``new_ext`` (no leading dot).
+
+    Pure string surgery: ``"library/movies-hd/x.mkv"`` + ``"mp4"`` →
+    ``"library/movies-hd/x.mp4"``. If the path has no extension, appends.
+    """
+    if "." in path.rsplit("/", 1)[-1]:
+        base = path.rsplit(".", 1)[0]
+        return f"{base}.{new_ext}"
+    return f"{path}.{new_ext}"
+
+
+def _handle_remux_container(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new version; rewrite the asset's location path extension.
+
+    The byte payload doesn't actually change here (the materializer's
+    ffmpeg -c copy preserves streams); the version bump signals to
+    voom-v2 that the file moved to a new container, which is a
+    reconciliation-relevant event.
+    """
+    event = resolved.event
+    assert isinstance(event, RemuxContainerEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    prev_container = previous.path.rsplit(".", 1)[-1] if "." in previous.path else ""
+    new_path = _swap_extension(previous.path, event.to_container)
+    state.locations[loc_id] = previous.model_copy(update={"path": new_path})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REMUX_CONTAINER,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+        state_delta={
+            "from_container": prev_container,
+            "to_container": event.to_container,
+            "from_path": previous.path,
+            "to_path": new_path,
+            "input_path": previous.path,
+            "output_path": new_path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -486,4 +555,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _handle_archive_file,
     TimelineActionName.MOVE_BETWEEN_ROOTS: _handle_move_between_roots,
+    TimelineActionName.REMUX_CONTAINER: _handle_remux_container,
 }
