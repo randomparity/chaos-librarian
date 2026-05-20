@@ -10,7 +10,7 @@
 Lift the Sprint 5 static-only timeline gate for filesystem mutations. Sprint 6 ships:
 
 1. Engine handlers and scenario contract entries for `archive_file` and `move_between_roots` (the two new actions; the four others — `remove_sidecar`, `update_sidecar`, plus the originally-listed media mutations — are deferred).
-2. Materializer phase-B dispatcher that executes filesystem effects against `<run-dir>/library/` for every supported timeline action: add, move, rename, delete, slow-copy (start/commit), archive, move-between-roots, create_sidecar.
+2. Materializer phase-B dispatcher that executes filesystem effects against `<run-dir>/library/` for every supported timeline action: move, rename, delete, slow-copy (start/commit), archive, move-between-roots, create_sidecar. (`add_file` is deferred to Sprint 7.)
 3. Per-asset `path_history` on `AssetReport`, derived from the journal and populated in both plan-only and materialize modes.
 4. `FilesystemAction` audit records on `MaterializationReport` so consumers can correlate journal entries to real disk operations.
 
@@ -20,7 +20,7 @@ Sprint 6's materialize rejects any scenario whose timeline contains an action ou
 
 The source design doc lists eleven mutations under Sprint 6 deliverables, but only resolves the exit criterion ("Identity Move/Rename scenario runs end-to-end on a real directory"). Each open question is resolved below; push back if you disagree before the plan is written.
 
-1. **Mutation scope.** Existing seven filesystem actions (add, move, rename, delete, create_sidecar, slow_copy_start, slow_copy_commit) **plus** `archive_file` and `move_between_roots`. The two new sidecar actions in the source design (`remove_sidecar`, `update_sidecar`) are deferred to a follow-up sprint. Rationale: the Identity Move/Rename exit criterion only exercises move + rename; archive_file and move_between_roots are filesystem-level moves that share the same execution path; sidecar removal/update can land alongside Sprint 7's media-mutation work where the sidecar lifecycle is more naturally exercised.
+1. **Mutation scope.** Existing six filesystem actions (move, rename, delete, create_sidecar, slow_copy_start, slow_copy_commit) **plus** `archive_file` and `move_between_roots` — eight supported actions total. `add_file` is deferred to Sprint 7 (see Alternatives Rejected). The two new sidecar actions in the source design (`remove_sidecar`, `update_sidecar`) are deferred to a follow-up sprint. Rationale: the Identity Move/Rename exit criterion only exercises move + rename; archive_file and move_between_roots are filesystem-level moves that share the same execution path; sidecar removal/update can land alongside Sprint 7's media-mutation work where the sidecar lifecycle is more naturally exercised.
 
 2. **Slow-copy materialize behavior.** Two-step temp → final rename. At `slow_copy_start`: write the FULL bytes immediately to `temp_path` (no wall-clock partial growth — that's Sprint 8). Stamp `ManifestLocation.temp_path`. At `slow_copy_commit`: `Path(temp_path).replace(Path(final_path))`. If `final_path != initial_path` (the asset's pre-start location), also `Path(initial_path).unlink(missing_ok=True)` so the on-disk state matches the engine's location model (which treats slow_copy as a teleport via temp). External observers reading the run-dir between the two events see BOTH the initial file and the temp file — that's the watcher-test signal.
 
@@ -39,7 +39,7 @@ The source design doc lists eleven mutations under Sprint 6 deliverables, but on
 
 8. **Materialize replay.** Stays stubbed at `MaterializeReplayNotImplemented` (exit 1). Rationale: same as Sprint 5 — the canonicalization rule's real consumer is the voom-v2 adapter (Sprint 9). Adding replay now without a real consumer risks two reworks.
 
-9. **Re-probe and re-hash.** Re-hash and re-probe only when bytes change. `move_asset` / `rename_file` / `delete_file` / `archive_file` / `move_between_roots` / `slow_copy_*` are pure path changes — the existing `content_hash` + `probed` on `ManifestVersion` stay valid; only `ManifestLocation.path` (and `temp_path`) update. `add_file` and `create_sidecar` write new bytes and hash them inline. Minimizes ffprobe invocations and matches engine semantics.
+9. **Re-probe and re-hash.** Re-hash and re-probe only when bytes change. `move_asset` / `rename_file` / `delete_file` / `archive_file` / `move_between_roots` / `slow_copy_*` are pure path changes — the existing `content_hash` + `probed` on `ManifestVersion` stay valid; only `ManifestLocation.path` (and `temp_path`) update. `create_sidecar` writes new bytes and hashes them inline; `add_file` is deferred to Sprint 7. Minimizes ffprobe invocations and matches engine semantics.
 
 10. **Filesystem action audit.** `MaterializationReport` gains `filesystem_actions: list[FilesystemAction]` (one record per phase-B operation). Each `FilesystemAction` carries `event_id`, `action`, `target_asset_id`, `from_path`/`to_path`/`temp_path`, and `duration_ns`. Bumps `MATERIALIZATION_SCHEMA_VERSION` 2 → 3. Mirrors the role of `ToolInvocation` for subprocesses.
 
@@ -89,19 +89,28 @@ src/chaos_librarian/engine/
   state.py            # + WorldState._root_paths (root_id -> path);
                       # + WorldState._archive_path_template;
                       # + root_path_for / archive_path_for helpers;
-                      # build_initial_state populates both from the scenario
+                      # build_initial_state populates both from the scenario;
+                      # + INITIAL_PATH_TEMPLATE module-level constant lifted
+                      # from build_initial_state so the slow-copy validation
+                      # rule can format an asset's initial path without
+                      # duplicating the path convention
   reports.py          # AssetReport builder calls derive_path_history per asset
 
 src/chaos_librarian/materializer/
   run.py              # remove TimelineUnsupportedError gate for non-empty
                       # timelines; add preflight_timeline call before phase A;
-                      # add phase B dispatcher after phase A
+                      # add phase B dispatcher after phase A; call
+                      # augment_timeline_sidecars after phase B
   preflight.py        # + preflight_timeline(scenario, supported_actions);
                       # + SUPPORTED_S6_ACTIONS frozenset constant
   finalize.py         # threads filesystem_actions through MaterializationReport
                       # build_report call
   errors.py           # + FilesystemActionError(MaterializationError);
                       # + error_code E_MATERIALIZE_FS_FAILED
+  manifest_build.py   # + augment_timeline_sidecars(manifest, phase_b_sidecar_hashes)
+                      # — stamps content_hash on timeline-created sidecar rows by
+                      # sidecar_id. Sprint 5's augment_manifest (declared-subtitle
+                      # path, keyed by (asset_id, language)) is untouched.
 
 src/chaos_librarian/validation/
   rules/timeline_lifecycle.py  # extend simulator with ARCHIVE_FILE and
@@ -115,6 +124,7 @@ src/chaos_librarian/validation/
   rules/target_unknown.py      # extend with from_root_id / to_root_id / archive_root
                                # validation; raises new E_ROOT_UNKNOWN code
   codes.py                     # + E_ROOT_UNKNOWN constant
+                               # + E_SLOW_COPY_PATH_COLLISION constant
 
 src/chaos_librarian/schema_export.py
                                # regenerate scenario.schema.json (v4),
@@ -309,6 +319,50 @@ def _handle_move_between_roots(state, resolved, ids, run_id, scenario_id):
     return (entry,)
 ```
 
+### `state_delta` key contract
+
+The phase-B dispatcher and `derive_path_history` read about ten string keys
+out of each journal entry's `state_delta`. The contract has been implicit —
+a typo in any handler would silently produce `None` values downstream
+rather than failing fast. Sprint 6 makes the contract explicit with a
+module-level constant in `engine/events.py`:
+
+```python
+_STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
+    TimelineActionName.MOVE_ASSET:         frozenset({"from_path", "to_path"}),
+    TimelineActionName.RENAME_FILE:        frozenset({"from_path", "to_path"}),
+    TimelineActionName.DELETE_FILE:        frozenset({"removed_path"}),
+    TimelineActionName.CREATE_SIDECAR:     frozenset({"sidecar_path", "sidecar_id", "language"}),
+    TimelineActionName.SLOW_COPY_START:    frozenset({"final_path", "temp_path", "initial_path_at_start"}),
+    TimelineActionName.SLOW_COPY_COMMIT:   frozenset({"final_path"}),
+    TimelineActionName.ARCHIVE_FILE:       frozenset({"from_path", "to_path"}),
+    TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
+        {"from_path", "to_path", "from_root_id", "to_root_id"}
+    ),
+}
+```
+
+Semantics:
+
+- Each handler's emitted `state_delta` must contain AT LEAST the keys
+  declared for its action. Extra keys are allowed for forward
+  compatibility (e.g., a future sprint adding `bytes_written` to
+  `slow_copy_start` doesn't break consumers that only read the contract
+  set).
+- `slow_copy_commit` deliberately carries only `final_path`; its dispatcher
+  pops the matching `slow_copy_start` entry from `pending_slow_copy` to
+  recover `initial_path` and `temp_path`. The related-event_id traversal
+  is already part of the journal model.
+- `add_file` is intentionally absent from this table — it is deferred to
+  Sprint 7, and the preflight gate rejects it before any handler runs.
+  Sprint 7's implementation should add an entry here at the same time the
+  helper lands.
+
+A Layer 2 test (`test_state_delta_keys_match_contract`, see Testing
+Strategy) parametrizes over `_STATE_DELTA_KEYS` and asserts that each
+handler's emitted `state_delta` is a superset of the contract — locking
+the surface against drift in future sprints.
+
 ### `WorldState` extensions
 
 ```python
@@ -409,6 +463,33 @@ The derivation logic is small (a few lines per action) and lives in
 `path_containment.py` directly — the rule already inspects per-event fields, so
 adding two more action branches is a localized change.
 
+### Slow-copy path-collision rule
+
+Phase B's `slow_copy_commit` helper unlinks `initial_path` and then
+`replace`s `temp_path → final_path` (see "Per-action behavior"). Two
+degenerate `temp_path` choices break that contract:
+
+- `temp_path == final_path` — the multi-phase visibility contract collapses
+  (no separate temp file ever exists; external observers cannot see the
+  in-progress copy).
+- `temp_path == initial_path` — the commit's `initial_path.unlink()` wipes
+  the temp file before the `replace` runs.
+
+Neither case is caught by `move_after_delete` / `double_slow_copy` /
+existing `slow_copy.py` rule. Sprint 6 extends `rules/slow_copy.py` with two
+checks that both emit `E_SLOW_COPY_PATH_COLLISION`:
+
+- For every `SlowCopyStartEvent`: assert `event.temp_path != event.to`.
+- For every `SlowCopyStartEvent`: assert `event.temp_path` is not the
+  asset's initial-state path under the
+  `<primary_root>/<asset_id>.<container>` convention.
+
+The initial-path derivation reuses the path template that
+`engine.state.build_initial_state` already builds. Sprint 6 lifts that
+template to a module-level constant in `engine/state.py` (proposed name:
+`INITIAL_PATH_TEMPLATE`) so the validation rule can format it without
+duplicating the convention. No new helper is required.
+
 ## Materializer Phase-B Dispatcher
 
 `materializer/filesystem.py` exposes one orchestrator-facing entry point that
@@ -429,7 +510,7 @@ def apply_phase_b(
     """
 ```
 
-The dispatcher carries three pieces of incremental state alongside the journal
+The dispatcher carries four pieces of incremental state alongside the journal
 walk:
 
 - `current_path: dict[str, str]` — initialized from the scenario's per-asset
@@ -441,6 +522,15 @@ walk:
   and `temp_path` (the on-disk path the bytes were copied TO).
 - `scenario_assets: Mapping[str, Asset]` — pre-built `{asset_id: Asset}` for
   metadata lookups (duration, container).
+- `phase_b_sidecar_hashes: dict[str, str]` — `sidecar_id -> sha256` for every
+  timeline-created sidecar written during phase B. Drained after the journal
+  walk by `manifest_build.augment_timeline_sidecars(manifest, ...)`, which
+  stamps `ManifestSidecar.content_hash` on the matching row. Separate from
+  the declared-subtitle path, which feeds Sprint 5's `augment_manifest` via
+  an `(asset_id, language)`-keyed map populated during phase A's synthesis
+  loop. The two maps never share keys: declared subtitles are not written
+  during phase B, and timeline-created sidecars do not pass through the
+  phase-A loop.
 
 Each per-action helper has the same signature:
 
@@ -450,8 +540,9 @@ class _PhaseBContext:
     library_root: Path
     scenario_assets: Mapping[str, Asset]
     resolved_seed: int
-    current_path: dict[str, str]            # mutated
+    current_path: dict[str, str]                     # mutated
     pending_slow_copy: dict[str, _PendingSlowCopy]   # mutated
+    phase_b_sidecar_hashes: dict[str, str]           # mutated; sidecar_id -> sha256
 
 
 def _move_asset(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
@@ -501,10 +592,16 @@ respective `state_delta` payloads (both additive; `state_delta` is
 |---|---|
 | `move_asset`, `rename_file`, `move_between_roots`, `archive_file` | `(library/from).replace(library/to)`; update `current_path[asset_id] = to`. The three latter share the body with `move_asset`; the dispatcher entry keeps the original `entry.action` on the `FilesystemAction`. |
 | `delete_file` | `(library/from).unlink()`; del `current_path[asset_id]`. |
-| `add_file` | `(library/to).write_bytes(b"")`; `current_path[asset_id] = to`. Sprint 7 attaches recipe-driven bytes. |
-| `create_sidecar` | Read `language` and `to_path` from `state_delta`. Look up `asset.duration_seconds` in `ctx.scenario_assets[asset_id]`. Generate body via `recipes.srt_payload(language=..., duration_s=..., seed=ctx.resolved_seed)`. Write the file; the sidecar's content_hash is populated by `manifest_build.augment_manifest` post-phase-B (orchestrator collects sidecar hashes during phase B in a parallel dict, same as Sprint 5). |
+| `create_sidecar` | Read `language`, `sidecar_path`, and `sidecar_id` from `state_delta` (the engine handler allocates `sidecar_id` and the contract above requires these three keys). Look up `asset.duration_seconds` in `ctx.scenario_assets[asset_id]`. Generate body via `recipes.srt_payload(language=..., duration_s=..., seed=ctx.resolved_seed)`. Write the file at `sidecar_path`, sha256 the bytes, and APPEND to `ctx.phase_b_sidecar_hashes` keyed by `sidecar_id`. After phase B completes, the orchestrator calls `manifest_build.augment_timeline_sidecars(manifest, phase_b_sidecar_hashes)` which iterates `manifest.sidecars`, looks up each `sidecar.id` in the dict, and stamps `content_hash` when present. The existing `augment_manifest` (declared-subtitle path) keeps its `(asset_id, language)` keying — declared subtitles are hashed during phase A's synthesis loop and do not pass through the phase-B map. Collision rule: if a `create_sidecar` event reuses an `(asset_id, language)` pair already occupied by a declared subtitle, the engine handler still allocates a new `sidecar_id` and appends a new `ManifestSidecar` row — both rows coexist in the manifest. The declared row keeps its phase-A hash; the timeline row gets its phase-B hash. The two-row outcome is the intended semantic (declared sidecar plus a runtime-created sidecar are distinct objects in the test surface). |
 | `slow_copy_start` | Read `initial_path_at_start` and `temp_path` from `state_delta`. Copy the bytes: `(library/temp_path).write_bytes((library/initial_path).read_bytes())`. Record `pending_slow_copy[entry.event_id] = _PendingSlowCopy(asset_id, initial_path, temp_path)`. `current_path` is NOT updated yet (the bytes are still at the initial path too). |
 | `slow_copy_commit` | Pop `pending_slow_copy[entry.related_event_id]`. Read `final_path` from `state_delta`. If `initial_path != final_path`: `(library/initial_path).unlink(missing_ok=True)`. Then `(library/temp_path).replace(library/final_path)`. Update `current_path[asset_id] = final_path`. |
+
+**Slow-copy path invariants.** The validation rule (see "Slow-copy
+path-collision rule" above) rejects `temp_path == initial_path` and
+`temp_path == final_path` before phase B runs, so the commit helper can
+rely on the three paths being pairwise distinct: the `unlink(initial_path)`
+cannot wipe `temp_path`, and the `replace(temp_path → final_path)` always
+moves bytes from a distinct source to a distinct destination.
 
 ### `_DISPATCH` table
 
@@ -513,7 +610,6 @@ _DISPATCH: dict[TimelineActionName, Callable[..., FilesystemAction]] = {
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,           # same body
     TimelineActionName.DELETE_FILE: _delete_file,
-    TimelineActionName.ADD_FILE: _add_file,
     TimelineActionName.CREATE_SIDECAR: _create_sidecar,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,
@@ -546,7 +642,6 @@ arbitrary keys with no schema bump. Existing consumers ignore extra keys.
 
 ```python
 SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset({
-    TimelineActionName.ADD_FILE,
     TimelineActionName.MOVE_ASSET,
     TimelineActionName.RENAME_FILE,
     TimelineActionName.DELETE_FILE,
@@ -556,6 +651,8 @@ SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset({
     TimelineActionName.ARCHIVE_FILE,
     TimelineActionName.MOVE_BETWEEN_ROOTS,
 })
+# add_file is intentionally excluded; preflight rejects it with
+# E_MATERIALIZE_TIMELINE_UNSUPPORTED (deferred to Sprint 7, see Alternatives Rejected).
 
 
 def preflight_timeline(scenario: Scenario) -> None:
@@ -708,7 +805,7 @@ class MaterializationReport(BaseModel):
 |------|-------------------------------------------------------|---------------|
 | 0    | success                                               | — |
 | 2    | usage error (Typer-handled)                           | — |
-| 3    | scenario validation failed                            | E_* from validation pipeline, incl. new E_ROOT_UNKNOWN |
+| 3    | scenario validation failed                            | E_* from validation pipeline, incl. new E_ROOT_UNKNOWN, new E_SLOW_COPY_PATH_COLLISION |
 | 4    | required tool missing or below minimum                | E_MATERIALIZE_CAPABILITY_GATE |
 | 5    | materializer ran but produced an error                | E_MATERIALIZE_TIMELINE_UNSUPPORTED (re-purposed: now "unsupported action"), E_MATERIALIZE_UNSUPPORTED, E_MATERIALIZE_TOOL_FAILED, E_MATERIALIZE_PROBE_PARSE_FAILED, **E_MATERIALIZE_FS_FAILED** |
 | 7    | containment violation; or in-progress sentinel        | E_PATH_CONTAINMENT, E_SENTINEL_IN_PROGRESS |
@@ -803,6 +900,11 @@ tests/engine/test_events_sprint6.py
   - test_archive_file_journal_entry: assert state_delta has from_path + to_path
   - test_move_between_roots_journal_entry: assert state_delta carries
     from_root_id, to_root_id, from_path, to_path
+  - test_state_delta_keys_match_contract: parametrized over every entry in
+    `_STATE_DELTA_KEYS`. For each action, build a minimal scenario that
+    exercises the handler once, invoke the engine, and assert
+    `set(emitted_entry.state_delta.keys()) >= _STATE_DELTA_KEYS[action]`.
+    Locks the state_delta surface against silent drift in future sprints.
 
 tests/engine/test_path_history.py
   - test_path_history_empty_for_static_asset: asset with no filesystem events
@@ -830,11 +932,11 @@ tests/materializer/test_filesystem.py  # NEW MODULE
       * test_apply_move_asset_renames_file
       * test_apply_rename_file_is_alias_of_move
       * test_apply_delete_file_unlinks
-      * test_apply_add_file_writes_zero_bytes
       * test_apply_archive_file_moves_to_archive_root
       * test_apply_archive_file_with_explicit_root
       * test_apply_move_between_roots_crosses_roots
       * test_apply_create_sidecar_writes_srt_and_hashes
+      * test_apply_create_sidecar_returns_hash_keyed_by_sidecar_id
       * test_apply_slow_copy_start_writes_full_bytes_to_temp_path
       * test_apply_slow_copy_commit_renames_temp_to_final
       * test_apply_slow_copy_commit_unlinks_initial_when_different_from_final
@@ -860,6 +962,14 @@ tests/validation/rules/test_path_containment_sprint6.py
     archive_root pointing at a root path that resolves outside library/ via
     a `..` segment -> E_PATH_CONTAINMENT
   - test_move_between_roots_path_synthesis_respects_containment
+
+tests/validation/rules/test_slow_copy.py  # EXISTING file; add cases
+  - test_slow_copy_rejects_temp_equals_final: SlowCopyStartEvent with
+    temp_path == to -> E_SLOW_COPY_PATH_COLLISION
+  - test_slow_copy_rejects_temp_equals_initial_path: SlowCopyStartEvent
+    whose temp_path collides with the asset's initial-state path under
+    the <primary_root>/<asset_id>.<container> convention ->
+    E_SLOW_COPY_PATH_COLLISION
 ```
 
 ### Layer 3 — Materializer orchestrator unit tests (mocked subprocess)
@@ -875,6 +985,10 @@ tests/materializer/test_run_sprint6.py
   - test_reencode_video_rejected_at_preflight: mixed scenario with
     reencode_video event -> E_MATERIALIZE_UNSUPPORTED at preflight, no
     run-dir allocated
+  - test_add_file_rejected_at_preflight: scenario with delete_file ->
+    add_file on the same asset; preflight rejects with
+    E_MATERIALIZE_TIMELINE_UNSUPPORTED, no run-dir allocated. Locks the
+    deferral of add_file materialize to Sprint 7.
   - test_phase_b_oserror_aborts_and_cleans_up: monkeypatch the _move_asset
     helper to raise OSError on the third invocation; assert library/ wiped,
     materialization.json present with outcome=fs_failed,
@@ -930,6 +1044,15 @@ tests/integration/test_materialize_sprint6_real.py
       Scenario with a timeline create_sidecar event (not declared on the
       asset's subtitles); assert SRT file exists at the event's to_path and
       manifest.sidecars carries the content_hash
+
+  - test_create_sidecar_collides_with_declared_subtitle:
+      Scenario declares one English subtitle on the asset and includes a
+      create_sidecar event for the same (asset_id, language) pair. Assert:
+      manifest.sidecars contains TWO entries for that (asset_id, language),
+      with distinct sidecar_id values and distinct on-disk paths; both
+      content_hash values are populated (the declared row from phase A's
+      augment_manifest, the timeline row from phase B's
+      augment_timeline_sidecars).
 
   - test_phase_b_failure_cleans_library:
       Hand-crafted scenario where a delete_file targets an asset whose path
@@ -993,6 +1116,7 @@ tests/fixtures/scenarios/slow-copy.yaml
 
 - Wall-clock slow_copy partial growth (Sprint 8).
 - Media mutation execution (Sprint 7).
+- `add_file` in materialize (deferred to Sprint 7 to land alongside add-with-recipe).
 - `remove_sidecar` / `update_sidecar` actions (deferred).
 - Cross-mode plan-vs-materialize journal equivalence for non-empty timelines
   (Sprint 9's adapter).
@@ -1064,6 +1188,18 @@ Plus additions resolved during brainstorming:
   member. Rejected because phase-B failures carry no `ToolInvocation` and
   inflating "tool failed" semantics to include them would mislead the
   Sprint 9 adapter and any human reading the report.
+
+- **Materialize `add_file` with a zero-byte payload.** Would let Sprint 6
+  cover all currently-engineered timeline actions. Rejected because phase
+  A populates `ManifestVersion.content_hash` from the originally-synthesized
+  bytes, so writing `b""` at phase B leaves the hash stale. Re-hash plus
+  re-probe is viable but introduces a second probe path outside the phase-A
+  synthesis loop. Deferring `add_file` materialize to Sprint 7 (where
+  recipe-driven byte synthesis lands) is the cleaner cut; the lifecycle
+  rule already makes `add_file` reachable only after `delete_file` on the
+  same asset, so existing plan-only scenarios continue to work unchanged
+  and Sprint 6's preflight rejects `add_file` with the existing
+  `E_MATERIALIZE_TIMELINE_UNSUPPORTED` code.
 
 ## Open Questions
 
