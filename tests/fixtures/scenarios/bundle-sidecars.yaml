@@ -35,9 +35,25 @@ works:
                   mode: sidecar
 
 timeline:
-  - id: create_subs_001
-    at: 1s
+  - id: ev_create_poster
+    at: 0s
     action: create_sidecar
     target: asset_main
-    to: movies-hd/Quasar.eng.srt
-    language: eng
+    to: movies-hd/Quasar.poster.png
+    kind: poster
+  - id: ev_create_nfo
+    at: 0s
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Quasar.nfo
+    kind: nfo
+  - id: ev_embed_subtitle
+    at: 1s
+    action: embed_subtitle
+    target: asset_main
+    sidecar_path: asset_main.eng.srt
+  - id: ev_rename_asset
+    at: 2s
+    action: rename_file
+    target: asset_main
+    to: movies-hd/Quasar.HD.mkv
