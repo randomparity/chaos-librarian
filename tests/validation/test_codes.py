@@ -114,3 +114,19 @@ class TestCodeConstants:
     )
     def test_constant_defined(self, name: str) -> None:
         assert getattr(codes, name) == name
+
+
+def test_e_sidecar_target_unknown_constant():
+    assert codes.E_SIDECAR_TARGET_UNKNOWN == "E_SIDECAR_TARGET_UNKNOWN"
+
+
+def test_e_extract_track_unknown_constant():
+    assert codes.E_EXTRACT_TRACK_UNKNOWN == "E_EXTRACT_TRACK_UNKNOWN"
+
+
+def test_e_sidecar_kind_mismatch_constant():
+    assert codes.E_SIDECAR_KIND_MISMATCH == "E_SIDECAR_KIND_MISMATCH"
+
+
+def test_e_sidecar_path_collision_constant():
+    assert codes.E_SIDECAR_PATH_COLLISION == "E_SIDECAR_PATH_COLLISION"
