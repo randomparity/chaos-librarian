@@ -19,27 +19,11 @@ subpackage import target.
 from __future__ import annotations
 
 import ast
-from pathlib import Path
 
 import pytest
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-_RULES_DIR = _REPO_ROOT / "src" / "chaos_librarian" / "validation" / "rules"
-
-# Sibling rule modules — every ``rules/`` file that defines an ``E_*`` rule.
-# Keep alphabetized; mirrors ``test_rule_import_isolation.RULE_MODULES``.
-_RULE_MODULES: tuple[str, ...] = (
-    "asset_path_safety",
-    "duration_syntax",
-    "id_duplicate",
-    "path_containment",
-    "path_duplicate",
-    "sidecar_language",
-    "slow_copy",
-    "target_unknown",
-    "timeline_lifecycle",
-    "timeline_order",
-)
+from tests.validation.rule_modules import RULE_MODULES as _RULE_MODULES
+from tests.validation.rule_modules import RULES_DIR as _RULES_DIR
 
 _RULES_PACKAGE_PREFIX = "chaos_librarian.validation.rules."
 _SIBLING_PREFIXES: frozenset[str] = frozenset(
