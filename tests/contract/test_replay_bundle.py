@@ -343,5 +343,5 @@ def test_materialize_bundle_toolchain_rejects_unknown_tool():
         MaterializeReplayBundle.model_validate(payload)
 
 
-def test_replay_bundle_schema_version_is_four():
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 4
+def test_replay_bundle_schema_version_is_five():
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 5
