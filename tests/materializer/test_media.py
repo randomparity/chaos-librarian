@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
-from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import ToolInvocation
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.media import (
     _MediaContext,
@@ -579,3 +579,52 @@ class TestApplyExtractSubtitle:
         joined = " ".join(argv)
         # Either the language-specific map or the fallback s:0 map.
         assert "0:s:m:language:fra" in joined or "0:s:0" in joined
+
+
+class TestApplyUpdateSidecar:
+    def test_update_sidecar_subtitle_regenerates_bytes(self, monkeypatch, tmp_path):
+        # Asset declared with a subtitle so ctx can find duration_seconds.
+        asset = Asset.model_validate(
+            {
+                "id": "a0",
+                "role": "primary_video",
+                "container": "mkv",
+                "duration_seconds": 2.0,
+                "video": {"source": "color_bars", "codec": "h264", "resolution": "hd"},
+                "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+                "subtitles": [{"codec": "srt", "language": "eng", "mode": "sidecar"}],
+            }
+        )
+        sidecar = ManifestSidecar(
+            id="sidecar_0001",
+            asset_id="a0",
+            kind="subtitle",
+            path="a0.eng.srt",
+            language="eng",
+        )
+        # Pre-populate the sidecar file.
+        (tmp_path / "a0.eng.srt").write_bytes(b"old")
+        ctx = _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": asset},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+            sidecar_lookup=lambda _sid: sidecar,
+        )
+        entry = _atomic_entry(
+            event_id="ev_us_001",
+            action=TimelineActionName.UPDATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_id": "sidecar_0001",
+                "sidecar_path": "a0.eng.srt",
+            },
+        )
+        result = apply_media_action(ctx, entry)
+        new_bytes = (tmp_path / "a0.eng.srt").read_bytes()
+        assert new_bytes != b"old"
+        assert b"00:00:00,000" in new_bytes
+        assert result.output_sidecar_id == "sidecar_0001"
+        assert result.tool_invocation_index is None  # subtitle is pure Python
+        assert "sidecar_0001" in ctx.post_phase_b_sidecars

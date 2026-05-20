@@ -20,15 +20,19 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
-from chaos_librarian.contract.scenario import Asset, TimelineActionName
+from chaos_librarian.contract.scenario import Asset, SidecarKind, TimelineActionName
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.probe import probe_file
+from chaos_librarian.materializer.sidecar_bytes import regenerate_sidecar
+
+if TYPE_CHECKING:
+    from chaos_librarian.contract.manifest import ManifestSidecar
 
 __all__ = ["_MediaContext", "_subtitle_codec_for_container", "apply_media_action"]
 
@@ -81,6 +85,10 @@ class _MediaContext:
     # Shared with the orchestrator so each media handler's ffmpeg/ffprobe
     # calls append to the same MaterializationReport.invocations list.
     invocations: list[ToolInvocation] = field(default_factory=list)
+    # update_sidecar needs the (kind, language) recorded on the existing
+    # ManifestSidecar; the orchestrator passes a lookup callable so this
+    # module doesn't import from manifest_build.
+    sidecar_lookup: Callable[[str], ManifestSidecar | None] | None = None
 
 
 _RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
@@ -506,6 +514,99 @@ def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAct
     )
 
 
+def _apply_update_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """Regenerate the sidecar's bytes with a perturbed sub-seed.
+
+    Per spec design decision #7, the perturbed seed includes event_id
+    so consecutive updates on the same sidecar produce distinct bytes.
+
+    Subtitle / NFO: pure Python; tool_invocation_index = None.
+    Poster: invokes ffmpeg lavfi; tool_invocation_index populated.
+    """
+    delta = entry.state_delta
+    sidecar_id = str(delta["sidecar_id"])
+    sidecar_path = ctx.library_root / str(delta["sidecar_path"])
+    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    if ctx.sidecar_lookup is None:
+        raise MediaActionError(
+            "update_sidecar: ctx.sidecar_lookup is None",
+            event_id=entry.event_id,
+            action=TimelineActionName.UPDATE_SIDECAR,
+            cause=RuntimeError("missing lookup"),
+        )
+    sidecar = ctx.sidecar_lookup(sidecar_id)
+    if sidecar is None:
+        raise MediaActionError(
+            f"update_sidecar: sidecar_id {sidecar_id!r} not in manifest",
+            event_id=entry.event_id,
+            action=TimelineActionName.UPDATE_SIDECAR,
+            cause=KeyError(sidecar_id),
+        )
+    asset = ctx.scenario_assets.get(sidecar.asset_id)
+    if asset is None:
+        raise MediaActionError(
+            f"update_sidecar: asset {sidecar.asset_id!r} not in scenario",
+            event_id=entry.event_id,
+            action=TimelineActionName.UPDATE_SIDECAR,
+            cause=KeyError(sidecar.asset_id),
+        )
+    kind = SidecarKind(sidecar.kind)
+    started = time.monotonic_ns()
+    invocation_index: int | None = None
+    bytes_, argv = regenerate_sidecar(
+        kind=kind,
+        language=sidecar.language,
+        sidecar_id=sidecar_id,
+        resolved_seed=ctx.resolved_seed,
+        event_id=entry.event_id,
+        duration_s=asset.duration_seconds,
+        output_path=temp_output,
+    )
+    if bytes_ is not None:
+        temp_output.parent.mkdir(parents=True, exist_ok=True)
+        temp_output.write_bytes(bytes_)
+    else:
+        if argv is None:
+            raise MediaActionError(
+                f"update_sidecar: regenerate_sidecar returned no bytes and no argv "
+                f"for event {entry.event_id}",
+                event_id=entry.event_id,
+                action=TimelineActionName.UPDATE_SIDECAR,
+                cause=RuntimeError("missing argv"),
+                asset_id=sidecar.asset_id,
+            )
+        invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+        invocation_index = len(ctx.invocations)
+        ctx.invocations.append(invocation)
+        if invocation.exit_code != 0:
+            raise MediaActionError(
+                f"update_sidecar (poster) failed for event {entry.event_id}: "
+                f"ffmpeg exit {invocation.exit_code}",
+                event_id=entry.event_id,
+                action=TimelineActionName.UPDATE_SIDECAR,
+                cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+                asset_id=sidecar.asset_id,
+                tool_invocation_index=invocation_index,
+            )
+    temp_output.replace(sidecar_path)
+    new_hash = _hash_file(sidecar_path)
+    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.UPDATE_SIDECAR,
+        target_asset_id=sidecar.asset_id,
+        input_path=str(delta["sidecar_path"]),  # input == output for update
+        output_path=str(delta["sidecar_path"]),
+        input_version_id=None,
+        output_version_id=None,
+        output_sidecar_id=sidecar_id,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
@@ -514,6 +615,7 @@ _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry]
     TimelineActionName.EDIT_METADATA: _apply_edit_metadata,
     TimelineActionName.EMBED_SUBTITLE: _apply_embed_subtitle,
     TimelineActionName.EXTRACT_SUBTITLE: _apply_extract_subtitle,
+    TimelineActionName.UPDATE_SIDECAR: _apply_update_sidecar,
 }
 
 
