@@ -61,6 +61,12 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
         {"from_path", "to_path", "from_root_id", "to_root_id"}
     ),
+    TimelineActionName.REENCODE_VIDEO: frozenset(
+        {"resolution", "codec", "input_path", "output_path"}
+    ),
+    TimelineActionName.REENCODE_AUDIO: frozenset(
+        {"from_channels", "to_channels", "input_path", "output_path"}
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -242,14 +248,21 @@ def _handle_reencode_video(
         event.target,
         ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
     )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
         scenario_id=scenario_id,
         action=TimelineActionName.REENCODE_VIDEO,
         target_ids=[event.target],
-        location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"resolution": event.resolution, "codec": event.codec},
+        location_ids=[loc_id],
+        state_delta={
+            "resolution": event.resolution,
+            "codec": event.codec,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
         input_version_ids=[prior_version_id],
         output_version_ids=[new_version_id],
     )
@@ -272,14 +285,21 @@ def _handle_reencode_audio(
         event.target,
         ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
     )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
         scenario_id=scenario_id,
         action=TimelineActionName.REENCODE_AUDIO,
         target_ids=[event.target],
-        location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"from_channels": event.from_channels, "to_channels": event.to_channels},
+        location_ids=[loc_id],
+        state_delta={
+            "from_channels": event.from_channels,
+            "to_channels": event.to_channels,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
         input_version_ids=[prior_version_id],
         output_version_ids=[new_version_id],
     )

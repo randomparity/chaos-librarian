@@ -97,6 +97,32 @@ class TestReencodeVideoHandler:
         assert entry.state_delta["resolution"] == "sd"
         assert entry.state_delta["codec"] == "h264"
 
+    def test_reencode_video_emits_input_and_output_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "reencode_video",
+                    "target": "a0",
+                    "resolution": "sd",
+                    "codec": "h264",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        assert isinstance(entry, AtomicJournalEntry)
+        input_path = entry.state_delta["input_path"]
+        output_path = entry.state_delta["output_path"]
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        # In-place re-encode: input and output paths are identical.
+        assert input_path == output_path
+        assert input_path.endswith("/a0.mkv")
+
 
 class TestReencodeAudioHandler:
     """reencode_audio bumps version and records channel transition.
@@ -125,6 +151,31 @@ class TestReencodeAudioHandler:
         assert entry.action == "reencode_audio"
         assert entry.state_delta["from_channels"] == "5.1"
         assert entry.state_delta["to_channels"] == "stereo"
+
+    def test_reencode_audio_emits_input_and_output_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "reencode_audio",
+                    "target": "a0",
+                    "from_channels": "5.1",
+                    "to_channels": "stereo",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        assert isinstance(entry, AtomicJournalEntry)
+        input_path = entry.state_delta["input_path"]
+        output_path = entry.state_delta["output_path"]
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        assert input_path == output_path
+        assert input_path.endswith("/a0.mkv")
 
 
 class TestCreateSidecarHandler:
