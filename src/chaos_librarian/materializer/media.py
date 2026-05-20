@@ -224,10 +224,72 @@ def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
+def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """Container swap via ffmpeg ``-c copy``. Path extension differs.
+
+    Writes ffmpeg's output to a ``<output>.tmp.<resolved_seed>`` sibling
+    then atomically renames it over the final path. Re-hashes and
+    re-probes the output, stashing both on ``ctx.post_phase_b_versions``
+    for ``manifest_build.augment_versions`` to drain. Ensures the output
+    parent directory exists before the rename, since changing the
+    extension can imply a different parent in some scenarios.
+    """
+    delta = entry.state_delta
+    input_path = ctx.library_root / str(delta["input_path"])
+    output_path = ctx.library_root / str(delta["output_path"])
+    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c",
+        "copy",
+        *BITEXACT_FLAGS,
+        str(temp_output),
+    ]
+    started = time.monotonic_ns()
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"remux_container failed for event {entry.event_id}: "
+            f"ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REMUX_CONTAINER,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+            tool_invocation_index=invocation_index,
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_output.replace(output_path)
+    new_hash = _hash_file(output_path)
+    probed = probe_file(output_path)
+    new_version_id = entry.output_version_ids[0]
+    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.REMUX_CONTAINER,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["output_path"]),
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=new_version_id,
+        output_sidecar_id=None,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
     TimelineActionName.REENCODE_AUDIO: _apply_reencode_audio,
+    TimelineActionName.REMUX_CONTAINER: _apply_remux_container,
 }
 
 

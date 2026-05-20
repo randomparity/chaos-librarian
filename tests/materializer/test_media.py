@@ -288,3 +288,72 @@ class TestApplyReencodeAudio:
         argv = captured_argv[0]
         assert "-ac" in argv
         assert argv[argv.index("-ac") + 1] == "stereo"
+
+
+class TestApplyRemuxContainer:
+    def test_apply_remux_writes_to_new_extension(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"r" * 100)
+        entry = _atomic_entry(
+            event_id="ev_rmx_001",
+            action=TimelineActionName.REMUX_CONTAINER,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_container": "mkv",
+                "to_container": "mp4",
+                "from_path": "x.mkv",
+                "to_path": "x.mp4",
+                "input_path": "x.mkv",
+                "output_path": "x.mp4",
+            },
+        )
+        result = apply_media_action(media_ctx, entry)
+        assert (tmp_path / "x.mp4").exists()
+        assert result.output_path == "x.mp4"
+
+    def test_apply_remux_argv_uses_c_copy(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"r" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="mp4", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_rmx_001",
+            action=TimelineActionName.REMUX_CONTAINER,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_container": "mkv",
+                "to_container": "mp4",
+                "from_path": "x.mkv",
+                "to_path": "x.mp4",
+                "input_path": "x.mkv",
+                "output_path": "x.mp4",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        assert "-c" in argv
+        assert argv[argv.index("-c") + 1] == "copy"
