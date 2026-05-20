@@ -162,3 +162,17 @@ def test_manifest_v4_schema_version():
         sidecars=[],
     )
     assert manifest.schema_version == 4
+
+
+def test_manifest_poster_sidecar_json_round_trip():
+    sidecar = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="poster",
+        path="asset_main.poster.png",
+        language=None,
+    )
+    payload = sidecar.model_dump_json()
+    restored = ManifestSidecar.model_validate_json(payload)
+    assert restored == sidecar
+    assert restored.language is None

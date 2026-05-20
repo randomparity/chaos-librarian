@@ -38,6 +38,7 @@ from chaos_librarian.contract.scenario import (
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RenameFileEvent,
+    SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
@@ -294,6 +295,11 @@ def _handle_create_sidecar(
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, CreateSidecarEvent)
+    # TEMPORARY: handler does not yet route on event.kind (see follow-up issue).
+    # Until it does, fail loud if a non-subtitle CreateSidecarEvent reaches here.
+    assert event.kind == SidecarKind.SUBTITLE, (
+        f"_handle_create_sidecar does not yet route on kind; got kind={event.kind!r}"
+    )
     sidecar_id = ids.next_sidecar_id()
     sidecar = ManifestSidecar(
         id=sidecar_id,
