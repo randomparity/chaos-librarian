@@ -32,6 +32,28 @@ ALL_COMMANDS = [
     "clean",
 ]
 
+
+def test_registered_commands_match_expected_order() -> None:
+    """The CLI contract pins the order ``--help`` lists commands.
+
+    WHY (per CLAUDE.md Rule 9): Typer renders ``--help`` in the order
+    ``@app.command()`` decorators run. Each command lives in its own
+    module under ``cli/commands/``; ``cli/commands/__init__.py`` imports
+    them in the contract order. A forgotten ``import`` line silently
+    drops a command from ``--help`` and the rest shift up — this test
+    catches both regressions.
+    """
+    # cmd.name is None when the command name was inferred from the
+    # callback's function name. Fall back to a getattr lookup so ``ty``
+    # doesn't have to prove that callback is a function (per ty's
+    # callable-vs-function rules).
+    registered = [
+        cmd.name or getattr(cmd.callback, "__name__", "<anonymous>")
+        for cmd in app.registered_commands
+    ]
+    assert registered == ALL_COMMANDS
+
+
 # Commands whose positional argument is a regular file (``exists=True,
 # dir_okay=False``). Tuple entries are ``(name, extra_args, takes_out)``
 # where ``extra_args`` is appended after the positional and ``takes_out``

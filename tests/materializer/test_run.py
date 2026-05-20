@@ -17,6 +17,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.materializer import run as run_mod
+from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     ScenarioValidationError,
     TimelineUnsupportedError,
@@ -76,8 +77,8 @@ def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
             ],
         )
 
-    monkeypatch.setattr(run_mod, "run_ffmpeg", fake_run)
-    monkeypatch.setattr(run_mod, "probe_file", fake_probe)
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run)
+    monkeypatch.setattr(synthesis_mod, "probe_file", fake_probe)
 
 
 def test_orchestrator_refuses_non_empty_timeline(
@@ -132,8 +133,8 @@ def test_orchestrator_records_ffmpeg_failure_and_wipes_library(
     def fail_probe(_path: Path) -> ProbedMedia:
         pytest.fail("probe should not be called")
 
-    monkeypatch.setattr(run_mod, "run_ffmpeg", fake_run)
-    monkeypatch.setattr(run_mod, "probe_file", fail_probe)
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run)
+    monkeypatch.setattr(synthesis_mod, "probe_file", fail_probe)
     scenario = tmp_path / "static.yaml"
     scenario.write_text(_STATIC_SCENARIO)
     out = tmp_path / "run"
@@ -254,8 +255,8 @@ def test_orchestrator_probes_each_asset_exactly_once(
             ],
         )
 
-    monkeypatch.setattr(run_mod, "run_ffmpeg", fake_run)
-    monkeypatch.setattr(run_mod, "probe_file", counting_probe)
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run)
+    monkeypatch.setattr(synthesis_mod, "probe_file", counting_probe)
     scenario = tmp_path / "static.yaml"
     scenario.write_text(_STATIC_SCENARIO)
     out = tmp_path / "run"
