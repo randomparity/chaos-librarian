@@ -266,7 +266,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 3
+schema_version: 4
 scenario_id: static-test
 seed: 1
 duration_scale: short

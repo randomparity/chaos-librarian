@@ -112,7 +112,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 3\nscenario_id: static\n",
+        scenario="schema_version: 4\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         journal_digest="0" * 64,
@@ -129,7 +129,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
             validation_report=validation_report,
             materialization_report=materialization_report,
             replay_bundle=replay_bundle,
-            scenario_yaml_bytes=b"schema_version: 3\nscenario_id: static\n",
+            scenario_yaml_bytes=b"schema_version: 4\nscenario_id: static\n",
             sentinel=_sentinel(RunSentinelState.COMPLETE),
         ),
     )

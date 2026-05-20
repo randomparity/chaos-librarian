@@ -35,6 +35,36 @@
       "title": "AddFileEvent",
       "type": "object"
     },
+    "ArchiveFileEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "archive_file",
+          "default": "archive_file",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "ArchiveFileEvent",
+      "type": "object"
+    },
     "Asset": {
       "additionalProperties": false,
       "properties": {
@@ -232,6 +262,18 @@
     "Library": {
       "additionalProperties": false,
       "properties": {
+        "archive_root": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive Root"
+        },
         "roots": {
           "items": {
             "$ref": "#/$defs/LibraryRoot"
@@ -298,6 +340,46 @@
         "to"
       ],
       "title": "MoveAssetEvent",
+      "type": "object"
+    },
+    "MoveBetweenRootsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "move_between_roots",
+          "default": "move_between_roots",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "from_root_id": {
+          "title": "From Root Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to_root_id": {
+          "title": "To Root Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "from_root_id",
+        "to_root_id"
+      ],
+      "title": "MoveBetweenRootsEvent",
       "type": "object"
     },
     "ReencodeAudioEvent": {
@@ -632,7 +714,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -653,9 +735,11 @@
         "discriminator": {
           "mapping": {
             "add_file": "#/$defs/AddFileEvent",
+            "archive_file": "#/$defs/ArchiveFileEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
             "move_asset": "#/$defs/MoveAssetEvent",
+            "move_between_roots": "#/$defs/MoveBetweenRootsEvent",
             "reencode_audio": "#/$defs/ReencodeAudioEvent",
             "reencode_video": "#/$defs/ReencodeVideoEvent",
             "rename_file": "#/$defs/RenameFileEvent",
@@ -691,6 +775,12 @@
           },
           {
             "$ref": "#/$defs/SlowCopyCommitEvent"
+          },
+          {
+            "$ref": "#/$defs/ArchiveFileEvent"
+          },
+          {
+            "$ref": "#/$defs/MoveBetweenRootsEvent"
           }
         ]
       },

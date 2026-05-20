@@ -30,6 +30,10 @@ def test_namespace_uuid_is_v5() -> None:
     assert CHAOS_LIBRARIAN_NAMESPACE_UUID.version == 5
 
 
+def test_scenario_schema_version_bumped_to_4():
+    assert SCENARIO_SCHEMA_VERSION == 4
+
+
 def test_all_schema_versions_are_positive_integers() -> None:
     versions = [
         ASSET_REPORT_SCHEMA_VERSION,
