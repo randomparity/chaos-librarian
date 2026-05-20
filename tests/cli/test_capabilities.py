@@ -6,13 +6,17 @@ import json
 
 from typer.testing import CliRunner
 
-import chaos_librarian.cli.app as app_mod
+from chaos_librarian.cli import commands as commands_pkg
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.capabilities import (
     Capabilities,
     ReadyFor,
     ToolStatus,
 )
+
+# Patch detect_capabilities at the call site (cli.commands.capabilities)
+# after the cli/app.py split (#23).
+app_mod = commands_pkg.capabilities
 
 runner = CliRunner()
 

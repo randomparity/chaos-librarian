@@ -9,7 +9,7 @@ from pathlib import Path
 
 from typer.testing import CliRunner
 
-import chaos_librarian.cli.app as app_mod
+from chaos_librarian.cli import commands as commands_pkg
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract import (
     MATERIALIZATION_SCHEMA_VERSION,
@@ -37,6 +37,10 @@ from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
 )
+
+# Patch materialize_scenario at the call site (cli.commands.materialize)
+# after the cli/app.py split (#23).
+app_mod = commands_pkg.materialize
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"

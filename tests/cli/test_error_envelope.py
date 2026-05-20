@@ -18,12 +18,16 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from chaos_librarian.cli import app as app_mod
+from chaos_librarian.cli import commands as commands_pkg
 from chaos_librarian.cli.app import app
 from chaos_librarian.materializer import (
     MaterializeArtifacts,
     UnsupportedMaterializationError,
 )
+
+# Patch materialize_scenario at the call site (cli.commands.materialize)
+# after the cli/app.py split (#23).
+app_mod = commands_pkg.materialize
 
 FIXTURE_DIR = Path(__file__).parent.parent / "fixtures" / "scenarios"
 

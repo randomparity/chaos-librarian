@@ -1,6 +1,6 @@
-"""Regression tests for ``_find_sidecar_for`` after the manifest v3 bump.
+"""Regression tests for ``find_sidecar_for`` after the manifest v3 bump.
 
-Issue #13: pre-v3 ``_find_sidecar_for`` keyed on a substring match
+Issue #13: pre-v3 ``find_sidecar_for`` keyed on a substring match
 (``language in sidecar.path``) which mis-resolved whenever one language
 tag was a substring of another (e.g. ``"en"`` matching
 ``"library/x.eng.srt"``). v3 adds an explicit ``language`` field on
@@ -18,7 +18,7 @@ from chaos_librarian.contract.manifest import (
     ManifestVariant,
     ManifestWork,
 )
-from chaos_librarian.materializer.run import _find_sidecar_for
+from chaos_librarian.materializer.manifest_build import find_sidecar_for
 
 
 def _manifest_with_sidecars(*sidecars: ManifestSidecar) -> Manifest:
@@ -64,8 +64,8 @@ def test_lookup_distinguishes_substring_colliding_languages() -> None:
     )
     manifest = _manifest_with_sidecars(en, eng)
 
-    assert _find_sidecar_for(manifest, "a0", "en") is en
-    assert _find_sidecar_for(manifest, "a0", "eng") is eng
+    assert find_sidecar_for(manifest, "a0", "en") is en
+    assert find_sidecar_for(manifest, "a0", "eng") is eng
 
 
 def test_lookup_filters_by_asset_id() -> None:
@@ -86,5 +86,5 @@ def test_lookup_filters_by_asset_id() -> None:
     )
     manifest = _manifest_with_sidecars(a0_en, a1_en)
 
-    assert _find_sidecar_for(manifest, "a0", "en") is a0_en
-    assert _find_sidecar_for(manifest, "a1", "en") is a1_en
+    assert find_sidecar_for(manifest, "a0", "en") is a0_en
+    assert find_sidecar_for(manifest, "a1", "en") is a1_en
