@@ -11,12 +11,28 @@ resolve symlinks). It is wired into the materializer in later sprints.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Final
 
 from chaos_librarian.errors import ChaosLibrarianValueError
 
 
 class PathContainmentError(ChaosLibrarianValueError):
     """Raised when a scenario path violates the library containment contract."""
+
+
+INITIAL_PATH_TEMPLATE: Final[str] = "{root_path}/{asset_id}.{container}"
+"""Initial on-disk path convention for every declared asset.
+
+Sprint 0 baked this into ``build_initial_state``'s f-string at the assignment
+site; Sprint 6 lifts it to a module-level constant so the slow-copy
+path-collision validation rule (``rules/slow_copy.py``) can format it
+without re-encoding the convention. Format keys: ``root_path``, ``asset_id``,
+``container``.
+
+Lives in ``contract/paths.py`` (not ``engine/state.py``) to preserve the
+validation→contract→errors-only layering — no validation rule imports
+from ``chaos_librarian.engine``.
+"""
 
 
 _UNSAFE_COMPONENT_CHARS = frozenset({"/", "\\", "\x00"})

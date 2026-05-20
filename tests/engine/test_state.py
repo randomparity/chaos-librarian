@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from chaos_librarian.contract.manifest import Manifest
+from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
+from tests.engine.conftest import _build_minimal_scenario
 
 
 def _scenario_from_dict(data: dict[str, object]) -> Scenario:
@@ -194,3 +196,63 @@ timeline: []
         report = run_validation(run_input)
         assert report.ok is False
         assert any(i.code == E_PATH_CONTAINMENT for i in report.issues)
+
+
+def test_world_state_root_path_for_returns_declared_path() -> None:
+    scenario = _build_minimal_scenario(
+        roots=[("movies-hd", "library/movies-hd"), ("staging", "library/staging")],
+        works=[("work_001", "asset_hd_main", "mkv")],
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    assert state.root_path_for("movies-hd") == "library/movies-hd"
+    assert state.root_path_for("staging") == "library/staging"
+
+
+def test_world_state_archive_path_for_default_root() -> None:
+    scenario = _build_minimal_scenario(
+        roots=[("movies-hd", "library/movies-hd")],
+        works=[("work_001", "asset_hd_main", "mkv")],
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    assert state.archive_path_for("asset_hd_main") == (
+        "library/movies-hd/archive/asset_hd_main.mkv"
+    )
+
+
+def test_world_state_archive_path_for_sentinel_value() -> None:
+    scenario = _build_minimal_scenario(
+        roots=[("movies-hd", "library/movies-hd")],
+        works=[("work_001", "asset_hd_main", "mkv")],
+        archive_root="archive",
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    assert state.archive_path_for("asset_hd_main") == (
+        "library/movies-hd/archive/asset_hd_main.mkv"
+    )
+
+
+def test_world_state_archive_path_for_explicit_root() -> None:
+    scenario = _build_minimal_scenario(
+        roots=[
+            ("movies-hd", "library/movies-hd"),
+            ("cold-storage", "library/cold-storage"),
+        ],
+        works=[("work_001", "asset_hd_main", "mkv")],
+        archive_root="cold-storage",
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    assert state.archive_path_for("asset_hd_main") == ("library/cold-storage/asset_hd_main.mkv")
+
+
+def test_initial_path_template_format() -> None:
+    # Module-level constant lifted from build_initial_state so the slow-copy
+    # validation rule can format an asset's initial path without duplicating
+    # the convention.
+    assert (
+        INITIAL_PATH_TEMPLATE.format(
+            root_path="library/movies-hd",
+            asset_id="asset_hd_main",
+            container="mkv",
+        )
+        == "library/movies-hd/asset_hd_main.mkv"
+    )

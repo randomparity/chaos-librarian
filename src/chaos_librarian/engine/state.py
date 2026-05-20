@@ -26,6 +26,7 @@ from chaos_librarian.contract.manifest import (
     ManifestVersion,
     ManifestWork,
 )
+from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.errors import ChaosLibrarianValueError
@@ -50,6 +51,35 @@ class WorldState:
 
     # Maps slow_copy_start event_id → (location_id, final_path). Drained on commit.
     pending_slow_copies: dict[str, tuple[str, str]] = field(default_factory=dict)
+
+    # Sprint 6 additions: populated once in ``build_initial_state`` from
+    # ``scenario.library`` so the archive_file / move_between_roots handlers
+    # can resolve a root id or compute an asset's archive destination
+    # without re-deriving the convention each call.
+    _root_paths: dict[str, str] = field(default_factory=dict)
+    _archive_path_template: str = ""
+
+    def root_path_for(self, root_id: str) -> str:
+        """Return the declared path of the library root with this id.
+
+        Raises:
+            KeyError: if ``root_id`` was not declared in the scenario.
+        """
+        return self._root_paths[root_id]
+
+    def archive_path_for(self, asset_id: str) -> str:
+        """Return the archive destination for ``asset_id``.
+
+        Formats ``_archive_path_template`` with the asset's container.
+        Validation (``rules/target_unknown.rule_root_unknown``) has
+        already proven the archive root resolves, so the template is
+        populated and the format call cannot KeyError.
+        """
+        asset = self.assets[asset_id]
+        return self._archive_path_template.format(
+            asset_id=asset_id,
+            container=asset.container,
+        )
 
     def location_id_for_asset(self, asset_id: str) -> str:
         """Return the location id currently bound to ``asset_id``.
@@ -114,6 +144,13 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
         )
     primary_root = scenario.library.roots[0]
     state = WorldState()
+    state._root_paths = {root.id: root.path for root in scenario.library.roots}
+    archive_root = scenario.library.archive_root
+    if archive_root is None or archive_root == "archive":
+        archive_base = f"{primary_root.path}/archive"
+    else:
+        archive_base = state._root_paths[archive_root]
+    state._archive_path_template = f"{archive_base}/{{asset_id}}.{{container}}"
 
     for work in scenario.works:
         state.works[work.id] = ManifestWork(id=work.id, title=work.title)
@@ -142,7 +179,11 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
                     ManifestLocation(
                         id=location_id,
                         asset_id=asset.id,
-                        path=f"{primary_root.path}/{asset.id}.{asset.container}",
+                        path=INITIAL_PATH_TEMPLATE.format(
+                            root_path=primary_root.path,
+                            asset_id=asset.id,
+                            container=asset.container,
+                        ),
                     ),
                 )
 
