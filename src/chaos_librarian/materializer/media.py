@@ -167,9 +167,67 @@ def _apply_reencode_video(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
+def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """Re-encode audio in place. from_channels is descriptive; -ac uses to_channels."""
+    delta = entry.state_delta
+    input_path = ctx.library_root / str(delta["input_path"])
+    output_path = ctx.library_root / str(delta["output_path"])
+    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-c:v",
+        "copy",
+        "-ac",
+        str(delta["to_channels"]),
+        "-c:a",
+        "aac",
+        "-c:s",
+        "copy",
+        *BITEXACT_FLAGS,
+        str(temp_output),
+    ]
+    started = time.monotonic_ns()
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"reencode_audio failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+            tool_invocation_index=invocation_index,
+        )
+    temp_output.replace(output_path)
+    new_hash = _hash_file(output_path)
+    probed = probe_file(output_path)
+    new_version_id = entry.output_version_ids[0]
+    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.REENCODE_AUDIO,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["output_path"]),
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=new_version_id,
+        output_sidecar_id=None,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
+    TimelineActionName.REENCODE_AUDIO: _apply_reencode_audio,
 }
 
 

@@ -219,3 +219,72 @@ class TestApplyReencodeVideo:
             apply_media_action(media_ctx, entry)
         assert exc_info.value.event_id == "ev_rv_001"
         assert exc_info.value.action == TimelineActionName.REENCODE_VIDEO
+
+
+class TestApplyReencodeAudio:
+    def test_apply_reencode_audio_writes_output(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"x" * 100)
+        entry = _atomic_entry(
+            event_id="ev_ra_001",
+            action=TimelineActionName.REENCODE_AUDIO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_channels": "5.1",
+                "to_channels": "stereo",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        result = apply_media_action(media_ctx, entry)
+        assert (tmp_path / "x.mkv").read_bytes() == b"x" * 100
+        expected_hash = "sha256:" + hashlib.sha256(b"x" * 100).hexdigest()
+        assert result.output_content_hash == expected_hash
+        assert result.action == TimelineActionName.REENCODE_AUDIO
+        assert result.output_version_id == "v1"
+        assert media_ctx.post_phase_b_versions["v1"][0] == expected_hash
+
+    def test_apply_reencode_audio_argv_uses_ac_to_channels(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured_argv: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv.append(list(argv))
+            Path(argv[-1]).write_bytes(b"x" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_ra_001",
+            action=TimelineActionName.REENCODE_AUDIO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_channels": "5.1",
+                "to_channels": "stereo",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured_argv[0]
+        assert "-ac" in argv
+        assert argv[argv.index("-ac") + 1] == "stereo"
