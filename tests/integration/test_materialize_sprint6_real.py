@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import FailureStage, FilesystemAction, Outcome
-from chaos_librarian.contract.scenario import Scenario, TimelineActionName
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import filesystem as filesystem_mod
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer.capabilities import (
@@ -288,31 +287,30 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
     ``invocation_index`` is ``None`` (filesystem stage is not a
     subprocess invocation).
 
-    The trigger: pre-delete the asset's source file just before
-    ``apply_phase_b`` walks the journal; the first ``move_asset`` helper
-    raises ``OSError`` from ``src.replace(dst)``.
+    The trigger: pre-delete the asset's source file just before the
+    first ``_dispatch_one`` call walks the journal; the first
+    ``move_asset`` helper raises ``OSError`` from ``src.replace(dst)``.
+    Sprint 7 replaced the single ``apply_phase_b`` orchestrator entry
+    point with a per-entry dispatcher, so the trigger now hooks the
+    first dispatch call instead of the outer walk.
     """
-    original_apply = filesystem_mod.apply_phase_b
+    original_dispatch = filesystem_mod._dispatch_one
+    call_count = {"n": 0}
 
-    def tampered_apply_phase_b(
-        *,
-        library_root: Path,
-        journal: Sequence[JournalEntry],
-        scenario: Scenario,
-        resolved_seed: int,
-    ) -> tuple[list[FilesystemAction], dict[str, str]]:
-        # Identity-move-rename starts the asset at
-        # ``library/movies-hd/asset_hd_main.mkv``; deleting it before
-        # phase B starts forces the first move_asset to fail.
-        (library_root / "movies-hd" / "asset_hd_main.mkv").unlink()
-        return original_apply(
-            library_root=library_root,
-            journal=journal,
-            scenario=scenario,
-            resolved_seed=resolved_seed,
-        )
+    def tampered_dispatch_one(
+        ctx: filesystem_mod._PhaseBContext, entry: JournalEntry
+    ) -> FilesystemAction | None:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # Identity-move-rename starts the asset at
+            # ``library/movies-hd/asset_hd_main.mkv``; deleting it
+            # before the first dispatch runs forces the first
+            # ``move_asset`` helper to fail with ENOENT.
+            (ctx.library_root / "movies-hd" / "asset_hd_main.mkv").unlink()
+        return original_dispatch(ctx, entry)
 
-    monkeypatch.setattr(run_mod, "apply_phase_b", tampered_apply_phase_b)
+    monkeypatch.setattr(filesystem_mod, "_dispatch_one", tampered_dispatch_one)
+    monkeypatch.setattr(run_mod, "_dispatch_one", tampered_dispatch_one)
 
     out_dir = tmp_path / "run-001"
     with pytest.raises(FilesystemActionError):

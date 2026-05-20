@@ -31,7 +31,7 @@ from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
     MaterializeMetadata,
     begin_materialize_run,
-    cleanup_failed_filesystem_run,
+    cleanup_failed_phase_b_run,
     cleanup_failed_run,
 )
 
@@ -155,7 +155,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         assert (out_dir / name).exists(), name
 
 
-def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
+def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -231,7 +231,7 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
         sentinel=_sentinel(RunSentinelState.COMPLETE),
     )
     with pytest.raises(OSError, match="Permission denied") as exc_info:
-        cleanup_failed_filesystem_run(out_dir, metadata)
+        cleanup_failed_phase_b_run(out_dir, metadata)
     assert exc_info.value is boom
     # The fix is "drop ignore_errors=True"; with it passed, real rmtree
     # would silently swallow the OSError and the test would not surface
