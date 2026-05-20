@@ -81,3 +81,131 @@ class TestRule6PathContainment:
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+    def test_archive_file_path_synthesis_respects_containment(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """archive_file has no to: field — destination is synthesized from
+        library.archive_root + asset container. The escaping archive root
+        must surface as a containment violation at the synthesized path."""
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "movies-hd", "path": "library/movies-hd"},
+                    {"id": "escape", "path": "library/../../../etc"},
+                ],
+                "archive_root": "escape",
+            },
+            timeline=[
+                {
+                    "id": "ev_arch",
+                    "at": "0ns",
+                    "action": "archive_file",
+                    "target": "a",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert timeline_issues, "synthesized archive destination should fail containment"
+
+    def test_move_between_roots_path_synthesis_respects_containment(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """move_between_roots synthesizes the destination from to_root_id +
+        asset container. An escaping to-root must surface as a containment
+        violation against the synthesized path."""
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "movies-hd", "path": "library/movies-hd"},
+                    {"id": "escape", "path": "library/../../../etc"},
+                ],
+            },
+            timeline=[
+                {
+                    "id": "ev_mbr",
+                    "at": "0ns",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "movies-hd",
+                    "to_root_id": "escape",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert timeline_issues, "synthesized move-between-roots destination should fail containment"
+
+    def test_archive_file_with_safe_archive_root_no_timeline_issue(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """archive_file under a contained archive root does not emit a
+        timeline-level containment issue for the synthesized destination."""
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "movies-hd", "path": "movies-hd"},
+                    {"id": "cold-storage", "path": "cold-storage"},
+                ],
+                "archive_root": "cold-storage",
+            },
+            timeline=[
+                {
+                    "id": "ev_arch",
+                    "at": "0ns",
+                    "action": "archive_file",
+                    "target": "a",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert not timeline_issues
+
+    def test_move_between_roots_with_safe_to_root_no_timeline_issue(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """move_between_roots under a contained to-root does not emit a
+        timeline-level containment issue for the synthesized destination."""
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "movies-hd", "path": "movies-hd"},
+                    {"id": "cold-storage", "path": "cold-storage"},
+                ],
+            },
+            timeline=[
+                {
+                    "id": "ev_mbr",
+                    "at": "0ns",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "movies-hd",
+                    "to_root_id": "cold-storage",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert not timeline_issues
