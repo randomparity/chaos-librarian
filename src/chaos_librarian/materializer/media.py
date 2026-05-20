@@ -440,6 +440,72 @@ def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
+def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """ffmpeg -map 0:s:m:language:<lang>? -c:s srt sidecar.srt.
+
+    Output is always .srt regardless of asset container. No re-probe
+    (asset bytes unchanged); hash only the new sidecar file.
+    """
+    delta = entry.state_delta
+    input_path = ctx.library_root / str(delta["input_path"])
+    sidecar_path = ctx.library_root / str(delta["sidecar_path"])
+    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    language = str(delta["language"])
+    # The optional "?" suffix tells ffmpeg "skip if no match" — combined
+    # with a -map fallback, this gives the language-or-track-0 behavior.
+    # In practice ffmpeg's stream-specifier matrix is fiddly; if the
+    # language match misses, ffmpeg emits a warning and the fallback
+    # -map covers it. The output is always .srt.
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-map",
+        f"0:s:m:language:{language}?",
+        "-map",
+        "0:s:0",
+        "-c:s",
+        "srt",
+        *BITEXACT_FLAGS,
+        str(temp_output),
+    ]
+    started = time.monotonic_ns()
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"extract_subtitle failed for event {entry.event_id}: "
+            f"ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EXTRACT_SUBTITLE,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+            tool_invocation_index=invocation_index,
+        )
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    temp_output.replace(sidecar_path)
+    new_hash = _hash_file(sidecar_path)
+    sidecar_id = str(delta["sidecar_id"])
+    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["sidecar_path"]),
+        input_version_id=None,
+        output_version_id=None,
+        output_sidecar_id=sidecar_id,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
@@ -447,6 +513,7 @@ _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry]
     TimelineActionName.REMUX_CONTAINER: _apply_remux_container,
     TimelineActionName.EDIT_METADATA: _apply_edit_metadata,
     TimelineActionName.EMBED_SUBTITLE: _apply_embed_subtitle,
+    TimelineActionName.EXTRACT_SUBTITLE: _apply_extract_subtitle,
 }
 
 

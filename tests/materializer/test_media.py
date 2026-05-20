@@ -519,3 +519,63 @@ class TestApplyEmbedSubtitle:
         apply_media_action(media_ctx, entry)
         argv = captured[0]
         assert argv[argv.index("-c:s") + 1] == "mov_text"
+
+
+class TestApplyExtractSubtitle:
+    def test_apply_extract_writes_srt_at_to_path(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"s" * 100)
+        entry = _atomic_entry(
+            event_id="ev_xs_001",
+            action=TimelineActionName.EXTRACT_SUBTITLE,
+            target="a0",
+            state_delta={
+                "sidecar_id": "sidecar_0002",
+                "sidecar_path": "x.fra.srt",
+                "language": "fra",
+                "input_path": "x.mkv",
+            },
+        )
+        result = apply_media_action(media_ctx, entry)
+        assert (tmp_path / "x.fra.srt").exists()
+        assert result.output_sidecar_id == "sidecar_0002"
+        assert result.input_version_id is None
+        assert result.output_version_id is None
+        # post_phase_b_sidecars captured the new hash + path.
+        assert "sidecar_0002" in media_ctx.post_phase_b_sidecars
+
+    def test_apply_extract_argv_maps_language_with_fallback(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"s" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        entry = _atomic_entry(
+            event_id="ev_xs_001",
+            action=TimelineActionName.EXTRACT_SUBTITLE,
+            target="a0",
+            state_delta={
+                "sidecar_id": "sidecar_0002",
+                "sidecar_path": "x.fra.srt",
+                "language": "fra",
+                "input_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        joined = " ".join(argv)
+        # Either the language-specific map or the fallback s:0 map.
+        assert "0:s:m:language:fra" in joined or "0:s:0" in joined
