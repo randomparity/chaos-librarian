@@ -25,9 +25,11 @@ from chaos_librarian.contract.reports import (
     AssetReport,
     AssetSnapshot,
     BundleReport,
+    PathHistoryEntry,
     VariantReport,
     WorkReport,
 )
+from chaos_librarian.contract.scenario import TimelineActionName
 
 
 class TestAssetReport:
@@ -54,7 +56,7 @@ class TestAssetReport:
 
     def test_round_trip(self) -> None:
         report = AssetReport(
-            schema_version=2,
+            schema_version=3,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -65,7 +67,7 @@ class TestAssetReport:
 
     def test_current_may_be_none(self) -> None:
         report = AssetReport(
-            schema_version=2,
+            schema_version=3,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -86,9 +88,9 @@ class TestAssetReport:
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_two(self) -> None:
+    def test_schema_version_constant_is_three(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 2
+        assert ASSET_REPORT_SCHEMA_VERSION == 3
 
 
 class TestOtherReports:
@@ -168,8 +170,8 @@ def test_asset_snapshot_omits_new_fields_when_none():
     assert "probed" not in rendered
 
 
-def test_asset_report_schema_version_is_two():
-    assert ASSET_REPORT_SCHEMA_VERSION == 2
+def test_asset_report_schema_version_is_three() -> None:
+    assert ASSET_REPORT_SCHEMA_VERSION == 3
 
 
 def test_other_report_schema_versions_stay_at_one():
@@ -179,3 +181,66 @@ def test_other_report_schema_versions_stay_at_one():
     assert WORK_REPORT_SCHEMA_VERSION == 1
     assert VARIANT_REPORT_SCHEMA_VERSION == 1
     assert BUNDLE_REPORT_SCHEMA_VERSION == 1
+
+
+def test_path_history_entry_round_trip() -> None:
+    payload = {
+        "event_id": "ev_move_001",
+        "action": "move_asset",
+        "logical_time_ns": 1_000_000_000,
+        "from_path": "movies-hd/old.mkv",
+        "to_path": "movies-hd/new.mkv",
+        "temp_path": None,
+    }
+    entry = PathHistoryEntry.model_validate(payload)
+    assert entry.from_path == "movies-hd/old.mkv"
+    assert entry.to_path == "movies-hd/new.mkv"
+    assert entry.temp_path is None
+    assert entry.action == TimelineActionName.MOVE_ASSET
+
+
+def test_asset_report_path_history_defaults_to_empty_list() -> None:
+    payload = {
+        "schema_version": 3,
+        "asset_id": "asset_hd_main",
+        "initial": {
+            "location_path": "movies-hd/asset_hd_main.mkv",
+            "version_id": "version_0001",
+            "version_index": 0,
+        },
+        "history": [],
+        "current": {
+            "location_path": "movies-hd/asset_hd_main.mkv",
+            "version_id": "version_0001",
+            "version_index": 0,
+        },
+    }
+    report = AssetReport.model_validate(payload)
+    assert report.path_history == []
+
+
+def test_asset_report_v3_round_trip_with_path_history() -> None:
+    payload = {
+        "schema_version": 3,
+        "asset_id": "asset_hd_main",
+        "initial": {
+            "location_path": "movies-hd/asset_hd_main.mkv",
+            "version_id": "version_0001",
+            "version_index": 0,
+        },
+        "history": [],
+        "current": None,
+        "path_history": [
+            {
+                "event_id": "ev_delete_001",
+                "action": "delete_file",
+                "logical_time_ns": 1_000_000_000,
+                "from_path": "movies-hd/asset_hd_main.mkv",
+                "to_path": None,
+                "temp_path": None,
+            }
+        ],
+    }
+    report = AssetReport.model_validate(payload)
+    assert len(report.path_history) == 1
+    assert report.path_history[0].action == TimelineActionName.DELETE_FILE

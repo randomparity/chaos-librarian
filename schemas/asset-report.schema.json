@@ -86,6 +86,66 @@
       "title": "AssetSnapshot",
       "type": "object"
     },
+    "PathHistoryEntry": {
+      "additionalProperties": false,
+      "description": "One filesystem-affecting event projected for a single asset.\n\nDerived from the journal by ``derive_path_history``. Mirrors the\nverbatim ``AssetHistoryEntry`` but flattens the path-bearing\n``state_delta`` keys into typed ``str | None`` fields so external\nconsumers (voom-v2 adapter) can read them without parsing dicts.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/TimelineActionName"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "from_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Path"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "temp_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Path"
+        },
+        "to_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Path"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "logical_time_ns"
+      ],
+      "title": "PathHistoryEntry",
+      "type": "object"
+    },
     "ProbedMedia": {
       "additionalProperties": false,
       "description": "Output of ``ffprobe -show_format -show_streams`` mapped into a model.",
@@ -243,6 +303,24 @@
       ],
       "title": "StreamKind",
       "type": "string"
+    },
+    "TimelineActionName": {
+      "description": "All valid ``action:`` values for a timeline event.\n\nThis is the single source of truth: discriminator literals on the\nvariant classes below, the JSONPath formatter in ``validation.codes``,\nand the per-action path-field map in ``validation.semantic`` all\nreference these members instead of bare strings.",
+      "enum": [
+        "move_asset",
+        "rename_file",
+        "delete_file",
+        "add_file",
+        "reencode_video",
+        "reencode_audio",
+        "create_sidecar",
+        "slow_copy_start",
+        "slow_copy_commit",
+        "archive_file",
+        "move_between_roots"
+      ],
+      "title": "TimelineActionName",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -272,8 +350,15 @@
     "initial": {
       "$ref": "#/$defs/AssetSnapshot"
     },
+    "path_history": {
+      "items": {
+        "$ref": "#/$defs/PathHistoryEntry"
+      },
+      "title": "Path History",
+      "type": "array"
+    },
     "schema_version": {
-      "const": 2,
+      "const": 3,
       "title": "Schema Version",
       "type": "integer"
     }
