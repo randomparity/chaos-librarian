@@ -1,18 +1,16 @@
 schema_version: 4
-scenario_id: slow-copy-materialize
-seed: 7
+scenario_id: sidecar-collision
+seed: 23
 duration_scale: short
 
 library:
   roots:
-    - id: staging
-      path: staging
     - id: movies_hd
       path: movies-hd
 
 works:
-  - id: work_nova
-    title: Synthetic Nova
+  - id: work_meridian
+    title: Synthetic Meridian
     variants:
       - id: variant_hd
         label: hd
@@ -22,7 +20,7 @@ works:
             - id: asset_main
               role: primary_video
               container: mkv
-              duration_seconds: 6
+              duration_seconds: 4
               video:
                 source: mandelbrot
                 codec: h264
@@ -31,16 +29,15 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+              subtitles:
+                - codec: srt
+                  language: eng
+                  mode: sidecar
 
 timeline:
-  - id: copy_start_001
+  - id: create_subs_001
     at: 1s
-    action: slow_copy_start
+    action: create_sidecar
     target: asset_main
-    to: movies-hd/Nova.mkv
-    temp_path: movies-hd/Nova.mkv.part
-    duration: 3s
-  - id: copy_commit_001
-    at: 4s
-    action: slow_copy_commit
-    for: copy_start_001
+    to: movies-hd/Meridian.eng.timeline.srt
+    language: eng

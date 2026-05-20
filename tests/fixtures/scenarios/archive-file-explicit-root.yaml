@@ -1,0 +1,38 @@
+schema_version: 4
+scenario_id: sc_archive_file_explicit_root
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies-hd
+      path: library/movies-hd
+    - id: cold-storage
+      path: library/cold-storage
+  archive_root: cold-storage
+works:
+  - id: work_001
+    title: Test Movie For Archive Explicit Root
+    variants:
+      - id: variant_001
+        label: hd
+        bundle:
+          id: bundle_001
+          assets:
+            - id: asset_hd_main
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: en
+timeline:
+  - id: ev_archive_001
+    at: 0ns
+    action: archive_file
+    target: asset_hd_main
