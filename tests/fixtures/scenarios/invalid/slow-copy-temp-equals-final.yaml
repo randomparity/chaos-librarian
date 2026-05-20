@@ -1,0 +1,34 @@
+# expected: E_SLOW_COPY_PATH_COLLISION
+schema_version: 4
+scenario_id: sc_temp_equals_final
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: movies-hd
+      path: library/movies-hd
+works:
+  - id: w
+    title: t
+    variants:
+      - id: v
+        label: l
+        bundle:
+          id: b
+          assets:
+            - id: asset_hd_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: scs
+    at: 0ns
+    action: slow_copy_start
+    target: asset_hd_main
+    to: movies-hd/final.mkv
+    temp_path: movies-hd/final.mkv
+    duration: 1ns
+  - id: scc
+    at: 1ns
+    action: slow_copy_commit
+    for: scs
