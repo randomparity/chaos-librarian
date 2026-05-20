@@ -34,6 +34,7 @@ from chaos_librarian.contract.scenario import (
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
+    EmbedSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
     ReencodeAudioEvent,
@@ -73,6 +74,16 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
         {"from_container", "to_container", "from_path", "to_path", "input_path", "output_path"}
     ),
     TimelineActionName.EDIT_METADATA: frozenset({"fields", "input_path", "output_path"}),
+    TimelineActionName.EMBED_SUBTITLE: frozenset(
+        {
+            "embedded_sidecar_id",
+            "embedded_sidecar_path",
+            "language",
+            "kind",
+            "input_path",
+            "output_path",
+        }
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -586,6 +597,58 @@ def _handle_edit_metadata(
     return (entry,)
 
 
+def _handle_embed_subtitle(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new version; remove the named sidecar from state.
+
+    The materializer unlinks the sidecar file in phase B; here we mirror
+    that with state.sidecars.pop. Validation guarantees the sidecar
+    exists at scenario-construction time (rule_sidecar_target).
+    """
+    event = resolved.event
+    assert isinstance(event, EmbedSubtitleEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    sidecar = state.sidecars[sidecar_id]
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    del state.sidecars[sidecar_id]
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.EMBED_SUBTITLE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+        state_delta={
+            "embedded_sidecar_id": sidecar_id,
+            "embedded_sidecar_path": sidecar.path,
+            "language": sidecar.language,
+            "kind": sidecar.kind,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -600,4 +663,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_BETWEEN_ROOTS: _handle_move_between_roots,
     TimelineActionName.REMUX_CONTAINER: _handle_remux_container,
     TimelineActionName.EDIT_METADATA: _handle_edit_metadata,
+    TimelineActionName.EMBED_SUBTITLE: _handle_embed_subtitle,
 }
