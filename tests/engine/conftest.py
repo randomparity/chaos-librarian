@@ -9,7 +9,24 @@ every call site.
 
 from __future__ import annotations
 
-from chaos_librarian.contract.scenario import Scenario
+import uuid
+
+from chaos_librarian.contract.scenario import (
+    ArchiveFileEvent,
+    CreateSidecarEvent,
+    DeleteFileEvent,
+    MoveAssetEvent,
+    MoveBetweenRootsEvent,
+    RenameFileEvent,
+    Scenario,
+    SlowCopyCommitEvent,
+    SlowCopyStartEvent,
+    TimelineActionName,
+)
+from chaos_librarian.determinism import IdAllocator, TraceRecorder
+from chaos_librarian.engine.events import apply_event
+from chaos_librarian.engine.resolution import ResolvedEvent
+from chaos_librarian.engine.state import WorldState, build_initial_state
 
 
 def _build_minimal_scenario(
@@ -83,3 +100,94 @@ def _build_minimal_scenario(
             "timeline": [],
         }
     )
+
+
+def _minimal_scenario_for_action(
+    action: TimelineActionName,
+) -> tuple[Scenario, WorldState, ResolvedEvent]:
+    """Build the smallest scenario whose terminal event is ``action``.
+
+    Returns (scenario, prepared_world_state, resolved_event). The state is
+    pre-advanced through any prerequisite events (e.g. ``slow_copy_commit``
+    needs its matching ``slow_copy_start`` applied first so
+    ``state.pending_slow_copies`` is populated).
+    """
+    scenario = _build_minimal_scenario(
+        roots=[
+            ("movies-hd", "library/movies-hd"),
+            ("cold-storage", "library/cold-storage"),
+        ],
+        works=[("work_001", "asset_hd_main", "mkv")],
+        archive_root=None,
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    ids = IdAllocator(TraceRecorder())
+    run_id = uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01")
+
+    event: (
+        MoveAssetEvent
+        | RenameFileEvent
+        | DeleteFileEvent
+        | CreateSidecarEvent
+        | SlowCopyStartEvent
+        | SlowCopyCommitEvent
+        | ArchiveFileEvent
+        | MoveBetweenRootsEvent
+    )
+    if action is TimelineActionName.MOVE_ASSET:
+        event = MoveAssetEvent(id="ev", at="0ns", target="asset_hd_main", to="movies-hd/new.mkv")
+    elif action is TimelineActionName.RENAME_FILE:
+        event = RenameFileEvent(
+            id="ev", at="0ns", target="asset_hd_main", to="movies-hd/renamed.mkv"
+        )
+    elif action is TimelineActionName.DELETE_FILE:
+        event = DeleteFileEvent(id="ev", at="0ns", target="asset_hd_main")
+    elif action is TimelineActionName.CREATE_SIDECAR:
+        event = CreateSidecarEvent(
+            id="ev",
+            at="0ns",
+            target="asset_hd_main",
+            to="movies-hd/asset_hd_main.en.srt",
+            language="en",
+        )
+    elif action is TimelineActionName.SLOW_COPY_START:
+        event = SlowCopyStartEvent(
+            id="ev",
+            at="0ns",
+            target="asset_hd_main",
+            to="movies-hd/final.mkv",
+            temp_path="movies-hd/temp.mkv",
+            duration="1ns",
+        )
+    elif action is TimelineActionName.SLOW_COPY_COMMIT:
+        start_event = SlowCopyStartEvent(
+            id="start",
+            at="0ns",
+            target="asset_hd_main",
+            to="movies-hd/final.mkv",
+            temp_path="movies-hd/temp.mkv",
+            duration="1ns",
+        )
+        apply_event(
+            state=state,
+            resolved=ResolvedEvent(at_ns=0, declared_index=0, event=start_event),
+            ids=ids,
+            run_id=run_id,
+            scenario_id="sc_test",
+        )
+        event = SlowCopyCommitEvent(id="ev", at="1ns", for_="start")
+    elif action is TimelineActionName.ARCHIVE_FILE:
+        event = ArchiveFileEvent(id="ev", at="0ns", target="asset_hd_main")
+    elif action is TimelineActionName.MOVE_BETWEEN_ROOTS:
+        event = MoveBetweenRootsEvent(
+            id="ev",
+            at="0ns",
+            target="asset_hd_main",
+            from_root_id="movies-hd",
+            to_root_id="cold-storage",
+        )
+    else:
+        raise AssertionError(f"unhandled action: {action!r}")
+
+    resolved = ResolvedEvent(at_ns=1, declared_index=0, event=event)
+    return scenario, state, resolved

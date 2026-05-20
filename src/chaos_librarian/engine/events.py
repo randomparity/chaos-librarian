@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Callable
+from typing import Final
 
 from chaos_librarian.contract.journal import (
     AtomicJournalEntry,
@@ -43,6 +44,27 @@ from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 from chaos_librarian.errors import ChaosLibrarianValueError
+
+_STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
+    TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
+    TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
+    TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
+    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id"}),
+    TimelineActionName.SLOW_COPY_START: frozenset({"final_path", "temp_path"}),
+    TimelineActionName.SLOW_COPY_COMMIT: frozenset({"final_path"}),
+}
+"""Per-action contract for emitted ``state_delta`` keys.
+
+Each handler MUST emit at least these keys; extras are allowed for forward
+compatibility. ``add_file`` is intentionally absent (deferred to Sprint 7);
+``archive_file`` and ``move_between_roots`` land alongside their handlers.
+The ``language`` key on create_sidecar and ``initial_path_at_start`` on
+slow_copy_start are additive (Task 8); their entries here are bumped to
+include those keys when Task 8 lands.
+
+The parametrized test ``test_state_delta_keys_match_contract`` enforces this
+contract by invoking each handler against a minimal scenario.
+"""
 
 
 def apply_event(
