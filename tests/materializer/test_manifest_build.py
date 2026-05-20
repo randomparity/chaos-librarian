@@ -80,12 +80,13 @@ def test_augment_timeline_sidecars_stamps_hash_on_matching_row() -> None:
         path="movies-hd/asset_hd_main.en.srt",
         content_hash=None,
     )
+    fake_hash = "sha256:" + ("abc123" * 10 + "abc1")  # 64-char fake sha, prefixed
     augment_timeline_sidecars(
         manifest,
-        {"sidecar_0001": "abc123" * 10 + "abc1"},  # 64-char fake sha
+        {"sidecar_0001": fake_hash},
     )
     sidecar = next(s for s in manifest.sidecars if s.id == "sidecar_0001")
-    assert sidecar.content_hash == "abc123" * 10 + "abc1"
+    assert sidecar.content_hash == fake_hash
 
 
 def test_augment_timeline_sidecars_leaves_unmatched_rows_alone() -> None:
@@ -99,16 +100,18 @@ def test_augment_timeline_sidecars_leaves_unmatched_rows_alone() -> None:
     sidecar_id won't appear in a declared row, so iterating the hash map
     must never overwrite a declared row's existing hash.
     """
+    declared_hash = "sha256:" + "d" * 64
+    timeline_hash = "sha256:" + "t" * 64
     manifest = _build_manifest_with_sidecar(
         sidecar_id="sidecar_declared",
         asset_id="asset_hd_main",
         language="en",
         path="library/asset_hd_main.en.srt",
-        content_hash="declared-hash",
+        content_hash=declared_hash,
     )
-    augment_timeline_sidecars(manifest, {"sidecar_timeline": "timeline-hash"})
+    augment_timeline_sidecars(manifest, {"sidecar_timeline": timeline_hash})
     sidecar = next(s for s in manifest.sidecars if s.id == "sidecar_declared")
-    assert sidecar.content_hash == "declared-hash"
+    assert sidecar.content_hash == declared_hash
 
 
 def test_augment_timeline_sidecars_empty_dict_noop() -> None:
@@ -118,13 +121,14 @@ def test_augment_timeline_sidecars_empty_dict_noop() -> None:
     timeline events produce an empty phase-B sidecar-hash map; the
     function must accept that cleanly without mutating anything.
     """
+    existing_hash = "sha256:" + "e" * 64
     manifest = _build_manifest_with_sidecar(
         sidecar_id="sidecar_existing",
         asset_id="asset_hd_main",
         language="en",
         path="library/asset_hd_main.en.srt",
-        content_hash="existing-hash",
+        content_hash=existing_hash,
     )
     augment_timeline_sidecars(manifest, {})
     sidecar = next(s for s in manifest.sidecars if s.id == "sidecar_existing")
-    assert sidecar.content_hash == "existing-hash"
+    assert sidecar.content_hash == existing_hash

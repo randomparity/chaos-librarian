@@ -87,7 +87,7 @@ class ManifestVersion(BaseModel):
     id: str
     asset_id: str
     index: int
-    content_hash: str | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     probed: ProbedMedia | None = None
 
 
@@ -117,7 +117,7 @@ class ManifestSidecar(BaseModel):
     # mis-resolved when two language tags collided as substrings of each
     # other (e.g. "en"/"eng").
     language: str
-    content_hash: str | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
 
 
 class Manifest(BaseModel):

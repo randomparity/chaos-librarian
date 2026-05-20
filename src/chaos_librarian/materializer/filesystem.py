@@ -198,7 +198,7 @@ def _create_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemActio
     dst = ctx.library_root / sidecar_path
     dst.parent.mkdir(parents=True, exist_ok=True)
     dst.write_bytes(body)
-    ctx.phase_b_sidecar_hashes[sidecar_id] = hashlib.sha256(body).hexdigest()
+    ctx.phase_b_sidecar_hashes[sidecar_id] = "sha256:" + hashlib.sha256(body).hexdigest()
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,

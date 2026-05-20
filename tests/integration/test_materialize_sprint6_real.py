@@ -243,11 +243,9 @@ def test_create_sidecar_real_via_timeline(tmp_path: Path) -> None:
     assert timeline_row.asset_id == "asset_main"
     assert timeline_row.language == "eng"
     assert timeline_row.path == "movies-hd/Pulsar.eng.srt"
-    # Phase-B writes the timeline-sidecar hash as plain hex (no
-    # ``sha256:`` prefix); phase-A asset hashing in synthesis.py uses
-    # the ``sha256:`` prefix. Tracked as a follow-up — assert the actual
-    # bytes-equivalent form here.
-    assert timeline_row.content_hash == hashlib.sha256(srt_path.read_bytes()).hexdigest()
+    assert (
+        timeline_row.content_hash == "sha256:" + hashlib.sha256(srt_path.read_bytes()).hexdigest()
+    )
 
 
 def test_create_sidecar_collides_with_declared_subtitle(tmp_path: Path) -> None:
@@ -290,7 +288,7 @@ def test_create_sidecar_collides_with_declared_subtitle(tmp_path: Path) -> None:
     assert row.path == "movies-hd/Meridian.eng.timeline.srt"
     # Manifest row's ``content_hash`` reflects the phase-B bytes
     # (``augment_timeline_sidecars`` overwrote any phase-A value).
-    assert row.content_hash == hashlib.sha256(timeline_srt.read_bytes()).hexdigest()
+    assert row.content_hash == "sha256:" + hashlib.sha256(timeline_srt.read_bytes()).hexdigest()
 
 
 def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -254,8 +254,9 @@ def test_apply_create_sidecar_writes_srt_and_returns_hash_keyed_by_sidecar_id(
     expected_body = srt_payload(language="en", duration_s=1, seed=1234).encode("utf-8")
     assert written == expected_body
     assert "sidecar_0001" in sidecar_hashes
-    # sha256 hex is exactly 64 chars.
-    assert len(sidecar_hashes["sidecar_0001"]) == 64
+    # Prefixed form matches phase-A convention: "sha256:" + 64 hex chars.
+    assert sidecar_hashes["sidecar_0001"].startswith("sha256:")
+    assert len(sidecar_hashes["sidecar_0001"]) == 71
     assert len(actions) == 1
     assert actions[0].action is TimelineActionName.CREATE_SIDECAR
     assert actions[0].to_path == "movies-hd/asset_hd_main.en.srt"
