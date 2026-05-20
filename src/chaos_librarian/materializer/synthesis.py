@@ -15,6 +15,7 @@ from pathlib import Path
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
+from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Asset
 from chaos_librarian.materializer.errors import ToolFailedError, UnsupportedMaterializationError
 from chaos_librarian.materializer.ffmpeg import build_command, run_ffmpeg
@@ -36,6 +37,8 @@ def materialize_one_asset(
     out_dir: Path,
     caps: Capabilities,
     invocation_index: int,
+    *,
+    root_path: str,
 ) -> tuple[
     ToolInvocation,
     MaterializedAsset,
@@ -43,6 +46,12 @@ def materialize_one_asset(
     dict[tuple[str, str], str],
 ]:
     """Synthesize one asset, returning everything ``augment_manifest`` needs.
+
+    ``root_path`` is the primary library root's relative path (from
+    ``scenario.library.roots[0].path``); synthesis writes the asset to
+    ``<out_dir>/library/<root_path>/<asset_id>.<container>`` so the
+    on-disk layout matches the engine-emitted ``INITIAL_PATH_TEMPLATE``
+    that phase B walks.
 
     Returns a 4-tuple of (ffmpeg invocation, materialized asset record,
     probed-media result for the produced file, sidecar hashes keyed by
@@ -58,7 +67,13 @@ def materialize_one_asset(
             payload={},
         )
     library_dir = out_dir / "library"
-    output_path = library_dir / f"{asset.id}.{asset.container}"
+    relative_initial = INITIAL_PATH_TEMPLATE.format(
+        root_path=root_path,
+        asset_id=asset.id,
+        container=asset.container,
+    )
+    output_path = library_dir / relative_initial
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     width, height = RESOLUTION_PIXELS[asset.video.resolution]
     video_recipe = VIDEO_RECIPES[asset.video.source]
     video_input = video_recipe(

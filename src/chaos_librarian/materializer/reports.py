@@ -12,6 +12,7 @@ from chaos_librarian.contract import (
 )
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import (
+    FilesystemAction,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -37,6 +38,7 @@ def build_report(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     failures: list[MaterializationFailure],
+    filesystem_actions: list[FilesystemAction] | None = None,
 ) -> MaterializationReport:
     return MaterializationReport(
         schema_version=MATERIALIZATION_SCHEMA_VERSION,
@@ -53,6 +55,7 @@ def build_report(
         invocations=invocations,
         materialized=materialized,
         failures=failures,
+        filesystem_actions=filesystem_actions or [],
     )
 
 
