@@ -93,6 +93,22 @@ class WorldState:
         """Return the version id currently bound to ``asset_id``."""
         return self._asset_to_version[asset_id]
 
+    def sidecar_id_for_path(self, asset_id: str, path: str) -> str:
+        """Return the sidecar_id whose (asset_id, path) pair matches.
+
+        Validation guarantees the lookup succeeds for any well-formed
+        scenario (rule_sidecar_target rejects misses before the engine
+        runs). The engine raises KeyError rather than emitting a journal
+        entry — a missing sidecar here is a bug at this layer.
+
+        Raises:
+            KeyError: no sidecar matches.
+        """
+        for sid, sidecar in self.sidecars.items():
+            if sidecar.asset_id == asset_id and sidecar.path == path:
+                return sid
+        raise KeyError(f"no sidecar for asset {asset_id!r} at path {path!r}")
+
     def has_location(self, asset_id: str) -> bool:
         """Return True if ``asset_id`` is currently placed at some location."""
         return asset_id in self._asset_to_location

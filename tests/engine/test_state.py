@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from chaos_librarian.contract.manifest import Manifest
+import pytest
+
+from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
-from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.engine.state import WorldState, build_initial_state
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from tests.engine.conftest import _build_minimal_scenario
@@ -256,3 +258,42 @@ def test_initial_path_template_format() -> None:
         )
         == "library/movies-hd/asset_hd_main.mkv"
     )
+
+
+def test_sidecar_id_for_path_returns_id_when_match() -> None:
+    state = WorldState()
+    state.sidecars["sidecar_0001"] = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="subtitle",
+        path="asset_main.eng.srt",
+        language="eng",
+    )
+    assert state.sidecar_id_for_path("asset_main", "asset_main.eng.srt") == "sidecar_0001"
+
+
+def test_sidecar_id_for_path_raises_keyerror_on_miss() -> None:
+    state = WorldState()
+    with pytest.raises(KeyError, match="no sidecar"):
+        state.sidecar_id_for_path("asset_main", "missing.srt")
+
+
+def test_sidecar_id_for_path_scoped_by_asset_id() -> None:
+    state = WorldState()
+    state.sidecars["sidecar_0001"] = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_a",
+        kind="subtitle",
+        path="a.eng.srt",
+        language="eng",
+    )
+    state.sidecars["sidecar_0002"] = ManifestSidecar(
+        id="sidecar_0002",
+        asset_id="asset_b",
+        kind="subtitle",
+        path="a.eng.srt",
+        language="eng",
+    )
+    # Same path, different asset — the lookup must respect asset_id.
+    assert state.sidecar_id_for_path("asset_a", "a.eng.srt") == "sidecar_0001"
+    assert state.sidecar_id_for_path("asset_b", "a.eng.srt") == "sidecar_0002"
