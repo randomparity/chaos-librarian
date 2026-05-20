@@ -10,9 +10,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_SLOW_COPY_TIMING, E_SLOW_COPY_UNPAIRED
 from chaos_librarian.validation.rules._common import (
+    Reporter,
     _iter_timeline_events,
     _RawMapping,
     try_parse_duration,
@@ -31,6 +31,7 @@ def rule_slow_copy_unpaired(
     collector: IssueCollector,
 ) -> None:
     """5a: structural pairing of slow_copy_start <-> slow_copy_commit."""
+    reporter = Reporter(collector=collector, line_index=line_index)
     starts, commits = _index_starts_and_commits(raw)
     commits_per_start: dict[str, int] = {sid: 0 for sid in starts}
     for c_idx, commit in commits:
@@ -38,21 +39,14 @@ def rule_slow_copy_unpaired(
         if not isinstance(ref, str):
             continue  # Pydantic owns shape
         if ref not in starts:
-            collector.add(
+            reporter.error(
                 code=E_SLOW_COPY_UNPAIRED,
-                severity=ValidationSeverity.ERROR,
                 message=f"slow_copy_commit references unknown slow_copy_start {ref!r}",
                 loc=("timeline", c_idx, "for"),
-                line_index=line_index,
             )
             continue
         commits_per_start[ref] += 1
-    _report_orphan_starts(
-        commits_per_start=commits_per_start,
-        starts=starts,
-        line_index=line_index,
-        collector=collector,
-    )
+    _report_orphan_starts(commits_per_start=commits_per_start, starts=starts, reporter=reporter)
 
 
 def rule_slow_copy_timing(
@@ -66,19 +60,14 @@ def rule_slow_copy_timing(
     otherwise) AND structural pairing holds (Rule 5a already flagged
     orphans). Skipping here prevents double-reporting.
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     starts, commits = _index_starts_and_commits(raw)
     for c_idx, commit in commits:
         ref = commit.get("for")
         if not isinstance(ref, str) or ref not in starts:
             continue  # Rule 5a flagged orphan
         _, start = starts[ref]
-        _check_pair_timing(
-            c_idx=c_idx,
-            commit=commit,
-            start=start,
-            line_index=line_index,
-            collector=collector,
-        )
+        _check_pair_timing(c_idx=c_idx, commit=commit, start=start, reporter=reporter)
 
 
 def _index_starts_and_commits(
@@ -105,8 +94,7 @@ def _report_orphan_starts(
     *,
     commits_per_start: dict[str, int],
     starts: dict[str, tuple[int, _RawMapping]],
-    line_index: LineIndex,
-    collector: IssueCollector,
+    reporter: Reporter,
 ) -> None:
     """Emit E_SLOW_COPY_UNPAIRED for any start with zero or >1 matching commits."""
     for sid, count in commits_per_start.items():
@@ -117,12 +105,10 @@ def _report_orphan_starts(
         else:
             continue
         s_idx, _ = starts[sid]
-        collector.add(
+        reporter.error(
             code=E_SLOW_COPY_UNPAIRED,
-            severity=ValidationSeverity.ERROR,
             message=message,
             loc=("timeline", s_idx, "id"),
-            line_index=line_index,
         )
 
 
@@ -131,8 +117,7 @@ def _check_pair_timing(
     c_idx: int,
     commit: _RawMapping,
     start: _RawMapping,
-    line_index: LineIndex,
-    collector: IssueCollector,
+    reporter: Reporter,
 ) -> None:
     """Validate one matched pair's ``commit.at == start.at + start.duration``.
 
@@ -153,13 +138,11 @@ def _check_pair_timing(
         return  # Rule 3 flagged the unparseable string
     expected = start_at_ns + start_dur_ns
     if commit_at_ns != expected:
-        collector.add(
+        reporter.error(
             code=E_SLOW_COPY_TIMING,
-            severity=ValidationSeverity.ERROR,
             message=(
                 f"slow_copy_commit.at {commit_at!r} != "
                 f"start.at {start_at!r} + duration {start_dur!r}"
             ),
             loc=("timeline", c_idx, "at"),
-            line_index=line_index,
         )

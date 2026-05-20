@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_TARGET_UNKNOWN
-from chaos_librarian.validation.rules._common import _iter_timeline_events, iter_asset_ids
+from chaos_librarian.validation.rules._common import (
+    Reporter,
+    _iter_timeline_events,
+    iter_asset_ids,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -26,16 +29,15 @@ def rule_target_unknown(
     Events with no string ``target`` (e.g. ``slow_copy_commit``) are
     skipped: Pydantic's shape pass owns "the field must exist."
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     asset_ids = set(iter_asset_ids(raw))
     for idx, event in _iter_timeline_events(raw):
         target = event.get("target")
         if not isinstance(target, str):
             continue
         if target not in asset_ids:
-            collector.add(
+            reporter.error(
                 code=E_TARGET_UNKNOWN,
-                severity=ValidationSeverity.ERROR,
                 message=f"target asset {target!r} is not defined in any bundle",
                 loc=("timeline", idx, "target"),
-                line_index=line_index,
             )

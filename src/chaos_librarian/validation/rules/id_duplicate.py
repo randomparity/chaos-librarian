@@ -5,12 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_ID_DUPLICATE, format_jsonpath
 from chaos_librarian.validation.rules._common import (
     NS_ASSET_ID,
     NS_BUNDLE_ID,
     NS_VARIANT_ID,
+    Reporter,
     _as_mapping,
     _list_at_path,
     _Loc,
@@ -43,27 +43,15 @@ def rule_id_duplicate(
     Global namespaces (across the whole scenario): variant_id, bundle_id,
     asset_id. Top-level namespaces: root_id, work_id, timeline_id.
     """
-    _check_top_level_dups(
-        raw=raw,
-        namespace=NS_ROOT_ID,
-        path_parts=("library", "roots"),
-        line_index=line_index,
-        collector=collector,
-    )
-    _check_top_level_dups(
-        raw=raw,
-        namespace=NS_WORK_ID,
-        path_parts=("works",),
-        line_index=line_index,
-        collector=collector,
-    )
-    _check_top_level_dups(
-        raw=raw,
-        namespace=NS_TIMELINE_ID,
-        path_parts=("timeline",),
-        line_index=line_index,
-        collector=collector,
-    )
+    reporter = Reporter(collector=collector, line_index=line_index)
+    for namespace, path_parts in (
+        (NS_ROOT_ID, ("library", "roots")),
+        (NS_WORK_ID, ("works",)),
+        (NS_TIMELINE_ID, ("timeline",)),
+    ):
+        _check_top_level_dups(
+            raw=raw, namespace=namespace, path_parts=path_parts, reporter=reporter
+        )
 
     seen: dict[str, dict[str, _Loc]] = {
         NS_VARIANT_ID: {},
@@ -76,8 +64,7 @@ def rule_id_duplicate(
             value=value,
             loc=loc,
             seen=seen[namespace],
-            line_index=line_index,
-            collector=collector,
+            reporter=reporter,
         )
 
 
@@ -86,8 +73,7 @@ def _check_top_level_dups(
     raw: Mapping[str, object],
     namespace: str,
     path_parts: tuple[str, ...],
-    line_index: LineIndex,
-    collector: IssueCollector,
+    reporter: Reporter,
 ) -> None:
     """Top-level duplicate-id check: walk one list field and report collisions."""
     items = _list_at_path(raw, path_parts)
@@ -107,8 +93,7 @@ def _check_top_level_dups(
             value=item_id,
             loc=loc,
             seen=seen,
-            line_index=line_index,
-            collector=collector,
+            reporter=reporter,
         )
 
 
@@ -118,17 +103,14 @@ def _record_or_report(
     value: str,
     loc: _Loc,
     seen: dict[str, _Loc],
-    line_index: LineIndex,
-    collector: IssueCollector,
+    reporter: Reporter,
 ) -> None:
     if value in seen:
         first_path = format_jsonpath(seen[value])
-        collector.add(
+        reporter.error(
             code=E_ID_DUPLICATE,
-            severity=ValidationSeverity.ERROR,
             message=f"duplicate {namespace} {value!r} (first defined at {first_path})",
             loc=loc,
-            line_index=line_index,
         )
     else:
         seen[value] = loc

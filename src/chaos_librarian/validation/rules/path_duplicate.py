@@ -5,9 +5,13 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_PATH_DUPLICATE, format_jsonpath
-from chaos_librarian.validation.rules._common import _as_mapping, _list_at_path, _Loc
+from chaos_librarian.validation.rules._common import (
+    Reporter,
+    _as_mapping,
+    _list_at_path,
+    _Loc,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -26,6 +30,7 @@ def rule_path_duplicate(
     WARNING severity — does not flip ``report.ok``. Authors who genuinely
     want to alias a directory under two ID namespaces can ignore it.
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     roots = _list_at_path(raw, ("library", "roots"))
     if roots is None:
         return
@@ -40,12 +45,10 @@ def rule_path_duplicate(
         loc: _Loc = ("library", "roots", idx, "path")
         if path in seen:
             first_path = format_jsonpath(seen[path])
-            collector.add(
+            reporter.warning(
                 code=E_PATH_DUPLICATE,
-                severity=ValidationSeverity.WARNING,
                 message=f"root path {path!r} already used at {first_path}",
                 loc=loc,
-                line_index=line_index,
             )
         else:
             seen[path] = loc

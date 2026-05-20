@@ -8,9 +8,9 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from chaos_librarian.validation.rules._common import (
+    Reporter,
     _as_mapping,
     _iter_timeline_events,
     _list_at_path,
@@ -50,15 +50,12 @@ def rule_path_containment(
     absolute root. The helper's structural checks (absolute, ``..``,
     empty) do not require the root to exist on the filesystem.
     """
-    _check_root_paths(raw, line_index, collector)
-    _check_timeline_paths(raw, line_index, collector)
+    reporter = Reporter(collector=collector, line_index=line_index)
+    _check_root_paths(raw, reporter)
+    _check_timeline_paths(raw, reporter)
 
 
-def _check_root_paths(
-    raw: Mapping[str, object],
-    line_index: LineIndex,
-    collector: IssueCollector,
-) -> None:
+def _check_root_paths(raw: Mapping[str, object], reporter: Reporter) -> None:
     """Containment-check every ``library.roots[*].path``."""
     roots = _list_at_path(raw, ("library", "roots"))
     if roots is None:
@@ -69,19 +66,10 @@ def _check_root_paths(
             continue
         path = root.get("path")
         if isinstance(path, str):
-            _check_containment(
-                path,
-                loc=("library", "roots", idx, "path"),
-                line_index=line_index,
-                collector=collector,
-            )
+            _check_containment(path, loc=("library", "roots", idx, "path"), reporter=reporter)
 
 
-def _check_timeline_paths(
-    raw: Mapping[str, object],
-    line_index: LineIndex,
-    collector: IssueCollector,
-) -> None:
+def _check_timeline_paths(raw: Mapping[str, object], reporter: Reporter) -> None:
     """Containment-check every ``to:`` / ``temp_path:`` on timeline events."""
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -90,28 +78,11 @@ def _check_timeline_paths(
         for field_name in _PATH_FIELDS_BY_ACTION.get(action, ()):
             value = event.get(field_name)
             if isinstance(value, str):
-                _check_containment(
-                    value,
-                    loc=("timeline", idx, field_name),
-                    line_index=line_index,
-                    collector=collector,
-                )
+                _check_containment(value, loc=("timeline", idx, field_name), reporter=reporter)
 
 
-def _check_containment(
-    raw_path: str,
-    *,
-    loc: _Loc,
-    line_index: LineIndex,
-    collector: IssueCollector,
-) -> None:
+def _check_containment(raw_path: str, *, loc: _Loc, reporter: Reporter) -> None:
     try:
         resolve_under_library(Path(raw_path), _SYNTHETIC_LIBRARY_ROOT)
     except PathContainmentError as e:
-        collector.add(
-            code=E_PATH_CONTAINMENT,
-            severity=ValidationSeverity.ERROR,
-            message=str(e),
-            loc=loc,
-            line_index=line_index,
-        )
+        reporter.error(code=E_PATH_CONTAINMENT, message=str(e), loc=loc)
