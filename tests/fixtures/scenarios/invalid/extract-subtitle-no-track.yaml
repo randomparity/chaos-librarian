@@ -1,0 +1,28 @@
+# expected: E_EXTRACT_TRACK_UNKNOWN
+schema_version: 5
+scenario_id: sc_inv_xs_001
+seed: 1
+duration_scale: short
+library: {roots: [{id: r0, path: library/movies}]}
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+timeline:
+  - id: ev_xs
+    at: 1s
+    action: extract_subtitle
+    target: a0
+    to: a0.eng.srt
+    language: eng
