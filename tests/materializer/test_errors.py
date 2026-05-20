@@ -31,6 +31,7 @@ def test_every_subclass_carries_an_error_code():
         UnsupportedMaterializationError,
         ToolFailedError,
         ProbeParseError,
+        FilesystemActionError,
         ContainmentViolationError,
         CapabilityGateError,
         ScenarioValidationError,
