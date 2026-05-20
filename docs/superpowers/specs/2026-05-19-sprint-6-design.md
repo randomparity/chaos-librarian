@@ -510,12 +510,11 @@ def apply_phase_b(
     """
 ```
 
-The dispatcher carries four pieces of incremental state alongside the journal
-walk:
+The dispatcher carries three pieces of incremental state alongside the journal
+walk. Each per-action helper reads its source path from `entry.state_delta`
+rather than from any cached path-tracking map — the journal is the truth
+source.
 
-- `current_path: dict[str, str]` — initialized from the scenario's per-asset
-  initial paths (same convention as `engine.state.build_initial_state`). Each
-  filesystem action that moves bytes updates this map.
 - `pending_slow_copy: dict[str, _PendingSlowCopy]` — keyed by the
   `slow_copy_start` event_id; populated at start, drained at commit. Tracks
   `asset_id`, `initial_path` (the on-disk path the bytes were copied FROM),
@@ -540,7 +539,6 @@ class _PhaseBContext:
     library_root: Path
     scenario_assets: Mapping[str, Asset]
     resolved_seed: int
-    current_path: dict[str, str]                     # mutated
     pending_slow_copy: dict[str, _PendingSlowCopy]   # mutated
     phase_b_sidecar_hashes: dict[str, str]           # mutated; sidecar_id -> sha256
 
@@ -551,7 +549,6 @@ def _move_asset(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     to_path = entry.state_delta["to_path"]
     (ctx.library_root / to_path).parent.mkdir(parents=True, exist_ok=True)
     (ctx.library_root / from_path).replace(ctx.library_root / to_path)
-    ctx.current_path[asset_id] = to_path
     return FilesystemAction(
         event_id=entry.event_id,
         action=entry.action,
@@ -590,11 +587,11 @@ respective `state_delta` payloads (both additive; `state_delta` is
 
 | Action | Helper logic |
 |---|---|
-| `move_asset`, `rename_file`, `move_between_roots`, `archive_file` | `(library/from).replace(library/to)`; update `current_path[asset_id] = to`. The three latter share the body with `move_asset`; the dispatcher entry keeps the original `entry.action` on the `FilesystemAction`. |
-| `delete_file` | `(library/from).unlink()`; del `current_path[asset_id]`. |
+| `move_asset`, `rename_file`, `move_between_roots`, `archive_file` | `(library/from).replace(library/to)`. The three latter share the body with `move_asset`; the dispatcher entry keeps the original `entry.action` on the `FilesystemAction`. |
+| `delete_file` | `(library/from).unlink()`. |
 | `create_sidecar` | Read `language`, `sidecar_path`, and `sidecar_id` from `state_delta` (the engine handler allocates `sidecar_id` and the contract above requires these three keys). Look up `asset.duration_seconds` in `ctx.scenario_assets[asset_id]`. Generate body via `recipes.srt_payload(language=..., duration_s=..., seed=ctx.resolved_seed)`. Write the file at `sidecar_path`, sha256 the bytes, and APPEND to `ctx.phase_b_sidecar_hashes` keyed by `sidecar_id`. After phase B completes, the orchestrator calls `manifest_build.augment_timeline_sidecars(manifest, phase_b_sidecar_hashes)` which iterates `manifest.sidecars`, looks up each `sidecar.id` in the dict, and stamps `content_hash` when present. The existing `augment_manifest` (declared-subtitle path) keeps its `(asset_id, language)` keying — declared subtitles are hashed during phase A's synthesis loop and do not pass through the phase-B map. Collision rule: if a `create_sidecar` event reuses an `(asset_id, language)` pair already occupied by a declared subtitle, the engine handler still allocates a new `sidecar_id` and appends a new `ManifestSidecar` row — both rows coexist in the manifest. The declared row keeps its phase-A hash; the timeline row gets its phase-B hash. The two-row outcome is the intended semantic (declared sidecar plus a runtime-created sidecar are distinct objects in the test surface). |
-| `slow_copy_start` | Read `initial_path_at_start` and `temp_path` from `state_delta`. Copy the bytes: `(library/temp_path).write_bytes((library/initial_path).read_bytes())`. Record `pending_slow_copy[entry.event_id] = _PendingSlowCopy(asset_id, initial_path, temp_path)`. `current_path` is NOT updated yet (the bytes are still at the initial path too). |
-| `slow_copy_commit` | Pop `pending_slow_copy[entry.related_event_id]`. Read `final_path` from `state_delta`. If `initial_path != final_path`: `(library/initial_path).unlink(missing_ok=True)`. Then `(library/temp_path).replace(library/final_path)`. Update `current_path[asset_id] = final_path`. |
+| `slow_copy_start` | Read `initial_path_at_start` and `temp_path` from `state_delta`. Copy the bytes: `(library/temp_path).write_bytes((library/initial_path).read_bytes())`. Record `pending_slow_copy[entry.event_id] = _PendingSlowCopy(asset_id, initial_path, temp_path)`. |
+| `slow_copy_commit` | Pop `pending_slow_copy[entry.related_event_id]`. Read `final_path` from `state_delta`. If `initial_path != final_path`: `(library/initial_path).unlink(missing_ok=True)`. Then `(library/temp_path).replace(library/final_path)`. |
 
 **Slow-copy path invariants.** The validation rule (see "Slow-copy
 path-collision rule" above) rejects `temp_path == initial_path` and
