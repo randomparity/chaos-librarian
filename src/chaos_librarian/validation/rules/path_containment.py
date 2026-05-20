@@ -44,6 +44,7 @@ _PATH_FIELDS_BY_ACTION: dict[str, tuple[str, ...]] = {
     TimelineActionName.ADD_FILE: ("to",),
     TimelineActionName.CREATE_SIDECAR: ("to",),
     TimelineActionName.SLOW_COPY_START: ("to", "temp_path"),
+    TimelineActionName.EXTRACT_SUBTITLE: ("to",),
 }
 
 
