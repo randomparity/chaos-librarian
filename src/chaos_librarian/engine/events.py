@@ -34,6 +34,7 @@ from chaos_librarian.contract.scenario import (
     CreateSidecarEvent,
     DeleteFileEvent,
     MoveAssetEvent,
+    MoveBetweenRootsEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RenameFileEvent,
@@ -54,6 +55,9 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.SLOW_COPY_START: frozenset({"final_path", "temp_path"}),
     TimelineActionName.SLOW_COPY_COMMIT: frozenset({"final_path"}),
     TimelineActionName.ARCHIVE_FILE: frozenset({"from_path", "to_path"}),
+    TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
+        {"from_path", "to_path", "from_root_id", "to_root_id"}
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -399,6 +403,43 @@ def _handle_archive_file(
     return (entry,)
 
 
+def _handle_move_between_roots(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Move ``target`` from ``from_root_id`` to ``to_root_id``.
+
+    The destination is ``<to_root.path>/<asset_id>.<container>``. Validation
+    has already proven both root ids exist.
+    """
+    event = resolved.event
+    assert isinstance(event, MoveBetweenRootsEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    asset = state.assets[event.target]
+    to_root_path = state.root_path_for(event.to_root_id)
+    destination = f"{to_root_path}/{event.target}.{asset.container}"
+    state.locations[loc_id] = previous.model_copy(update={"path": destination})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.MOVE_BETWEEN_ROOTS,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={
+            "from_path": previous.path,
+            "to_path": destination,
+            "from_root_id": event.from_root_id,
+            "to_root_id": event.to_root_id,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -410,4 +451,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.SLOW_COPY_START: _handle_slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _handle_archive_file,
+    TimelineActionName.MOVE_BETWEEN_ROOTS: _handle_move_between_roots,
 }

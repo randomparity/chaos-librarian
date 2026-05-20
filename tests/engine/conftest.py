@@ -119,6 +119,31 @@ def _resolve_archive_file(
     return ResolvedEvent(at_ns=1, declared_index=0, event=event)
 
 
+def _resolve_move_between_roots(
+    scenario: Scenario,
+    *,
+    event_id: str,
+    target: str,
+    from_root_id: str,
+    to_root_id: str,
+) -> ResolvedEvent:
+    """Build a ResolvedEvent wrapping a ``MoveBetweenRootsEvent`` for tests.
+
+    Mirrors the shape that ``resolve_timeline`` would produce, without
+    requiring the event to live on the scenario's timeline. Sprint 6 task 17
+    reuses this helper for materializer dispatcher tests.
+    """
+    del scenario  # only present to mirror the engine resolver's call signature
+    event = MoveBetweenRootsEvent(
+        id=event_id,
+        at="0ns",
+        target=target,
+        from_root_id=from_root_id,
+        to_root_id=to_root_id,
+    )
+    return ResolvedEvent(at_ns=1, declared_index=0, event=event)
+
+
 def _minimal_scenario_for_action(
     action: TimelineActionName,
 ) -> tuple[Scenario, WorldState, ResolvedEvent]:

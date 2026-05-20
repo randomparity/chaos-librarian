@@ -12,7 +12,11 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
-from tests.engine.conftest import _build_minimal_scenario, _resolve_archive_file
+from tests.engine.conftest import (
+    _build_minimal_scenario,
+    _resolve_archive_file,
+    _resolve_move_between_roots,
+)
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -244,3 +248,49 @@ class TestArchiveFileHandler:
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
         assert state.locations[loc_id].path == "library/cold-storage/asset_hd_main.mkv"
+
+
+class TestMoveBetweenRootsHandler:
+    """move_between_roots relocates an asset across two declared roots.
+
+    WHY: a same-shape move can be expressed as ``move_asset``, but
+    cross-root moves carry the originating and destination root ids in the
+    journal so adapters can tell a move-between-roots from an in-root
+    rename without parsing path prefixes.
+    """
+
+    def test_move_between_roots_handler_crosses_roots(self) -> None:
+        scenario = _build_minimal_scenario(
+            roots=[
+                ("movies-hd", "library/movies-hd"),
+                ("staging", "library/staging"),
+            ],
+            works=[("work_001", "asset_hd_main", "mkv")],
+        )
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        resolved = _resolve_move_between_roots(
+            scenario,
+            event_id="ev_mbr_001",
+            target="asset_hd_main",
+            from_root_id="movies-hd",
+            to_root_id="staging",
+        )
+        entries = apply_event(
+            state=state,
+            resolved=resolved,
+            ids=IdAllocator(TraceRecorder()),
+            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+            scenario_id="sc_test",
+        )
+        loc_id = state.location_id_for_asset("asset_hd_main")
+        assert state.locations[loc_id].path == "library/staging/asset_hd_main.mkv"
+        assert len(entries) == 1
+        (entry,) = entries
+        assert entry.action == TimelineActionName.MOVE_BETWEEN_ROOTS
+        assert entry.target_ids == ["asset_hd_main"]
+        assert entry.state_delta == {
+            "from_path": "library/movies-hd/asset_hd_main.mkv",
+            "to_path": "library/staging/asset_hd_main.mkv",
+            "from_root_id": "movies-hd",
+            "to_root_id": "staging",
+        }
