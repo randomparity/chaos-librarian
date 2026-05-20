@@ -22,11 +22,10 @@ from chaos_librarian.validation.codes import (
 )
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_list,
-    _as_mapping,
     _iter_timeline_events,
     _RawMapping,
     iter_assets_with_loc,
+    primary_root_path,
     try_parse_duration,
 )
 
@@ -197,8 +196,8 @@ def rule_slow_copy_path_collision(
     source of truth.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    primary_root_path, asset_containers = _index_asset_paths(raw)
-    if primary_root_path is None:
+    primary_path, asset_containers = _index_asset_paths(raw)
+    if primary_path is None:
         return  # Pydantic owns shape on missing roots[0]
     for idx, event in _iter_timeline_events(raw):
         if event.get("action") != TimelineActionName.SLOW_COPY_START:
@@ -223,7 +222,7 @@ def rule_slow_copy_path_collision(
         if container is None:
             continue  # asset undeclared; rule_target_unknown owns that
         initial_path = INITIAL_PATH_TEMPLATE.format(
-            root_path=primary_root_path,
+            root_path=primary_path,
             asset_id=target,
             container=container,
         )
@@ -249,7 +248,7 @@ def _index_asset_paths(
     so the works -> variants -> bundle -> assets walk stays single-sourced
     in ``_common.py``.
     """
-    primary_path = _primary_root_path(raw)
+    primary_path = primary_root_path(raw)
     if primary_path is None:
         return (None, {})
     containers: dict[str, str] = {}
@@ -259,18 +258,3 @@ def _index_asset_paths(
         if isinstance(asset_id, str) and isinstance(container, str):
             containers[asset_id] = container
     return (primary_path, containers)
-
-
-def _primary_root_path(raw: Mapping[str, object]) -> str | None:
-    """Return ``library.roots[0].path`` if well-shaped, else None."""
-    library = _as_mapping(raw.get("library"))
-    if library is None:
-        return None
-    roots = _as_list(library.get("roots"))
-    if not roots:
-        return None
-    primary = _as_mapping(roots[0])
-    if primary is None:
-        return None
-    primary_path = primary.get("path")
-    return primary_path if isinstance(primary_path, str) else None

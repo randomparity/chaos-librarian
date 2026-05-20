@@ -23,8 +23,8 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _as_mapping,
     _iter_timeline_events,
-    _list_at_path,
     iter_asset_ids,
+    iter_declared_roots,
 )
 
 if TYPE_CHECKING:
@@ -73,7 +73,7 @@ def rule_root_unknown(
     library = _as_mapping(raw.get("library"))
     if library is None:
         return  # Pydantic owns shape
-    declared_ids = _collect_declared_root_ids(raw)
+    declared_ids = {root_id for root_id, _ in iter_declared_roots(raw)}
 
     archive_root = library.get("archive_root")
     if (
@@ -88,19 +88,6 @@ def rule_root_unknown(
         )
 
     _check_move_between_roots(raw, declared_ids, reporter)
-
-
-def _collect_declared_root_ids(raw: Mapping[str, object]) -> set[str]:
-    """Return the set of well-shaped ``library.roots[].id`` values."""
-    declared_ids: set[str] = set()
-    for root_obj in _list_at_path(raw, ("library", "roots")) or []:
-        root = _as_mapping(root_obj)
-        if root is None:
-            continue
-        root_id = root.get("id")
-        if isinstance(root_id, str):
-            declared_ids.add(root_id)
-    return declared_ids
 
 
 def _check_move_between_roots(

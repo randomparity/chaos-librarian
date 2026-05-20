@@ -40,7 +40,9 @@ __all__ = [
     "_list_at_path",
     "iter_asset_ids",
     "iter_assets_with_loc",
+    "iter_declared_roots",
     "iter_global_namespaces",
+    "primary_root_path",
     "try_parse_duration",
 ]
 
@@ -149,6 +151,46 @@ def try_parse_duration(raw_str: str) -> int | None:
         return parse_duration(raw_str)
     except DurationParseError:
         return None
+
+
+def iter_declared_roots(raw: _RawMapping) -> Iterator[tuple[str, str | None]]:
+    """Yield ``(root_id, root_path)`` for each well-shaped ``library.roots[]`` entry.
+
+    ``root_id`` is guaranteed to be a string (entries with non-string ids
+    are skipped — Pydantic's shape pass owns those errors). ``root_path``
+    is ``None`` when the entry's ``path`` field is missing or non-string;
+    callers needing both fields filter on ``p is not None``.
+    """
+    for root_obj in _list_at_path(raw, ("library", "roots")) or []:
+        root = _as_mapping(root_obj)
+        if root is None:
+            continue
+        root_id = root.get("id")
+        if not isinstance(root_id, str):
+            continue
+        path = root.get("path")
+        yield root_id, path if isinstance(path, str) else None
+
+
+def primary_root_path(raw: _RawMapping) -> str | None:
+    """Return ``library.roots[0].path`` if well-shaped, else ``None``.
+
+    Mirrors ``build_initial_state``'s primary-root convention: the engine
+    synthesizes every initial asset location under
+    ``<library.roots[0].path>/...``. Strictly inspects the *first* entry —
+    if it's malformed, returns ``None`` rather than falling through to a
+    later root (the engine would have failed on ``roots[0]`` too). Returns
+    ``None`` when the library is empty or the first entry's path doesn't
+    narrow to a string — Pydantic's shape pass owns those errors.
+    """
+    roots = _list_at_path(raw, ("library", "roots")) or []
+    if not roots:
+        return None
+    primary = _as_mapping(roots[0])
+    if primary is None:
+        return None
+    path = primary.get("path")
+    return path if isinstance(path, str) else None
 
 
 def iter_global_namespaces(
