@@ -12,6 +12,7 @@ from chaos_librarian.materializer.capabilities import (
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     ContainmentViolationError,
+    FilesystemActionError,
     MaterializationError,
     ProbeParseError,
     ScenarioValidationError,
@@ -27,6 +28,7 @@ from chaos_librarian.materializer.run import (
 __all__ = [
     "CapabilityGateError",
     "ContainmentViolationError",
+    "FilesystemActionError",
     "MaterializationError",
     "MaterializeArtifacts",
     "ProbeParseError",
