@@ -106,7 +106,7 @@ def test_augment_timeline_sidecars_leaves_unmatched_rows_alone() -> None:
         sidecar_id="sidecar_declared",
         asset_id="asset_hd_main",
         language="en",
-        path="library/asset_hd_main.en.srt",
+        path="asset_hd_main.en.srt",
         content_hash=declared_hash,
     )
     augment_timeline_sidecars(manifest, {"sidecar_timeline": timeline_hash})
@@ -126,7 +126,7 @@ def test_augment_timeline_sidecars_empty_dict_noop() -> None:
         sidecar_id="sidecar_existing",
         asset_id="asset_hd_main",
         language="en",
-        path="library/asset_hd_main.en.srt",
+        path="asset_hd_main.en.srt",
         content_hash=existing_hash,
     )
     augment_timeline_sidecars(manifest, {})

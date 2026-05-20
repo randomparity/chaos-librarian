@@ -44,7 +44,7 @@ def augment_manifest(
         content_hash = sidecar_hashes.get(key)
         if content_hash is None:
             continue
-        sidecar_path = f"library/{asset.id}.{sub.language}.srt"
+        sidecar_path = f"{asset.id}.{sub.language}.srt"
         existing = find_sidecar_for(manifest, asset.id, sub.language)
         if existing is None:
             manifest.sidecars.append(
