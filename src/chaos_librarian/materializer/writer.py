@@ -139,9 +139,14 @@ def cleanup_failed_filesystem_run(out_dir: Path, metadata: MaterializeMetadata) 
     the run-dir in a state where the partially-mutated tree is gone, and
     the rest of the metadata describes the failure for ``inspect`` and
     ``clean`` consumers.
+
+    On ``rmtree`` failure the OSError surfaces to the caller; the
+    partially-wiped library is visible for forensic inspection. The
+    sentinel stays at ``in_progress`` so downstream tooling cannot
+    mistake the half-cleaned run-dir for a completed failure record.
     """
     library = out_dir / "library"
-    shutil.rmtree(library, ignore_errors=True)
+    shutil.rmtree(library)
     _write_shared_metadata(out_dir, metadata)
     # Sentinel last — the moment readers can trust the dir.
     replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))
