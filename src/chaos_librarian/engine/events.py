@@ -47,6 +47,7 @@ from chaos_librarian.contract.scenario import (
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
+    UpdateSidecarEvent,
 )
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.resolution import ResolvedEvent
@@ -90,6 +91,7 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
         {"sidecar_id", "sidecar_path", "language", "input_path"}
     ),
     TimelineActionName.REMOVE_SIDECAR: frozenset({"removed_sidecar_id", "removed_sidecar_path"}),
+    TimelineActionName.UPDATE_SIDECAR: frozenset({"sidecar_id", "sidecar_path"}),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -724,6 +726,32 @@ def _handle_remove_sidecar(
     return (entry,)
 
 
+def _handle_update_sidecar(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Emit a journal entry; no state mutation. Phase B regenerates bytes."""
+    event = resolved.event
+    assert isinstance(event, UpdateSidecarEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.UPDATE_SIDECAR,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={
+            "sidecar_id": sidecar_id,
+            "sidecar_path": event.sidecar_path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -741,4 +769,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.EMBED_SUBTITLE: _handle_embed_subtitle,
     TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
     TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
+    TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
 }

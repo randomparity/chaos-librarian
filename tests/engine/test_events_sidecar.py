@@ -342,3 +342,72 @@ class TestRemoveSidecarHandler:
         prior_version_id = state.version_id_for_asset("a0")
         apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
         assert state.version_id_for_asset("a0") == prior_version_id
+
+
+class TestUpdateSidecarHandler:
+    """update_sidecar emits a journal entry but does NO state mutation.
+
+    WHY: the actual content_hash change happens in phase B (the
+    materializer regenerates bytes with a perturbed sub-seed). Plan-only
+    mode has no way to mark the sidecar as "updated", and that's
+    accepted — plan-only is bytes-blind.
+    """
+
+    def test_update_does_not_mutate_state(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_us",
+                    "at": "2s",
+                    "action": "update_sidecar",
+                    "target": "a0",
+                    "sidecar_path": "a0.eng.srt",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        resolved_events = list(resolve_timeline(scenario))
+        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        sidecars_before = dict(state.sidecars)
+        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        # Same dict; same sidecar_ids; same fields.
+        assert state.sidecars.keys() == sidecars_before.keys()
+
+    def test_update_state_delta_records_sidecar_id_and_path(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_us",
+                    "at": "2s",
+                    "action": "update_sidecar",
+                    "target": "a0",
+                    "sidecar_path": "a0.eng.srt",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        resolved_events = list(resolve_timeline(scenario))
+        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        sidecar_id = next(iter(state.sidecars.keys()))
+        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        assert delta["sidecar_id"] == sidecar_id
+        assert delta["sidecar_path"] == "a0.eng.srt"
