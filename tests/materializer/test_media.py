@@ -402,3 +402,120 @@ class TestApplyEditMetadata:
         # Each field must appear as -metadata key=value
         assert "title=Pulsar" in argv
         assert "year=2026" in argv
+
+
+class TestApplyEmbedSubtitle:
+    def test_apply_embed_unlinks_sidecar_after_success(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        (tmp_path / "x.eng.srt").write_bytes(b"1\n00:00:00,000 --> 00:00:01,000\nhi\n\n")
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"e" * 100)
+        entry = _atomic_entry(
+            event_id="ev_es_001",
+            action=TimelineActionName.EMBED_SUBTITLE,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "embedded_sidecar_id": "sidecar_0001",
+                "embedded_sidecar_path": "x.eng.srt",
+                "language": "eng",
+                "kind": "subtitle",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        # Sidecar file consumed.
+        assert not (tmp_path / "x.eng.srt").exists()
+
+    def test_apply_embed_mkv_uses_srt_codec(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        (tmp_path / "x.eng.srt").write_bytes(b"1\n")
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"e" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_es_001",
+            action=TimelineActionName.EMBED_SUBTITLE,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "embedded_sidecar_id": "sidecar_0001",
+                "embedded_sidecar_path": "x.eng.srt",
+                "language": "eng",
+                "kind": "subtitle",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        # mkv output → -c:s srt
+        assert "-c:s" in argv
+        assert argv[argv.index("-c:s") + 1] == "srt"
+
+    def test_apply_embed_mp4_uses_mov_text_codec(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mp4").write_bytes(b"y" * 50)
+        (tmp_path / "x.eng.srt").write_bytes(b"1\n")
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"e" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="mp4", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_es_001",
+            action=TimelineActionName.EMBED_SUBTITLE,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "embedded_sidecar_id": "sidecar_0001",
+                "embedded_sidecar_path": "x.eng.srt",
+                "language": "eng",
+                "kind": "subtitle",
+                "input_path": "x.mp4",
+                "output_path": "x.mp4",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        assert argv[argv.index("-c:s") + 1] == "mov_text"

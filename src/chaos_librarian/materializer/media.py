@@ -357,12 +357,96 @@ def _apply_edit_metadata(ctx: _MediaContext, entry: JournalEntry) -> MediaAction
     )
 
 
+def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """ffmpeg muxes the sidecar into the asset; unlinks the sidecar after success.
+
+    The output container's extension selects the in-container subtitle
+    codec via ``_subtitle_codec_for_container`` (mkv/webm → ``srt``;
+    mp4/m4v/mov → ``mov_text``; others raise ValueError, which is
+    wrapped in MediaActionError). The sidecar file is unlinked only
+    after the atomic rename succeeds — if ffmpeg fails, the sidecar
+    must remain on disk for the next attempt.
+    """
+    delta = entry.state_delta
+    input_path = ctx.library_root / str(delta["input_path"])
+    output_path = ctx.library_root / str(delta["output_path"])
+    sidecar_disk_path = ctx.library_root / str(delta["embedded_sidecar_path"])
+    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    container_ext = output_path.suffix.lstrip(".")
+    try:
+        subtitle_codec = _subtitle_codec_for_container(container_ext)
+    except ValueError as exc:
+        raise MediaActionError(
+            f"embed_subtitle: unsupported output container {container_ext!r} "
+            f"for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EMBED_SUBTITLE,
+            cause=exc,
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+        ) from exc
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-i",
+        str(sidecar_disk_path),
+        "-map",
+        "0",
+        "-map",
+        "1",
+        "-c:v",
+        "copy",
+        "-c:a",
+        "copy",
+        "-c:s",
+        subtitle_codec,
+        *BITEXACT_FLAGS,
+        str(temp_output),
+    ]
+    started = time.monotonic_ns()
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"embed_subtitle failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EMBED_SUBTITLE,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+            tool_invocation_index=invocation_index,
+        )
+    temp_output.replace(output_path)
+    sidecar_disk_path.unlink()
+    new_hash = _hash_file(output_path)
+    probed = probe_file(output_path)
+    new_version_id = entry.output_version_ids[0]
+    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.EMBED_SUBTITLE,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["output_path"]),
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=new_version_id,
+        output_sidecar_id=None,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
     TimelineActionName.REENCODE_AUDIO: _apply_reencode_audio,
     TimelineActionName.REMUX_CONTAINER: _apply_remux_container,
     TimelineActionName.EDIT_METADATA: _apply_edit_metadata,
+    TimelineActionName.EMBED_SUBTITLE: _apply_embed_subtitle,
 }
 
 
