@@ -15,8 +15,11 @@ from typing import TYPE_CHECKING
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
-from chaos_librarian.validation.rules._common import _iter_timeline_events, _Loc
-from chaos_librarian.validation.rules.id_duplicate import iter_asset_ids
+from chaos_librarian.validation.rules._common import (
+    _iter_timeline_events,
+    _Loc,
+    iter_asset_ids,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex

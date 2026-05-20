@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_TIMELINE_ORDER
-from chaos_librarian.validation.rules._common import _iter_timeline_events
-from chaos_librarian.validation.rules.duration_syntax import try_parse_duration
+from chaos_librarian.validation.rules._common import _iter_timeline_events, try_parse_duration
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex

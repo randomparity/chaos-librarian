@@ -7,8 +7,7 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_TARGET_UNKNOWN
-from chaos_librarian.validation.rules._common import _iter_timeline_events
-from chaos_librarian.validation.rules.id_duplicate import iter_asset_ids
+from chaos_librarian.validation.rules._common import _iter_timeline_events, iter_asset_ids
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex

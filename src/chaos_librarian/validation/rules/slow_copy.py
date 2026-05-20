@@ -15,8 +15,8 @@ from chaos_librarian.validation.codes import E_SLOW_COPY_TIMING, E_SLOW_COPY_UNP
 from chaos_librarian.validation.rules._common import (
     _iter_timeline_events,
     _RawMapping,
+    try_parse_duration,
 )
-from chaos_librarian.validation.rules.duration_syntax import try_parse_duration
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
