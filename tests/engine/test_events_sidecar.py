@@ -169,3 +169,86 @@ class TestEmbedSubtitleHandler:
         assert delta["kind"] == "subtitle"
         # Match the sibling tests' pattern: assert input/output paths converge.
         assert delta["input_path"] == delta["output_path"]
+
+
+class TestExtractSubtitleHandler:
+    """extract_subtitle allocates a NEW sidecar but DOES NOT bump the asset's version.
+
+    WHY: extract is read-only on the asset — the bytes don't change.
+    The asymmetry with embed_subtitle (which DOES allocate) is correct.
+    """
+
+    def test_extract_allocates_new_sidecar(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_xs",
+                    "at": "1s",
+                    "action": "extract_subtitle",
+                    "target": "a0",
+                    "to": "a0.fra.srt",
+                    "language": "fra",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert len(state.sidecars) == 0
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        assert len(state.sidecars) == 1
+        sidecar = next(iter(state.sidecars.values()))
+        assert sidecar.kind == "subtitle"
+        assert sidecar.language == "fra"
+        assert sidecar.path == "a0.fra.srt"
+        assert sidecar.asset_id == "a0"
+
+    def test_extract_does_not_allocate_new_version(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_xs",
+                    "at": "1s",
+                    "action": "extract_subtitle",
+                    "target": "a0",
+                    "to": "a0.fra.srt",
+                    "language": "fra",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        # Same version after — extract is read-only.
+        assert state.version_id_for_asset("a0") == prior_version_id
+        # And the journal entry's input/output version ids are EMPTY.
+        assert entries[0].input_version_ids == []
+        assert entries[0].output_version_ids == []
+
+    def test_extract_state_delta_records_sidecar_and_paths(self) -> None:
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_xs",
+                    "at": "1s",
+                    "action": "extract_subtitle",
+                    "target": "a0",
+                    "to": "a0.fra.srt",
+                    "language": "fra",
+                },
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        assert delta["sidecar_path"] == "a0.fra.srt"
+        assert delta["language"] == "fra"
+        input_path = delta["input_path"]
+        assert isinstance(input_path, str)
+        assert input_path.endswith("/a0.mkv")
+        # extract has no output_path key — its output IS sidecar_path.
+        assert "output_path" not in delta

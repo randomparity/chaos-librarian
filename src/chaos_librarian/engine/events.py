@@ -35,6 +35,7 @@ from chaos_librarian.contract.scenario import (
     DeleteFileEvent,
     EditMetadataEvent,
     EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
     ReencodeAudioEvent,
@@ -83,6 +84,9 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "input_path",
             "output_path",
         }
+    ),
+    TimelineActionName.EXTRACT_SUBTITLE: frozenset(
+        {"sidecar_id", "sidecar_path", "language", "input_path"}
     ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
@@ -649,6 +653,47 @@ def _handle_embed_subtitle(
     return (entry,)
 
 
+def _handle_extract_subtitle(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new sidecar row; asset's version is UNCHANGED.
+
+    Asymmetric with embed_subtitle (which DOES bump version) because
+    extraction is a read-only operation on the asset bytes.
+    """
+    event = resolved.event
+    assert isinstance(event, ExtractSubtitleEvent)
+    sidecar_id = ids.next_sidecar_id()
+    state.sidecars[sidecar_id] = ManifestSidecar(
+        id=sidecar_id,
+        asset_id=event.target,
+        kind="subtitle",
+        path=event.to,
+        language=event.language,
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={
+            "sidecar_id": sidecar_id,
+            "sidecar_path": event.to,
+            "language": event.language,
+            "input_path": previous.path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -664,4 +709,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.REMUX_CONTAINER: _handle_remux_container,
     TimelineActionName.EDIT_METADATA: _handle_edit_metadata,
     TimelineActionName.EMBED_SUBTITLE: _handle_embed_subtitle,
+    TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
 }
