@@ -19,9 +19,9 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_SIDECAR_LANGUAGE_INVALID
 from chaos_librarian.validation.rules._common import (
+    Reporter,
     _as_list,
     _as_mapping,
     _iter_timeline_events,
@@ -44,6 +44,7 @@ def rule_sidecar_language_consistent(
 
     See module docstring for the two failure modes flagged.
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     declared_by_asset = _index_declared_languages(raw)
 
     seen: dict[tuple[str, str], int] = {}
@@ -56,29 +57,25 @@ def rule_sidecar_language_consistent(
             continue  # Pydantic owns the type checks
         key = (target, language)
         if key in seen:
-            collector.add(
+            reporter.error(
                 code=E_SIDECAR_LANGUAGE_INVALID,
-                severity=ValidationSeverity.ERROR,
                 message=(
                     f"duplicate create_sidecar for ({target!r}, {language!r}); "
                     f"first event was at index {seen[key]}"
                 ),
                 loc=("timeline", index, "language"),
-                line_index=line_index,
             )
         else:
             seen[key] = index
         declared = declared_by_asset.get(target)
         if declared is not None and language not in declared:
-            collector.add(
+            reporter.error(
                 code=E_SIDECAR_LANGUAGE_INVALID,
-                severity=ValidationSeverity.ERROR,
                 message=(
                     f"create_sidecar language {language!r} not declared on "
                     f"target asset {target!r} (declared: {sorted(declared)!r})"
                 ),
                 loc=("timeline", index, "language"),
-                line_index=line_index,
             )
 
 

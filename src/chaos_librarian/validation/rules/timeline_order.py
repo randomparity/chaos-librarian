@@ -5,9 +5,12 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_TIMELINE_ORDER
-from chaos_librarian.validation.rules._common import _iter_timeline_events, try_parse_duration
+from chaos_librarian.validation.rules._common import (
+    Reporter,
+    _iter_timeline_events,
+    try_parse_duration,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -26,6 +29,7 @@ def rule_timeline_order(
     Ties are allowed. Pairs where either ``at:`` is unparseable are
     skipped (Rule 3 already flagged the unparseable string).
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     last_ns: int | None = None
     last_idx: int = -1
     for idx, event in _iter_timeline_events(raw):
@@ -38,12 +42,10 @@ def rule_timeline_order(
             # string; don't re-flag it as an order violation here.
             continue
         if last_ns is not None and at_ns < last_ns:
-            collector.add(
+            reporter.error(
                 code=E_TIMELINE_ORDER,
-                severity=ValidationSeverity.ERROR,
-                message=(f"timeline event at {at!r} precedes previous event at index {last_idx}"),
+                message=f"timeline event at {at!r} precedes previous event at index {last_idx}",
                 loc=("timeline", idx, "at"),
-                line_index=line_index,
             )
         last_ns = at_ns
         last_idx = idx

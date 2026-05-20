@@ -8,14 +8,15 @@ lookups (``state._asset_to_location``, etc).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import partial
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
+    Reporter,
     _iter_timeline_events,
     _Loc,
     iter_asset_ids,
@@ -79,6 +80,10 @@ def rule_timeline_lifecycle(
       would otherwise look up a location id the delete/move/rename has
       already popped or relocated
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
+    # Bind ``code=E_LIFECYCLE_INVALID`` once — every emission in this rule uses
+    # the same code, so threading it through five helpers is pure noise.
+    emit: _Emit = partial(reporter.error, code=E_LIFECYCLE_INVALID)
     state = _LifecycleState(
         placed=set(iter_asset_ids(raw)),
         pending_slow_copies={},
@@ -91,12 +96,7 @@ def rule_timeline_lifecycle(
             continue  # Pydantic owns shape on missing/non-string action
         target = event.get("target")
         loc: _Loc = ("timeline", idx, "action")
-        kwargs = {
-            "state": state,
-            "collector": collector,
-            "line_index": line_index,
-            "loc": loc,
-        }
+        kwargs = {"state": state, "emit": emit, "loc": loc}
 
         if action == TimelineActionName.ADD_FILE and isinstance(target, str):
             _lifecycle_check_add_file(target=target, **kwargs)
@@ -110,38 +110,20 @@ def rule_timeline_lifecycle(
             _lifecycle_apply_commit(ref=event.get("for"), state=state)
 
 
-def _lifecycle_emit(
-    *,
-    collector: IssueCollector,
-    line_index: LineIndex,
-    loc: _Loc,
-    message: str,
-) -> None:
-    """Add one E_LIFECYCLE_INVALID error to the collector."""
-    collector.add(
-        code=E_LIFECYCLE_INVALID,
-        severity=ValidationSeverity.ERROR,
-        message=message,
-        loc=loc,
-        line_index=line_index,
-    )
+# Pre-bound ``reporter.error(code=E_LIFECYCLE_INVALID, …)`` callable; the
+# remaining kwargs (message, loc) are passed at each emission site.
+_Emit = Callable[..., None]
 
 
 def _lifecycle_check_add_file(
     *,
     target: str,
     state: _LifecycleState,
-    collector: IssueCollector,
-    line_index: LineIndex,
+    emit: _Emit,
     loc: _Loc,
 ) -> None:
     if target in state.placed:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
-            message=f"add_file on already-placed asset {target!r}",
-        )
+        emit(message=f"add_file on already-placed asset {target!r}", loc=loc)
     state.placed.add(target)
 
 
@@ -150,24 +132,13 @@ def _lifecycle_check_mutation(
     action: str,
     target: str,
     state: _LifecycleState,
-    collector: IssueCollector,
-    line_index: LineIndex,
+    emit: _Emit,
     loc: _Loc,
 ) -> None:
     if target not in state.placed:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
-            message=f"{action} on unplaced asset {target!r}",
-        )
+        emit(message=f"{action} on unplaced asset {target!r}", loc=loc)
     if target in state.assets_with_pending_copy:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
-            message=f"{action} on asset {target!r} with a pending slow_copy",
-        )
+        emit(message=f"{action} on asset {target!r} with a pending slow_copy", loc=loc)
     if action == TimelineActionName.DELETE_FILE:
         state.placed.discard(target)
 
@@ -177,17 +148,11 @@ def _lifecycle_check_passthrough(
     action: str,
     target: str,
     state: _LifecycleState,
-    collector: IssueCollector,
-    line_index: LineIndex,
+    emit: _Emit,
     loc: _Loc,
 ) -> None:
     if target not in state.placed:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
-            message=f"{action} on unplaced asset {target!r}",
-        )
+        emit(message=f"{action} on unplaced asset {target!r}", loc=loc)
 
 
 def _lifecycle_check_slow_copy_start(
@@ -195,25 +160,17 @@ def _lifecycle_check_slow_copy_start(
     target: str,
     ev_id: object,
     state: _LifecycleState,
-    collector: IssueCollector,
-    line_index: LineIndex,
+    emit: _Emit,
     loc: _Loc,
 ) -> None:
     if target not in state.placed:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
-            message=f"slow_copy_start on unplaced asset {target!r}",
-        )
+        emit(message=f"slow_copy_start on unplaced asset {target!r}", loc=loc)
     if not isinstance(ev_id, str):
         return  # Pydantic owns shape; nothing to track
     if target in state.assets_with_pending_copy:
-        _lifecycle_emit(
-            collector=collector,
-            line_index=line_index,
-            loc=loc,
+        emit(
             message=f"slow_copy_start on asset {target!r} that already has a pending copy",
+            loc=loc,
         )
     state.pending_slow_copies[ev_id] = target
     state.assets_with_pending_copy.add(target)

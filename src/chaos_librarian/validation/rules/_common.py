@@ -16,9 +16,11 @@ walkers. See issue #27.
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
+from chaos_librarian.contract.validation import ValidationSeverity
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -28,6 +30,7 @@ __all__ = [
     "NS_ASSET_ID",
     "NS_BUNDLE_ID",
     "NS_VARIANT_ID",
+    "Reporter",
     "Rule",
     "_Loc",
     "_RawMapping",
@@ -45,6 +48,39 @@ __all__ = [
 _Loc = tuple[str | int, ...]
 _RawMapping = Mapping[str, object]
 Rule = Callable[[_RawMapping, "LineIndex", "IssueCollector"], None]
+
+
+@dataclass(frozen=True, slots=True)
+class Reporter:
+    """Binds ``collector`` + ``line_index`` once per rule invocation.
+
+    Replaces 5-kwarg ``collector.add(code=..., severity=...,
+    message=..., loc=..., line_index=line_index)`` sites with 3-kwarg
+    ``reporter.error(code=..., message=..., loc=...)``. Internal
+    rule helpers thread one ``reporter`` arg instead of carrying
+    ``collector`` and ``line_index`` separately.
+    """
+
+    collector: IssueCollector
+    line_index: LineIndex
+
+    def error(self, *, code: str, message: str, loc: _Loc) -> None:
+        self.collector.add(
+            code=code,
+            severity=ValidationSeverity.ERROR,
+            message=message,
+            loc=loc,
+            line_index=self.line_index,
+        )
+
+    def warning(self, *, code: str, message: str, loc: _Loc) -> None:
+        self.collector.add(
+            code=code,
+            severity=ValidationSeverity.WARNING,
+            message=message,
+            loc=loc,
+            line_index=self.line_index,
+        )
 
 
 # Typo-safe namespace keys for ``iter_global_namespaces`` callers — string

@@ -12,9 +12,8 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation.codes import E_DURATION_SYNTAX
-from chaos_librarian.validation.rules._common import _iter_timeline_events, _Loc
+from chaos_librarian.validation.rules._common import Reporter, _iter_timeline_events, _Loc
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -33,6 +32,7 @@ def rule_duration_syntax(
     Fields checked: ``timeline[*].at`` (every event) and
     ``slow_copy_start.duration`` (only when ``action == "slow_copy_start"``).
     """
+    reporter = Reporter(collector=collector, line_index=line_index)
     for idx, event in _iter_timeline_events(raw):
         at = event.get("at")
         if isinstance(at, str):
@@ -40,8 +40,7 @@ def rule_duration_syntax(
                 raw_str=at,
                 loc=("timeline", idx, "at"),
                 field_label="at duration",
-                line_index=line_index,
-                collector=collector,
+                reporter=reporter,
             )
         if event.get("action") == TimelineActionName.SLOW_COPY_START:
             duration = event.get("duration")
@@ -50,8 +49,7 @@ def rule_duration_syntax(
                     raw_str=duration,
                     loc=("timeline", idx, "duration"),
                     field_label="duration",
-                    line_index=line_index,
-                    collector=collector,
+                    reporter=reporter,
                 )
 
 
@@ -60,17 +58,14 @@ def _check_duration(
     raw_str: str,
     loc: _Loc,
     field_label: str,
-    line_index: LineIndex,
-    collector: IssueCollector,
+    reporter: Reporter,
 ) -> None:
     """Parse one duration string; on failure, emit one E_DURATION_SYNTAX issue."""
     try:
         parse_duration(raw_str)
     except DurationParseError as e:
-        collector.add(
+        reporter.error(
             code=E_DURATION_SYNTAX,
-            severity=ValidationSeverity.ERROR,
             message=f"invalid {field_label} {raw_str!r}: {e.reason}",
             loc=loc,
-            line_index=line_index,
         )
