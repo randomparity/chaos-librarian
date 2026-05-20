@@ -14,6 +14,7 @@ from chaos_librarian.materializer.errors import (
     ContainmentViolationError,
     FilesystemActionError,
     MaterializationError,
+    MediaActionError,
     ProbeParseError,
     ScenarioValidationError,
     TimelineUnsupportedError,
@@ -149,3 +150,34 @@ def test_filesystem_action_error_accepts_non_oserror_cause() -> None:
     assert err.cause is cause
     assert err.payload["errno"] is None
     assert err.payload["action"] == "create_sidecar"
+
+
+def test_media_action_error_payload_carries_event_action_invocation():
+    cause = RuntimeError("ffmpeg exit 1")
+    err = MediaActionError(
+        "reencode_video failed for event ev_rv_001",
+        event_id="ev_rv_001",
+        action=TimelineActionName.REENCODE_VIDEO,
+        cause=cause,
+        asset_id="asset_main",
+        tool_invocation_index=3,
+    )
+    assert err.error_code == "E_MATERIALIZE_MEDIA_FAILED"
+    assert err.event_id == "ev_rv_001"
+    assert err.action == TimelineActionName.REENCODE_VIDEO
+    assert err.cause is cause
+    assert err.tool_invocation_index == 3
+    assert err.payload["event_id"] == "ev_rv_001"
+    assert err.payload["action"] == "reencode_video"
+    assert err.payload["tool_invocation_index"] == 3
+    assert err.asset_id == "asset_main"
+
+
+def test_media_action_error_subclass_of_materialization_error():
+    err = MediaActionError(
+        "x",
+        event_id="e0",
+        action=TimelineActionName.REENCODE_VIDEO,
+        cause=RuntimeError("y"),
+    )
+    assert isinstance(err, MaterializationError)
