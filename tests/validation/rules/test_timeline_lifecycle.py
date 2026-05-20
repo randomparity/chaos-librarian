@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import pytest
+
 from chaos_librarian.validation import codes
+from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.rules.timeline_lifecycle import rule_timeline_lifecycle
 from chaos_librarian.validation.semantic import run_semantic_pass
 
 
@@ -387,3 +391,177 @@ class TestRuleLifecycleMoveBetweenRoots:
         assert any(
             "move_between_roots" in i.message and "pending slow_copy" in i.message for i in issues
         )
+
+
+class TestSprint7LifecycleExtensions:
+    """Sprint 7 adds 6 new actions to the simulator; all 6 require placed targets.
+
+    REMUX, EDIT_METADATA, EMBED_SUBTITLE, EXTRACT_SUBTITLE join
+    _PATH_MUTATING_PASSTHROUGH (rejected against pending slow_copy).
+    UPDATE_SIDECAR and REMOVE_SIDECAR are EXCLUDED — they don't touch
+    the asset.
+    """
+
+    def test_remux_container_on_unplaced_asset_rejected(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            asset_id="asset_main",
+            timeline=[
+                {"id": "e0", "at": "1s", "action": "delete_file", "target": "asset_main"},
+                {
+                    "id": "e1",
+                    "at": "2s",
+                    "action": "remux_container",
+                    "target": "asset_main",
+                    "to_container": "mp4",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        rule_timeline_lifecycle(raw, empty_index, collector)
+        assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+    @pytest.mark.parametrize(
+        ("action", "fields"),
+        [
+            ("remux_container", {"to_container": "mp4"}),
+            ("edit_metadata", {"fields": {"k": "v"}}),
+            ("embed_subtitle", {"sidecar_path": "asset_main.eng.srt"}),
+            ("extract_subtitle", {"to": "asset_main.fra.srt", "language": "fra"}),
+        ],
+    )
+    def test_slow_copy_forbidden_action(
+        self, minimal_scenario, empty_index, action, fields
+    ) -> None:
+        raw = minimal_scenario(
+            asset_id="asset_main",
+            asset_subtitles=[{"codec": "srt", "language": "eng", "mode": "sidecar"}],
+            timeline=[
+                {
+                    "id": "e_sc",
+                    "at": "1s",
+                    "action": "slow_copy_start",
+                    "target": "asset_main",
+                    "to": "asset_main.mkv",
+                    "temp_path": "asset_main.mkv.copying",
+                    "duration": "5s",
+                },
+                {
+                    "id": "e_op",
+                    "at": "2s",
+                    "action": action,
+                    "target": "asset_main",
+                    **fields,
+                },
+            ],
+        )
+        collector = IssueCollector()
+        rule_timeline_lifecycle(raw, empty_index, collector)
+        assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues), (
+            f"action {action} during pending slow_copy must be rejected"
+        )
+
+    def test_update_sidecar_during_pending_slow_copy_valid(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        # UPDATE_SIDECAR is intentionally NOT in _PATH_MUTATING_PASSTHROUGH
+        # — it touches a sidecar file, not the asset bytes.
+        raw = minimal_scenario(
+            asset_id="asset_main",
+            timeline=[
+                {
+                    "id": "e_cs",
+                    "at": "0s",
+                    "action": "create_sidecar",
+                    "target": "asset_main",
+                    "to": "asset_main.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_sc",
+                    "at": "1s",
+                    "action": "slow_copy_start",
+                    "target": "asset_main",
+                    "to": "asset_main.mkv",
+                    "temp_path": "asset_main.mkv.copying",
+                    "duration": "5s",
+                },
+                {
+                    "id": "e_us",
+                    "at": "2s",
+                    "action": "update_sidecar",
+                    "target": "asset_main",
+                    "sidecar_path": "asset_main.eng.srt",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        rule_timeline_lifecycle(raw, empty_index, collector)
+        # Lifecycle rule should NOT flag update_sidecar during slow_copy.
+        assert not any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+    def test_remove_sidecar_during_pending_slow_copy_valid(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            asset_id="asset_main",
+            timeline=[
+                {
+                    "id": "e_cs",
+                    "at": "0s",
+                    "action": "create_sidecar",
+                    "target": "asset_main",
+                    "to": "asset_main.eng.srt",
+                    "language": "eng",
+                },
+                {
+                    "id": "e_sc",
+                    "at": "1s",
+                    "action": "slow_copy_start",
+                    "target": "asset_main",
+                    "to": "asset_main.mkv",
+                    "temp_path": "asset_main.mkv.copying",
+                    "duration": "5s",
+                },
+                {
+                    "id": "e_rs",
+                    "at": "2s",
+                    "action": "remove_sidecar",
+                    "target": "asset_main",
+                    "sidecar_path": "asset_main.eng.srt",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        rule_timeline_lifecycle(raw, empty_index, collector)
+        assert not any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+    def test_embed_subtitle_on_missing_sidecar_emits_lifecycle_invalid(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        # Sprint 7 spec: lifecycle rule covers dynamic case (sidecar removed
+        # earlier in timeline). Static case is rule_sidecar_target.
+        raw = minimal_scenario(
+            asset_id="asset_main",
+            asset_subtitles=[{"codec": "srt", "language": "eng", "mode": "sidecar"}],
+            timeline=[
+                {
+                    "id": "e_rs",
+                    "at": "1s",
+                    "action": "remove_sidecar",
+                    "target": "asset_main",
+                    "sidecar_path": "asset_main.eng.srt",
+                },
+                {
+                    "id": "e_es",
+                    "at": "2s",
+                    "action": "embed_subtitle",
+                    "target": "asset_main",
+                    "sidecar_path": "asset_main.eng.srt",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        rule_timeline_lifecycle(raw, empty_index, collector)
+        assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)

@@ -57,8 +57,18 @@ def minimal_scenario() -> ScenarioBuilder:
 
     def _build(
         timeline: list[dict[str, object]] | None = None,
+        asset_id: str = "a",
+        asset_subtitles: list[dict[str, object]] | None = None,
         **overrides: object,
     ) -> dict[str, object]:
+        asset: dict[str, object] = {
+            "id": asset_id,
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 1,
+        }
+        if asset_subtitles is not None:
+            asset["subtitles"] = asset_subtitles
         base: dict[str, object] = {
             "schema_version": 5,
             "scenario_id": "t",
@@ -75,14 +85,7 @@ def minimal_scenario() -> ScenarioBuilder:
                             "label": "l",
                             "bundle": {
                                 "id": "b",
-                                "assets": [
-                                    {
-                                        "id": "a",
-                                        "role": "primary_video",
-                                        "container": "mkv",
-                                        "duration_seconds": 1,
-                                    }
-                                ],
+                                "assets": [asset],
                             },
                         }
                     ],
