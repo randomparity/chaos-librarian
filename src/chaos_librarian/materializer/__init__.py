@@ -25,6 +25,10 @@ from chaos_librarian.materializer.run import (
     MaterializeArtifacts,
     materialize_scenario,
 )
+from chaos_librarian.materializer.wall_clock import (
+    WallClockUsageError,
+    run_wall_clock_scenario,
+)
 
 __all__ = [
     "CapabilityGateError",
@@ -38,7 +42,9 @@ __all__ = [
     "TimelineUnsupportedError",
     "ToolFailedError",
     "UnsupportedMaterializationError",
+    "WallClockUsageError",
     "assert_capable_for_static_materialize",
     "detect_capabilities",
     "materialize_scenario",
+    "run_wall_clock_scenario",
 ]

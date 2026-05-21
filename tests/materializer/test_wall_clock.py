@@ -1,0 +1,340 @@
+"""Wall-clock materializer orchestration tests."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from textwrap import dedent
+
+import pytest
+from pydantic import TypeAdapter
+
+from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
+from chaos_librarian.contract.materialization import FilesystemAction, MaterializedAsset
+from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.errors import TimelineUnsupportedError
+
+_JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now_ns = 0
+        self.base = datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC)
+
+    def monotonic_ns(self) -> int:
+        return self.now_ns
+
+    def sleep_until(self, deadline_ns: int) -> None:
+        self.now_ns = max(self.now_ns, deadline_ns)
+
+    def utc_now(self) -> datetime:
+        return self.base + timedelta(microseconds=self.now_ns // 1_000)
+
+    def advance(self, ns: int) -> None:
+        self.now_ns += ns
+
+
+@pytest.fixture
+def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
+    clock = FakeClock()
+    monkeypatch.setattr(wall_clock, "_monotonic_ns", clock.monotonic_ns)
+    monkeypatch.setattr(wall_clock, "_sleep_until", clock.sleep_until)
+    monkeypatch.setattr(wall_clock, "_utc_now", clock.utc_now)
+    return clock
+
+
+@pytest.fixture(autouse=True)
+def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
+    caps = Capabilities(
+        schema_version=1,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+        ),
+    )
+    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
+
+
+def _fake_materialize_one_asset(
+    asset,
+    resolved_seed,
+    out_dir: Path,
+    caps,
+    invocation_index: int,
+    *,
+    root_path: str,
+    skip_languages=frozenset(),
+):
+    del resolved_seed, caps, skip_languages
+    data = f"{asset.id}-bytes".encode()
+    path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+    probed = ProbedMedia(
+        container=asset.container,
+        duration_seconds=asset.duration_seconds,
+        size_bytes=len(data),
+        streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
+    )
+    return (
+        wall_clock.ToolInvocation(
+            tool="ffmpeg",
+            version="7.1.1",
+            command=["ffmpeg", str(path)],
+            exit_code=0,
+            duration_ns=1,
+        ),
+        MaterializedAsset(
+            asset_id=asset.id,
+            location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
+            content_hash=content_hash,
+            size_bytes=len(data),
+            duration_seconds=asset.duration_seconds,
+            invocation_index=invocation_index,
+        ),
+        probed,
+        {},
+    )
+
+
+def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-clock-test") -> Path:
+    path = tmp_path / f"{scenario_id}.yaml"
+    path.write_text(
+        dedent(
+            f"""
+            schema_version: 5
+            scenario_id: {scenario_id}
+            seed: 7
+            duration_scale: short
+            library:
+              roots:
+                - id: movies_hd
+                  path: movies-hd
+            works:
+              - id: work_001
+                title: Synthetic Test
+                variants:
+                  - id: variant_001
+                    label: hd
+                    bundle:
+                      id: bundle_001
+                      assets:
+                        - id: asset_main
+                          role: primary_video
+                          container: mkv
+                          duration_seconds: 1
+                          video:
+                            source: color_bars
+                            codec: h264
+                            resolution: hd
+                          audio:
+                            - codec: aac
+                              channels: stereo
+                              language: eng
+            timeline:
+            {timeline}
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _journal_entries(out_dir: Path) -> list[JournalEntry]:
+    return [
+        _JOURNAL_ADAPTER.validate_json(line)
+        for line in (out_dir / "journal.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_non_adjacent_slow_copy_raises_before_out_dir(tmp_path: Path) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: copy_start
+                at: 0ns
+                action: slow_copy_start
+                target: asset_main
+                to: movies-hd/final.mkv
+                temp_path: movies-hd/final.mkv.part
+                duration: 10ns
+              - id: sidecar_001
+                at: 1ns
+                action: create_sidecar
+                target: asset_main
+                to: movies-hd/asset_main.nfo
+                kind: nfo
+              - id: copy_commit
+                at: 10ns
+                action: slow_copy_commit
+                for: copy_start
+        """,
+        scenario_id="non-adjacent-slow-copy",
+    )
+    out_dir = tmp_path / "run"
+    with pytest.raises(TimelineUnsupportedError):
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+    assert not out_dir.exists()
+
+
+def test_timeline_drained_early_idles_until_duration(fake_clock: FakeClock, tmp_path: Path) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: move_001
+                at: 1ns
+                action: move_asset
+                target: asset_main
+                to: movies-hd/moved.mkv
+        """,
+    )
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        tmp_path / "run",
+        duration="10ns",
+        speed="1x",
+    )
+    assert fake_clock.now_ns == 10
+    assert artifacts.materialization_report.actual_duration_ns == 10
+    assert artifacts.replay_bundle.applied_events == 1
+
+
+def test_handler_overrun_does_not_start_second_due_event(
+    fake_clock: FakeClock, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: move_001
+                at: 0ns
+                action: move_asset
+                target: asset_main
+                to: movies-hd/moved.mkv
+              - id: rename_001
+                at: 1ns
+                action: rename_file
+                target: asset_main
+                to: movies-hd/renamed.mkv
+        """,
+    )
+
+    def slow_dispatch(ctx, entry):
+        fake_clock.advance(10)
+        return FilesystemAction(
+            event_id=entry.event_id,
+            action=TimelineActionName(entry.action),
+            target_asset_id=entry.target_ids[0],
+            from_path=None,
+            to_path=None,
+            temp_path=None,
+            duration_ns=10,
+        )
+
+    monkeypatch.setattr(wall_clock, "_dispatch_one", slow_dispatch)
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        tmp_path / "run",
+        duration="1ns",
+        speed="1x",
+    )
+    assert artifacts.replay_bundle.applied_events == 1
+
+
+def test_mid_slow_copy_timeout_executes_commit_and_marks_overrun(
+    fake_clock: FakeClock, tmp_path: Path
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: copy_start
+                at: 0ns
+                action: slow_copy_start
+                target: asset_main
+                to: movies-hd/final.mkv
+                temp_path: movies-hd/final.mkv.part
+                duration: 10ns
+              - id: copy_commit
+                at: 10ns
+                action: slow_copy_commit
+                for: copy_start
+        """,
+    )
+    out_dir = tmp_path / "run"
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="5ns",
+        speed="1x",
+    )
+    assert fake_clock.now_ns == 5
+    assert artifacts.replay_bundle.applied_events == 2
+    assert artifacts.materialization_report.overran_duration is True
+    assert (out_dir / "library" / "movies-hd" / "final.mkv").read_bytes() == b"asset_main-bytes"
+    assert not (out_dir / "library" / "movies-hd" / "final.mkv.part").exists()
+
+
+def test_slow_copy_partial_growth_writes_exact_prefix(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    session = wall_clock.WallClockSlowCopySession(
+        start_event_id="copy_start",
+        asset_id="asset_main",
+        source_bytes=b"0123456789",
+        temp_path="movies-hd/file.part",
+        final_path="movies-hd/file.mkv",
+        start_logical_ns=0,
+        commit_logical_ns=10,
+        total_bytes=10,
+    )
+    wall_clock._grow_active_slow_copies(library, {"copy_start": session}, logical_ns=5)
+    assert (library / "movies-hd" / "file.part").read_bytes() == b"01234"
+
+
+def test_final_journal_keeps_timestamps_and_digest_normalizes(
+    fake_clock: FakeClock,
+    tmp_path: Path,
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: move_001
+                at: 0ns
+                action: move_asset
+                target: asset_main
+                to: movies-hd/moved.mkv
+              - id: rename_001
+                at: 1ns
+                action: rename_file
+                target: asset_main
+                to: movies-hd/renamed.mkv
+        """,
+    )
+    out_dir = tmp_path / "run"
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="10ns",
+        speed="1x",
+    )
+    entries = _journal_entries(out_dir)
+    assert entries
+    assert all(entry.wall_clock_time is not None for entry in entries)
+    digest_entries = [entry.model_copy(update={"wall_clock_time": None}) for entry in entries]
+    digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
+    assert artifacts.replay_bundle.journal_digest == digest
+    replay_payload = json.loads((out_dir / "replay.json").read_text(encoding="utf-8"))
+    assert replay_payload["run_id"] == str(artifacts.materialization_report.run_id)
