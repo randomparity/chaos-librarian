@@ -1,3 +1,6 @@
+# Artifacts
+chaos-test-out/
+
 # Python
 __pycache__/
 *.py[cod]
