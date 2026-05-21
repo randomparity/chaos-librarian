@@ -345,6 +345,22 @@ def _handle_create_sidecar(
     assert event.kind == SidecarKind.SUBTITLE, (
         f"_handle_create_sidecar does not yet route on kind; got kind={event.kind!r}"
     )
+    # Drop any declared subtitle row seeded by ``build_initial_state``
+    # that collides on ``(asset_id, language)`` — the timeline
+    # ``create_sidecar`` is the authoritative writer for that language
+    # (#39). Validation's projection overwrites declared entries with the
+    # timeline value; mirror that here. The phase-A writer also skips the
+    # declared file on disk via ``_timeline_sidecar_languages``, so the
+    # manifest must not carry a row for the orphaned declared write.
+    collisions = [
+        sid
+        for sid, sidecar in state.sidecars.items()
+        if sidecar.asset_id == event.target
+        and sidecar.kind == "subtitle"
+        and sidecar.language == event.language
+    ]
+    for sid in collisions:
+        del state.sidecars[sid]
     sidecar_id = ids.next_sidecar_id()
     sidecar = ManifestSidecar(
         id=sidecar_id,

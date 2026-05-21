@@ -297,3 +297,157 @@ def test_sidecar_id_for_path_scoped_by_asset_id() -> None:
     # Same path, different asset — the lookup must respect asset_id.
     assert state.sidecar_id_for_path("asset_a", "a.eng.srt") == "sidecar_0001"
     assert state.sidecar_id_for_path("asset_b", "a.eng.srt") == "sidecar_0002"
+
+
+class TestBuildInitialStateSeedsDeclaredSidecars:
+    """``build_initial_state`` mirrors the validator's projection of declared subtitles.
+
+    WHY: the validator's ``_seed_projection_from_declared`` accepts
+    ``embed_subtitle.sidecar_path = <asset>.<lang>.srt`` for any declared
+    ``mode: sidecar`` subtitle. The engine handlers (``embed_subtitle``,
+    ``update_sidecar``, ``remove_sidecar``) resolve that path through
+    ``WorldState.sidecar_id_for_path``. If state.sidecars is empty for the
+    declared subtitle, validation accepts the scenario but the engine
+    raises KeyError mid-run. The seed below closes that gap.
+    """
+
+    def test_declared_sidecar_subtitle_seeds_one_row(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "side",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "sidecar",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert len(state.sidecars) == 1
+        (sidecar,) = state.sidecars.values()
+        assert sidecar.id == "sidecar_a0_eng"
+        assert sidecar.asset_id == "a0"
+        assert sidecar.kind == "subtitle"
+        assert sidecar.path == "a0.eng.srt"
+        assert sidecar.language == "eng"
+
+    def test_embedded_mode_subtitle_is_not_seeded(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "emb",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "embedded",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert state.sidecars == {}
+
+    def test_sidecar_id_for_path_resolves_declared_subtitle(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "side",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "sidecar",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert state.sidecar_id_for_path("a0", "a0.eng.srt") == "sidecar_a0_eng"

@@ -17,9 +17,14 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
 
 def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scenario:
-    """Asset declares one English subtitle as a sidecar. Phase A would
-    write it at ``a0.eng.srt``; the engine doesn't pre-populate it (only
-    create_sidecar / extract_subtitle do)."""
+    """Asset declares one English subtitle as a sidecar at ``a0.eng.srt``.
+
+    ``build_initial_state`` seeds one ``ManifestSidecar`` per declared
+    sidecar-mode subtitle into ``state.sidecars`` (the fixture below
+    yields one row with id ``sidecar_a0_eng``); ``create_sidecar`` for the
+    same ``(asset_id, language)`` replaces that row, and the Sprint 7
+    handlers (embed/update/remove) resolve the declared row directly.
+    """
     return Scenario.model_validate(
         {
             "schema_version": 5,
@@ -193,13 +198,16 @@ class TestExtractSubtitleHandler:
         )
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
-        assert len(state.sidecars) == 0
+        # ``build_initial_state`` seeds one row per declared sidecar-mode
+        # subtitle (the asset declares one eng subtitle); extract_subtitle
+        # then allocates a second row for the freshly extracted fra track.
+        baseline = len(state.sidecars)
+        assert baseline == 1
         (resolved,) = resolve_timeline(scenario)
         apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
-        assert len(state.sidecars) == 1
-        sidecar = next(iter(state.sidecars.values()))
+        assert len(state.sidecars) == baseline + 1
+        sidecar = next(s for s in state.sidecars.values() if s.language == "fra")
         assert sidecar.kind == "subtitle"
-        assert sidecar.language == "fra"
         assert sidecar.path == "a0.fra.srt"
         assert sidecar.asset_id == "a0"
 

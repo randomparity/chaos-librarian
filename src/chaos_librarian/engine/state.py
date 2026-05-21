@@ -27,7 +27,7 @@ from chaos_librarian.contract.manifest import (
     ManifestWork,
 )
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import Scenario, SubtitleMode
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.errors import ChaosLibrarianValueError
 
@@ -149,6 +149,14 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
     - one ``ManifestVersion`` with id ``version_NNNN`` and ``index=0``
     - one ``ManifestLocation`` with id ``location_NNNN`` at path
       ``<roots[0].path>/<asset.id>.<container>``
+    - one ``ManifestSidecar`` per declared subtitle with ``mode=sidecar``,
+      id ``sidecar_<asset.id>_<language>`` at path
+      ``<asset.id>.<language>.srt``. Embedded subtitles are skipped.
+      This mirrors the validator's ``_seed_projection_from_declared``
+      projection so Sprint 7 handlers (``embed_subtitle``,
+      ``update_sidecar``, ``remove_sidecar``, ``extract_subtitle``) can
+      resolve a declared sidecar via ``sidecar_id_for_path`` instead of
+      raising KeyError.
 
     Raises:
         ValueError: if the scenario has zero library roots (impossible
@@ -202,5 +210,23 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
                         ),
                     ),
                 )
+                # Seed declared sidecar-mode subtitles into state.sidecars
+                # so Sprint 7 handlers (embed_subtitle, update_sidecar,
+                # remove_sidecar) can resolve the (asset_id, path) lookup
+                # the validator's projection already accepts. Id/path
+                # conventions mirror manifest_build.augment_manifest so the
+                # phase-A content_hash stamp finds the pre-existing row
+                # (no duplicate appended).
+                for sub in asset.subtitles:
+                    if sub.mode is not SubtitleMode.SIDECAR:
+                        continue
+                    sidecar_id = f"sidecar_{asset.id}_{sub.language}"
+                    state.sidecars[sidecar_id] = ManifestSidecar(
+                        id=sidecar_id,
+                        asset_id=asset.id,
+                        kind="subtitle",
+                        path=f"{asset.id}.{sub.language}.srt",
+                        language=sub.language,
+                    )
 
     return state

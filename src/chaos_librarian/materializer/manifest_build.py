@@ -27,14 +27,16 @@ def augment_manifest(
     skip_languages: frozenset[str] = frozenset(),
 ) -> None:
     """Stamp ``content_hash`` + ``probed`` onto the version record and
-    append/update ``ManifestSidecar`` rows for materialized sidecars.
+    update ``ManifestSidecar`` rows for materialized declared sidecars.
 
-    The engine does not pre-populate sidecars from ``scenario.subtitles``
-    (sidecars there are added only via ``create_sidecar`` timeline events).
-    Materialize must reflect the materialized sidecars in the manifest so
-    consumers see the bytes they were promised; we append one
-    ``ManifestSidecar`` per materialized language with a deterministic id
-    derived from the asset and language.
+    ``build_initial_state`` seeds one ``ManifestSidecar`` per declared
+    sidecar-mode subtitle into ``state.sidecars`` (Sprint 7), so the
+    serialized manifest already carries the row. Materialize then stamps
+    the phase-A ``content_hash`` onto the existing row. If the engine
+    consumed the declared subtitle (``embed_subtitle`` / ``remove_sidecar``
+    drop the row from ``state.sidecars``), the row is no longer in
+    ``manifest.sidecars`` and we deliberately do NOT re-add it — the
+    engine's removal is authoritative.
 
     ``skip_languages`` mirrors the same kwarg on ``write_sidecars``:
     languages a timeline ``create_sidecar`` will produce are skipped here
@@ -60,20 +62,8 @@ def augment_manifest(
         content_hash = sidecar_hashes.get(key)
         if content_hash is None:
             continue
-        sidecar_path = f"{asset.id}.{sub.language}.srt"
         existing = find_sidecar_for(manifest, asset.id, language=sub.language)
-        if existing is None:
-            manifest.sidecars.append(
-                ManifestSidecar(
-                    id=f"sidecar_{asset.id}_{sub.language}",
-                    asset_id=asset.id,
-                    kind=sub.codec,
-                    path=sidecar_path,
-                    language=sub.language,
-                    content_hash=content_hash,
-                )
-            )
-        else:
+        if existing is not None:
             existing.content_hash = content_hash
 
 
