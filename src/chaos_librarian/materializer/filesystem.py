@@ -20,7 +20,6 @@ through ``cleanup_failed_run``.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -35,7 +34,6 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.materializer.errors import FilesystemActionError
-from chaos_librarian.materializer.recipes import srt_payload
 
 __all__ = ["apply_phase_b"]
 
@@ -206,33 +204,6 @@ def _remove_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemActio
     )
 
 
-def _create_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
-    """Write a deterministic SRT sidecar; remember its sha256 by sidecar id."""
-    asset_id = entry.target_ids[0]
-    sidecar_path = str(entry.state_delta["sidecar_path"])
-    sidecar_id = str(entry.state_delta["sidecar_id"])
-    language = str(entry.state_delta["language"])
-    asset = ctx.scenario_assets[asset_id]
-    body = srt_payload(
-        language=language,
-        duration_s=asset.duration_seconds,
-        seed=ctx.resolved_seed,
-    ).encode("utf-8")
-    dst = ctx.library_root / sidecar_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_bytes(body)
-    ctx.phase_b_sidecar_hashes[sidecar_id] = "sha256:" + hashlib.sha256(body).hexdigest()
-    return FilesystemAction(
-        event_id=entry.event_id,
-        action=TimelineActionName.CREATE_SIDECAR,
-        target_asset_id=asset_id,
-        from_path=None,
-        to_path=sidecar_path,
-        temp_path=None,
-        duration_ns=0,
-    )
-
-
 def _slow_copy_start(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Stage a slow-copy at ``temp_path``; defer rename until commit."""
     asset_id = entry.target_ids[0]
@@ -291,7 +262,6 @@ _DISPATCH: Final[
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,
     TimelineActionName.DELETE_FILE: _delete_file,
-    TimelineActionName.CREATE_SIDECAR: _create_sidecar,
     TimelineActionName.REMOVE_SIDECAR: _remove_sidecar,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,

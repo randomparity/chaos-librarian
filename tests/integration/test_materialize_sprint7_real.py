@@ -71,9 +71,14 @@ def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
     # The declared English subtitle's phase-A path (asset_main.eng.srt)
     # was consumed by embed_subtitle and unlinked.
     assert not (out / "library" / "asset_main.eng.srt").exists()
-    # Poster + NFO files exist at their create_sidecar to: paths.
-    assert (out / "library" / "movies-hd" / "Quasar.poster.png").exists()
-    assert (out / "library" / "movies-hd" / "Quasar.nfo").exists()
+    # Poster + NFO files exist at their create_sidecar to: paths, and
+    # carry kind-appropriate bytes (adversarial review finding #1: the
+    # prior phase-B helper wrote SRT bytes for every kind, so the .png
+    # and .nfo files shipped with subtitle contents).
+    poster_bytes = (out / "library" / "movies-hd" / "Quasar.poster.png").read_bytes()
+    assert poster_bytes[:8] == b"\x89PNG\r\n\x1a\n"
+    nfo_text = (out / "library" / "movies-hd" / "Quasar.nfo").read_text()
+    assert nfo_text.lstrip().startswith("<?xml")
     manifest = _load_current_manifest(out)
     sidecar_kinds = {s.kind for s in manifest.sidecars}
     assert "poster" in sidecar_kinds

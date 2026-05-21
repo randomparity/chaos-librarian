@@ -823,6 +823,161 @@ class TestApplyUpdateSidecar:
         assert "sidecar_0001" in ctx.post_phase_b_sidecars
 
 
+class TestApplyCreateSidecar:
+    """Sprint 7 routing fix: create_sidecar lives in media.py and dispatches per-kind.
+
+    Adversarial-review finding #1 — the prior phase-B helper wrote SRT
+    bytes unconditionally, so ``Quasar.poster.png`` and ``Quasar.nfo``
+    shipped with subtitle contents on disk. These tests pin each kind's
+    actual byte signature.
+    """
+
+    @staticmethod
+    def _asset(asset_id: str = "a0") -> Asset:
+        return Asset.model_validate(
+            {
+                "id": asset_id,
+                "role": "primary_video",
+                "container": "mkv",
+                "duration_seconds": 2.0,
+                "video": {"source": "color_bars", "codec": "h264", "resolution": "hd"},
+                "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+                "subtitles": [],
+            }
+        )
+
+    def test_subtitle_kind_writes_srt_bytes(self, tmp_path):
+        ctx = _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": self._asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_cs_sub",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.eng.srt",
+                "sidecar_id": "sidecar_sub",
+                "language": "eng",
+                "kind": "subtitle",
+            },
+        )
+        result = apply_media_action(ctx, entry)
+        body = (tmp_path / "a0.eng.srt").read_bytes()
+        # SRT cue format includes the HH:MM:SS,mmm timestamp header.
+        assert b"00:00:00,000" in body
+        assert b"-->" in body
+        assert result.output_sidecar_id == "sidecar_sub"
+        assert result.tool_invocation_index is None
+        assert "sidecar_sub" in ctx.post_phase_b_sidecars
+
+    def test_nfo_kind_writes_xml_bytes(self, tmp_path):
+        ctx = _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": self._asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_cs_nfo",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.nfo",
+                "sidecar_id": "sidecar_nfo",
+                "language": None,
+                "kind": "nfo",
+            },
+        )
+        result = apply_media_action(ctx, entry)
+        body = (tmp_path / "a0.nfo").read_text()
+        assert body.lstrip().startswith('<?xml version="1.0"')
+        assert "<movie>" in body
+        assert "sidecar_nfo" in body
+        assert result.tool_invocation_index is None
+        assert "sidecar_nfo" in ctx.post_phase_b_sidecars
+
+    def test_poster_kind_invokes_ffmpeg_and_writes_png(self, monkeypatch, tmp_path):
+        png_magic = b"\x89PNG\r\n\x1a\n"
+        png_bytes = png_magic + b"stub-png-body"
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            Path(argv[-1]).write_bytes(png_bytes)
+            invocation = ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=list(argv),
+                exit_code=0,
+                duration_ns=1000,
+            )
+            return invocation, ""
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        ctx = _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": self._asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_cs_poster",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.poster.png",
+                "sidecar_id": "sidecar_poster",
+                "language": None,
+                "kind": "poster",
+            },
+        )
+        result = apply_media_action(ctx, entry)
+        on_disk = (tmp_path / "a0.poster.png").read_bytes()
+        assert on_disk.startswith(png_magic)
+        assert result.tool_invocation_index is not None
+        assert result.tool_invocation_index == 0
+        assert ctx.invocations[0].tool == "ffmpeg"
+        assert "sidecar_poster" in ctx.post_phase_b_sidecars
+
+    def test_poster_kind_ffmpeg_failure_raises_media_action_error(self, monkeypatch, tmp_path):
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            invocation = ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=list(argv),
+                exit_code=1,
+                duration_ns=1000,
+            )
+            return invocation, "ffmpeg crashed"
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        ctx = _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": self._asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_cs_poster_fail",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.poster.png",
+                "sidecar_id": "sidecar_poster",
+                "language": None,
+                "kind": "poster",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(ctx, entry)
+        assert exc_info.value.action == TimelineActionName.CREATE_SIDECAR
+
+
 class _FakeCompleted:
     def __init__(self, *, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
         self.stdout = stdout
@@ -891,6 +1046,7 @@ def test_media_actions_constant_contents():
                 TimelineActionName.EMBED_SUBTITLE,
                 TimelineActionName.EXTRACT_SUBTITLE,
                 TimelineActionName.UPDATE_SIDECAR,
+                TimelineActionName.CREATE_SIDECAR,
             }
         )
         == _MEDIA_ACTIONS
@@ -898,9 +1054,11 @@ def test_media_actions_constant_contents():
 
 
 def test_stdlib_actions_constant_includes_remove_sidecar():
-    # Sprint 6's set plus REMOVE_SIDECAR (stdlib op).
+    # Sprint 6's set plus REMOVE_SIDECAR (stdlib op), minus CREATE_SIDECAR
+    # (moved to _MEDIA_ACTIONS in Sprint 7).
     assert TimelineActionName.REMOVE_SIDECAR in _STDLIB_ACTIONS
     assert TimelineActionName.MOVE_ASSET in _STDLIB_ACTIONS  # from S6
+    assert TimelineActionName.CREATE_SIDECAR not in _STDLIB_ACTIONS
 
 
 def test_supported_s7_actions_union():

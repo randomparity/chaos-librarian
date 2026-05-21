@@ -32,7 +32,12 @@ from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.preflight import SUPPORTED_S6_ACTIONS
 from chaos_librarian.materializer.probe import probe_file
-from chaos_librarian.materializer.sidecar_bytes import regenerate_sidecar
+from chaos_librarian.materializer.recipes import srt_payload
+from chaos_librarian.materializer.sidecar_bytes import (
+    poster_ffmpeg_argv,
+    regenerate_sidecar,
+    render_nfo,
+)
 
 
 def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
@@ -764,6 +769,96 @@ def _apply_update_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
+def _apply_create_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+    """Create a sidecar file with bytes appropriate to ``state_delta['kind']``.
+
+    Subtitle → ``srt_payload`` (pure Python). NFO → ``render_nfo`` (pure
+    Python). Poster → ``poster_ffmpeg_argv`` (lavfi color source via
+    ffmpeg). All three kinds use the standard atomic-rename via
+    ``_temp_sibling`` and stash ``(content_hash, path)`` on
+    ``ctx.post_phase_b_sidecars`` so ``augment_updated_sidecars`` can
+    stamp the engine-allocated ``ManifestSidecar`` row.
+
+    Earlier revisions wrote SRT bytes unconditionally — independent of
+    ``kind`` — so ``Quasar.poster.png`` and ``Quasar.nfo`` shipped with
+    SRT contents on disk (PR #63 adversarial review, finding #1).
+    """
+    delta = entry.state_delta
+    asset_id = entry.target_ids[0]
+    sidecar_id = str(delta["sidecar_id"])
+    sidecar_path_str = str(delta["sidecar_path"])
+    sidecar_path = ctx.library_root / sidecar_path_str
+    kind = SidecarKind(str(delta["kind"]))
+    raw_language = delta.get("language")
+    language = str(raw_language) if isinstance(raw_language, str) else None
+    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    asset = ctx.scenario_assets[asset_id]
+    started = time.monotonic_ns()
+    invocation_index: int | None = None
+    sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+    if kind == SidecarKind.SUBTITLE:
+        if language is None:
+            raise MediaActionError(
+                f"create_sidecar (subtitle) missing language for event {entry.event_id}",
+                event_id=entry.event_id,
+                action=TimelineActionName.CREATE_SIDECAR,
+                cause=ValueError("language is None"),
+                asset_id=asset_id,
+            )
+        body = srt_payload(
+            language=language,
+            duration_s=asset.duration_seconds,
+            seed=ctx.resolved_seed,
+        ).encode("utf-8")
+        temp_output.write_bytes(body)
+    elif kind == SidecarKind.NFO:
+        temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+    elif kind == SidecarKind.POSTER:
+        argv = poster_ffmpeg_argv(
+            output_path=temp_output,
+            resolved_seed=ctx.resolved_seed,
+            sidecar_id=sidecar_id,
+        )
+        invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+        invocation_index = len(ctx.invocations)
+        ctx.invocations.append(invocation)
+        if invocation.exit_code != 0:
+            raise MediaActionError(
+                f"create_sidecar (poster) failed for event {entry.event_id}: "
+                f"ffmpeg exit {invocation.exit_code}",
+                event_id=entry.event_id,
+                action=TimelineActionName.CREATE_SIDECAR,
+                cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+                asset_id=asset_id,
+                tool_invocation_index=invocation_index,
+            )
+    else:  # pragma: no cover — SidecarKind is exhaustive
+        raise MediaActionError(
+            f"create_sidecar: unknown kind {kind!r} for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.CREATE_SIDECAR,
+            cause=ValueError(f"unknown kind {kind!r}"),
+            asset_id=asset_id,
+        )
+    temp_output.replace(sidecar_path)
+    new_hash = _hash_file(sidecar_path)
+    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
+    return MediaAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.CREATE_SIDECAR,
+        target_asset_id=asset_id,
+        input_path=sidecar_path_str,
+        output_path=sidecar_path_str,
+        input_version_id=None,
+        output_version_id=None,
+        output_sidecar_id=sidecar_id,
+        input_content_hash=None,
+        output_content_hash=new_hash,
+        tool_invocation_index=invocation_index,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
 _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
@@ -773,6 +868,7 @@ _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry]
     TimelineActionName.EMBED_SUBTITLE: _apply_embed_subtitle,
     TimelineActionName.EXTRACT_SUBTITLE: _apply_extract_subtitle,
     TimelineActionName.UPDATE_SIDECAR: _apply_update_sidecar,
+    TimelineActionName.CREATE_SIDECAR: _apply_create_sidecar,
 }
 
 
@@ -805,13 +901,19 @@ _MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.EMBED_SUBTITLE,
         TimelineActionName.EXTRACT_SUBTITLE,
         TimelineActionName.UPDATE_SIDECAR,
+        TimelineActionName.CREATE_SIDECAR,
     }
 )
 
 
-_STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = SUPPORTED_S6_ACTIONS | frozenset(
-    {TimelineActionName.REMOVE_SIDECAR}
-)
+# create_sidecar moved to _MEDIA_ACTIONS in Sprint 7 — the per-kind byte
+# generators (subtitle / NFO / poster) belong in media.py alongside the
+# other byte-changing handlers, so SUPPORTED_S6_ACTIONS (which still lists
+# CREATE_SIDECAR as a Sprint 6 supported action) is filtered here to keep
+# routing single-dispatch.
+_STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    SUPPORTED_S6_ACTIONS - {TimelineActionName.CREATE_SIDECAR}
+) | frozenset({TimelineActionName.REMOVE_SIDECAR})
 
 
 SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
