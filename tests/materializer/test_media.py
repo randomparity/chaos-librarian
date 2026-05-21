@@ -290,7 +290,82 @@ class TestApplyReencodeAudio:
         apply_media_action(media_ctx, entry)
         argv = captured_argv[0]
         assert "-ac" in argv
-        assert argv[argv.index("-ac") + 1] == "stereo"
+        # Channel-name strings are translated to integer counts before
+        # ffmpeg sees -ac (#58: ffmpeg rejects "stereo").
+        assert argv[argv.index("-ac") + 1] == "2"
+
+    def test_apply_reencode_audio_argv_maps_5_1_to_6(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured_argv: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv.append(list(argv))
+            Path(argv[-1]).write_bytes(b"x" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        entry = _atomic_entry(
+            event_id="ev_ra_002",
+            action=TimelineActionName.REENCODE_AUDIO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_channels": "stereo",
+                "to_channels": "5.1",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured_argv[0]
+        assert argv[argv.index("-ac") + 1] == "6"
+
+    def test_apply_reencode_audio_unknown_channel_layout_raises(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        # ffmpeg must NOT be invoked: assert by failing the fake.
+        ffmpeg_calls: list[int] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            ffmpeg_calls.append(1)
+            raise AssertionError("ffmpeg invoked for unknown channel layout")
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        entry = _atomic_entry(
+            event_id="ev_ra_bad",
+            action=TimelineActionName.REENCODE_AUDIO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_channels": "stereo",
+                "to_channels": "foo",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(media_ctx, entry)
+        assert exc_info.value.action == TimelineActionName.REENCODE_AUDIO
+        assert "foo" in str(exc_info.value)
+        assert ffmpeg_calls == []
 
 
 class TestApplyRemuxContainer:

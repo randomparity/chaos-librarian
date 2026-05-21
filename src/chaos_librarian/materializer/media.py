@@ -54,6 +54,34 @@ _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
 }
 
 
+# ffmpeg's ``-ac`` flag requires an integer channel count, but the
+# scenario contract's ``AudioTrack.channels`` is a free-form ``str`` so
+# authors can write the natural ``"stereo"`` / ``"5.1"`` shorthand.
+# Translate names to integers before invoking ffmpeg (#58).
+_CHANNEL_COUNT_BY_NAME: Final[dict[str, int]] = {
+    "mono": 1,
+    "stereo": 2,
+    "2.1": 3,
+    "5.1": 6,
+    "7.1": 8,
+}
+
+
+def _channel_count_for(name: str) -> int:
+    """Return the integer channel count for a scenario channel name.
+
+    Raises ValueError when ``name`` isn't a known channel layout; the
+    caller wraps that in a MediaActionError so the user sees
+    E_MATERIALIZE_MEDIA_FAILED before ffmpeg is invoked.
+    """
+    count = _CHANNEL_COUNT_BY_NAME.get(name.lower())
+    if count is None:
+        raise ValueError(
+            f"unknown audio channel layout {name!r}; supported: {sorted(_CHANNEL_COUNT_BY_NAME)}"
+        )
+    return count
+
+
 def _subtitle_codec_for_container(container_ext: str) -> str:
     """Return the ffmpeg ``-c:s`` argument for a given container extension.
 
@@ -199,6 +227,17 @@ def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
     temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    to_channels_name = str(delta["to_channels"])
+    try:
+        ac_value = _channel_count_for(to_channels_name)
+    except ValueError as exc:
+        raise MediaActionError(
+            f"reencode_audio: unknown to_channels {to_channels_name!r} for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=exc,
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+        ) from exc
     argv = [
         "ffmpeg",
         "-hide_banner",
@@ -208,7 +247,7 @@ def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         "-c:v",
         "copy",
         "-ac",
-        str(delta["to_channels"]),
+        str(ac_value),
         "-c:a",
         "aac",
         "-c:s",

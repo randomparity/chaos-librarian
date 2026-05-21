@@ -40,15 +40,6 @@ pytestmark = pytest.mark.skipif(
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
-@pytest.mark.xfail(
-    reason="Blocked on #57 (fixture library/library path duplication) "
-    "and #58 (-ac stereo: ffmpeg expects integer channel count).",
-    strict=False,
-)
-@pytest.mark.xfail(
-    reason="Blocked on #58: -ac stereo: ffmpeg expects integer channel count.",
-    strict=False,
-)
 def test_version_evolution_end_to_end(tmp_path: Path) -> None:
     """EXIT CRITERION #1. Reencode + downmix + edit_metadata round-trip."""
     out = tmp_path / "run-001"
