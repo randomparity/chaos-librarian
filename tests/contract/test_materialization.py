@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
+from chaos_librarian.contract import materialization as materialization_contract
 from chaos_librarian.contract.materialization import (
     FailureStage,
     FilesystemAction,
@@ -111,8 +112,31 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_four() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 4
+def test_materialization_schema_version_is_five() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 5
+
+
+def test_materialization_report_run_timing_defaults() -> None:
+    report = _minimal_report()
+    assert report.requested_duration_ns is None
+    assert report.actual_duration_ns is None
+    assert report.speed_multiplier is None
+    assert report.overran_duration is False
+    assert (
+        report.execution_mode is materialization_contract.MaterializationExecutionMode.MATERIALIZE
+    )
+
+
+def test_materialization_report_accepts_run_timing() -> None:
+    report = _minimal_report(
+        schema_version=5,
+        requested_duration_ns=90_000_000_000,
+        actual_duration_ns=90_123_456_789,
+        speed_multiplier="10",
+        overran_duration=True,
+        execution_mode="run",
+    )
+    assert report.execution_mode is materialization_contract.MaterializationExecutionMode.RUN
 
 
 def test_filesystem_action_round_trip() -> None:
@@ -157,7 +181,7 @@ def test_materialization_failure_round_trips_with_none_optional_fields() -> None
 
 def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
     payload = {
-        "schema_version": 4,
+        "schema_version": MATERIALIZATION_SCHEMA_VERSION,
         "run_id": "1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01",
         "outcome": "success",
         "platform": "darwin",
@@ -221,7 +245,7 @@ def test_failure_stage_includes_media():
 
 def test_materialization_report_carries_media_actions():
     report = MaterializationReport(
-        schema_version=4,
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
         run_id=uuid.uuid4(),
         outcome=Outcome.SUCCESS,
         platform="darwin",
@@ -230,4 +254,4 @@ def test_materialization_report_carries_media_actions():
         toolchain=ToolchainInfo(),
     )
     assert report.media_actions == []
-    assert report.schema_version == 4
+    assert report.schema_version == MATERIALIZATION_SCHEMA_VERSION

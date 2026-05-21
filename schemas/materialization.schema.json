@@ -76,6 +76,15 @@
       "title": "FilesystemAction",
       "type": "object"
     },
+    "MaterializationExecutionMode": {
+      "description": "Mode that produced the materialization report.",
+      "enum": [
+        "materialize",
+        "run"
+      ],
+      "title": "MaterializationExecutionMode",
+      "type": "string"
+    },
     "MaterializationFailure": {
       "additionalProperties": false,
       "description": "Per-failure record.\n\n``asset_id`` is None for non-per-asset stages (e.g. capability\nregression). ``invocation_index`` indexes into ``invocations`` when the\nfailure came from a subprocess call.",
@@ -408,6 +417,22 @@
   "additionalProperties": false,
   "description": "Top-level ``materialization.json`` body.",
   "properties": {
+    "actual_duration_ns": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Actual Duration Ns"
+    },
+    "execution_mode": {
+      "$ref": "#/$defs/MaterializationExecutionMode",
+      "default": "materialize"
+    },
     "failures": {
       "items": {
         "$ref": "#/$defs/MaterializationFailure"
@@ -451,9 +476,26 @@
     "outcome": {
       "$ref": "#/$defs/Outcome"
     },
+    "overran_duration": {
+      "default": false,
+      "title": "Overran Duration",
+      "type": "boolean"
+    },
     "platform": {
       "title": "Platform",
       "type": "string"
+    },
+    "requested_duration_ns": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Duration Ns"
     },
     "run_id": {
       "format": "uuid",
@@ -461,9 +503,21 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "speed_multiplier": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Speed Multiplier"
     },
     "started_at": {
       "format": "date-time",

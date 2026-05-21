@@ -1,4 +1,4 @@
-"""Materialization report schema (v4).
+"""Materialization report schema (v5).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
@@ -42,6 +42,13 @@ class FailureStage(enum.StrEnum):
     FFPROBE = "ffprobe"
     FILESYSTEM = "filesystem"
     MEDIA = "media"
+
+
+class MaterializationExecutionMode(enum.StrEnum):
+    """Mode that produced the materialization report."""
+
+    MATERIALIZE = "materialize"
+    RUN = "run"
 
 
 class ToolchainInfo(BaseModel):
@@ -151,7 +158,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -163,3 +170,8 @@ class MaterializationReport(BaseModel):
     failures: list[MaterializationFailure] = Field(default_factory=list)
     filesystem_actions: list[FilesystemAction] = Field(default_factory=list)
     media_actions: list[MediaAction] = Field(default_factory=list)
+    requested_duration_ns: int | None = None
+    actual_duration_ns: int | None = None
+    speed_multiplier: str | None = None
+    overran_duration: bool = False
+    execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE
