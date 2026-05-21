@@ -2,7 +2,7 @@ schema_version: 5
 scenario_id: sc_ee_001
 seed: 42
 duration_scale: short
-library: {roots: [{id: r0, path: library/movies}]}
+library: {roots: [{id: r0, path: movies}]}
 works:
   - id: w0
     title: T
@@ -30,5 +30,5 @@ timeline:
     at: 2s
     action: extract_subtitle
     target: a0
-    to: a0.eng.extracted.srt
+    to: movies/a0.eng.extracted.srt
     language: eng

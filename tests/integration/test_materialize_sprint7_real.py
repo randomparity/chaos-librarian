@@ -45,6 +45,10 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
     "and #58 (-ac stereo: ffmpeg expects integer channel count).",
     strict=False,
 )
+@pytest.mark.xfail(
+    reason="Blocked on #58: -ac stereo: ffmpeg expects integer channel count.",
+    strict=False,
+)
 def test_version_evolution_end_to_end(tmp_path: Path) -> None:
     """EXIT CRITERION #1. Reencode + downmix + edit_metadata round-trip."""
     out = tmp_path / "run-001"
@@ -88,8 +92,8 @@ def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #57: fixture root path library/movies duplicates "
-    "library/ under the run dir.",
+    reason="Blocked on #60: _apply_remux_container leaves the old-extension "
+    "input file on disk after writing the new container.",
     strict=False,
 )
 def test_remux_container_real(tmp_path: Path) -> None:
@@ -101,11 +105,6 @@ def test_remux_container_real(tmp_path: Path) -> None:
     assert not (out / "library" / "movies" / "a0.mkv").exists()
 
 
-@pytest.mark.xfail(
-    reason="Blocked on #57: fixture root path library/movies duplicates "
-    "library/ under the run dir.",
-    strict=False,
-)
 def test_edit_metadata_real(tmp_path: Path) -> None:
     out = tmp_path / "run-004"
     artifacts = materialize_scenario(FIXTURE_DIR / "edit-metadata.yaml", out)
@@ -132,8 +131,7 @@ def test_edit_metadata_real(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #57 (fixture library/library path duplication) "
-    "and #59 (extract_subtitle ffmpeg 8.x stream-specifier syntax).",
+    reason="Blocked on #59: extract_subtitle ffmpeg 8.x stream-specifier syntax.",
     strict=False,
 )
 def test_embed_then_extract_round_trip(tmp_path: Path) -> None:
@@ -167,11 +165,6 @@ def test_remove_sidecar_real(tmp_path: Path) -> None:
     assert all(s.path != "a0.eng.srt" for s in manifest.sidecars)
 
 
-@pytest.mark.xfail(
-    reason="Blocked on #57: fixture root path library/movies duplicates "
-    "library/ under the run dir.",
-    strict=False,
-)
 def test_subtitle_ops_on_mp4_asset_use_mov_text(tmp_path: Path) -> None:
     out = tmp_path / "run-008"
     artifacts = materialize_scenario(FIXTURE_DIR / "subtitle-ops-on-mp4.yaml", out)

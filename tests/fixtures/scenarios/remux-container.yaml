@@ -5,7 +5,7 @@ duration_scale: short
 library:
   roots:
     - id: r0
-      path: library/movies
+      path: movies
 works:
   - id: w0
     title: T

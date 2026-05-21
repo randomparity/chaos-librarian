@@ -2,7 +2,7 @@ schema_version: 5
 scenario_id: sc_remove_sidecar_001
 seed: 42
 duration_scale: short
-library: {roots: [{id: r0, path: library/movies}]}
+library: {roots: [{id: r0, path: movies}]}
 works:
   - id: w0
     title: T
