@@ -121,10 +121,6 @@ def test_edit_metadata_real(tmp_path: Path) -> None:
     assert "year=2026" in lowered
 
 
-@pytest.mark.xfail(
-    reason="Blocked on #59: extract_subtitle ffmpeg 8.x stream-specifier syntax.",
-    strict=False,
-)
 def test_embed_then_extract_round_trip(tmp_path: Path) -> None:
     out = tmp_path / "run-005"
     artifacts = materialize_scenario(FIXTURE_DIR / "embed-extract-roundtrip.yaml", out)

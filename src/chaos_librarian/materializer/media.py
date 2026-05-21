@@ -16,6 +16,8 @@ Per-action ffmpeg sketches are in the Sprint 7 spec
 from __future__ import annotations
 
 import hashlib
+import json
+import subprocess
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -31,6 +33,19 @@ from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.preflight import SUPPORTED_S6_ACTIONS
 from chaos_librarian.materializer.probe import probe_file
 from chaos_librarian.materializer.sidecar_bytes import regenerate_sidecar
+
+
+def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
+    """Return ``value`` as ``dict[str, object]`` if every key is a string."""
+    if not isinstance(value, dict):
+        return None
+    blob: dict[str, object] = {}
+    for key, item in value.items():
+        if not isinstance(key, str):
+            return None
+        blob[key] = item
+    return blob
+
 
 if TYPE_CHECKING:
     from chaos_librarian.contract.manifest import ManifestSidecar
@@ -505,22 +520,99 @@ def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
+def _probe_subtitle_index_for_language(input_path: Path, language: str) -> int:
+    """Return the subtitle-stream index whose tags.language matches.
+
+    Indexing is relative to subtitle streams only (matching ffmpeg's
+    ``-map 0:s:<idx>`` semantics — the 0th subtitle stream is ``0:s:0``,
+    not the absolute stream index). Falls back to ``0`` when no track's
+    language tag matches ``language`` (per spec design decision #8).
+
+    Raises:
+        RuntimeError: ffprobe exited non-zero or produced unparseable
+            JSON. The caller (the extract_subtitle handler) wraps the
+            propagated exception in a MediaActionError.
+    """
+    argv = [
+        "ffprobe",
+        "-hide_banner",
+        "-v",
+        "error",
+        "-select_streams",
+        "s",
+        "-show_entries",
+        "stream=index:stream_tags=language",
+        "-of",
+        "json",
+        str(input_path),
+    ]
+    completed = subprocess.run(
+        argv,
+        capture_output=True,
+        text=True,
+        timeout=15.0,
+        check=False,
+        stdin=subprocess.DEVNULL,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            f"ffprobe (subtitle index) exit {completed.returncode} on {input_path}: "
+            f"{(completed.stderr or '')[-512:]}"
+        )
+    try:
+        raw: object = json.loads(completed.stdout or "")
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"ffprobe (subtitle index) stdout was not valid JSON for {input_path}"
+        ) from exc
+    payload = _coerce_str_keyed_dict(raw)
+    if payload is None:
+        return 0
+    streams = payload.get("streams")
+    if not isinstance(streams, list):
+        return 0
+    target = language.lower()
+    for idx, stream in enumerate(streams):
+        stream_blob = _coerce_str_keyed_dict(stream)
+        if stream_blob is None:
+            continue
+        tags = _coerce_str_keyed_dict(stream_blob.get("tags"))
+        if tags is None:
+            continue
+        lang = tags.get("language")
+        if isinstance(lang, str) and lang.lower() == target:
+            return idx
+    return 0
+
+
 def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
-    """ffmpeg -map 0:s:m:language:<lang>? -c:s srt sidecar.srt.
+    """ffmpeg -map 0:s:<idx> -c:s srt sidecar.srt.
 
     Output is always .srt regardless of asset container. No re-probe
     (asset bytes unchanged); hash only the new sidecar file.
+
+    The subtitle stream index is resolved by probing the asset's
+    subtitle tracks with ffprobe and matching ``tags.language`` against
+    ``event.language``. Falls back to track 0 on no match (per spec
+    design decision #8). Earlier revisions used
+    ``-map 0:s:m:language:<lang>? -map 0:s:0`` but ffmpeg 8.x rejects
+    that metadata stream-specifier combination (#59).
     """
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     sidecar_path = ctx.library_root / str(delta["sidecar_path"])
     temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
     language = str(delta["language"])
-    # The optional "?" suffix tells ffmpeg "skip if no match" — combined
-    # with a -map fallback, this gives the language-or-track-0 behavior.
-    # In practice ffmpeg's stream-specifier matrix is fiddly; if the
-    # language match misses, ffmpeg emits a warning and the fallback
-    # -map covers it. The output is always .srt.
+    try:
+        subtitle_index = _probe_subtitle_index_for_language(input_path, language)
+    except (RuntimeError, subprocess.TimeoutExpired) as exc:
+        raise MediaActionError(
+            f"extract_subtitle: ffprobe failed selecting subtitle index for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.EXTRACT_SUBTITLE,
+            cause=exc,
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+        ) from exc
     argv = [
         "ffmpeg",
         "-hide_banner",
@@ -528,9 +620,7 @@ def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAct
         "-i",
         str(input_path),
         "-map",
-        f"0:s:m:language:{language}?",
-        "-map",
-        "0:s:0",
+        f"0:s:{subtitle_index}",
         "-c:s",
         "srt",
         *BITEXACT_FLAGS,

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import uuid
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import Asset, TimelineActionName
+from chaos_librarian.materializer import media as media_module
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.media import (
     _MEDIA_ACTIONS,
@@ -603,6 +605,10 @@ class TestApplyExtractSubtitle:
     def test_apply_extract_writes_srt_at_to_path(self, media_ctx, monkeypatch, tmp_path):
         (tmp_path / "x.mkv").write_bytes(b"y" * 50)
         _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"s" * 100)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
+            lambda path, lang: 0,
+        )
         entry = _atomic_entry(
             event_id="ev_xs_001",
             action=TimelineActionName.EXTRACT_SUBTITLE,
@@ -622,7 +628,9 @@ class TestApplyExtractSubtitle:
         # post_phase_b_sidecars captured the new hash + path.
         assert "sidecar_0002" in media_ctx.post_phase_b_sidecars
 
-    def test_apply_extract_argv_maps_language_with_fallback(self, media_ctx, monkeypatch, tmp_path):
+    def test_apply_extract_argv_uses_probed_language_match_index(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
         (tmp_path / "x.mkv").write_bytes(b"y" * 50)
         captured: list[list[str]] = []
 
@@ -641,6 +649,12 @@ class TestApplyExtractSubtitle:
             )
 
         monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        # Probe stub returns index 1 (i.e. the SECOND subtitle stream
+        # matches "fra"), so the argv must contain 0:s:1.
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
+            lambda path, lang: 1,
+        )
         entry = _atomic_entry(
             event_id="ev_xs_001",
             action=TimelineActionName.EXTRACT_SUBTITLE,
@@ -654,9 +668,53 @@ class TestApplyExtractSubtitle:
         )
         apply_media_action(media_ctx, entry)
         argv = captured[0]
+        assert "-map" in argv
+        assert argv[argv.index("-map") + 1] == "0:s:1"
+        # ffmpeg 8.x rejects the legacy metadata stream-specifier form;
+        # make sure we don't regress.
         joined = " ".join(argv)
-        # Either the language-specific map or the fallback s:0 map.
-        assert "0:s:m:language:fra" in joined or "0:s:0" in joined
+        assert "0:s:m:language" not in joined
+
+    def test_apply_extract_argv_falls_back_to_track_0_on_lang_miss(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        captured: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured.append(list(argv))
+            Path(argv[-1]).write_bytes(b"s" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
+        # Probe stub returns 0 — fallback path (no language matched).
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
+            lambda path, lang: 0,
+        )
+        entry = _atomic_entry(
+            event_id="ev_xs_002",
+            action=TimelineActionName.EXTRACT_SUBTITLE,
+            target="a0",
+            state_delta={
+                "sidecar_id": "sidecar_0003",
+                "sidecar_path": "x.deu.srt",
+                "language": "deu",
+                "input_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        argv = captured[0]
+        assert argv[argv.index("-map") + 1] == "0:s:0"
 
 
 class TestApplyUpdateSidecar:
@@ -706,6 +764,63 @@ class TestApplyUpdateSidecar:
         assert result.output_sidecar_id == "sidecar_0001"
         assert result.tool_invocation_index is None  # subtitle is pure Python
         assert "sidecar_0001" in ctx.post_phase_b_sidecars
+
+
+class _FakeCompleted:
+    def __init__(self, *, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
+        self.stdout = stdout
+        self.stderr = stderr
+        self.returncode = returncode
+
+
+class TestProbeSubtitleIndexForLanguage:
+    """Covers media._probe_subtitle_index_for_language (#59)."""
+
+    def test_probe_picks_matching_language_index(self, monkeypatch, tmp_path):
+        # Two subtitle streams: eng then fra; ask for fra → expect index 1.
+        payload = {
+            "streams": [
+                {"index": 2, "tags": {"language": "eng"}},
+                {"index": 3, "tags": {"language": "fra"}},
+            ]
+        }
+
+        def fake_run(argv, **_kwargs):
+            return _FakeCompleted(stdout=json.dumps(payload))
+
+        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "fra")
+        assert idx == 1
+
+    def test_probe_falls_back_to_zero_when_language_missing(self, monkeypatch, tmp_path):
+        payload = {
+            "streams": [
+                {"index": 2, "tags": {"language": "eng"}},
+            ]
+        }
+
+        def fake_run(argv, **_kwargs):
+            return _FakeCompleted(stdout=json.dumps(payload))
+
+        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "deu")
+        assert idx == 0
+
+    def test_probe_falls_back_to_zero_when_no_streams_key(self, monkeypatch, tmp_path):
+        def fake_run(argv, **_kwargs):
+            return _FakeCompleted(stdout="{}")
+
+        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "eng")
+        assert idx == 0
+
+    def test_probe_nonzero_exit_raises_runtime_error(self, monkeypatch, tmp_path):
+        def fake_run(argv, **_kwargs):
+            return _FakeCompleted(stdout="", stderr="boom", returncode=1)
+
+        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        with pytest.raises(RuntimeError, match="ffprobe"):
+            media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "eng")
 
 
 def test_media_actions_constant_contents():
