@@ -37,7 +37,9 @@ def parse_speed(raw: str) -> SpeedMultiplier:
     if value <= 0:
         raise SpeedParseError(f"invalid speed {raw!r}: must be greater than zero")
     fraction = Fraction(value)
-    normalized = format(value.normalize(), "f").rstrip("0").rstrip(".")
+    normalized = format(value.normalize(), "f")
+    if "." in normalized:
+        normalized = normalized.rstrip("0").rstrip(".")
     return SpeedMultiplier(fraction.numerator, fraction.denominator, normalized)
 
 

@@ -239,11 +239,11 @@ def test_file_arg_stub_with_valid_paths_exits_one(
     scenario.write_text("")
     out = tmp_path / "run-001"
     code = _invoke_with_file_arg(name, extra_args, takes_out, scenario, out)
-    # ``validate`` (Sprint 1), ``plan`` (Sprint 3), and ``materialize`` (Sprint 5)
-    # are real commands — an empty file fails shape validation with
-    # E_TOP_LEVEL_NOT_MAPPING and the command exits 3. The remaining stub
-    # commands exit 1.
-    if name in {"validate", "plan", "materialize"}:
+    # ``validate`` (Sprint 1), ``plan`` (Sprint 3), ``materialize`` (Sprint 5),
+    # and ``run`` (Sprint 8) are real commands — an empty file fails shape
+    # validation with E_TOP_LEVEL_NOT_MAPPING and the command exits 3. The
+    # remaining stub commands exit 1.
+    if name in {"validate", "plan", "materialize", "run"}:
         assert code == 3
     else:
         assert code == 1

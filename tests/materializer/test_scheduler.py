@@ -19,6 +19,13 @@ def test_parse_speed_normalizes_decimal() -> None:
     assert speed.normalized == "0.5"
 
 
+def test_parse_speed_preserves_integer_magnitude() -> None:
+    speed = parse_speed("10x")
+    assert speed.numerator == 10
+    assert speed.denominator == 1
+    assert speed.normalized == "10"
+
+
 def test_parse_speed_rejects_invalid() -> None:
     for raw in ("", "0x", "-1x", "1", "x", "1..0x"):
         with pytest.raises(SpeedParseError):
