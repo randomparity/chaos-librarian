@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import uuid
 from pathlib import Path
 
 import pytest
@@ -66,6 +67,54 @@ class TestRunPlanDeterminism:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         a = run_plan(run_input=run_input, validation_report=report)
         assert a.replay_bundle.run_id.version == 5
+
+
+class TestRunPlanRawPrefix:
+    """run_plan can serve materializer-owned raw journal prefixes.
+
+    WHY: wall-clock finalization needs exact executed event counts and a
+    materialized UUID4 run_id, while plan-only replay must keep its existing
+    step-boundary semantics.
+    """
+
+    def test_accepts_run_id_override(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        run_id = uuid.UUID("11111111-1111-4111-8111-111111111111")
+        artifacts = run_plan(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=run_id,
+        )
+        assert artifacts.replay_bundle.run_id == run_id
+        assert {entry.run_id for entry in artifacts.journal} == {run_id}
+
+    def test_raw_prefix_applies_one_event(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        artifacts = run_plan(
+            run_input=run_input,
+            validation_report=report,
+            applied_events_override=1,
+        )
+        assert artifacts.replay_bundle.applied_events == 1
+        assert [entry.event_id for entry in artifacts.journal] == ["move_001"]
+
+    def test_rejects_negative_raw_prefix(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        with pytest.raises(ValueError, match="applied_events_override must be >= 0"):
+            run_plan(
+                run_input=run_input,
+                validation_report=report,
+                applied_events_override=-1,
+            )
+
+    def test_rejects_raw_prefix_past_timeline(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        with pytest.raises(ValueError, match="applied_events_override exceeds timeline"):
+            run_plan(
+                run_input=run_input,
+                validation_report=report,
+                applied_events_override=999,
+            )
 
 
 class TestRunPlanFirstPack:
