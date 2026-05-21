@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 scenario_id: version-evolution
 seed: 17
 duration_scale: short
@@ -43,3 +43,10 @@ timeline:
     target: asset_main
     from_channels: "5.1"
     to_channels: stereo
+  - id: ev_edit_meta_001
+    at: 7s
+    action: edit_metadata
+    target: asset_main
+    fields:
+      title: "Pulsar (remastered)"
+      year: "2026"

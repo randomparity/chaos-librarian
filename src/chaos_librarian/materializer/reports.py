@@ -16,6 +16,7 @@ from chaos_librarian.contract.materialization import (
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
+    MediaAction,
     Outcome,
     ToolchainInfo,
     ToolInvocation,
@@ -39,6 +40,7 @@ def build_report(
     materialized: list[MaterializedAsset],
     failures: list[MaterializationFailure],
     filesystem_actions: list[FilesystemAction] | None = None,
+    media_actions: list[MediaAction] | None = None,
 ) -> MaterializationReport:
     return MaterializationReport(
         schema_version=MATERIALIZATION_SCHEMA_VERSION,
@@ -56,6 +58,7 @@ def build_report(
         materialized=materialized,
         failures=failures,
         filesystem_actions=filesystem_actions or [],
+        media_actions=media_actions or [],
     )
 
 

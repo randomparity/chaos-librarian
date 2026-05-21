@@ -33,14 +33,21 @@ from chaos_librarian.contract.scenario import (
     ArchiveFileEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
+    EditMetadataEvent,
+    EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
+    RemoveSidecarEvent,
+    RemuxContainerEvent,
     RenameFileEvent,
+    SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
+    UpdateSidecarEvent,
 )
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.resolution import ResolvedEvent
@@ -51,7 +58,9 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
     TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
     TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
-    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id", "language"}),
+    TimelineActionName.CREATE_SIDECAR: frozenset(
+        {"sidecar_path", "sidecar_id", "language", "kind"}
+    ),
     TimelineActionName.SLOW_COPY_START: frozenset(
         {"final_path", "temp_path", "initial_path_at_start"}
     ),
@@ -60,6 +69,31 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_BETWEEN_ROOTS: frozenset(
         {"from_path", "to_path", "from_root_id", "to_root_id"}
     ),
+    TimelineActionName.REENCODE_VIDEO: frozenset(
+        {"resolution", "codec", "input_path", "output_path"}
+    ),
+    TimelineActionName.REENCODE_AUDIO: frozenset(
+        {"from_channels", "to_channels", "input_path", "output_path"}
+    ),
+    TimelineActionName.REMUX_CONTAINER: frozenset(
+        {"from_container", "to_container", "from_path", "to_path", "input_path", "output_path"}
+    ),
+    TimelineActionName.EDIT_METADATA: frozenset({"fields", "input_path", "output_path"}),
+    TimelineActionName.EMBED_SUBTITLE: frozenset(
+        {
+            "embedded_sidecar_id",
+            "embedded_sidecar_path",
+            "language",
+            "kind",
+            "input_path",
+            "output_path",
+        }
+    ),
+    TimelineActionName.EXTRACT_SUBTITLE: frozenset(
+        {"sidecar_id", "sidecar_path", "language", "input_path"}
+    ),
+    TimelineActionName.REMOVE_SIDECAR: frozenset({"removed_sidecar_id", "removed_sidecar_path"}),
+    TimelineActionName.UPDATE_SIDECAR: frozenset({"sidecar_id", "sidecar_path"}),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -241,14 +275,21 @@ def _handle_reencode_video(
         event.target,
         ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
     )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
         scenario_id=scenario_id,
         action=TimelineActionName.REENCODE_VIDEO,
         target_ids=[event.target],
-        location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"resolution": event.resolution, "codec": event.codec},
+        location_ids=[loc_id],
+        state_delta={
+            "resolution": event.resolution,
+            "codec": event.codec,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
         input_version_ids=[prior_version_id],
         output_version_ids=[new_version_id],
     )
@@ -271,14 +312,21 @@ def _handle_reencode_audio(
         event.target,
         ManifestVersion(id=new_version_id, asset_id=event.target, index=prior_version.index + 1),
     )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
         scenario_id=scenario_id,
         action=TimelineActionName.REENCODE_AUDIO,
         target_ids=[event.target],
-        location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={"from_channels": event.from_channels, "to_channels": event.to_channels},
+        location_ids=[loc_id],
+        state_delta={
+            "from_channels": event.from_channels,
+            "to_channels": event.to_channels,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
         input_version_ids=[prior_version_id],
         output_version_ids=[new_version_id],
     )
@@ -292,19 +340,47 @@ def _handle_create_sidecar(
     run_id: uuid.UUID,
     scenario_id: str,
 ) -> tuple[JournalEntry, ...]:
+    """Allocate a sidecar row; route on ``event.kind``.
+
+    Subtitle sidecars carry a ``language`` and dedup any declared row
+    seeded by ``build_initial_state`` that collides on
+    ``(asset_id, language)`` — the timeline ``create_sidecar`` is the
+    authoritative writer for that language (#39). Poster and NFO
+    sidecars carry no language and never collide; they are inserted
+    verbatim. No kind bumps the asset's version.
+    """
     event = resolved.event
     assert isinstance(event, CreateSidecarEvent)
+    if event.kind == SidecarKind.SUBTITLE:
+        # Drop any declared subtitle row seeded by ``build_initial_state``
+        # that collides on ``(asset_id, language)``. Validation's
+        # projection overwrites declared entries with the timeline value;
+        # mirror that here. The phase-A writer also skips the declared
+        # file on disk via ``_timeline_sidecar_languages``, so the
+        # manifest must not carry a row for the orphaned declared write.
+        collisions = [
+            sid
+            for sid, sidecar in state.sidecars.items()
+            if sidecar.asset_id == event.target
+            and sidecar.kind == "subtitle"
+            and sidecar.language == event.language
+        ]
+        for sid in collisions:
+            del state.sidecars[sid]
     sidecar_id = ids.next_sidecar_id()
-    # V1: every sidecar is a subtitle file; future kinds (chapters, fanart)
-    # will branch here.
-    sidecar = ManifestSidecar(
+    state.sidecars[sidecar_id] = ManifestSidecar(
         id=sidecar_id,
         asset_id=event.target,
-        kind="subtitle",
+        kind=event.kind.value,
         path=event.to,
         language=event.language,
     )
-    state.sidecars[sidecar_id] = sidecar
+    state_delta: dict[str, object] = {
+        "sidecar_path": event.to,
+        "sidecar_id": sidecar_id,
+        "language": event.language,
+        "kind": event.kind.value,
+    }
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
@@ -312,11 +388,7 @@ def _handle_create_sidecar(
         action=TimelineActionName.CREATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={
-            "sidecar_path": event.to,
-            "sidecar_id": sidecar_id,
-            "language": event.language,
-        },
+        state_delta=state_delta,
     )
     return (entry,)
 
@@ -450,6 +522,259 @@ def _handle_move_between_roots(
     return (entry,)
 
 
+def _swap_extension(path: str, new_ext: str) -> str:
+    """Replace the path's file extension with ``new_ext`` (no leading dot).
+
+    Pure string surgery: ``"library/movies-hd/x.mkv"`` + ``"mp4"`` →
+    ``"library/movies-hd/x.mp4"``. If the path has no extension, appends.
+    """
+    if "." in path.rsplit("/", 1)[-1]:
+        base = path.rsplit(".", 1)[0]
+        return f"{base}.{new_ext}"
+    return f"{path}.{new_ext}"
+
+
+def _handle_remux_container(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new version; rewrite the asset's location path extension.
+
+    The byte payload doesn't actually change here (the materializer's
+    ffmpeg -c copy preserves streams); the version bump signals to
+    voom-v2 that the file moved to a new container, which is a
+    reconciliation-relevant event.
+    """
+    event = resolved.event
+    assert isinstance(event, RemuxContainerEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    prev_container = previous.path.rsplit(".", 1)[-1] if "." in previous.path else ""
+    new_path = _swap_extension(previous.path, event.to_container)
+    state.locations[loc_id] = previous.model_copy(update={"path": new_path})
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REMUX_CONTAINER,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+        state_delta={
+            "from_container": prev_container,
+            "to_container": event.to_container,
+            "from_path": previous.path,
+            "to_path": new_path,
+            "input_path": previous.path,
+            "output_path": new_path,
+        },
+    )
+    return (entry,)
+
+
+def _handle_edit_metadata(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new version; record the fields delta. Path unchanged."""
+    event = resolved.event
+    assert isinstance(event, EditMetadataEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.EDIT_METADATA,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+        state_delta={
+            "fields": dict(event.fields),
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
+    )
+    return (entry,)
+
+
+def _handle_embed_subtitle(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new version; remove the named sidecar from state.
+
+    The materializer unlinks the sidecar file in phase B; here we mirror
+    that with state.sidecars.pop. Validation guarantees the sidecar
+    exists at scenario-construction time (rule_sidecar_target).
+    """
+    event = resolved.event
+    assert isinstance(event, EmbedSubtitleEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    sidecar = state.sidecars[sidecar_id]
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    del state.sidecars[sidecar_id]
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.EMBED_SUBTITLE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        input_version_ids=[prior_version_id],
+        output_version_ids=[new_version_id],
+        state_delta={
+            "embedded_sidecar_id": sidecar_id,
+            "embedded_sidecar_path": sidecar.path,
+            "language": sidecar.language,
+            "kind": sidecar.kind,
+            "input_path": previous.path,
+            "output_path": previous.path,
+        },
+    )
+    return (entry,)
+
+
+def _handle_extract_subtitle(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Allocate a new sidecar row; asset's version is UNCHANGED.
+
+    Asymmetric with embed_subtitle (which DOES bump version) because
+    extraction is a read-only operation on the asset bytes.
+    """
+    event = resolved.event
+    assert isinstance(event, ExtractSubtitleEvent)
+    sidecar_id = ids.next_sidecar_id()
+    state.sidecars[sidecar_id] = ManifestSidecar(
+        id=sidecar_id,
+        asset_id=event.target,
+        kind="subtitle",
+        path=event.to,
+        language=event.language,
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    previous = state.locations[loc_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        target_ids=[event.target],
+        location_ids=[loc_id],
+        state_delta={
+            "sidecar_id": sidecar_id,
+            "sidecar_path": event.to,
+            "language": event.language,
+            "input_path": previous.path,
+        },
+    )
+    return (entry,)
+
+
+def _handle_remove_sidecar(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Drop the named sidecar from state. No version change."""
+    event = resolved.event
+    assert isinstance(event, RemoveSidecarEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    sidecar = state.sidecars[sidecar_id]
+    del state.sidecars[sidecar_id]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.REMOVE_SIDECAR,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={
+            "removed_sidecar_id": sidecar_id,
+            "removed_sidecar_path": sidecar.path,
+        },
+    )
+    return (entry,)
+
+
+def _handle_update_sidecar(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    run_id: uuid.UUID,
+    scenario_id: str,
+) -> tuple[JournalEntry, ...]:
+    """Emit a journal entry; no state mutation. Phase B regenerates bytes."""
+    event = resolved.event
+    assert isinstance(event, UpdateSidecarEvent)
+    sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        run_id=run_id,
+        scenario_id=scenario_id,
+        action=TimelineActionName.UPDATE_SIDECAR,
+        target_ids=[event.target],
+        location_ids=[state.location_id_for_asset(event.target)],
+        state_delta={
+            "sidecar_id": sidecar_id,
+            "sidecar_path": event.sidecar_path,
+        },
+    )
+    return (entry,)
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -462,4 +787,10 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.SLOW_COPY_COMMIT: _handle_slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _handle_archive_file,
     TimelineActionName.MOVE_BETWEEN_ROOTS: _handle_move_between_roots,
+    TimelineActionName.REMUX_CONTAINER: _handle_remux_container,
+    TimelineActionName.EDIT_METADATA: _handle_edit_metadata,
+    TimelineActionName.EMBED_SUBTITLE: _handle_embed_subtitle,
+    TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
+    TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
+    TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
 }

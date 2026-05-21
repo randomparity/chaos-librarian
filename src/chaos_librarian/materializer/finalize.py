@@ -12,6 +12,7 @@ from chaos_librarian.contract.materialization import (
     FilesystemAction,
     MaterializationFailure,
     MaterializedAsset,
+    MediaAction,
     Outcome,
     ToolInvocation,
 )
@@ -20,6 +21,7 @@ from chaos_librarian.materializer._context import MaterializeArtifacts, RunConte
 from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     MaterializationError,
+    MediaActionError,
     ProbeParseError,
 )
 from chaos_librarian.materializer.reports import (
@@ -29,7 +31,7 @@ from chaos_librarian.materializer.reports import (
     build_reports,
 )
 from chaos_librarian.materializer.writer import (
-    cleanup_failed_filesystem_run,
+    cleanup_failed_phase_b_run,
     cleanup_failed_run,
     finalize_materialize_run,
 )
@@ -37,7 +39,7 @@ from chaos_librarian.materializer.writer import (
 __all__ = [
     "build_sentinel",
     "finalize_failure",
-    "finalize_failure_filesystem",
+    "finalize_failure_phase_b",
     "finalize_success",
 ]
 
@@ -66,6 +68,7 @@ def finalize_success(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
     finished_at = datetime.now(UTC)
@@ -79,6 +82,7 @@ def finalize_success(
         materialized=materialized,
         failures=[],
         filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
     )
     replay_bundle = build_replay_bundle(
         run_id=ctx.run_id,
@@ -161,33 +165,47 @@ def finalize_failure(
     )
 
 
-def finalize_failure_filesystem(
+def finalize_failure_phase_b(
     ctx: RunContext,
-    exc: FilesystemActionError,
+    exc: MaterializationError,
+    outcome: Outcome,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
 ) -> None:
-    """Caught phase-B failure path: outcome=fs_failed, library/ wiped.
+    """Caught phase-B failure path: outcome=fs_failed | media_failed; library/ wiped.
 
-    Mirrors ``finalize_failure``'s structure but builds a
-    ``MaterializationFailure`` with ``stage=FILESYSTEM`` and writes the
-    report with ``outcome=FS_FAILED``. ``cleanup_failed_filesystem_run``
-    rmtree's ``library/`` entirely (no placeholder dir) and flips the
-    sentinel to ``complete``. The ``filesystem_actions`` captured before
-    the crash are recorded so the report shows the sequence up to the
-    failing event.
+    Shared between ``FilesystemActionError`` (stage=FILESYSTEM,
+    outcome=FS_FAILED) and ``MediaActionError`` (stage=MEDIA,
+    outcome=MEDIA_FAILED). The fields on ``MaterializationFailure`` are
+    derived from the exc subclass + outcome. ``filesystem_actions`` and
+    ``media_actions`` captured before the crash are both recorded so the
+    report shows the audit trail up to the failing event.
     """
     finished_at = datetime.now(UTC)
+    if isinstance(exc, MediaActionError):
+        stage = FailureStage.MEDIA
+        invocation_index = exc.tool_invocation_index
+    elif isinstance(exc, FilesystemActionError):
+        stage = FailureStage.FILESYSTEM
+        invocation_index = None
+    else:
+        # Defensive default — preflight + dispatcher should keep this
+        # branch unreachable. Mirrors the FS shape so downstream consumers
+        # still see a well-formed failure record.
+        stage = FailureStage.FILESYSTEM
+        invocation_index = None
+    cause = getattr(exc, "cause", None)
     failure = MaterializationFailure(
         asset_id=exc.asset_id,
-        stage=FailureStage.FILESYSTEM,
+        stage=stage,
         exit_code=None,
-        stderr_tail=str(exc.cause),
-        invocation_index=None,
+        stderr_tail=str(cause) if cause is not None else "",
+        invocation_index=invocation_index,
     )
     report = build_report(
-        outcome=Outcome.FS_FAILED,
+        outcome=outcome,
         run_id=ctx.run_id,
         caps=ctx.caps,
         started_at=ctx.started_at,
@@ -196,6 +214,7 @@ def finalize_failure_filesystem(
         materialized=materialized,
         failures=[failure],
         filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
     )
     replay_bundle = build_replay_bundle(
         run_id=ctx.run_id,
@@ -204,7 +223,7 @@ def finalize_failure_filesystem(
         caps=ctx.caps,
         created_at=finished_at,
     )
-    cleanup_failed_filesystem_run(
+    cleanup_failed_phase_b_run(
         ctx.out_dir,
         build_metadata(
             plan_artifacts=ctx.plan_artifacts,

@@ -27,6 +27,7 @@ from chaos_librarian.contract.reports import (
     BundleReport,
     PathHistoryEntry,
     VariantReport,
+    VersionHistoryEntry,
     WorkReport,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
@@ -56,7 +57,7 @@ class TestAssetReport:
 
     def test_round_trip(self) -> None:
         report = AssetReport(
-            schema_version=3,
+            schema_version=4,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -67,7 +68,7 @@ class TestAssetReport:
 
     def test_current_may_be_none(self) -> None:
         report = AssetReport(
-            schema_version=3,
+            schema_version=4,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -78,7 +79,7 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 3,
+            "schema_version": 4,
             "asset_id": "asset_hd_main",
             "initial": self._snapshot().model_dump(),
             "history": [],
@@ -88,9 +89,9 @@ class TestAssetReport:
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_three(self) -> None:
+    def test_schema_version_constant_is_four(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 3
+        assert ASSET_REPORT_SCHEMA_VERSION == 4
 
 
 class TestOtherReports:
@@ -170,8 +171,8 @@ def test_asset_snapshot_omits_new_fields_when_none():
     assert "probed" not in rendered
 
 
-def test_asset_report_schema_version_is_three() -> None:
-    assert ASSET_REPORT_SCHEMA_VERSION == 3
+def test_asset_report_schema_version_is_four() -> None:
+    assert ASSET_REPORT_SCHEMA_VERSION == 4
 
 
 def test_other_report_schema_versions_stay_at_one():
@@ -201,7 +202,7 @@ def test_path_history_entry_round_trip() -> None:
 
 def test_asset_report_path_history_defaults_to_empty_list() -> None:
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "asset_id": "asset_hd_main",
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
@@ -219,9 +220,9 @@ def test_asset_report_path_history_defaults_to_empty_list() -> None:
     assert report.path_history == []
 
 
-def test_asset_report_v3_round_trip_with_path_history() -> None:
+def test_asset_report_v4_round_trip_with_path_history() -> None:
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "asset_id": "asset_hd_main",
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
@@ -244,3 +245,45 @@ def test_asset_report_v3_round_trip_with_path_history() -> None:
     report = AssetReport.model_validate(payload)
     assert len(report.path_history) == 1
     assert report.path_history[0].action == TimelineActionName.DELETE_FILE
+
+
+def test_version_history_entry_round_trip():
+    entry = VersionHistoryEntry(
+        event_id="ev_rv_001",
+        action=TimelineActionName.REENCODE_VIDEO,
+        logical_time_ns=3_000_000_000,
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        state_delta_summary={"resolution": "sd", "codec": "h264"},
+    )
+    assert entry.action == TimelineActionName.REENCODE_VIDEO
+    assert entry.state_delta_summary == {"resolution": "sd", "codec": "h264"}
+
+
+def test_version_history_entry_extract_no_versions():
+    entry = VersionHistoryEntry(
+        event_id="ev_xs_001",
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        logical_time_ns=4_000_000_000,
+        input_version_id=None,
+        output_version_id=None,
+        state_delta_summary={},
+    )
+    assert entry.input_version_id is None
+    assert entry.output_version_id is None
+
+
+def test_asset_report_v4_default_version_history_empty():
+    snapshot = AssetSnapshot(
+        location_path="movies/x.mkv",
+        version_id="v0",
+        version_index=0,
+    )
+    report = AssetReport(
+        schema_version=4,
+        asset_id="asset_main",
+        initial=snapshot,
+        current=snapshot,
+    )
+    assert report.version_history == []
+    assert report.schema_version == 4

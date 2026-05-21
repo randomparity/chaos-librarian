@@ -178,19 +178,29 @@ SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 
 
 def preflight_timeline(scenario: Scenario) -> None:
-    """Reject any timeline event whose action is outside SUPPORTED_S6_ACTIONS.
+    """Reject any timeline event whose action is outside SUPPORTED_S7_ACTIONS.
 
     Raised before phase A so the matrix-rejection contract (no run-dir
     allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
+
+    ``SUPPORTED_S7_ACTIONS`` is imported lazily: ``materializer.media``
+    already imports ``SUPPORTED_S6_ACTIONS`` from this module at load
+    time (to compose ``_STDLIB_ACTIONS``), so a top-level import here
+    would form a circular import. Resolving the symbol at call time
+    keeps the module-level dependency one-way.
     """
+    from chaos_librarian.materializer.media import (  # noqa: PLC0415 — see docstring
+        SUPPORTED_S7_ACTIONS,
+    )
+
     for index, event in enumerate(scenario.timeline):
-        if event.action not in SUPPORTED_S6_ACTIONS:
+        if event.action not in SUPPORTED_S7_ACTIONS:
             raise TimelineUnsupportedError(
-                f"timeline action {event.action.value!r} not supported in Sprint 6",
+                f"timeline action {event.action.value!r} not supported",
                 field=f"timeline[{index}].action",
                 payload={
                     "event_id": event.id,
                     "action": event.action.value,
-                    "supported": sorted(a.value for a in SUPPORTED_S6_ACTIONS),
+                    "supported": sorted(a.value for a in SUPPORTED_S7_ACTIONS),
                 },
             )

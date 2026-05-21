@@ -1,0 +1,34 @@
+schema_version: 5
+scenario_id: sc_ee_001
+seed: 42
+duration_scale: short
+library: {roots: [{id: r0, path: movies}]}
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+              subtitles:
+                - {codec: srt, language: eng, mode: sidecar}
+timeline:
+  - id: ev_embed
+    at: 1s
+    action: embed_subtitle
+    target: a0
+    sidecar_path: a0.eng.srt
+  - id: ev_extract
+    at: 2s
+    action: extract_subtitle
+    target: a0
+    to: movies/a0.eng.extracted.srt
+    language: eng

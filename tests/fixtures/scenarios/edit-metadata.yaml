@@ -1,0 +1,29 @@
+schema_version: 5
+scenario_id: sc_edit_meta_001
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: r0
+      path: movies
+works:
+  - id: w0
+    title: T
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+timeline:
+  - id: ev_edit_meta
+    at: 1s
+    action: edit_metadata
+    target: a0
+    fields: {title: "Pulsar", year: "2026"}

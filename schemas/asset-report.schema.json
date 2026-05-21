@@ -317,10 +317,69 @@
         "slow_copy_start",
         "slow_copy_commit",
         "archive_file",
-        "move_between_roots"
+        "move_between_roots",
+        "remux_container",
+        "edit_metadata",
+        "embed_subtitle",
+        "extract_subtitle",
+        "remove_sidecar",
+        "update_sidecar"
       ],
       "title": "TimelineActionName",
       "type": "string"
+    },
+    "VersionHistoryEntry": {
+      "additionalProperties": false,
+      "description": "One version-affecting journal event projected for a single asset.\n\nDerived from the journal by ``derive_version_history``. Mirrors\nSprint 6's ``PathHistoryEntry`` shape for the version-allocating\nsubset of actions (reencode_video / reencode_audio / remux_container\n/ edit_metadata / embed_subtitle). ``extract_subtitle`` does NOT\nappear here \u2014 it's a read-only extract that allocates a sidecar but\nnot a version.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/TimelineActionName"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Version Id"
+        },
+        "logical_time_ns": {
+          "title": "Logical Time Ns",
+          "type": "integer"
+        },
+        "output_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Version Id"
+        },
+        "state_delta_summary": {
+          "additionalProperties": true,
+          "title": "State Delta Summary",
+          "type": "object"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "logical_time_ns"
+      ],
+      "title": "VersionHistoryEntry",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -358,9 +417,16 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "version_history": {
+      "items": {
+        "$ref": "#/$defs/VersionHistoryEntry"
+      },
+      "title": "Version History",
+      "type": "array"
     }
   },
   "required": [

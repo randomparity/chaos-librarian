@@ -8,7 +8,13 @@ from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedM
 from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset
 
-__all__ = ["augment_manifest", "augment_timeline_sidecars", "find_sidecar_for"]
+__all__ = [
+    "augment_manifest",
+    "augment_timeline_sidecars",
+    "augment_updated_sidecars",
+    "augment_versions",
+    "find_sidecar_for",
+]
 
 
 def augment_manifest(
@@ -21,14 +27,16 @@ def augment_manifest(
     skip_languages: frozenset[str] = frozenset(),
 ) -> None:
     """Stamp ``content_hash`` + ``probed`` onto the version record and
-    append/update ``ManifestSidecar`` rows for materialized sidecars.
+    update ``ManifestSidecar`` rows for materialized declared sidecars.
 
-    The engine does not pre-populate sidecars from ``scenario.subtitles``
-    (sidecars there are added only via ``create_sidecar`` timeline events).
-    Materialize must reflect the materialized sidecars in the manifest so
-    consumers see the bytes they were promised; we append one
-    ``ManifestSidecar`` per materialized language with a deterministic id
-    derived from the asset and language.
+    ``build_initial_state`` seeds one ``ManifestSidecar`` per declared
+    sidecar-mode subtitle into ``state.sidecars`` (Sprint 7), so the
+    serialized manifest already carries the row. Materialize then stamps
+    the phase-A ``content_hash`` onto the existing row. If the engine
+    consumed the declared subtitle (``embed_subtitle`` / ``remove_sidecar``
+    drop the row from ``state.sidecars``), the row is no longer in
+    ``manifest.sidecars`` and we deliberately do NOT re-add it — the
+    engine's removal is authoritative.
 
     ``skip_languages`` mirrors the same kwarg on ``write_sidecars``:
     languages a timeline ``create_sidecar`` will produce are skipped here
@@ -54,20 +62,8 @@ def augment_manifest(
         content_hash = sidecar_hashes.get(key)
         if content_hash is None:
             continue
-        sidecar_path = f"{asset.id}.{sub.language}.srt"
-        existing = find_sidecar_for(manifest, asset.id, sub.language)
-        if existing is None:
-            manifest.sidecars.append(
-                ManifestSidecar(
-                    id=f"sidecar_{asset.id}_{sub.language}",
-                    asset_id=asset.id,
-                    kind=sub.codec,
-                    path=sidecar_path,
-                    language=sub.language,
-                    content_hash=content_hash,
-                )
-            )
-        else:
+        existing = find_sidecar_for(manifest, asset.id, language=sub.language)
+        if existing is not None:
             existing.content_hash = content_hash
 
 
@@ -92,16 +88,69 @@ def augment_timeline_sidecars(
             sidecar.content_hash = content_hash
 
 
-def find_sidecar_for(manifest: Manifest, asset_id: str, language: str) -> ManifestSidecar | None:
-    """Return the ``ManifestSidecar`` for ``(asset_id, language)``, or ``None``.
+def augment_versions(
+    manifest: Manifest,
+    post_phase_b_versions: Mapping[str, tuple[str, ProbedMedia | None]],
+) -> None:
+    """Stamp ``content_hash`` + ``probed`` onto every version whose id is in the map.
 
-    Matches on the explicit ``language`` field (manifest v3+). The previous
-    substring-match on ``sidecar.path`` (``language in path``) mis-resolved
-    whenever one language tag appeared as a substring of another (e.g.
-    looking up ``"en"`` would match a ``"library/x.eng.srt"`` row). The
-    field is required from v3 so every row has a comparable key.
+    Sprint 7 wiring: each successful media handler (``reencode_*``,
+    ``remux_container``, ``edit_metadata``, ``embed_subtitle``) registers
+    its new version's ``content_hash`` + ``probed`` here; this function
+    drains the map into the manifest. Version ids not present in the map
+    are left untouched, and entries keyed on ids that aren't in the
+    manifest are silently ignored (defensive against deleted rows).
+    """
+    for version in manifest.versions:
+        entry = post_phase_b_versions.get(version.id)
+        if entry is None:
+            continue
+        content_hash, probed = entry
+        version.content_hash = content_hash
+        version.probed = probed
+
+
+def augment_updated_sidecars(
+    manifest: Manifest,
+    post_phase_b_sidecars: Mapping[str, tuple[str, str]],
+) -> None:
+    """Stamp ``content_hash`` + ``path`` on sidecar rows touched by update / extract.
+
+    Mirrors ``augment_timeline_sidecars`` shape (Sprint 6) but for the
+    Sprint 7 ``update_sidecar`` / ``extract_subtitle`` outputs. Maps
+    ``sidecar_id -> (content_hash, path)`` — ``extract_subtitle`` writes
+    to a new ``to`` path so the path is part of the mutation.
     """
     for sidecar in manifest.sidecars:
-        if sidecar.asset_id == asset_id and sidecar.language == language:
+        entry = post_phase_b_sidecars.get(sidecar.id)
+        if entry is None:
+            continue
+        content_hash, path = entry
+        sidecar.content_hash = content_hash
+        sidecar.path = path
+
+
+def find_sidecar_for(
+    manifest: Manifest,
+    asset_id: str,
+    *,
+    language: str | None = None,
+    kind: str = "subtitle",
+) -> ManifestSidecar | None:
+    """Return the ``ManifestSidecar`` matching ``(asset_id, language, kind)`` or ``None``.
+
+    Subtitle (default): keyed by ``(asset_id, language)``. Other kinds
+    (``poster``, ``nfo``): keyed by ``(asset_id, kind)`` — one poster per
+    asset, one NFO per asset. ``language`` is ``None`` for non-subtitle
+    kinds (manifest v4 made the field optional precisely so poster/NFO
+    rows don't need to fabricate a language tag).
+    """
+    for sidecar in manifest.sidecars:
+        if sidecar.asset_id != asset_id:
+            continue
+        if kind == "subtitle":
+            if sidecar.kind == "subtitle" and sidecar.language == language:
+                return sidecar
+        elif sidecar.kind == kind:
             return sidecar
     return None

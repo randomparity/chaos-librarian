@@ -112,6 +112,46 @@ class FilesystemActionError(MaterializationError):
         self.action = action
 
 
+class MediaActionError(MaterializationError):
+    """A phase-B media handler (ffmpeg-backed or sidecar-regeneration) raised.
+
+    Library/ must be wiped; materialization.json records
+    outcome=media_failed. ``tool_invocation_index`` cross-refs the
+    failing invocation in MaterializationReport.invocations when an
+    ffmpeg call was involved; ``None`` for update_sidecar's pure-Python
+    paths.
+    """
+
+    error_code: str = "E_MATERIALIZE_MEDIA_FAILED"
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        event_id: str,
+        action: TimelineActionName,
+        cause: BaseException,
+        asset_id: str | None = None,
+        tool_invocation_index: int | None = None,
+        field: str | None = None,
+        payload: dict[str, object] | None = None,
+    ) -> None:
+        merged_payload: dict[str, object] = dict(payload or {})
+        merged_payload.setdefault("event_id", event_id)
+        merged_payload.setdefault("action", action.value)
+        merged_payload.setdefault("tool_invocation_index", tool_invocation_index)
+        super().__init__(
+            message,
+            asset_id=asset_id,
+            field=field,
+            payload=merged_payload,
+        )
+        self.event_id = event_id
+        self.cause = cause
+        self.action = action
+        self.tool_invocation_index = tool_invocation_index
+
+
 class ContainmentViolationError(MaterializationError):
     """A scenario path resolved outside ``<run-dir>/library/``."""
 

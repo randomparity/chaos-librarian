@@ -130,8 +130,16 @@
           "type": "string"
         },
         "language": {
-          "title": "Language",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
         },
         "path": {
           "title": "Path",
@@ -142,8 +150,7 @@
         "id",
         "asset_id",
         "kind",
-        "path",
-        "language"
+        "path"
       ],
       "title": "ManifestSidecar",
       "type": "object"
@@ -422,7 +429,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
     },

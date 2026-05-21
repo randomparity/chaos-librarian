@@ -15,7 +15,6 @@ import pytest
 from chaos_librarian.contract.scenario import Scenario, TimelineActionName
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.filesystem import apply_phase_b
-from chaos_librarian.materializer.recipes import srt_payload
 from tests.engine.conftest import _build_minimal_scenario
 from tests.materializer.conftest import (
     _atomic_entry,
@@ -222,46 +221,6 @@ def test_apply_move_between_roots_crosses_roots(tmp_path: Path) -> None:
     assert actions[0].action is TimelineActionName.MOVE_BETWEEN_ROOTS
 
 
-def test_apply_create_sidecar_writes_srt_and_returns_hash_keyed_by_sidecar_id(
-    tmp_path: Path,
-) -> None:
-    """WHY: create_sidecar must write a deterministic SRT body (so the
-    manifest content_hash is reproducible across runs) AND return that
-    body's sha256 keyed by sidecar_id (so manifest_build can stamp the
-    ManifestSidecar row without re-reading the file)."""
-    library = tmp_path / "library"
-    library.mkdir()
-    journal = [
-        _atomic_entry(
-            event_id="cs_001",
-            action=TimelineActionName.CREATE_SIDECAR,
-            target="asset_hd_main",
-            state_delta={
-                "sidecar_path": "movies-hd/asset_hd_main.en.srt",
-                "sidecar_id": "sidecar_0001",
-                "language": "en",
-            },
-        )
-    ]
-    actions, sidecar_hashes = apply_phase_b(
-        library_root=library,
-        journal=journal,
-        scenario=_scenario(),
-        resolved_seed=1234,
-    )
-    written = (library / "movies-hd" / "asset_hd_main.en.srt").read_bytes()
-    # The asset declared duration_seconds=1 in _build_minimal_scenario.
-    expected_body = srt_payload(language="en", duration_s=1, seed=1234).encode("utf-8")
-    assert written == expected_body
-    assert "sidecar_0001" in sidecar_hashes
-    # Prefixed form matches phase-A convention: "sha256:" + 64 hex chars.
-    assert sidecar_hashes["sidecar_0001"].startswith("sha256:")
-    assert len(sidecar_hashes["sidecar_0001"]) == 71
-    assert len(actions) == 1
-    assert actions[0].action is TimelineActionName.CREATE_SIDECAR
-    assert actions[0].to_path == "movies-hd/asset_hd_main.en.srt"
-
-
 def test_apply_slow_copy_start_writes_full_bytes_to_temp_path(tmp_path: Path) -> None:
     """WHY: phase B materializes the staging artifact at slow_copy_start
     -- the temp file must hold the same bytes as the source; commit
@@ -378,6 +337,41 @@ def test_apply_slow_copy_commit_unlinks_initial_when_different_from_final(
     assert not (library / "movies-hd" / "asset_hd_main.mkv.partial").exists()
 
 
+def test_apply_remove_sidecar_unlinks_file_and_returns_action(tmp_path: Path) -> None:
+    """WHY: remove_sidecar unlinks the sidecar at removed_sidecar_path; the
+    emitted FilesystemAction carries from_path (the removed path) and a
+    null to_path so the audit log preserves what was lost -- mirroring
+    delete_file's contract for the sidecar case. The materializer routes
+    this here (not media.py) because no ffmpeg work is required."""
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    sidecar = library / "movies-hd" / "asset_hd_main.en.srt"
+    sidecar.write_bytes(b"x")
+    journal = [
+        _atomic_entry(
+            event_id="rs_001",
+            action=TimelineActionName.REMOVE_SIDECAR,
+            target="asset_hd_main",
+            state_delta={
+                "removed_sidecar_id": "sidecar_0001",
+                "removed_sidecar_path": "movies-hd/asset_hd_main.en.srt",
+            },
+        )
+    ]
+    actions, _ = apply_phase_b(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+    assert not sidecar.exists()
+    assert len(actions) == 1
+    assert actions[0].action is TimelineActionName.REMOVE_SIDECAR
+    assert actions[0].from_path == "movies-hd/asset_hd_main.en.srt"
+    assert actions[0].to_path is None
+    assert actions[0].temp_path is None
+
+
 def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None:
     """WHY: Sprint 6 preflight already rejects unsupported actions, but
     the dispatcher must not crash if a future engine-only action (e.g. a
@@ -404,9 +398,9 @@ def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None
 
 
 def test_apply_non_oserror_also_wraps_into_filesystem_action_error(tmp_path: Path) -> None:
-    """WHY: handlers can raise non-OSError on contract drift -- e.g. an
-    asset_id missing from scenario_assets surfaces as KeyError, an
-    unexpected related_event_id surfaces as KeyError too. The dispatcher
+    """WHY: handlers can raise non-OSError on contract drift -- e.g. a
+    slow_copy_commit entry whose ``related_event_id`` was never staged
+    surfaces as ``KeyError`` from ``pending_slow_copy.pop``. The dispatcher
     must wrap any handler exception into FilesystemActionError so the CLI
     still produces a structured exit-5 payload (errno=None because there
     is no underlying syscall errno). Otherwise the bare KeyError escapes
@@ -414,15 +408,11 @@ def test_apply_non_oserror_also_wraps_into_filesystem_action_error(tmp_path: Pat
     library = tmp_path / "library"
     library.mkdir()
     journal = [
-        _atomic_entry(
-            event_id="cs_unknown",
-            action=TimelineActionName.CREATE_SIDECAR,
-            target="asset_does_not_exist",
-            state_delta={
-                "sidecar_path": "movies-hd/asset_does_not_exist.en.srt",
-                "sidecar_id": "sidecar_0001",
-                "language": "en",
-            },
+        _committed_entry(
+            event_id="sc_orphan_commit",
+            target="asset_hd_main",
+            related_event_id="sc_start_never_happened",
+            state_delta={"final_path": "movies-hd/asset_hd_main.mkv"},
         )
     ]
     with pytest.raises(FilesystemActionError) as exc_info:
@@ -433,12 +423,12 @@ def test_apply_non_oserror_also_wraps_into_filesystem_action_error(tmp_path: Pat
             resolved_seed=1234,
         )
     err = exc_info.value
-    assert err.event_id == "cs_unknown"
-    assert err.action is TimelineActionName.CREATE_SIDECAR
-    assert err.asset_id == "asset_does_not_exist"
+    assert err.event_id == "sc_orphan_commit"
+    assert err.action is TimelineActionName.SLOW_COPY_COMMIT
+    assert err.asset_id == "asset_hd_main"
     assert err.payload["errno"] is None
-    assert err.payload["action"] == "create_sidecar"
-    assert err.payload["event_id"] == "cs_unknown"
+    assert err.payload["action"] == "slow_copy_commit"
+    assert err.payload["event_id"] == "sc_orphan_commit"
 
 
 def test_apply_oserror_wraps_into_filesystem_action_error(tmp_path: Path) -> None:

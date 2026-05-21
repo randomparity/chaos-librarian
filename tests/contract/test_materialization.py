@@ -15,6 +15,7 @@ from chaos_librarian.contract.materialization import (
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
+    MediaAction,
     Outcome,
     ToolchainInfo,
     ToolInvocation,
@@ -110,8 +111,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_three() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 3
+def test_materialization_schema_version_is_four() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 4
 
 
 def test_filesystem_action_round_trip() -> None:
@@ -156,7 +157,7 @@ def test_materialization_failure_round_trips_with_none_optional_fields() -> None
 
 def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
     payload = {
-        "schema_version": 3,
+        "schema_version": 4,
         "run_id": "1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01",
         "outcome": "success",
         "platform": "darwin",
@@ -169,3 +170,64 @@ def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
     }
     report = MaterializationReport.model_validate(payload)
     assert report.filesystem_actions == []
+
+
+def test_media_action_round_trip():
+    action = MediaAction(
+        event_id="ev_rv_001",
+        action=TimelineActionName.REENCODE_VIDEO,
+        target_asset_id="asset_main",
+        input_path="library/movies/asset_main.mkv",
+        output_path="library/movies/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        output_sidecar_id=None,
+        input_content_hash="sha256:" + "0" * 64,
+        output_content_hash="sha256:" + "1" * 64,
+        tool_invocation_index=2,
+        duration_ns=1_234_567,
+    )
+    assert action.event_id == "ev_rv_001"
+    assert action.action == TimelineActionName.REENCODE_VIDEO
+
+
+def test_media_action_extract_subtitle_no_input_version():
+    action = MediaAction(
+        event_id="ev_xs_001",
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        target_asset_id="asset_main",
+        input_path="library/asset_main.mkv",
+        output_path="library/asset_main.fra.srt",
+        input_version_id=None,
+        output_version_id=None,
+        output_sidecar_id="sidecar_0002",
+        input_content_hash=None,
+        output_content_hash="sha256:" + "2" * 64,
+        tool_invocation_index=4,
+        duration_ns=100,
+    )
+    assert action.output_sidecar_id == "sidecar_0002"
+    assert action.input_version_id is None
+    assert action.output_version_id is None
+
+
+def test_outcome_includes_media_failed():
+    assert Outcome.MEDIA_FAILED.value == "media_failed"
+
+
+def test_failure_stage_includes_media():
+    assert FailureStage.MEDIA.value == "media"
+
+
+def test_materialization_report_carries_media_actions():
+    report = MaterializationReport(
+        schema_version=4,
+        run_id=uuid.uuid4(),
+        outcome=Outcome.SUCCESS,
+        platform="darwin",
+        started_at=datetime.now(UTC),
+        finished_at=datetime.now(UTC),
+        toolchain=ToolchainInfo(),
+    )
+    assert report.media_actions == []
+    assert report.schema_version == 4

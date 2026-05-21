@@ -10,6 +10,11 @@ from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
 from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.rules.extract_track_unknown import (
+    rule_extract_track_unknown,
+)
+from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
+from chaos_librarian.validation.semantic import _RULES
 
 
 def _write(tmp_path: Path, content: str, name: str = "scenario.yaml") -> Path:
@@ -80,7 +85,7 @@ class TestRunValidationHappyPath:
         # no timeline events (all rules guard on emptiness and skip).
         path = _write(
             tmp_path,
-            "schema_version: 4\n"
+            "schema_version: 5\n"
             "scenario_id: minimal\n"
             "seed: 1\n"
             "duration_scale: short\n"
@@ -167,7 +172,7 @@ class TestRunValidationReportSorting:
         # A scenario with two field-level errors at different lines.
         path = _write(
             tmp_path,
-            "schema_version: 4\n"
+            "schema_version: 5\n"
             "scenario_id: dup\n"
             "seed: 1\n"
             "duration_scale: short\n"
@@ -187,3 +192,11 @@ class TestRunValidationReportSorting:
         report = run_validation(prepare_run_input(path))
         lines = [i.line for i in report.issues if i.line is not None]
         assert lines == sorted(lines)
+
+
+def test_pipeline_registers_rule_sidecar_target():
+    assert rule_sidecar_target in _RULES
+
+
+def test_pipeline_registers_rule_extract_track_unknown():
+    assert rule_extract_track_unknown in _RULES

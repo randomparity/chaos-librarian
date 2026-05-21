@@ -21,7 +21,7 @@ from chaos_librarian.contract.manifest import (
 
 def _manifest(*, content_hash: str | None, probed: ProbedMedia | None) -> Manifest:
     return Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[ManifestWork(id="w0", title="Title")],
         variants=[ManifestVariant(id="va0", work_id="w0", label="hd")],
         bundles=[ManifestBundle(id="b0", variant_id="va0")],

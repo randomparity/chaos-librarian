@@ -15,6 +15,7 @@ from chaos_librarian.contract.manifest import (
     ManifestVersion,
     ManifestWork,
 )
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.reports import ReportSet, build_report_set
 
 _RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -33,7 +34,7 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
         else []
     )
     return Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[ManifestWork(id="work_blazar", title="Synthetic Blazar")],
         variants=[ManifestVariant(id="variant_hd", work_id="work_blazar", label="hd")],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
@@ -53,7 +54,13 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
 
 
 def _atomic_entry(
-    *, event_id: str, action: str, target: str, delta: dict[str, object]
+    *,
+    event_id: str,
+    action: str,
+    target: str,
+    delta: dict[str, object],
+    input_version_ids: list[str] | None = None,
+    output_version_ids: list[str] | None = None,
 ) -> AtomicJournalEntry:
     return AtomicJournalEntry(
         schema_version=1,
@@ -63,6 +70,8 @@ def _atomic_entry(
         logical_time_ns=1_000_000_000,
         action=action,
         target_ids=[target],
+        input_version_ids=input_version_ids or [],
+        output_version_ids=output_version_ids or [],
         state_delta=delta,
         phase=JournalPhase.ATOMIC,
     )
@@ -185,6 +194,48 @@ class TestBuildReportSet:
         assert path_history[0].event_id == "move_001"
         assert path_history[0].from_path == "movies-hd/a.mkv"
         assert path_history[0].to_path == "movies-hd/Blazar.mkv"
+
+    def test_version_history_empty_for_static_scenario(self) -> None:
+        """WHY: AssetReport.version_history must default to [] when no version events ran.
+
+        Sprint 7 added the field; reports for static scenarios must not
+        invent version_history rows that didn't happen.
+        """
+        m = _manifest_with_one_asset()
+        rs = build_report_set(initial=m, current=m, journal=[])
+        assert rs.assets[0].version_history == []
+
+    def test_version_history_populated_for_reencode_video(self) -> None:
+        """WHY: a version-affecting journal event must surface in version_history.
+
+        Drift-locks AssetReport's Sprint 7 wiring against a future refactor
+        that forgets to call ``derive_version_history``.
+        """
+        m = _manifest_with_one_asset()
+        entry = _atomic_entry(
+            event_id="reencode_001",
+            action="reencode_video",
+            target="asset_hd_main",
+            input_version_ids=["version_0001"],
+            output_version_ids=["version_0002"],
+            delta={
+                "resolution": "sd",
+                "codec": "h264",
+                "input_path": "movies-hd/a.mkv",
+                "output_path": "movies-hd/a.mkv",
+            },
+        )
+        rs = build_report_set(initial=m, current=m, journal=[entry])
+        version_history = rs.assets[0].version_history
+        assert len(version_history) == 1
+        assert version_history[0].event_id == "reencode_001"
+        assert version_history[0].action == TimelineActionName.REENCODE_VIDEO
+        assert version_history[0].input_version_id == "version_0001"
+        assert version_history[0].output_version_id == "version_0002"
+        assert version_history[0].state_delta_summary == {
+            "resolution": "sd",
+            "codec": "h264",
+        }
 
     def test_iteration_order_is_stable(self) -> None:
         """Reports sort by id lexicographically.

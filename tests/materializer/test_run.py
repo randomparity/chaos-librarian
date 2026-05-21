@@ -108,18 +108,60 @@ def test_materialize_filesystem_only_timeline_runs_phase_b(
     assert len(report.filesystem_actions) == 2
 
 
-def test_materialize_reencode_video_rejected_at_preflight(
+def test_materialize_add_file_rejected_at_preflight(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: ``reencode_video`` is outside Sprint 6's supported action set.
+    """WHY: ``add_file`` is the one action still outside SUPPORTED_S7_ACTIONS.
     ``preflight_timeline`` rejects with E_MATERIALIZE_TIMELINE_UNSUPPORTED
     before any run-dir allocation — the lazy-allocation invariant."""
     _patch_success(monkeypatch)
+    scenario_path = tmp_path / "add-file.yaml"
+    scenario_path.write_text(
+        "schema_version: 5\n"
+        "scenario_id: add-file-rejected\n"
+        "seed: 11\n"
+        "duration_scale: short\n"
+        "library:\n"
+        "  roots:\n"
+        "    - id: movies_hd\n"
+        "      path: movies-hd\n"
+        "works:\n"
+        "  - id: work_quasar\n"
+        "    title: Synthetic Quasar\n"
+        "    variants:\n"
+        "      - id: variant_hd\n"
+        "        label: hd\n"
+        "        bundle:\n"
+        "          id: bundle_hd\n"
+        "          assets:\n"
+        "            - id: asset_main\n"
+        "              role: primary_video\n"
+        "              container: mkv\n"
+        "              duration_seconds: 5\n"
+        "              video:\n"
+        "                source: color_bars\n"
+        "                codec: h264\n"
+        "                resolution: 1080p\n"
+        "              audio:\n"
+        "                - codec: aac\n"
+        "                  channels: stereo\n"
+        "                  language: eng\n"
+        "timeline:\n"
+        "  - id: delete_001\n"
+        "    at: 1s\n"
+        "    action: delete_file\n"
+        "    target: asset_main\n"
+        "  - id: add_001\n"
+        "    at: 2s\n"
+        "    action: add_file\n"
+        "    target: asset_main\n"
+        "    to: movies-hd/new.mkv\n"
+    )
     out = tmp_path / "run-001"
     with pytest.raises(TimelineUnsupportedError) as exc_info:
-        materialize_scenario(FIXTURE_DIR / "reencode-video.yaml", out)
+        materialize_scenario(scenario_path, out)
     assert not out.exists()  # lazy allocation invariant
-    assert exc_info.value.payload["action"] == "reencode_video"
+    assert exc_info.value.payload["action"] == "add_file"
 
 
 def test_materialize_phase_b_oserror_aborts_and_cleans_up(
@@ -345,7 +387,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 4
+schema_version: 5
 scenario_id: static-test
 seed: 1
 duration_scale: short

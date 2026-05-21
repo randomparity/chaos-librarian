@@ -46,7 +46,7 @@ __all__ = [
     "MaterializeMetadata",
     "MaterializeReports",
     "begin_materialize_run",
-    "cleanup_failed_filesystem_run",
+    "cleanup_failed_phase_b_run",
     "cleanup_failed_run",
     "finalize_materialize_run",
 ]
@@ -131,14 +131,15 @@ def cleanup_failed_run(out_dir: Path, metadata: MaterializeMetadata) -> None:
     replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))
 
 
-def cleanup_failed_filesystem_run(out_dir: Path, metadata: MaterializeMetadata) -> None:
+def cleanup_failed_phase_b_run(out_dir: Path, metadata: MaterializeMetadata) -> None:
     """Wipe ``library/`` entirely (no placeholder), write metadata, flip sentinel.
 
-    Used by the phase-B (fs_failed) path. Unlike ``cleanup_failed_run``,
-    no empty ``library/`` directory is recreated: a phase-B crash leaves
-    the run-dir in a state where the partially-mutated tree is gone, and
-    the rest of the metadata describes the failure for ``inspect`` and
-    ``clean`` consumers.
+    Used by the phase-B failure path (filesystem OR media). Unlike
+    ``cleanup_failed_run``, no empty ``library/`` directory is recreated:
+    a phase-B crash leaves the run-dir in a state where the
+    partially-mutated tree is gone, and the rest of the metadata
+    describes the failure (``outcome=fs_failed`` or ``media_failed``)
+    for ``inspect`` and ``clean`` consumers.
 
     On ``rmtree`` failure the OSError surfaces to the caller; the
     partially-wiped library is visible for forensic inspection. The
@@ -146,7 +147,8 @@ def cleanup_failed_filesystem_run(out_dir: Path, metadata: MaterializeMetadata) 
     mistake the half-cleaned run-dir for a completed failure record.
     """
     library = out_dir / "library"
-    shutil.rmtree(library)
+    if library.exists():
+        shutil.rmtree(library)
     _write_shared_metadata(out_dir, metadata)
     # Sentinel last — the moment readers can trust the dir.
     replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))

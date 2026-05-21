@@ -112,5 +112,67 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_three():
-    assert MANIFEST_SCHEMA_VERSION == 3
+def test_manifest_schema_version_is_four():
+    assert MANIFEST_SCHEMA_VERSION == 4
+
+
+def test_manifest_sidecar_poster_no_language():
+    sidecar = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="poster",
+        path="asset_main.poster.png",
+        language=None,
+    )
+    assert sidecar.language is None
+    assert sidecar.kind == "poster"
+
+
+def test_manifest_sidecar_nfo_no_language():
+    sidecar = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="nfo",
+        path="asset_main.nfo",
+        language=None,
+    )
+    assert sidecar.language is None
+
+
+def test_manifest_sidecar_subtitle_keeps_language():
+    sidecar = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="subtitle",
+        path="asset_main.eng.srt",
+        language="eng",
+    )
+    assert sidecar.language == "eng"
+
+
+def test_manifest_v4_schema_version():
+    manifest = Manifest(
+        schema_version=4,
+        works=[],
+        variants=[],
+        bundles=[],
+        assets=[],
+        versions=[],
+        locations=[],
+        sidecars=[],
+    )
+    assert manifest.schema_version == 4
+
+
+def test_manifest_poster_sidecar_json_round_trip():
+    sidecar = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="poster",
+        path="asset_main.poster.png",
+        language=None,
+    )
+    payload = sidecar.model_dump_json()
+    restored = ManifestSidecar.model_validate_json(payload)
+    assert restored == sidecar
+    assert restored.language is None

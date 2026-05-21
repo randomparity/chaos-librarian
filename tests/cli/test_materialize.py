@@ -49,7 +49,7 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 def _success() -> MaterializeArtifacts:
     return MaterializeArtifacts(
         current_manifest=Manifest(
-            schema_version=3,
+            schema_version=4,
             works=[],
             variants=[],
             bundles=[],
@@ -70,7 +70,7 @@ def _success() -> MaterializeArtifacts:
         replay_bundle=MaterializeReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version="0.1.0",
-            scenario="schema_version: 4\nscenario_id: x\n",
+            scenario="schema_version: 5\nscenario_id: x\n",
             run_id=uuid.uuid4(),
             resolved_seed=1,
             applied_events=0,

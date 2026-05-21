@@ -9,14 +9,16 @@ lookups (``state._asset_to_location``, etc).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import partial
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
+    _as_list,
+    _as_mapping,
     _iter_timeline_events,
     _Loc,
     iter_asset_ids,
@@ -43,15 +45,30 @@ _LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.CREATE_SIDECAR,
         TimelineActionName.ARCHIVE_FILE,
         TimelineActionName.MOVE_BETWEEN_ROOTS,
+        TimelineActionName.REMUX_CONTAINER,
+        TimelineActionName.EDIT_METADATA,
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.REMOVE_SIDECAR,
+        TimelineActionName.UPDATE_SIDECAR,
     }
 )
-# Subset of the passthrough set that mutates the on-disk path. These keep the
-# asset placed but relocate bytes, so they also reject while a slow_copy is
-# pending — same guard the mutation set already applies to move/rename/delete.
+# Subset of the passthrough set that mutates the on-disk path OR reads asset
+# bytes. These keep the asset placed but relocate / mutate / read bytes, so
+# they also reject while a slow_copy is pending — same guard the mutation set
+# already applies to move/rename/delete. UPDATE_SIDECAR and REMOVE_SIDECAR are
+# intentionally excluded — they touch a sidecar file, not the asset.
+# See follow-up issue #48 for the rename to slow_copy_forbidden_set.
 _PATH_MUTATING_PASSTHROUGH: frozenset[str] = frozenset(
     {
         TimelineActionName.ARCHIVE_FILE,
         TimelineActionName.MOVE_BETWEEN_ROOTS,
+        TimelineActionName.REENCODE_VIDEO,
+        TimelineActionName.REENCODE_AUDIO,
+        TimelineActionName.REMUX_CONTAINER,
+        TimelineActionName.EDIT_METADATA,
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
     }
 )
 
@@ -68,6 +85,10 @@ class _LifecycleState:
     placed: set[str]
     pending_slow_copies: dict[str, str]  # start_event_id -> asset_id
     assets_with_pending_copy: set[str]
+    sidecars_by_path: dict[tuple[str, str], str] = field(default_factory=dict)
+    """(asset_id, path) -> kind. Seeded from declared subtitles; updated
+    by create_sidecar / extract_subtitle (insert) and
+    remove_sidecar / embed_subtitle (delete)."""
 
 
 def rule_timeline_lifecycle(
@@ -99,6 +120,7 @@ def rule_timeline_lifecycle(
         placed=set(iter_asset_ids(raw)),
         pending_slow_copies={},
         assets_with_pending_copy=set(),
+        sidecars_by_path=_seed_sidecars_by_path(raw),
     )
 
     for idx, event in _iter_timeline_events(raw):
@@ -113,6 +135,21 @@ def rule_timeline_lifecycle(
             _lifecycle_check_add_file(target=target, **kwargs)
         elif action in _MUTATION_ACTIONS and isinstance(target, str):
             _lifecycle_check_mutation(action=action, target=target, **kwargs)
+        elif action == TimelineActionName.CREATE_SIDECAR and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _apply_create_sidecar(event=event, target=target, state=state)
+        elif action == TimelineActionName.EXTRACT_SUBTITLE and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _apply_extract_subtitle(event=event, target=target, state=state)
+        elif action == TimelineActionName.EMBED_SUBTITLE and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _apply_embed_subtitle(event=event, target=target, **kwargs)
+        elif action == TimelineActionName.REMOVE_SIDECAR and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _apply_remove_sidecar(event=event, target=target, **kwargs)
+        elif action == TimelineActionName.UPDATE_SIDECAR and isinstance(target, str):
+            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _apply_update_sidecar(event=event, target=target, **kwargs)
         elif action in _LOCATION_DEPENDENT_PASSTHROUGH and isinstance(target, str):
             _lifecycle_check_passthrough(action=action, target=target, **kwargs)
         elif action == TimelineActionName.SLOW_COPY_START and isinstance(target, str):
@@ -197,3 +234,145 @@ def _lifecycle_apply_commit(*, ref: object, state: _LifecycleState) -> None:
         return
     committed_asset = state.pending_slow_copies.pop(ref)
     state.assets_with_pending_copy.discard(committed_asset)
+
+
+def _apply_create_sidecar(
+    *,
+    event: Mapping[str, object],
+    target: str,
+    state: _LifecycleState,
+) -> None:
+    """Insert (target, to) -> kind into the sidecar projection."""
+    to = event.get("to")
+    kind = event.get("kind", SidecarKind.SUBTITLE.value)
+    if isinstance(to, str) and isinstance(kind, str):
+        state.sidecars_by_path[(target, to)] = kind
+
+
+def _apply_extract_subtitle(
+    *,
+    event: Mapping[str, object],
+    target: str,
+    state: _LifecycleState,
+) -> None:
+    """Insert (target, to) -> subtitle into the sidecar projection."""
+    to = event.get("to")
+    if isinstance(to, str):
+        state.sidecars_by_path[(target, to)] = SidecarKind.SUBTITLE.value
+
+
+def _apply_embed_subtitle(
+    *,
+    event: Mapping[str, object],
+    target: str,
+    state: _LifecycleState,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    """Emit E_LIFECYCLE_INVALID if sidecar is missing; else consume it."""
+    sidecar_path = event.get("sidecar_path")
+    if not isinstance(sidecar_path, str):
+        return
+    if (target, sidecar_path) not in state.sidecars_by_path:
+        emit(
+            message=(f"embed_subtitle on missing sidecar {sidecar_path!r} (asset {target!r})"),
+            loc=loc,
+        )
+    else:
+        del state.sidecars_by_path[(target, sidecar_path)]
+
+
+def _apply_remove_sidecar(
+    *,
+    event: Mapping[str, object],
+    target: str,
+    state: _LifecycleState,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    """Emit E_LIFECYCLE_INVALID if sidecar is missing; else delete it."""
+    sidecar_path = event.get("sidecar_path")
+    if not isinstance(sidecar_path, str):
+        return
+    if (target, sidecar_path) not in state.sidecars_by_path:
+        emit(
+            message=(f"remove_sidecar on missing sidecar {sidecar_path!r} (asset {target!r})"),
+            loc=loc,
+        )
+    else:
+        del state.sidecars_by_path[(target, sidecar_path)]
+
+
+def _apply_update_sidecar(
+    *,
+    event: Mapping[str, object],
+    target: str,
+    state: _LifecycleState,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    """Emit E_LIFECYCLE_INVALID if sidecar is missing; do not mutate projection."""
+    sidecar_path = event.get("sidecar_path")
+    if not isinstance(sidecar_path, str):
+        return
+    if (target, sidecar_path) not in state.sidecars_by_path:
+        emit(
+            message=(f"update_sidecar on missing sidecar {sidecar_path!r} (asset {target!r})"),
+            loc=loc,
+        )
+
+
+def _seed_sidecars_by_path(raw: Mapping[str, object]) -> dict[tuple[str, str], str]:
+    """Seed (asset_id, path) -> kind for declared subtitle sidecars.
+
+    Declared subtitles use the path convention <asset_id>.<language>.srt
+    (per scenario v5 §"Declared-sidecar path convention").
+    """
+    out: dict[tuple[str, str], str] = {}
+    for work_obj in _as_list(raw.get("works")) or []:
+        work = _as_mapping(work_obj)
+        if work is None:
+            continue
+        for variant_obj in _as_list(work.get("variants")) or []:
+            _seed_from_variant(variant_obj, out=out)
+    return out
+
+
+def _seed_from_variant(
+    variant_obj: object,
+    *,
+    out: dict[tuple[str, str], str],
+) -> None:
+    """Walk one variant's bundle.assets and add declared sidecar subtitles to ``out``."""
+    variant = _as_mapping(variant_obj)
+    if variant is None:
+        return
+    bundle = _as_mapping(variant.get("bundle"))
+    if bundle is None:
+        return
+    for asset_obj in _as_list(bundle.get("assets")) or []:
+        _seed_from_asset(asset_obj, out=out)
+
+
+def _seed_from_asset(
+    asset_obj: object,
+    *,
+    out: dict[tuple[str, str], str],
+) -> None:
+    """Add one entry per declared sidecar-mode subtitle on one asset."""
+    asset = _as_mapping(asset_obj)
+    if asset is None:
+        return
+    asset_id = asset.get("id")
+    if not isinstance(asset_id, str):
+        return
+    for sub_obj in _as_list(asset.get("subtitles")) or []:
+        sub = _as_mapping(sub_obj)
+        if sub is None:
+            continue
+        if sub.get("mode") != "sidecar":
+            continue
+        language = sub.get("language")
+        if not isinstance(language, str):
+            continue
+        out[(asset_id, f"{asset_id}.{language}.srt")] = SidecarKind.SUBTITLE.value

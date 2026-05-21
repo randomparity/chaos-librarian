@@ -1,4 +1,4 @@
-schema_version: 4
+schema_version: 5
 scenario_id: mixed-supported-unsupported
 seed: 11
 duration_scale: short
@@ -31,14 +31,12 @@ works:
                   language: eng
 
 timeline:
-  - id: move_001
+  - id: delete_001
     at: 1s
-    action: move_asset
+    action: delete_file
+    target: asset_main
+  - id: add_001
+    at: 2s
+    action: add_file
     target: asset_main
     to: movies-hd/Orbit.mkv
-  - id: reencode_001
-    at: 2s
-    action: reencode_video
-    target: asset_main
-    resolution: 720p
-    codec: h264

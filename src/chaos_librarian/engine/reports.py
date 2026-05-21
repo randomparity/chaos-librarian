@@ -33,6 +33,7 @@ from chaos_librarian.contract.reports import (
     WorkReport,
 )
 from chaos_librarian.engine.path_history import derive_path_history
+from chaos_librarian.engine.version_history import derive_version_history
 from chaos_librarian.errors import ChaosLibrarianValueError
 
 
@@ -138,12 +139,13 @@ def _build_asset_report(
         if asset_id in entry.target_ids
     ]
     return AssetReport(
-        schema_version=3,
+        schema_version=4,
         asset_id=asset_id,
         initial=initial_snapshot,
         history=history,
         current=_snapshot_for(asset_id, current),
         path_history=derive_path_history(asset_id, journal),
+        version_history=derive_version_history(asset_id, journal),
     )
 
 

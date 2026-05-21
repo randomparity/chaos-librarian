@@ -17,13 +17,21 @@ from chaos_librarian.contract.scenario import (
     ArchiveFileEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
+    EditMetadataEvent,
+    EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    ReencodeAudioEvent,
+    ReencodeVideoEvent,
+    RemoveSidecarEvent,
+    RemuxContainerEvent,
     RenameFileEvent,
     Scenario,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
+    UpdateSidecarEvent,
 )
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
@@ -39,6 +47,14 @@ type _TerminalEvent = (
     | SlowCopyCommitEvent
     | ArchiveFileEvent
     | MoveBetweenRootsEvent
+    | ReencodeVideoEvent
+    | ReencodeAudioEvent
+    | RemuxContainerEvent
+    | EditMetadataEvent
+    | EmbedSubtitleEvent
+    | ExtractSubtitleEvent
+    | RemoveSidecarEvent
+    | UpdateSidecarEvent
 )
 
 # Shared id linking the pre-applied slow_copy_start event to the commit
@@ -48,12 +64,19 @@ type _TerminalEvent = (
 # so the two must stay in sync.
 _PENDING_COPY_ID: Final = "start"
 
+# Shared path linking the pre-applied create_sidecar event to the
+# embed/remove/update terminal events. The sidecar handlers look the
+# sidecar up by (target, path), so the prereq and terminal must agree.
+_PENDING_SIDECAR_PATH: Final = "library/movies-hd/asset_hd_main.eng.srt"
+
 
 def _build_minimal_scenario(
     *,
     roots: list[tuple[str, str]],
     works: list[tuple[str, str, str]],
     archive_root: str | None = None,
+    with_media_tracks: bool = False,
+    with_declared_subtitle: bool = False,
 ) -> Scenario:
     """Build a minimal Scenario for engine-level tests.
 
@@ -74,15 +97,46 @@ def _build_minimal_scenario(
             leaves the field at its default; the literal string
             ``"archive"`` is the sentinel meaning "default subdir of the
             primary root".
+        with_media_tracks: if True, every synthesized asset gets a
+            ``video`` track (color_bars / h264 / hd) and one ``audio``
+            track (aac / stereo / eng). Sprint 7 handlers that probe
+            asset internals (re-encode, remux, edit_metadata, extract)
+            require these fields.
+        with_declared_subtitle: if True, every synthesized asset also
+            gets one declared subtitle track (srt / eng / sidecar).
+            extract_subtitle requires a declared subtitle track on the
+            asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=4``.
+        A fully-validated Scenario at ``schema_version=5``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
     }
     if archive_root is not None:
         library["archive_root"] = archive_root
+
+    def _asset(asset_id: str, container: str) -> dict[str, object]:
+        asset: dict[str, object] = {
+            "id": asset_id,
+            "role": "primary_video",
+            "container": container,
+            "duration_seconds": 1,
+        }
+        if with_media_tracks:
+            asset["video"] = {
+                "source": "color_bars",
+                "codec": "h264",
+                "resolution": "hd",
+            }
+            asset["audio"] = [
+                {"codec": "aac", "channels": "stereo", "language": "eng"},
+            ]
+        if with_declared_subtitle:
+            asset["subtitles"] = [
+                {"codec": "srt", "language": "eng", "mode": "sidecar"},
+            ]
+        return asset
 
     scenario_works = [
         {
@@ -94,14 +148,7 @@ def _build_minimal_scenario(
                     "label": "default",
                     "bundle": {
                         "id": f"bundle_{work_id}",
-                        "assets": [
-                            {
-                                "id": asset_id,
-                                "role": "primary_video",
-                                "container": container,
-                                "duration_seconds": 1,
-                            }
-                        ],
+                        "assets": [_asset(asset_id, container)],
                     },
                 }
             ],
@@ -111,7 +158,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -202,7 +249,88 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         from_root_id="movies-hd",
         to_root_id="cold-storage",
     ),
+    TimelineActionName.REENCODE_VIDEO: lambda: ReencodeVideoEvent(
+        id="ev", at="0ns", target="asset_hd_main", resolution="sd", codec="h264"
+    ),
+    TimelineActionName.REENCODE_AUDIO: lambda: ReencodeAudioEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        from_channels="stereo",
+        to_channels="mono",
+    ),
+    TimelineActionName.REMUX_CONTAINER: lambda: RemuxContainerEvent(
+        id="ev", at="0ns", target="asset_hd_main", to_container="mp4"
+    ),
+    TimelineActionName.EDIT_METADATA: lambda: EditMetadataEvent(
+        id="ev", at="0ns", target="asset_hd_main", fields={"title": "X"}
+    ),
+    TimelineActionName.EMBED_SUBTITLE: lambda: EmbedSubtitleEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        sidecar_path=_PENDING_SIDECAR_PATH,
+    ),
+    TimelineActionName.EXTRACT_SUBTITLE: lambda: ExtractSubtitleEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        to="library/movies-hd/asset_hd_main.fra.srt",
+        language="fra",
+    ),
+    TimelineActionName.REMOVE_SIDECAR: lambda: RemoveSidecarEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        sidecar_path=_PENDING_SIDECAR_PATH,
+    ),
+    TimelineActionName.UPDATE_SIDECAR: lambda: UpdateSidecarEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        sidecar_path=_PENDING_SIDECAR_PATH,
+    ),
 }
+
+# Sprint 7 actions whose handlers probe asset video/audio fields; the
+# scenario must declare matching tracks or the handler / preflight will
+# crash on the missing data.
+_NEEDS_MEDIA_TRACKS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.REENCODE_VIDEO,
+        TimelineActionName.REENCODE_AUDIO,
+        TimelineActionName.REMUX_CONTAINER,
+        TimelineActionName.EDIT_METADATA,
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.REMOVE_SIDECAR,
+        TimelineActionName.UPDATE_SIDECAR,
+    }
+)
+
+# Sprint 7 actions whose minimal scenario requires a declared subtitle
+# track on the asset (extract_subtitle picks a track; embed/remove/update
+# operate on a sidecar that was created by the prereq below — they don't
+# strictly need a declared subtitle, but adding one keeps the corpus
+# consistent and matches the test_events_sidecar fixture).
+_NEEDS_DECLARED_SUBTITLE: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.REMOVE_SIDECAR,
+        TimelineActionName.UPDATE_SIDECAR,
+    }
+)
+
+# Sprint 7 actions whose terminal event references a sidecar that the
+# minimal scenario must allocate first via a pre-applied create_sidecar.
+_NEEDS_PENDING_SIDECAR: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.REMOVE_SIDECAR,
+        TimelineActionName.UPDATE_SIDECAR,
+    }
+)
 
 
 def _prepare_pending_slow_copy(state: WorldState) -> None:
@@ -229,6 +357,29 @@ def _prepare_pending_slow_copy(state: WorldState) -> None:
     )
 
 
+def _prepare_pending_sidecar(state: WorldState) -> None:
+    """Pre-apply create_sidecar so the embed/remove/update terminal can resolve it.
+
+    The matching builders in ``_TERMINAL_EVENT_BUILDERS`` reference
+    ``_PENDING_SIDECAR_PATH``; without this prerequisite
+    ``state.sidecar_id_for_path`` would KeyError.
+    """
+    create_event = CreateSidecarEvent(
+        id="prep_cs",
+        at="0ns",
+        target="asset_hd_main",
+        to=_PENDING_SIDECAR_PATH,
+        language="eng",
+    )
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(at_ns=0, declared_index=0, event=create_event),
+        ids=IdAllocator(TraceRecorder()),
+        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+        scenario_id="sc_test",
+    )
+
+
 def _minimal_scenario_for_action(
     action: TimelineActionName,
 ) -> tuple[Scenario, WorldState, ResolvedEvent]:
@@ -237,7 +388,9 @@ def _minimal_scenario_for_action(
     Returns (scenario, prepared_world_state, resolved_event). The state is
     pre-advanced through any prerequisite events (e.g. ``slow_copy_commit``
     needs its matching ``slow_copy_start`` applied first so
-    ``state.pending_slow_copies`` is populated).
+    ``state.pending_slow_copies`` is populated; the four sidecar-touching
+    Sprint 7 actions need a ``create_sidecar`` pre-applied so
+    ``sidecar_id_for_path`` can resolve their target).
     """
     scenario = _build_minimal_scenario(
         roots=[
@@ -246,10 +399,14 @@ def _minimal_scenario_for_action(
         ],
         works=[("work_001", "asset_hd_main", "mkv")],
         archive_root=None,
+        with_media_tracks=action in _NEEDS_MEDIA_TRACKS,
+        with_declared_subtitle=action in _NEEDS_DECLARED_SUBTITLE,
     )
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
     if action is TimelineActionName.SLOW_COPY_COMMIT:
         _prepare_pending_slow_copy(state)
+    if action in _NEEDS_PENDING_SIDECAR:
+        _prepare_pending_sidecar(state)
 
     builder = _TERMINAL_EVENT_BUILDERS.get(action)
     if builder is None:

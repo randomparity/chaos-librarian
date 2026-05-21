@@ -20,7 +20,6 @@ through ``cleanup_failed_run``.
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -35,7 +34,6 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.materializer.errors import FilesystemActionError
-from chaos_librarian.materializer.recipes import srt_payload
 
 __all__ = ["apply_phase_b"]
 
@@ -183,28 +181,24 @@ def _delete_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     )
 
 
-def _create_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
-    """Write a deterministic SRT sidecar; remember its sha256 by sidecar id."""
+def _remove_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+    """Unlink the sidecar at ``state_delta['removed_sidecar_path']``.
+
+    Routed through phase B (not media.py) because there is no ffmpeg
+    work -- the manifest sidecar row is removed by the engine, the file
+    is removed here. Mirrors ``_delete_file``'s shape so consumers can
+    read ``from_path`` for the removed path and treat ``to_path=None``
+    as the audit-log signal that the inode is gone.
+    """
     asset_id = entry.target_ids[0]
-    sidecar_path = str(entry.state_delta["sidecar_path"])
-    sidecar_id = str(entry.state_delta["sidecar_id"])
-    language = str(entry.state_delta["language"])
-    asset = ctx.scenario_assets[asset_id]
-    body = srt_payload(
-        language=language,
-        duration_s=asset.duration_seconds,
-        seed=ctx.resolved_seed,
-    ).encode("utf-8")
-    dst = ctx.library_root / sidecar_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_bytes(body)
-    ctx.phase_b_sidecar_hashes[sidecar_id] = "sha256:" + hashlib.sha256(body).hexdigest()
+    removed_path = str(entry.state_delta["removed_sidecar_path"])
+    (ctx.library_root / removed_path).unlink()
     return FilesystemAction(
         event_id=entry.event_id,
-        action=TimelineActionName.CREATE_SIDECAR,
+        action=TimelineActionName.REMOVE_SIDECAR,
         target_asset_id=asset_id,
-        from_path=None,
-        to_path=sidecar_path,
+        from_path=removed_path,
+        to_path=None,
         temp_path=None,
         duration_ns=0,
     )
@@ -268,7 +262,7 @@ _DISPATCH: Final[
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,
     TimelineActionName.DELETE_FILE: _delete_file,
-    TimelineActionName.CREATE_SIDECAR: _create_sidecar,
+    TimelineActionName.REMOVE_SIDECAR: _remove_sidecar,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _move_asset,

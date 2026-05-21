@@ -5,7 +5,8 @@
       "enum": [
         "ffmpeg",
         "ffprobe",
-        "filesystem"
+        "filesystem",
+        "media"
       ],
       "title": "FailureStage",
       "type": "string"
@@ -170,6 +171,119 @@
       "title": "MaterializedAsset",
       "type": "object"
     },
+    "MediaAction": {
+      "additionalProperties": false,
+      "description": "One phase-B media operation audit record.\n\nParallel to ``FilesystemAction``: one record per journal entry that\nproduced a real byte / probed-metadata change via ffmpeg or\nsidecar-regeneration. ``tool_invocation_index`` cross-refs into\n``MaterializationReport.invocations`` so consumers can join the two\naudit streams.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/TimelineActionName"
+        },
+        "duration_ns": {
+          "title": "Duration Ns",
+          "type": "integer"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Content Hash"
+        },
+        "input_path": {
+          "title": "Input Path",
+          "type": "string"
+        },
+        "input_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Version Id"
+        },
+        "output_content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Content Hash"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "output_sidecar_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Sidecar Id"
+        },
+        "output_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Version Id"
+        },
+        "target_asset_id": {
+          "title": "Target Asset Id",
+          "type": "string"
+        },
+        "tool_invocation_index": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Invocation Index"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "target_asset_id",
+        "input_path",
+        "output_path",
+        "duration_ns"
+      ],
+      "title": "MediaAction",
+      "type": "object"
+    },
     "Outcome": {
       "description": "High-level materialize result.\n\n``unsupported`` covers both timeline-rejection and matrix-rejection.\n``tool_failed`` covers both ffmpeg subprocess errors and ffprobe parse\nfailures.",
       "enum": [
@@ -178,7 +292,8 @@
         "tool_failed",
         "tool_missing",
         "containment_violation",
-        "fs_failed"
+        "fs_failed",
+        "media_failed"
       ],
       "title": "Outcome",
       "type": "string"
@@ -196,7 +311,13 @@
         "slow_copy_start",
         "slow_copy_commit",
         "archive_file",
-        "move_between_roots"
+        "move_between_roots",
+        "remux_container",
+        "edit_metadata",
+        "embed_subtitle",
+        "extract_subtitle",
+        "remove_sidecar",
+        "update_sidecar"
       ],
       "title": "TimelineActionName",
       "type": "string"
@@ -320,6 +441,13 @@
       "title": "Materialized",
       "type": "array"
     },
+    "media_actions": {
+      "items": {
+        "$ref": "#/$defs/MediaAction"
+      },
+      "title": "Media Actions",
+      "type": "array"
+    },
     "outcome": {
       "$ref": "#/$defs/Outcome"
     },
@@ -333,7 +461,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
     },

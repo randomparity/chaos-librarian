@@ -12,19 +12,27 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     Bundle,
+    CreateSidecarEvent,
     DurationScale,
+    EditMetadataEvent,
+    EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
     Library,
     LibraryRoot,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
     ReencodeVideoEvent,
+    RemoveSidecarEvent,
+    RemuxContainerEvent,
     Scenario,
+    SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
     TimelineActionName,
+    UpdateSidecarEvent,
     Variant,
     VideoSource,
     VideoTrack,
@@ -161,8 +169,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_four() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 4
+def test_scenario_schema_version_is_five() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 5
 
 
 def test_archive_file_event_round_trip():
@@ -245,9 +253,9 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_round_trip_with_new_events():
+def test_scenario_v4_actions_round_trip_at_v5():
     payload = {
-        "schema_version": 4,
+        "schema_version": 5,
         "scenario_id": "sc_arch_001",
         "seed": 42,
         "duration_scale": "short",
@@ -266,5 +274,191 @@ def test_scenario_v4_round_trip_with_new_events():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 4
+    assert scenario.schema_version == 5
     assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE
+
+
+def test_sidecar_kind_enum_values():
+    assert SidecarKind.SUBTITLE.value == "subtitle"
+    assert SidecarKind.POSTER.value == "poster"
+    assert SidecarKind.NFO.value == "nfo"
+
+
+def test_create_sidecar_default_kind_is_subtitle():
+    payload = {
+        "id": "ev_cs_001",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "asset_main",
+        "to": "asset_main.eng.srt",
+        "language": "eng",
+    }
+    event = CreateSidecarEvent.model_validate(payload)
+    assert event.kind == SidecarKind.SUBTITLE
+
+
+def test_create_sidecar_subtitle_requires_language():
+    payload = {
+        "id": "ev_cs_001",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "asset_main",
+        "to": "x.srt",
+        "kind": "subtitle",
+    }
+    with pytest.raises(ValidationError, match="subtitle sidecar requires language"):
+        CreateSidecarEvent.model_validate(payload)
+
+
+def test_create_sidecar_poster_forbids_language():
+    payload = {
+        "id": "ev_cs_001",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "asset_main",
+        "to": "p.png",
+        "kind": "poster",
+        "language": "eng",
+    }
+    with pytest.raises(ValidationError, match="poster sidecar forbids language"):
+        CreateSidecarEvent.model_validate(payload)
+
+
+def test_create_sidecar_nfo_forbids_language():
+    payload = {
+        "id": "ev_cs_001",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "asset_main",
+        "to": "x.nfo",
+        "kind": "nfo",
+        "language": "eng",
+    }
+    with pytest.raises(ValidationError, match="nfo sidecar forbids language"):
+        CreateSidecarEvent.model_validate(payload)
+
+
+def test_create_sidecar_poster_round_trip():
+    payload = {
+        "id": "ev_cs_001",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "asset_main",
+        "to": "asset_main.poster.png",
+        "kind": "poster",
+    }
+    event = CreateSidecarEvent.model_validate(payload)
+    assert event.kind == SidecarKind.POSTER
+    assert event.language is None
+
+
+def test_remux_container_event_round_trip():
+    payload = {
+        "id": "ev_rmx_001",
+        "at": "2s",
+        "action": "remux_container",
+        "target": "asset_main",
+        "to_container": "mp4",
+    }
+    event = RemuxContainerEvent.model_validate(payload)
+    assert event.to_container == "mp4"
+    assert event.action == TimelineActionName.REMUX_CONTAINER
+
+
+def test_edit_metadata_event_round_trip():
+    payload = {
+        "id": "ev_em_001",
+        "at": "3s",
+        "action": "edit_metadata",
+        "target": "asset_main",
+        "fields": {"title": "Pulsar", "artist": "x"},
+    }
+    event = EditMetadataEvent.model_validate(payload)
+    assert event.fields == {"title": "Pulsar", "artist": "x"}
+
+
+def test_edit_metadata_rejects_empty_fields():
+    payload = {
+        "id": "ev_em_001",
+        "at": "3s",
+        "action": "edit_metadata",
+        "target": "asset_main",
+        "fields": {},
+    }
+    with pytest.raises(ValidationError, match="empty"):
+        EditMetadataEvent.model_validate(payload)
+
+
+def test_embed_subtitle_event_round_trip():
+    payload = {
+        "id": "ev_es_001",
+        "at": "4s",
+        "action": "embed_subtitle",
+        "target": "asset_main",
+        "sidecar_path": "asset_main.eng.srt",
+    }
+    event = EmbedSubtitleEvent.model_validate(payload)
+    assert event.sidecar_path == "asset_main.eng.srt"
+
+
+def test_extract_subtitle_event_round_trip():
+    payload = {
+        "id": "ev_xs_001",
+        "at": "5s",
+        "action": "extract_subtitle",
+        "target": "asset_main",
+        "to": "asset_main.fra.srt",
+        "language": "fra",
+    }
+    event = ExtractSubtitleEvent.model_validate(payload)
+    assert event.to == "asset_main.fra.srt"
+    assert event.language == "fra"
+
+
+def test_remove_sidecar_event_round_trip():
+    payload = {
+        "id": "ev_rs_001",
+        "at": "6s",
+        "action": "remove_sidecar",
+        "target": "asset_main",
+        "sidecar_path": "asset_main.eng.srt",
+    }
+    event = RemoveSidecarEvent.model_validate(payload)
+    assert event.target == "asset_main"
+    assert event.sidecar_path == "asset_main.eng.srt"
+
+
+def test_update_sidecar_event_round_trip():
+    payload = {
+        "id": "ev_us_001",
+        "at": "7s",
+        "action": "update_sidecar",
+        "target": "asset_main",
+        "sidecar_path": "asset_main.eng.srt",
+    }
+    event = UpdateSidecarEvent.model_validate(payload)
+    assert event.target == "asset_main"
+    assert event.sidecar_path == "asset_main.eng.srt"
+
+
+def test_scenario_v5_round_trip_with_new_events():
+    payload = {
+        "schema_version": 5,
+        "scenario_id": "sc_s7_001",
+        "seed": 42,
+        "duration_scale": "short",
+        "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
+        "works": [],
+        "timeline": [
+            {
+                "id": "e0",
+                "at": "0s",
+                "action": "remux_container",
+                "target": "asset_main",
+                "to_container": "mp4",
+            },
+        ],
+    }
+    scenario = Scenario.model_validate(payload)
+    assert scenario.schema_version == 5
+    assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER

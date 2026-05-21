@@ -31,7 +31,7 @@ from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
     MaterializeMetadata,
     begin_materialize_run,
-    cleanup_failed_filesystem_run,
+    cleanup_failed_phase_b_run,
     cleanup_failed_run,
 )
 
@@ -86,7 +86,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[],
         variants=[],
         bundles=[],
@@ -116,7 +116,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 4\nscenario_id: static\n",
+        scenario="schema_version: 5\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         applied_events=0,
@@ -134,7 +134,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
             validation_report=validation_report,
             materialization_report=materialization_report,
             replay_bundle=replay_bundle,
-            scenario_yaml_bytes=b"schema_version: 4\nscenario_id: static\n",
+            scenario_yaml_bytes=b"schema_version: 5\nscenario_id: static\n",
             sentinel=_sentinel(RunSentinelState.COMPLETE),
         ),
     )
@@ -155,7 +155,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         assert (out_dir / name).exists(), name
 
 
-def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
+def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -189,7 +189,7 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=3,
+        schema_version=4,
         works=[],
         variants=[],
         bundles=[],
@@ -211,7 +211,7 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 4\nscenario_id: static\n",
+        scenario="schema_version: 5\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         applied_events=0,
@@ -227,11 +227,11 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
         validation_report=validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
-        scenario_yaml_bytes=b"schema_version: 4\nscenario_id: static\n",
+        scenario_yaml_bytes=b"schema_version: 5\nscenario_id: static\n",
         sentinel=_sentinel(RunSentinelState.COMPLETE),
     )
     with pytest.raises(OSError, match="Permission denied") as exc_info:
-        cleanup_failed_filesystem_run(out_dir, metadata)
+        cleanup_failed_phase_b_run(out_dir, metadata)
     assert exc_info.value is boom
     # The fix is "drop ignore_errors=True"; with it passed, real rmtree
     # would silently swallow the OSError and the test would not surface
@@ -242,3 +242,77 @@ def test_cleanup_failed_filesystem_run_propagates_rmtree_errors(
     # Sentinel is still in_progress because the cleanup raised before flipping.
     sentinel_payload = json.loads((out_dir / SENTINEL_FILENAME).read_text())
     assert sentinel_payload["state"] == "in_progress"
+
+
+def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> None:
+    """WHY: an upstream failure may wipe ``library/`` before phase-B cleanup runs.
+
+    Without a ``library.exists()`` guard, ``cleanup_failed_phase_b_run``
+    crashes mid-cleanup with ``FileNotFoundError``, leaving the sentinel
+    stuck at ``in_progress`` and the metadata unwritten. Mirror the
+    sibling ``cleanup_failed_run`` shape: skip the rmtree silently when
+    the library is already gone, still write metadata, flip the sentinel
+    (PR #63 adversarial review, finding #5).
+    """
+    out_dir = tmp_path / "fs_failed_run"
+    in_progress = _sentinel(RunSentinelState.IN_PROGRESS)
+    begin_materialize_run(out_dir, in_progress)
+    # Pre-remove library/ so the cleanup runs against a missing tree.
+    shutil.rmtree(out_dir / "library")
+    run_id = uuid.uuid4()
+    manifest = Manifest(
+        schema_version=4,
+        works=[],
+        variants=[],
+        bundles=[],
+        assets=[],
+        versions=[],
+        locations=[],
+        sidecars=[],
+    )
+    validation_report = ValidationReport(schema_version=1, ok=True, scenario_id="static", issues=[])
+    materialization_report = MaterializationReport(
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
+        run_id=run_id,
+        outcome=Outcome.MEDIA_FAILED,
+        platform="test",
+        started_at=datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
+        finished_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+    )
+    replay_bundle = MaterializeReplayBundle(
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+        chaos_librarian_version="0.1.0",
+        scenario="schema_version: 5\nscenario_id: static\n",
+        run_id=run_id,
+        resolved_seed=1,
+        applied_events=0,
+        journal_digest="0" * 64,
+        execution_mode=ExecutionMode.MATERIALIZE,
+        created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+    )
+    metadata = MaterializeMetadata(
+        initial_manifest=manifest,
+        current_manifest=manifest,
+        journal_entries=(),
+        validation_report=validation_report,
+        materialization_report=materialization_report,
+        replay_bundle=replay_bundle,
+        scenario_yaml_bytes=b"schema_version: 5\nscenario_id: static\n",
+        sentinel=_sentinel(RunSentinelState.COMPLETE),
+    )
+    cleanup_failed_phase_b_run(out_dir, metadata)
+    # Metadata + sentinel were written even though library/ was already gone.
+    sentinel_payload = json.loads((out_dir / SENTINEL_FILENAME).read_text())
+    assert sentinel_payload["state"] == "complete"
+    for name in (
+        "scenario.yaml",
+        "manifest.initial.json",
+        "manifest.current.json",
+        "journal.jsonl",
+        "validation.json",
+        "materialization.json",
+        "replay.json",
+    ):
+        assert (out_dir / name).exists(), name

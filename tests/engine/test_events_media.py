@@ -19,7 +19,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario_id": "media",
             "seed": 1,
             "duration_scale": "short",
@@ -97,6 +97,32 @@ class TestReencodeVideoHandler:
         assert entry.state_delta["resolution"] == "sd"
         assert entry.state_delta["codec"] == "h264"
 
+    def test_reencode_video_emits_input_and_output_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "reencode_video",
+                    "target": "a0",
+                    "resolution": "sd",
+                    "codec": "h264",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        assert isinstance(entry, AtomicJournalEntry)
+        input_path = entry.state_delta["input_path"]
+        output_path = entry.state_delta["output_path"]
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        # In-place re-encode: input and output paths are identical.
+        assert input_path == output_path
+        assert input_path.endswith("/a0.mkv")
+
 
 class TestReencodeAudioHandler:
     """reencode_audio bumps version and records channel transition.
@@ -125,6 +151,31 @@ class TestReencodeAudioHandler:
         assert entry.action == "reencode_audio"
         assert entry.state_delta["from_channels"] == "5.1"
         assert entry.state_delta["to_channels"] == "stereo"
+
+    def test_reencode_audio_emits_input_and_output_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "reencode_audio",
+                    "target": "a0",
+                    "from_channels": "5.1",
+                    "to_channels": "stereo",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        assert isinstance(entry, AtomicJournalEntry)
+        input_path = entry.state_delta["input_path"]
+        output_path = entry.state_delta["output_path"]
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        assert input_path == output_path
+        assert input_path.endswith("/a0.mkv")
 
 
 class TestCreateSidecarHandler:
@@ -157,6 +208,7 @@ class TestCreateSidecarHandler:
             "sidecar_path": "movies-hd/a0.eng.srt",
             "sidecar_id": "sidecar_0001",
             "language": "eng",
+            "kind": "subtitle",
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()
@@ -202,3 +254,169 @@ class TestReencodeAudioOnUnplacedAssetCrashes:
         (reencode_resolved,) = resolve_timeline(bad_scenario)
         with pytest.raises(KeyError):
             apply_event(state, reencode_resolved, ids, _RUN_ID, "media")
+
+
+class TestRemuxContainerHandler:
+    """remux_container allocates a new version and rewrites the location path's extension.
+
+    WHY: container changes are observable bytes-affecting changes (codec
+    copy is fine, but the wrapper differs); voom-v2's reconciliation
+    treats this as a new version.
+    """
+
+    def test_remux_allocates_new_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entry = entries[0]
+        assert isinstance(entry, AtomicJournalEntry)
+        assert entry.input_version_ids == [prior_version_id]
+        new_version_id = entry.output_version_ids[0]
+        assert new_version_id != prior_version_id
+        assert state.versions[new_version_id].index == 1
+
+    def test_remux_rewrites_path_extension(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        loc_id = state.location_id_for_asset("a0")
+        old_path = state.locations[loc_id].path
+        assert old_path.endswith(".mkv")
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        new_path = state.locations[loc_id].path
+        assert new_path == old_path[:-4] + ".mp4"
+
+    def test_remux_state_delta_records_paths_and_containers(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        from_container = delta["from_container"]
+        to_container = delta["to_container"]
+        from_path = delta["from_path"]
+        to_path = delta["to_path"]
+        input_path = delta["input_path"]
+        output_path = delta["output_path"]
+        assert isinstance(from_container, str)
+        assert isinstance(to_container, str)
+        assert isinstance(from_path, str)
+        assert isinstance(to_path, str)
+        assert isinstance(input_path, str)
+        assert isinstance(output_path, str)
+        assert from_container == "mkv"
+        assert to_container == "mp4"
+        assert from_path.endswith(".mkv")
+        assert to_path.endswith(".mp4")
+        assert input_path == from_path
+        assert output_path == to_path
+
+
+class TestEditMetadataHandler:
+    """edit_metadata allocates a new version and copies the fields dict into state_delta.
+
+    WHY: metadata changes don't move bytes around but they DO change the
+    asset's identity (the ffprobe output differs); voom-v2 treats them
+    as a new version.
+    """
+
+    def test_edit_metadata_allocates_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"title": "X", "year": "2026"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entry = entries[0]
+        assert entry.input_version_ids == [prior_version_id]
+        new_version_id = entry.output_version_ids[0]
+        assert new_version_id != prior_version_id
+
+    def test_edit_metadata_records_fields(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"title": "Pulsar", "year": "2026"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        delta = entries[0].state_delta
+        fields = delta["fields"]
+        assert isinstance(fields, dict)
+        assert fields == {"title": "Pulsar", "year": "2026"}
+        input_path = delta["input_path"]
+        output_path = delta["output_path"]
+        assert input_path == output_path
+
+    def test_edit_metadata_does_not_change_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "edit_metadata",
+                    "target": "a0",
+                    "fields": {"k": "v"},
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        loc_id = state.location_id_for_asset("a0")
+        old_path = state.locations[loc_id].path
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        assert state.locations[loc_id].path == old_path

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from chaos_librarian.contract.manifest import Manifest
+import pytest
+
+from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
-from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.engine.state import WorldState, build_initial_state
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from tests.engine.conftest import _build_minimal_scenario
@@ -19,7 +21,7 @@ def _scenario_from_dict(data: dict[str, object]) -> Scenario:
 def _minimal_scenario() -> Scenario:
     return _scenario_from_dict(
         {
-            "schema_version": 4,
+            "schema_version": 5,
             "scenario_id": "min",
             "seed": 1,
             "duration_scale": "short",
@@ -80,7 +82,7 @@ class TestBuildInitialState:
         state = build_initial_state(scenario, ids)
         manifest = state.to_manifest()
         assert isinstance(manifest, Manifest)
-        assert manifest.schema_version == 3
+        assert manifest.schema_version == 4
         assert [w.id for w in manifest.works] == ["w0"]
         assert [v.id for v in manifest.variants] == ["v0"]
         assert [b.id for b in manifest.bundles] == ["b0"]
@@ -91,7 +93,7 @@ class TestBuildInitialState:
     def test_two_assets_get_independent_locations(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 4,
+                "schema_version": 5,
                 "scenario_id": "two",
                 "seed": 1,
                 "duration_scale": "short",
@@ -166,7 +168,7 @@ class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
 
     def test_asset_id_traversal_rejected_by_validation(self) -> None:
         yaml_bytes = b"""\
-schema_version: 4
+schema_version: 5
 scenario_id: unsafe-id
 seed: 1
 duration_scale: short
@@ -256,3 +258,196 @@ def test_initial_path_template_format() -> None:
         )
         == "library/movies-hd/asset_hd_main.mkv"
     )
+
+
+def test_sidecar_id_for_path_returns_id_when_match() -> None:
+    state = WorldState()
+    state.sidecars["sidecar_0001"] = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_main",
+        kind="subtitle",
+        path="asset_main.eng.srt",
+        language="eng",
+    )
+    assert state.sidecar_id_for_path("asset_main", "asset_main.eng.srt") == "sidecar_0001"
+
+
+def test_sidecar_id_for_path_raises_keyerror_on_miss() -> None:
+    state = WorldState()
+    with pytest.raises(KeyError, match="no sidecar"):
+        state.sidecar_id_for_path("asset_main", "missing.srt")
+
+
+def test_sidecar_id_for_path_scoped_by_asset_id() -> None:
+    state = WorldState()
+    state.sidecars["sidecar_0001"] = ManifestSidecar(
+        id="sidecar_0001",
+        asset_id="asset_a",
+        kind="subtitle",
+        path="a.eng.srt",
+        language="eng",
+    )
+    state.sidecars["sidecar_0002"] = ManifestSidecar(
+        id="sidecar_0002",
+        asset_id="asset_b",
+        kind="subtitle",
+        path="a.eng.srt",
+        language="eng",
+    )
+    # Same path, different asset — the lookup must respect asset_id.
+    assert state.sidecar_id_for_path("asset_a", "a.eng.srt") == "sidecar_0001"
+    assert state.sidecar_id_for_path("asset_b", "a.eng.srt") == "sidecar_0002"
+
+
+class TestBuildInitialStateSeedsDeclaredSidecars:
+    """``build_initial_state`` mirrors the validator's projection of declared subtitles.
+
+    WHY: the validator's ``_seed_projection_from_declared`` accepts
+    ``embed_subtitle.sidecar_path = <asset>.<lang>.srt`` for any declared
+    ``mode: sidecar`` subtitle. The engine handlers (``embed_subtitle``,
+    ``update_sidecar``, ``remove_sidecar``) resolve that path through
+    ``WorldState.sidecar_id_for_path``. If state.sidecars is empty for the
+    declared subtitle, validation accepts the scenario but the engine
+    raises KeyError mid-run. The seed below closes that gap.
+    """
+
+    def test_declared_sidecar_subtitle_seeds_one_row(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "side",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "sidecar",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert len(state.sidecars) == 1
+        (sidecar,) = state.sidecars.values()
+        assert sidecar.id == "sidecar_a0_eng"
+        assert sidecar.asset_id == "a0"
+        assert sidecar.kind == "subtitle"
+        assert sidecar.path == "a0.eng.srt"
+        assert sidecar.language == "eng"
+
+    def test_embedded_mode_subtitle_is_not_seeded(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "emb",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "embedded",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert state.sidecars == {}
+
+    def test_sidecar_id_for_path_resolves_declared_subtitle(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 5,
+                "scenario_id": "side",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "subtitles": [
+                                                {
+                                                    "codec": "srt",
+                                                    "language": "eng",
+                                                    "mode": "sidecar",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert state.sidecar_id_for_path("a0", "a0.eng.srt") == "sidecar_a0_eng"

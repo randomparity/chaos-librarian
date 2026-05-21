@@ -110,6 +110,10 @@ class TestCodeConstants:
             "E_PATH_CONTAINMENT",
             "E_PATH_DUPLICATE",
             "E_TIMELINE_ORDER",
+            "E_SIDECAR_TARGET_UNKNOWN",
+            "E_EXTRACT_TRACK_UNKNOWN",
+            "E_SIDECAR_KIND_MISMATCH",
+            "E_SIDECAR_PATH_COLLISION",
         ],
     )
     def test_constant_defined(self, name: str) -> None:

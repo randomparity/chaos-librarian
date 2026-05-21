@@ -196,9 +196,21 @@
           "title": "Id",
           "type": "string"
         },
+        "kind": {
+          "$ref": "#/$defs/SidecarKind",
+          "default": "subtitle"
+        },
         "language": {
-          "title": "Language",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
         },
         "target": {
           "title": "Target",
@@ -213,8 +225,7 @@
         "id",
         "at",
         "target",
-        "to",
-        "language"
+        "to"
       ],
       "title": "CreateSidecarEvent",
       "type": "object"
@@ -258,6 +269,119 @@
       ],
       "title": "DurationScale",
       "type": "string"
+    },
+    "EditMetadataEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "edit_metadata",
+          "default": "edit_metadata",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "fields": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Fields",
+          "type": "object"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "fields"
+      ],
+      "title": "EditMetadataEvent",
+      "type": "object"
+    },
+    "EmbedSubtitleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "embed_subtitle",
+          "default": "embed_subtitle",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sidecar_path": {
+          "title": "Sidecar Path",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "sidecar_path"
+      ],
+      "title": "EmbedSubtitleEvent",
+      "type": "object"
+    },
+    "ExtractSubtitleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "extract_subtitle",
+          "default": "extract_subtitle",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "language": {
+          "title": "Language",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to": {
+          "title": "To",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to",
+        "language"
+      ],
+      "title": "ExtractSubtitleEvent",
+      "type": "object"
     },
     "Library": {
       "additionalProperties": false,
@@ -462,6 +586,76 @@
       "title": "ReencodeVideoEvent",
       "type": "object"
     },
+    "RemoveSidecarEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "remove_sidecar",
+          "default": "remove_sidecar",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sidecar_path": {
+          "title": "Sidecar Path",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "sidecar_path"
+      ],
+      "title": "RemoveSidecarEvent",
+      "type": "object"
+    },
+    "RemuxContainerEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "remux_container",
+          "default": "remux_container",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to_container": {
+          "title": "To Container",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to_container"
+      ],
+      "title": "RemuxContainerEvent",
+      "type": "object"
+    },
     "RenameFileEvent": {
       "additionalProperties": false,
       "properties": {
@@ -496,6 +690,16 @@
       ],
       "title": "RenameFileEvent",
       "type": "object"
+    },
+    "SidecarKind": {
+      "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster and NFO forbid it.",
+      "enum": [
+        "subtitle",
+        "poster",
+        "nfo"
+      ],
+      "title": "SidecarKind",
+      "type": "string"
     },
     "SlowCopyCommitEvent": {
       "additionalProperties": false,
@@ -616,6 +820,41 @@
       "title": "SubtitleTrack",
       "type": "object"
     },
+    "UpdateSidecarEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "update_sidecar",
+          "default": "update_sidecar",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "sidecar_path": {
+          "title": "Sidecar Path",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "sidecar_path"
+      ],
+      "title": "UpdateSidecarEvent",
+      "type": "object"
+    },
     "Variant": {
       "additionalProperties": false,
       "properties": {
@@ -714,7 +953,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -738,13 +977,19 @@
             "archive_file": "#/$defs/ArchiveFileEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
+            "edit_metadata": "#/$defs/EditMetadataEvent",
+            "embed_subtitle": "#/$defs/EmbedSubtitleEvent",
+            "extract_subtitle": "#/$defs/ExtractSubtitleEvent",
             "move_asset": "#/$defs/MoveAssetEvent",
             "move_between_roots": "#/$defs/MoveBetweenRootsEvent",
             "reencode_audio": "#/$defs/ReencodeAudioEvent",
             "reencode_video": "#/$defs/ReencodeVideoEvent",
+            "remove_sidecar": "#/$defs/RemoveSidecarEvent",
+            "remux_container": "#/$defs/RemuxContainerEvent",
             "rename_file": "#/$defs/RenameFileEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
-            "slow_copy_start": "#/$defs/SlowCopyStartEvent"
+            "slow_copy_start": "#/$defs/SlowCopyStartEvent",
+            "update_sidecar": "#/$defs/UpdateSidecarEvent"
           },
           "propertyName": "action"
         },
@@ -781,6 +1026,24 @@
           },
           {
             "$ref": "#/$defs/MoveBetweenRootsEvent"
+          },
+          {
+            "$ref": "#/$defs/RemuxContainerEvent"
+          },
+          {
+            "$ref": "#/$defs/EditMetadataEvent"
+          },
+          {
+            "$ref": "#/$defs/EmbedSubtitleEvent"
+          },
+          {
+            "$ref": "#/$defs/ExtractSubtitleEvent"
+          },
+          {
+            "$ref": "#/$defs/RemoveSidecarEvent"
+          },
+          {
+            "$ref": "#/$defs/UpdateSidecarEvent"
           }
         ]
       },

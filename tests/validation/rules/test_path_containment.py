@@ -209,3 +209,44 @@ class TestRule6PathContainment:
             if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
         ]
         assert not timeline_issues
+
+    def test_extract_subtitle_to_escaping_path_rejected(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """extract_subtitle.to is a sidecar destination — '..' must surface
+        as E_PATH_CONTAINMENT at validate-time, not the materializer."""
+        raw = minimal_scenario(
+            timeline=[
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "extract_subtitle",
+                    "target": "a",
+                    "to": "../escape.srt",
+                    "language": "eng",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+    def test_extract_subtitle_to_under_library_accepted(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """A relative under-library extract_subtitle.to does not trip the rule."""
+        raw = minimal_scenario(
+            timeline=[
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "extract_subtitle",
+                    "target": "a",
+                    "to": "a.fra.srt",
+                    "language": "fra",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
