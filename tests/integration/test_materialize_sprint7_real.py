@@ -82,11 +82,6 @@ def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
     assert not any(s.kind == "subtitle" for s in manifest.sidecars)
 
 
-@pytest.mark.xfail(
-    reason="Blocked on #60: _apply_remux_container leaves the old-extension "
-    "input file on disk after writing the new container.",
-    strict=False,
-)
 def test_remux_container_real(tmp_path: Path) -> None:
     out = tmp_path / "run-003"
     artifacts = materialize_scenario(FIXTURE_DIR / "remux-container.yaml", out)

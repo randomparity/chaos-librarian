@@ -313,6 +313,14 @@ def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaActi
     for ``manifest_build.augment_versions`` to drain. Ensures the output
     parent directory exists before the rename, since changing the
     extension can imply a different parent in some scenarios.
+
+    The old-extension input file is unlinked AFTER the new container is
+    in place at ``output_path`` — preserving the crash-safety guarantee
+    that a half-finished remux leaves both files on disk (never zero).
+    The unlink is skipped when ``input_path`` resolves to the same
+    absolute path as ``output_path`` (a same-extension remux is not a
+    real scenario today, but the guard documents the invariant). Any
+    OSError from the unlink propagates (fail loud, #60).
     """
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
@@ -345,6 +353,8 @@ def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaActi
         )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     temp_output.replace(output_path)
+    if input_path.resolve() != output_path.resolve():
+        input_path.unlink(missing_ok=False)
     new_hash = _hash_file(output_path)
     probed = probe_file(output_path)
     new_version_id = entry.output_version_ids[0]

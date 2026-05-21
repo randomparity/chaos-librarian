@@ -438,6 +438,63 @@ class TestApplyRemuxContainer:
         assert "-c" in argv
         assert argv[argv.index("-c") + 1] == "copy"
 
+    def test_apply_remux_unlinks_old_extension_input(self, media_ctx, monkeypatch, tmp_path):
+        """Issue #60: after a successful remux the old-extension input must be unlinked.
+
+        Otherwise the manifest only references the new file but the
+        old-extension file persists as dead bytes in the library.
+        """
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"r" * 100)
+        entry = _atomic_entry(
+            event_id="ev_rmx_unlink",
+            action=TimelineActionName.REMUX_CONTAINER,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_container": "mkv",
+                "to_container": "mp4",
+                "from_path": "x.mkv",
+                "to_path": "x.mp4",
+                "input_path": "x.mkv",
+                "output_path": "x.mp4",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        assert (tmp_path / "x.mp4").exists()
+        assert not (tmp_path / "x.mkv").exists()
+
+    def test_apply_remux_no_unlink_when_input_equals_output(self, media_ctx, monkeypatch, tmp_path):
+        """Invariant: when input_path == output_path (same resolved path),
+        the post-rename unlink is a no-op — the temp-rename has already
+        overwritten the file at that location. The engine never emits
+        remux events with matching paths today, but the guard documents
+        the invariant and protects against accidental data loss.
+        """
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"r" * 100)
+        entry = _atomic_entry(
+            event_id="ev_rmx_noop",
+            action=TimelineActionName.REMUX_CONTAINER,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_container": "mkv",
+                "to_container": "mkv",
+                "from_path": "x.mkv",
+                "to_path": "x.mkv",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        apply_media_action(media_ctx, entry)
+        # The file at the shared path still exists with the new bytes;
+        # no unlink fired (otherwise the file would be gone).
+        assert (tmp_path / "x.mkv").exists()
+        assert (tmp_path / "x.mkv").read_bytes() == b"r" * 100
+
 
 class TestApplyEditMetadata:
     def test_apply_edit_metadata_argv_passes_each_field(self, media_ctx, monkeypatch, tmp_path):
