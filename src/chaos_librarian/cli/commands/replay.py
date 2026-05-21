@@ -18,13 +18,14 @@ from chaos_librarian.cli._envelope import (
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER, infer_original
 from chaos_librarian.cli.app import app
-from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
+from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.engine import (
     ReplayIntegrityError,
     compare_fixtures,
     replay_plan_bundle,
     write_fixture,
 )
+from chaos_librarian.materializer.replay import replay_run_bundle
 
 
 @app.command()
@@ -58,6 +59,33 @@ def replay(
         )
         raise typer.Exit(code=1) from exc
     if isinstance(parsed_any, MaterializeReplayBundle):
+        if parsed_any.execution_mode is ExecutionMode.RUN:
+            try:
+                replay_run_bundle(parsed_any, out)
+            except ReplayIntegrityError as exc:
+                emit_cli_error(
+                    error_code=E_REPLAY_DIVERGENCE,
+                    message=str(exc),
+                    json_output=json_output,
+                    details={"kind": "integrity", "recorded_run_id": str(parsed_any.run_id)},
+                )
+                raise typer.Exit(code=6) from exc
+
+            if json_output:
+                typer.echo(
+                    json.dumps(
+                        {
+                            "out": str(out.resolve()),
+                            "run_id": str(parsed_any.run_id),
+                            "compared_against": None,
+                        },
+                        sort_keys=True,
+                    )
+                )
+            else:
+                typer.echo(f"replay: wrote {out}")
+            return
+
         emit_cli_error(
             error_code=E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED,
             message="materialize replay is not implemented in this CLI build",
