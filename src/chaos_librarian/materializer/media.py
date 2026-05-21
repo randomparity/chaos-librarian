@@ -879,6 +879,13 @@ def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
         MediaActionError: ffmpeg non-zero exit, ffprobe parse failure,
             OSError during the rename, or no handler registered for the
             entry's action.
+
+    Any ``OSError`` raised inside a handler (e.g. ``Path.replace``,
+    ``Path.unlink``, ``Path.write_bytes`` on a full disk) is wrapped here
+    rather than propagating bare. Without this wrapper the orchestrator's
+    phase-B failure path — keyed on ``MediaActionError`` — never runs and
+    ``library/`` is left half-mutated with the sentinel stuck at
+    ``IN_PROGRESS`` (PR #63 adversarial review, finding #3).
     """
     action = TimelineActionName(entry.action)
     handler = _HANDLERS.get(action)
@@ -889,7 +896,16 @@ def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
             action=action,
             cause=RuntimeError("no dispatch"),
         )
-    return handler(ctx, entry)
+    try:
+        return handler(ctx, entry)
+    except OSError as exc:
+        raise MediaActionError(
+            f"{action.value} failed for event {entry.event_id}: {exc}",
+            event_id=entry.event_id,
+            action=action,
+            cause=exc,
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+        ) from exc
 
 
 _MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(

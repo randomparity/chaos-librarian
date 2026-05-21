@@ -1035,6 +1035,83 @@ class TestProbeSubtitleIndexForLanguage:
             media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "eng")
 
 
+class TestApplyMediaActionIOErrorWrapping:
+    """Adversarial-review finding #3: OSError from a handler must wrap.
+
+    Without wrapping at the apply_media_action entry point, bare OSError
+    propagates past the orchestrator's ``except MediaActionError`` clause
+    and ``finalize_failure_phase_b`` never runs — leaving ``library/``
+    half-mutated and the sentinel stuck at IN_PROGRESS.
+    """
+
+    def test_reencode_video_oserror_wraps_in_media_action_error(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"x" * 100)
+        original_replace = Path.replace
+
+        def boom_replace(self, target):
+            if str(self).endswith(".tmp.42.mkv"):
+                raise OSError(28, "No space left on device")
+            return original_replace(self, target)
+
+        monkeypatch.setattr(Path, "replace", boom_replace)
+        entry = _atomic_entry(
+            event_id="ev_io_rv",
+            action=TimelineActionName.REENCODE_VIDEO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "resolution": "sd",
+                "codec": "h264",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(media_ctx, entry)
+        assert exc_info.value.event_id == "ev_io_rv"
+        assert exc_info.value.action == TimelineActionName.REENCODE_VIDEO
+        assert isinstance(exc_info.value.cause, OSError)
+
+    def test_embed_subtitle_oserror_wraps_in_media_action_error(
+        self, media_ctx, monkeypatch, tmp_path
+    ):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        (tmp_path / "s.srt").write_bytes(b"1\n00:00:00,000 --> 00:00:01,000\nstub\n")
+        _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"x" * 100)
+        original_unlink = Path.unlink
+
+        def boom_unlink(self, *args, **kwargs):
+            if self.name == "s.srt":
+                raise OSError(13, "Permission denied")
+            return original_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", boom_unlink)
+        entry = _atomic_entry(
+            event_id="ev_io_es",
+            action=TimelineActionName.EMBED_SUBTITLE,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+                "embedded_sidecar_path": "s.srt",
+                "embedded_sidecar_id": "sc0",
+                "language": "eng",
+                "kind": "subtitle",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(media_ctx, entry)
+        assert exc_info.value.event_id == "ev_io_es"
+        assert exc_info.value.action == TimelineActionName.EMBED_SUBTITLE
+        assert isinstance(exc_info.value.cause, OSError)
+
+
 def test_media_actions_constant_contents():
     assert (
         frozenset(

@@ -147,7 +147,8 @@ def cleanup_failed_phase_b_run(out_dir: Path, metadata: MaterializeMetadata) -> 
     mistake the half-cleaned run-dir for a completed failure record.
     """
     library = out_dir / "library"
-    shutil.rmtree(library)
+    if library.exists():
+        shutil.rmtree(library)
     _write_shared_metadata(out_dir, metadata)
     # Sentinel last — the moment readers can trust the dir.
     replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))

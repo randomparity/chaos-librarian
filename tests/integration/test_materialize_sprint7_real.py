@@ -178,6 +178,41 @@ def test_subtitle_ops_on_mp4_asset_use_mov_text(tmp_path: Path) -> None:
     assert "mov_text" in subtitle_codecs
 
 
+def test_phase_b_oserror_cleans_library(tmp_path: Path, monkeypatch) -> None:
+    """Bare OSError from a media handler must route through phase-B cleanup.
+
+    Adversarial review finding #3: previously a ``Path.replace`` /
+    ``Path.unlink`` failure (disk full, permission denied) raised bare
+    OSError past the orchestrator's ``except MediaActionError`` and left
+    ``library/`` half-mutated with the sentinel stuck at IN_PROGRESS.
+    The wrapper at ``apply_media_action`` now turns OSError into
+    MediaActionError so ``finalize_failure_phase_b`` runs.
+    """
+    out = tmp_path / "run-oserror"
+    original_replace = Path.replace
+    fired = {"count": 0}
+
+    def boom_on_first_remux(self, target):
+        # The remux handler in bundle-sidecars.yaml renames a .tmp.<seed>.mkv
+        # over Quasar.HD.mkv during the rename event. Inject OSError on the
+        # first .tmp.<seed>.* rename we see so phase-A finishes but phase-B
+        # blows up mid-walk.
+        if ".tmp." in self.name and fired["count"] == 0:
+            fired["count"] += 1
+            raise OSError(28, "No space left on device")
+        return original_replace(self, target)
+
+    monkeypatch.setattr(Path, "replace", boom_on_first_remux)
+    with pytest.raises(MediaActionError):
+        materialize_scenario(FIXTURE_DIR / "bundle-sidecars.yaml", out)
+    # library/ wiped by finalize_failure_phase_b.
+    assert not (out / "library").exists()
+    report_path = out / "materialization.json"
+    assert report_path.exists()
+    body = json.loads(report_path.read_text())
+    assert body["outcome"] == "media_failed"
+
+
 def test_phase_b_media_failure_cleans_library(tmp_path: Path) -> None:
     """Hand-craft a scenario that ffmpeg rejects (reencode_audio -ac quad)."""
     # Build the scenario in-place rather than as a fixture so the failure
