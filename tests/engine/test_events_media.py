@@ -208,6 +208,7 @@ class TestCreateSidecarHandler:
             "sidecar_path": "movies-hd/a0.eng.srt",
             "sidecar_id": "sidecar_0001",
             "language": "eng",
+            "kind": "subtitle",
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()

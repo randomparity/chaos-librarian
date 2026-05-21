@@ -58,7 +58,9 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
     TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
     TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
-    TimelineActionName.CREATE_SIDECAR: frozenset({"sidecar_path", "sidecar_id", "language"}),
+    TimelineActionName.CREATE_SIDECAR: frozenset(
+        {"sidecar_path", "sidecar_id", "language", "kind"}
+    ),
     TimelineActionName.SLOW_COPY_START: frozenset(
         {"final_path", "temp_path", "initial_path_at_start"}
     ),
@@ -377,6 +379,7 @@ def _handle_create_sidecar(
         "sidecar_path": event.to,
         "sidecar_id": sidecar_id,
         "language": event.language,
+        "kind": event.kind.value,
     }
     entry = _new_atomic_entry(
         resolved=resolved,
