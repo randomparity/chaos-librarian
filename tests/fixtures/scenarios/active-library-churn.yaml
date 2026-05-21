@@ -1,0 +1,75 @@
+schema_version: 5
+scenario_id: active-library-churn
+seed: 17
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+works:
+  - id: work_pulsar
+    title: Synthetic Pulsar
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline:
+  - id: move_001
+    at: 1ns
+    action: move_asset
+    target: asset_main
+    to: movies-hd/Pulsar.mkv
+  - id: copy_start_001
+    at: 2ns
+    action: slow_copy_start
+    target: asset_main
+    to: movies-hd/Pulsar Copy.mkv
+    temp_path: movies-hd/Pulsar Copy.mkv.part
+    duration: 4ns
+  - id: copy_commit_001
+    at: 6ns
+    action: slow_copy_commit
+    for: copy_start_001
+  - id: sidecar_create_001
+    at: 7ns
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Pulsar.nfo
+    kind: nfo
+  - id: sidecar_update_001
+    at: 8ns
+    action: update_sidecar
+    target: asset_main
+    sidecar_path: movies-hd/Pulsar.nfo
+  - id: metadata_001
+    at: 9ns
+    action: edit_metadata
+    target: asset_main
+    fields:
+      title: Synthetic Pulsar Updated
+  - id: delete_001
+    at: 10ns
+    action: delete_file
+    target: asset_main
+  - id: add_001
+    at: 11ns
+    action: add_file
+    target: asset_main
+    to: movies-hd/Pulsar Restored.mkv
