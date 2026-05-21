@@ -38,7 +38,18 @@ if TYPE_CHECKING:
 
 __all__ = ["rule_sidecar_target"]
 
-_Projection = dict[tuple[str, str], str]
+_Projection = dict[tuple[str, str], tuple[str, str | None]]
+"""``(asset_id, path) -> (kind, language)``.
+
+``language`` is ``None`` for poster/NFO rows. Subtitle rows carry it so
+``_handle_create_sidecar`` can mirror the engine's ``(asset, language)``
+dedup (#63 finding #2): the engine drops any prior subtitle row matching
+the new event's ``(asset, language)`` regardless of path, so a scenario
+that declares ``a0.eng.srt`` and then ``create_sidecar`` writes
+``movies/a0/en.srt`` must invalidate the declared row in the projection
+too. Without this, embed/remove referencing the declared path validates
+clean but crashes the engine.
+"""
 
 
 def rule_sidecar_target(
@@ -99,11 +110,31 @@ def _handle_create_sidecar(
     target: str,
     projection: _Projection,
 ) -> None:
-    """Insert (target, to) -> kind for a well-shaped create_sidecar event."""
+    """Insert ``(target, to) -> (kind, language)`` for a well-shaped event.
+
+    Subtitle creates additionally drop any existing subtitle entry on
+    ``target`` that matches the new event's ``language`` regardless of
+    path. The engine does the same in ``_handle_create_sidecar`` (removes
+    every ``ManifestSidecar`` row keyed on ``(asset, "subtitle",
+    language)``); validating without that dedup let a scenario like
+    "declared a0.eng.srt + create_sidecar to movies/a0/en.srt + embed
+    a0.eng.srt" pass shape validation only to fail at runtime with a bare
+    ``KeyError`` from the engine.
+    """
     to = event.get("to")
     kind = event.get("kind", SidecarKind.SUBTITLE.value)
-    if isinstance(to, str) and isinstance(kind, str):
-        projection[(target, to)] = kind
+    if not isinstance(to, str) or not isinstance(kind, str):
+        return
+    raw_language = event.get("language")
+    language = raw_language if isinstance(raw_language, str) else None
+    if kind == SidecarKind.SUBTITLE.value and language is not None:
+        for existing_key in [
+            key
+            for key, value in projection.items()
+            if key[0] == target and value[0] == SidecarKind.SUBTITLE.value and value[1] == language
+        ]:
+            del projection[existing_key]
+    projection[(target, to)] = (kind, language)
 
 
 def _handle_extract_subtitle(
@@ -127,7 +158,9 @@ def _handle_extract_subtitle(
             loc=("timeline", idx, "to"),
         )
     else:
-        projection[(target, to)] = SidecarKind.SUBTITLE.value
+        raw_language = event.get("language")
+        language = raw_language if isinstance(raw_language, str) else None
+        projection[(target, to)] = (SidecarKind.SUBTITLE.value, language)
 
 
 def _handle_embed_subtitle(
@@ -142,8 +175,8 @@ def _handle_embed_subtitle(
     sidecar_path = event.get("sidecar_path")
     if not isinstance(sidecar_path, str):
         return
-    kind = projection.get((target, sidecar_path))
-    if kind is None:
+    entry = projection.get((target, sidecar_path))
+    if entry is None:
         reporter.error(
             code=E_SIDECAR_TARGET_UNKNOWN,
             message=(
@@ -151,7 +184,9 @@ def _handle_embed_subtitle(
             ),
             loc=("timeline", idx, "sidecar_path"),
         )
-    elif kind != SidecarKind.SUBTITLE.value:
+        return
+    kind, _language = entry
+    if kind != SidecarKind.SUBTITLE.value:
         reporter.error(
             code=E_SIDECAR_KIND_MISMATCH,
             message=(
@@ -252,4 +287,7 @@ def _seed_from_asset(
         language = sub.get("language")
         if not isinstance(language, str):
             continue
-        projection[(asset_id, f"{asset_id}.{language}.srt")] = SidecarKind.SUBTITLE.value
+        projection[(asset_id, f"{asset_id}.{language}.srt")] = (
+            SidecarKind.SUBTITLE.value,
+            language,
+        )

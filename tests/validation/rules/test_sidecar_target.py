@@ -230,6 +230,43 @@ def test_extract_subtitle_to_after_remove_valid():
     assert not any(i.code == E_SIDECAR_PATH_COLLISION for i in issues)
 
 
+def test_create_subtitle_overrides_declared_at_different_path_then_embed_declared_path_emits_E_SIDECAR_TARGET_UNKNOWN():  # noqa: E501
+    """Engine drops any prior subtitle row matching (asset, language) regardless of path.
+
+    Without language-based dedup in the validator's projection, a
+    scenario that declares ``a0.eng.srt``, calls ``create_sidecar`` for
+    the same ``(asset_id, language)`` at a different path, and then
+    ``embed_subtitle`` on the old declared path validates clean — only
+    to crash the engine with a bare ``KeyError``. PR #63 adversarial
+    review finding #2.
+    """
+    raw = _minimal(
+        timeline=[
+            {
+                "id": "e_cs",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "a0",
+                "to": "movies/a0/en.srt",
+                "language": "eng",
+                "kind": "subtitle",
+            },
+            {
+                "id": "e_es",
+                "at": "2s",
+                "action": "embed_subtitle",
+                "target": "a0",
+                "sidecar_path": "a0.eng.srt",
+            },
+        ],
+        asset_subtitles=[
+            {"codec": "srt", "language": "eng", "mode": "sidecar"},
+        ],
+    )
+    issues = _run(raw)
+    assert any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
+
+
 def test_embed_subtitle_consumes_sidecar_then_subsequent_remove_unknown():
     raw = _minimal(
         timeline=[
