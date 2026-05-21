@@ -664,7 +664,7 @@ class TestApplyExtractSubtitle:
         _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"s" * 100)
         monkeypatch.setattr(
             "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
-            lambda path, lang: 0,
+            lambda ctx, path, lang: 0,
         )
         entry = _atomic_entry(
             event_id="ev_xs_001",
@@ -710,7 +710,7 @@ class TestApplyExtractSubtitle:
         # matches "fra"), so the argv must contain 0:s:1.
         monkeypatch.setattr(
             "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
-            lambda path, lang: 1,
+            lambda ctx, path, lang: 1,
         )
         entry = _atomic_entry(
             event_id="ev_xs_001",
@@ -756,7 +756,7 @@ class TestApplyExtractSubtitle:
         # Probe stub returns 0 — fallback path (no language matched).
         monkeypatch.setattr(
             "chaos_librarian.materializer.media._probe_subtitle_index_for_language",
-            lambda path, lang: 0,
+            lambda ctx, path, lang: 0,
         )
         entry = _atomic_entry(
             event_id="ev_xs_002",
@@ -986,7 +986,16 @@ class _FakeCompleted:
 
 
 class TestProbeSubtitleIndexForLanguage:
-    """Covers media._probe_subtitle_index_for_language (#59)."""
+    """Covers media._probe_subtitle_index_for_language (#59, #61)."""
+
+    def _ctx(self, tmp_path):
+        return _MediaContext(
+            library_root=tmp_path,
+            scenario_assets={},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.1",
+        )
 
     def test_probe_picks_matching_language_index(self, monkeypatch, tmp_path):
         # Two subtitle streams: eng then fra; ask for fra → expect index 1.
@@ -1001,8 +1010,14 @@ class TestProbeSubtitleIndexForLanguage:
             return _FakeCompleted(stdout=json.dumps(payload))
 
         monkeypatch.setattr(media_module.subprocess, "run", fake_run)
-        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "fra")
+        ctx = self._ctx(tmp_path)
+        idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "fra")
         assert idx == 1
+        # #61: every probe call must be auditable via ctx.invocations.
+        assert len(ctx.invocations) == 1
+        assert ctx.invocations[0].tool == "ffprobe"
+        assert ctx.invocations[0].exit_code == 0
+        assert ctx.invocations[0].version == "7.1"
 
     def test_probe_falls_back_to_zero_when_language_missing(self, monkeypatch, tmp_path):
         payload = {
@@ -1015,24 +1030,34 @@ class TestProbeSubtitleIndexForLanguage:
             return _FakeCompleted(stdout=json.dumps(payload))
 
         monkeypatch.setattr(media_module.subprocess, "run", fake_run)
-        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "deu")
+        ctx = self._ctx(tmp_path)
+        idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "deu")
         assert idx == 0
+        assert len(ctx.invocations) == 1
 
     def test_probe_falls_back_to_zero_when_no_streams_key(self, monkeypatch, tmp_path):
         def fake_run(argv, **_kwargs):
             return _FakeCompleted(stdout="{}")
 
         monkeypatch.setattr(media_module.subprocess, "run", fake_run)
-        idx = media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "eng")
+        ctx = self._ctx(tmp_path)
+        idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")
         assert idx == 0
+        assert len(ctx.invocations) == 1
 
     def test_probe_nonzero_exit_raises_runtime_error(self, monkeypatch, tmp_path):
         def fake_run(argv, **_kwargs):
             return _FakeCompleted(stdout="", stderr="boom", returncode=1)
 
         monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        ctx = self._ctx(tmp_path)
         with pytest.raises(RuntimeError, match="ffprobe"):
-            media_module._probe_subtitle_index_for_language(tmp_path / "x.mkv", "eng")
+            media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")
+        # #61: failed probes must still appear in the audit log so users
+        # can see the exit_code that caused the materialize failure.
+        assert len(ctx.invocations) == 1
+        assert ctx.invocations[0].exit_code == 1
+        assert ctx.invocations[0].tool == "ffprobe"
 
 
 class TestApplyMediaActionIOErrorWrapping:

@@ -535,13 +535,17 @@ def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
-def _probe_subtitle_index_for_language(input_path: Path, language: str) -> int:
+def _probe_subtitle_index_for_language(ctx: _MediaContext, input_path: Path, language: str) -> int:
     """Return the subtitle-stream index whose tags.language matches.
 
     Indexing is relative to subtitle streams only (matching ffmpeg's
     ``-map 0:s:<idx>`` semantics — the 0th subtitle stream is ``0:s:0``,
     not the absolute stream index). Falls back to ``0`` when no track's
     language tag matches ``language`` (per spec design decision #8).
+
+    A ``ToolInvocation`` for the ffprobe call is appended to
+    ``ctx.invocations`` BEFORE any RuntimeError is raised so the audit
+    trail captures failed probes too (closes #61).
 
     Raises:
         RuntimeError: ffprobe exited non-zero or produced unparseable
@@ -561,6 +565,7 @@ def _probe_subtitle_index_for_language(input_path: Path, language: str) -> int:
         "json",
         str(input_path),
     ]
+    started = time.monotonic_ns()
     completed = subprocess.run(
         argv,
         capture_output=True,
@@ -568,6 +573,16 @@ def _probe_subtitle_index_for_language(input_path: Path, language: str) -> int:
         timeout=15.0,
         check=False,
         stdin=subprocess.DEVNULL,
+    )
+    duration_ns = time.monotonic_ns() - started
+    ctx.invocations.append(
+        ToolInvocation(
+            tool="ffprobe",
+            version=ctx.ffprobe_version,
+            command=list(argv),
+            exit_code=completed.returncode,
+            duration_ns=duration_ns,
+        )
     )
     if completed.returncode != 0:
         raise RuntimeError(
@@ -619,7 +634,7 @@ def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAct
     temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
     language = str(delta["language"])
     try:
-        subtitle_index = _probe_subtitle_index_for_language(input_path, language)
+        subtitle_index = _probe_subtitle_index_for_language(ctx, input_path, language)
     except (RuntimeError, subprocess.TimeoutExpired) as exc:
         raise MediaActionError(
             f"extract_subtitle: ffprobe failed selecting subtitle index for event {entry.event_id}",
