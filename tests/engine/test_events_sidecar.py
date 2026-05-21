@@ -1,6 +1,11 @@
 """Tests for the 4 sidecar-touching handlers added in Sprint 7.
 
 embed_subtitle, extract_subtitle, remove_sidecar, update_sidecar.
+
+Also covers ``_handle_create_sidecar`` kind routing — Sprint 6 only
+emitted subtitle sidecars; Sprint 7 widened ``CreateSidecarEvent.kind``
+to include ``poster`` and ``nfo``, and the handler must route on it
+(#50).
 """
 
 from __future__ import annotations
@@ -419,3 +424,166 @@ class TestUpdateSidecarHandler:
         delta = entries[0].state_delta
         assert delta["sidecar_id"] == sidecar_id
         assert delta["sidecar_path"] == "a0.eng.srt"
+
+
+class TestCreateSidecarKindRouting:
+    """create_sidecar must route on event.kind for poster/NFO (#50).
+
+    WHY: Sprint 7 widened ``CreateSidecarEvent.kind`` to include
+    ``poster`` and ``nfo``. The engine previously hardcoded
+    ``kind="subtitle"`` on every emitted ``ManifestSidecar`` row,
+    silently mislabelling poster/NFO sidecars. The handler must use
+    ``event.kind.value`` so manifest rows carry the kind the scenario
+    declared.
+    """
+
+    def _scenario_with_one_asset(self, timeline: list[dict[str, object]]) -> Scenario:
+        """Asset declares NO subtitle — keeps the seeded sidecars list empty.
+
+        Lets each poster/NFO test assert ``state.sidecars`` size precisely
+        without filtering out a baseline declared subtitle row.
+        """
+        return Scenario.model_validate(
+            {
+                "schema_version": 5,
+                "scenario_id": "create_sidecar_kind",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
+                "works": [
+                    {
+                        "id": "w0",
+                        "title": "T",
+                        "variants": [
+                            {
+                                "id": "v0",
+                                "label": "hd",
+                                "bundle": {
+                                    "id": "b0",
+                                    "assets": [
+                                        {
+                                            "id": "a0",
+                                            "role": "primary_video",
+                                            "container": "mkv",
+                                            "duration_seconds": 1,
+                                            "video": {
+                                                "source": "color_bars",
+                                                "codec": "h264",
+                                                "resolution": "hd",
+                                            },
+                                            "audio": [
+                                                {
+                                                    "codec": "aac",
+                                                    "channels": "stereo",
+                                                    "language": "eng",
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "timeline": timeline,
+            }
+        )
+
+    def test_poster_sidecar_carries_kind_and_no_language(self) -> None:
+        scenario = self._scenario_with_one_asset(
+            [
+                {
+                    "id": "ev_poster",
+                    "at": "0s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "library/r0/a0.poster.png",
+                    "kind": "poster",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        # One new sidecar row, labeled poster, with no language.
+        assert len(state.sidecars) == 1
+        sidecar = next(iter(state.sidecars.values()))
+        assert sidecar.kind == "poster"
+        assert sidecar.path == "library/r0/a0.poster.png"
+        assert sidecar.language is None
+        assert sidecar.asset_id == "a0"
+        # No version bump.
+        assert state.version_id_for_asset("a0") == prior_version_id
+        # Journal shape mirrors the subtitle branch (atomic atomic atomic).
+        entry = entries[0]
+        assert entry.action == "create_sidecar"
+        assert entry.target_ids == ["a0"]
+        assert entry.input_version_ids == []
+        assert entry.output_version_ids == []
+        delta = entry.state_delta
+        assert delta["sidecar_path"] == "library/r0/a0.poster.png"
+        assert delta["sidecar_id"] == sidecar.id
+        assert delta["language"] is None
+
+    def test_nfo_sidecar_carries_kind_and_no_language(self) -> None:
+        scenario = self._scenario_with_one_asset(
+            [
+                {
+                    "id": "ev_nfo",
+                    "at": "0s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "library/r0/a0.nfo",
+                    "kind": "nfo",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        assert len(state.sidecars) == 1
+        sidecar = next(iter(state.sidecars.values()))
+        assert sidecar.kind == "nfo"
+        assert sidecar.path == "library/r0/a0.nfo"
+        assert sidecar.language is None
+        # No version bump.
+        assert state.version_id_for_asset("a0") == prior_version_id
+        entry = entries[0]
+        assert entry.action == "create_sidecar"
+        delta = entry.state_delta
+        assert delta["sidecar_path"] == "library/r0/a0.nfo"
+        assert delta["sidecar_id"] == sidecar.id
+        assert delta["language"] is None
+
+    def test_subtitle_default_kind_still_dedups_declared_row(self) -> None:
+        """Regression guard: subtitle branch behavior preserved after refactor.
+
+        ``build_initial_state`` seeds one declared subtitle row; a
+        same-language ``create_sidecar`` must replace (not duplicate) it.
+        """
+        scenario = _scenario_with_subtitle_declared(
+            [
+                {
+                    "id": "e_cs",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "a0",
+                    "to": "a0.eng.srt",
+                    "language": "eng",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        assert len(state.sidecars) == 1  # declared row from build_initial_state
+        (resolved,) = resolve_timeline(scenario)
+        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        # Still one row — the declared row was replaced, not duplicated.
+        assert len(state.sidecars) == 1
+        sidecar = next(iter(state.sidecars.values()))
+        assert sidecar.kind == "subtitle"
+        assert sidecar.language == "eng"

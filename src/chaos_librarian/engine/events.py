@@ -338,38 +338,46 @@ def _handle_create_sidecar(
     run_id: uuid.UUID,
     scenario_id: str,
 ) -> tuple[JournalEntry, ...]:
+    """Allocate a sidecar row; route on ``event.kind``.
+
+    Subtitle sidecars carry a ``language`` and dedup any declared row
+    seeded by ``build_initial_state`` that collides on
+    ``(asset_id, language)`` — the timeline ``create_sidecar`` is the
+    authoritative writer for that language (#39). Poster and NFO
+    sidecars carry no language and never collide; they are inserted
+    verbatim. No kind bumps the asset's version.
+    """
     event = resolved.event
     assert isinstance(event, CreateSidecarEvent)
-    # TEMPORARY: handler does not yet route on event.kind (see follow-up issue).
-    # Until it does, fail loud if a non-subtitle CreateSidecarEvent reaches here.
-    assert event.kind == SidecarKind.SUBTITLE, (
-        f"_handle_create_sidecar does not yet route on kind; got kind={event.kind!r}"
-    )
-    # Drop any declared subtitle row seeded by ``build_initial_state``
-    # that collides on ``(asset_id, language)`` — the timeline
-    # ``create_sidecar`` is the authoritative writer for that language
-    # (#39). Validation's projection overwrites declared entries with the
-    # timeline value; mirror that here. The phase-A writer also skips the
-    # declared file on disk via ``_timeline_sidecar_languages``, so the
-    # manifest must not carry a row for the orphaned declared write.
-    collisions = [
-        sid
-        for sid, sidecar in state.sidecars.items()
-        if sidecar.asset_id == event.target
-        and sidecar.kind == "subtitle"
-        and sidecar.language == event.language
-    ]
-    for sid in collisions:
-        del state.sidecars[sid]
+    if event.kind == SidecarKind.SUBTITLE:
+        # Drop any declared subtitle row seeded by ``build_initial_state``
+        # that collides on ``(asset_id, language)``. Validation's
+        # projection overwrites declared entries with the timeline value;
+        # mirror that here. The phase-A writer also skips the declared
+        # file on disk via ``_timeline_sidecar_languages``, so the
+        # manifest must not carry a row for the orphaned declared write.
+        collisions = [
+            sid
+            for sid, sidecar in state.sidecars.items()
+            if sidecar.asset_id == event.target
+            and sidecar.kind == "subtitle"
+            and sidecar.language == event.language
+        ]
+        for sid in collisions:
+            del state.sidecars[sid]
     sidecar_id = ids.next_sidecar_id()
-    sidecar = ManifestSidecar(
+    state.sidecars[sidecar_id] = ManifestSidecar(
         id=sidecar_id,
         asset_id=event.target,
-        kind="subtitle",
+        kind=event.kind.value,
         path=event.to,
         language=event.language,
     )
-    state.sidecars[sidecar_id] = sidecar
+    state_delta: dict[str, object] = {
+        "sidecar_path": event.to,
+        "sidecar_id": sidecar_id,
+        "language": event.language,
+    }
     entry = _new_atomic_entry(
         resolved=resolved,
         run_id=run_id,
@@ -377,11 +385,7 @@ def _handle_create_sidecar(
         action=TimelineActionName.CREATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
-        state_delta={
-            "sidecar_path": event.to,
-            "sidecar_id": sidecar_id,
-            "language": event.language,
-        },
+        state_delta=state_delta,
     )
     return (entry,)
 
