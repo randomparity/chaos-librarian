@@ -107,7 +107,17 @@ _RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
 
 
 def _temp_sibling(output_path: Path, resolved_seed: int) -> Path:
-    """Return ``<output>.tmp.<resolved_seed>`` Path."""
+    """Return ``<stem>.tmp.<resolved_seed><suffix>`` sibling Path.
+
+    The suffix order matters: ffmpeg infers its muxer from the trailing
+    extension, so a ``.tmp.<seed>`` tail would defeat format detection
+    (#56). Keeping the original suffix at the end preserves ffmpeg's
+    auto-detection while still landing the temp file in the same
+    directory for ``Path.replace`` to atomically rename over the final
+    name. Files with no suffix get ``.tmp.<seed>`` appended unchanged.
+    """
+    if output_path.suffix:
+        return output_path.with_name(f"{output_path.stem}.tmp.{resolved_seed}{output_path.suffix}")
     return output_path.with_name(f"{output_path.name}.tmp.{resolved_seed}")
 
 

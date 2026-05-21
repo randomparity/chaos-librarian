@@ -41,8 +41,8 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #56: _temp_sibling produces .tmp.<seed> path that "
-    "ffmpeg 8.x cannot infer format from.",
+    reason="Blocked on #57 (fixture library/library path duplication) "
+    "and #58 (-ac stereo: ffmpeg expects integer channel count).",
     strict=False,
 )
 def test_version_evolution_end_to_end(tmp_path: Path) -> None:
@@ -65,11 +65,6 @@ def test_version_evolution_end_to_end(tmp_path: Path) -> None:
     assert len(asset_report.version_history) == 3
 
 
-@pytest.mark.xfail(
-    reason="Sprint 7 exit criterion #2 is blocked on #50 (poster/NFO handler), "
-    "#53 (kind=codec mismatch) and #56 (_temp_sibling ffmpeg format).",
-    strict=False,
-)
 def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
     """EXIT CRITERION #2. Poster + NFO + embed + rename."""
     out = tmp_path / "run-002"
@@ -93,8 +88,8 @@ def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #56: _temp_sibling produces .tmp.<seed> path that "
-    "ffmpeg 8.x cannot infer format from.",
+    reason="Blocked on #57: fixture root path library/movies duplicates "
+    "library/ under the run dir.",
     strict=False,
 )
 def test_remux_container_real(tmp_path: Path) -> None:
@@ -107,8 +102,8 @@ def test_remux_container_real(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #56: _temp_sibling produces .tmp.<seed> path that "
-    "ffmpeg 8.x cannot infer format from.",
+    reason="Blocked on #57: fixture root path library/movies duplicates "
+    "library/ under the run dir.",
     strict=False,
 )
 def test_edit_metadata_real(tmp_path: Path) -> None:
@@ -137,8 +132,8 @@ def test_edit_metadata_real(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #56: _temp_sibling produces .tmp.<seed> path that "
-    "ffmpeg 8.x cannot infer format from.",
+    reason="Blocked on #57 (fixture library/library path duplication) "
+    "and #59 (extract_subtitle ffmpeg 8.x stream-specifier syntax).",
     strict=False,
 )
 def test_embed_then_extract_round_trip(tmp_path: Path) -> None:
@@ -173,8 +168,8 @@ def test_remove_sidecar_real(tmp_path: Path) -> None:
 
 
 @pytest.mark.xfail(
-    reason="Blocked on #56: _temp_sibling produces .tmp.<seed> path that "
-    "ffmpeg 8.x cannot infer format from.",
+    reason="Blocked on #57: fixture root path library/movies duplicates "
+    "library/ under the run dir.",
     strict=False,
 )
 def test_subtitle_ops_on_mp4_asset_use_mov_text(tmp_path: Path) -> None:
