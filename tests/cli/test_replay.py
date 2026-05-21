@@ -161,6 +161,18 @@ def _fake_materialize_one_asset(
     )
 
 
+def _make_materialized_run_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    _patch_run_replay_materializer(monkeypatch)
+    source_bundle = _make_wall_clock_fixture(tmp_path, applied_events=1)
+    source = tmp_path / "source"
+    first_replay = runner.invoke(
+        app,
+        ["replay", str(source_bundle / "replay.json"), "--out", str(source)],
+    )
+    assert first_replay.exit_code == 0, first_replay.stdout + first_replay.stderr
+    return source
+
+
 class TestReplayHappyPath:
     """replay reproduces a fixture from its bundle.
 
@@ -404,6 +416,48 @@ class TestReplayRunBundles:
         assert (out / "manifest.current.json").exists()
         replay_payload = json.loads((out / "replay.json").read_text())
         assert replay_payload["execution_mode"] == "run"
+
+    def test_replay_run_bundle_compares_against_normalized_output(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        source = _make_materialized_run_fixture(monkeypatch, tmp_path)
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            [
+                "replay",
+                str(source / "replay.json"),
+                "--out",
+                str(out),
+                "--against",
+                str(source),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["compared_against"] == str(source)
+
+    def test_replay_run_bundle_against_catches_library_divergence(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        source = _make_materialized_run_fixture(monkeypatch, tmp_path)
+        (source / "library" / "movies-hd" / "moved.mkv").write_bytes(b"tampered")
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            [
+                "replay",
+                str(source / "replay.json"),
+                "--out",
+                str(out),
+                "--against",
+                str(source),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 6
+        assert json.loads(result.stderr)["error_code"] == E_REPLAY_DIVERGENCE
 
     def test_replay_rejects_run_bundle_prefix_past_timeline(self, tmp_path: Path) -> None:
         run_dir = _make_wall_clock_fixture(tmp_path, applied_events=999)

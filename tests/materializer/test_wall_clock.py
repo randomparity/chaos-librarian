@@ -18,7 +18,11 @@ from chaos_librarian.contract.materialization import FilesystemAction, Materiali
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import wall_clock
-from chaos_librarian.materializer.errors import TimelineUnsupportedError
+from chaos_librarian.materializer.errors import (
+    FilesystemActionError,
+    MediaActionError,
+    TimelineUnsupportedError,
+)
 
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
 
@@ -281,11 +285,93 @@ def test_mid_slow_copy_timeout_executes_commit_and_marks_overrun(
         duration="5ns",
         speed="1x",
     )
-    assert fake_clock.now_ns == 5
+    assert fake_clock.now_ns == 10
     assert artifacts.replay_bundle.applied_events == 2
     assert artifacts.materialization_report.overran_duration is True
+    assert artifacts.materialization_report.actual_duration_ns == 10
     assert (out_dir / "library" / "movies-hd" / "final.mkv").read_bytes() == b"asset_main-bytes"
     assert not (out_dir / "library" / "movies-hd" / "final.mkv.part").exists()
+
+
+def test_filesystem_failure_writes_run_failure_metadata(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: move_001
+                at: 0ns
+                action: move_asset
+                target: asset_main
+                to: movies-hd/moved.mkv
+        """,
+    )
+    out_dir = tmp_path / "run"
+
+    def fail_dispatch(ctx, entry):
+        del ctx
+        raise FilesystemActionError(
+            "move failed",
+            event_id=entry.event_id,
+            action=TimelineActionName(entry.action),
+            asset_id=entry.target_ids[0],
+            cause=OSError("disk full"),
+        )
+
+    monkeypatch.setattr(wall_clock, "_dispatch_one", fail_dispatch)
+    with pytest.raises(FilesystemActionError, match="move failed"):
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    sentinel = json.loads((out_dir / ".chaos-librarian-run").read_text(encoding="utf-8"))
+    assert report["outcome"] == "fs_failed"
+    assert report["execution_mode"] == "run"
+    assert report["requested_duration_ns"] == 1
+    assert sentinel["state"] == "complete"
+    assert not (out_dir / "library").exists()
+
+
+def test_media_failure_writes_run_failure_metadata(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: sidecar_001
+                at: 0ns
+                action: create_sidecar
+                target: asset_main
+                to: movies-hd/asset_main.nfo
+                kind: nfo
+        """,
+    )
+    out_dir = tmp_path / "run"
+
+    def fail_media(ctx, entry):
+        del ctx
+        raise MediaActionError(
+            "sidecar failed",
+            event_id=entry.event_id,
+            action=TimelineActionName(entry.action),
+            asset_id=entry.target_ids[0],
+            cause=RuntimeError("generator failed"),
+        )
+
+    monkeypatch.setattr(wall_clock, "apply_media_action", fail_media)
+    with pytest.raises(MediaActionError, match="sidecar failed"):
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    sentinel = json.loads((out_dir / ".chaos-librarian-run").read_text(encoding="utf-8"))
+    assert report["outcome"] == "media_failed"
+    assert report["execution_mode"] == "run"
+    assert report["failures"][0]["stage"] == "media"
+    assert sentinel["state"] == "complete"
+    assert not (out_dir / "library").exists()
 
 
 def test_slow_copy_partial_growth_writes_exact_prefix(tmp_path: Path) -> None:

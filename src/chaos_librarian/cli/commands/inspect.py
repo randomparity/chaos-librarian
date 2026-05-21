@@ -12,6 +12,8 @@ from chaos_librarian.cli._envelope import E_SENTINEL_INVALID, emit_cli_error
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.manifest import Manifest
+from chaos_librarian.contract.replay_bundle import ExecutionMode
+from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.engine import (
     SentinelInvalidError,
     resolve_timeline,
@@ -76,10 +78,16 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     scenario = run_input.scenario
     resolved_timeline = resolve_timeline(scenario)
     boundaries = step_boundaries(resolved_timeline)
-    if bundle.applied_events == 0:
+    applied_events = bundle.applied_events
+    if (
+        sentinel.state is RunSentinelState.IN_PROGRESS
+        and bundle.execution_mode is ExecutionMode.RUN
+    ):
+        applied_events = journal_entries
+    if applied_events == 0:
         applied_steps = 0
-    elif bundle.applied_events in boundaries:
-        applied_steps = boundaries.index(bundle.applied_events) + 1
+    elif applied_events in boundaries:
+        applied_steps = boundaries.index(applied_events) + 1
     else:
         # Off-boundary detection here is informational; the integrity
         # error fires at replay/step time, not inspect time.
@@ -91,7 +99,7 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
         "schema_version": bundle.schema_version,
         "execution_mode": bundle.execution_mode.value,
         "journal_entries": journal_entries,
-        "applied_events": bundle.applied_events,
+        "applied_events": applied_events,
         "applied_steps": applied_steps,
         "steps_remaining": steps_remaining,
         "counts": {

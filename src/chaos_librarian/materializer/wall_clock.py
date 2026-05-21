@@ -15,8 +15,10 @@ from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import (
+    FailureStage,
     FilesystemAction,
     MaterializationExecutionMode,
+    MaterializationFailure,
     MaterializedAsset,
     MediaAction,
     Outcome,
@@ -40,6 +42,7 @@ from chaos_librarian.materializer.capabilities import (
     detect_capabilities,
 )
 from chaos_librarian.materializer.errors import (
+    FilesystemActionError,
     MediaActionError,
     ScenarioValidationError,
     TimelineUnsupportedError,
@@ -78,6 +81,7 @@ from chaos_librarian.materializer.scheduler import (
 from chaos_librarian.materializer.synthesis import materialize_one_asset
 from chaos_librarian.materializer.writer import (
     WallClockBaselineMetadata,
+    cleanup_failed_phase_b_run,
     finalize_materialize_run,
     publish_wall_clock_baseline,
 )
@@ -362,40 +366,58 @@ def _run_timed_phase(
     commit_times = _slow_copy_commit_times(journal)
     overran_duration = False
 
-    while cursor < len(journal):
-        now_ns = _monotonic_ns()
-        logical_ns = logical_now_ns(now_ns - start_wall_ns, speed)
-        _grow_active_slow_copies(
-            run_context.out_dir / "library",
-            state.slow_copies,
-            logical_ns=logical_ns,
-        )
-        if now_ns >= deadline_ns:
-            break
-        due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
-        if due_count == 0:
-            _sleep_until(_next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed))
-            continue
-        for _ in range(due_count):
-            if _monotonic_ns() >= deadline_ns:
+    try:
+        while cursor < len(journal):
+            now_ns = _monotonic_ns()
+            logical_ns = logical_now_ns(now_ns - start_wall_ns, speed)
+            _grow_active_slow_copies(
+                run_context.out_dir / "library",
+                state.slow_copies,
+                logical_ns=logical_ns,
+            )
+            if now_ns >= deadline_ns:
                 break
-            cursor = _execute_and_record(
+            due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
+            if due_count == 0:
+                _sleep_until(_next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed))
+                continue
+            for _ in range(due_count):
+                if _monotonic_ns() >= deadline_ns:
+                    break
+                cursor = _execute_and_record(
+                    cursor=cursor,
+                    journal=journal,
+                    state=state,
+                    commit_times=commit_times,
+                    executed_journal=executed_journal,
+                    out_dir=run_context.out_dir,
+                )
+        if state.slow_copies:
+            cursor = _finish_active_slow_copies(
                 cursor=cursor,
                 journal=journal,
                 state=state,
-                commit_times=commit_times,
+                start_wall_ns=start_wall_ns,
+                speed=speed,
                 executed_journal=executed_journal,
                 out_dir=run_context.out_dir,
             )
-    if state.slow_copies:
-        cursor = _finish_active_slow_copies(
-            cursor=cursor,
-            journal=journal,
+            overran_duration = True
+    except (FilesystemActionError, MediaActionError) as exc:
+        actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
+        _finalize_wall_clock_phase_b_failure(
+            run_context=run_context,
+            scenario=scenario,
+            phase_a=phase_a,
             state=state,
             executed_journal=executed_journal,
-            out_dir=run_context.out_dir,
+            requested_duration_ns=requested_duration_ns,
+            actual_duration_ns=actual_duration_ns,
+            speed=speed,
+            overran_duration=actual_duration_ns > requested_duration_ns,
+            exc=exc,
         )
-        overran_duration = True
+        raise
     if cursor >= len(journal):
         _sleep_until(deadline_ns)
     actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
@@ -443,11 +465,19 @@ def _next_wake_ns(
     next_entry: JournalEntry,
     speed: SpeedMultiplier,
 ) -> int:
+    return min(deadline_ns, _entry_due_wall_ns(start_wall_ns, next_entry, speed))
+
+
+def _entry_due_wall_ns(
+    start_wall_ns: int,
+    next_entry: JournalEntry,
+    speed: SpeedMultiplier,
+) -> int:
     logical_delta = max(0, next_entry.logical_time_ns)
     wall_offset = logical_delta * speed.denominator // speed.numerator
     if logical_delta * speed.denominator % speed.numerator:
         wall_offset += 1
-    return min(deadline_ns, start_wall_ns + wall_offset)
+    return start_wall_ns + wall_offset
 
 
 def _execute_and_record(
@@ -562,6 +592,8 @@ def _finish_active_slow_copies(
     cursor: int,
     journal: tuple[JournalEntry, ...],
     state: _DispatchState,
+    start_wall_ns: int,
+    speed: SpeedMultiplier,
     executed_journal: list[JournalEntry],
     out_dir: Path,
 ) -> int:
@@ -573,6 +605,9 @@ def _finish_active_slow_copies(
         assert isinstance(entry, CommittedJournalEntry)
         if entry.related_event_id not in state.slow_copies:
             break
+        _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
+        logical_ns = logical_now_ns(_monotonic_ns() - start_wall_ns, speed)
+        _grow_active_slow_copies(out_dir / "library", state.slow_copies, logical_ns=logical_ns)
         cursor = _execute_and_record(
             cursor=cursor,
             journal=journal,
@@ -634,26 +669,12 @@ def _finalize_wall_clock_run(
     speed: SpeedMultiplier,
     overran_duration: bool,
 ) -> MaterializeArtifacts:
-    prefix_artifacts = run_plan(
-        run_input=run_context.run_input,
-        validation_report=run_context.plan_artifacts.validation_report,
-        resolved_seed_override=run_context.plan_artifacts.replay_bundle.resolved_seed,
-        run_id_override=run_context.run_id,
-        applied_events_override=len(executed_journal),
-    )
-    _stamp_phase_a_metadata(prefix_artifacts.current_manifest, scenario, phase_a)
-    augment_timeline_sidecars(
-        prefix_artifacts.current_manifest,
-        state.fs_ctx.phase_b_sidecar_hashes,
-    )
-    augment_versions(prefix_artifacts.current_manifest, state.media_ctx.post_phase_b_versions)
-    augment_updated_sidecars(
-        prefix_artifacts.current_manifest,
-        state.media_ctx.post_phase_b_sidecars,
-    )
-    final_artifacts = dataclasses.replace(
-        prefix_artifacts,
-        journal=tuple(executed_journal),
+    final_artifacts = _final_artifacts_for_executed_prefix(
+        run_context=run_context,
+        scenario=scenario,
+        phase_a=phase_a,
+        state=state,
+        executed_journal=executed_journal,
     )
     finished_at = _utc_now()
     materialization_report = build_report(
@@ -675,7 +696,7 @@ def _finalize_wall_clock_run(
     )
     replay_bundle = _build_final_replay_bundle(
         run_context=run_context,
-        artifacts=prefix_artifacts,
+        artifacts=final_artifacts,
         executed_journal=executed_journal,
         created_at=finished_at,
     )
@@ -694,6 +715,108 @@ def _finalize_wall_clock_run(
         current_manifest=final_artifacts.current_manifest,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
+    )
+
+
+def _finalize_wall_clock_phase_b_failure(
+    *,
+    run_context: RunContext,
+    scenario: Scenario,
+    phase_a: _PhaseAResult,
+    state: _DispatchState,
+    executed_journal: list[JournalEntry],
+    requested_duration_ns: int,
+    actual_duration_ns: int,
+    speed: SpeedMultiplier,
+    overran_duration: bool,
+    exc: FilesystemActionError | MediaActionError,
+) -> None:
+    final_artifacts = _final_artifacts_for_executed_prefix(
+        run_context=run_context,
+        scenario=scenario,
+        phase_a=phase_a,
+        state=state,
+        executed_journal=executed_journal,
+    )
+    finished_at = _utc_now()
+    outcome = Outcome.MEDIA_FAILED if isinstance(exc, MediaActionError) else Outcome.FS_FAILED
+    materialization_report = build_report(
+        outcome=outcome,
+        run_id=run_context.run_id,
+        caps=run_context.caps,
+        started_at=run_context.started_at,
+        finished_at=finished_at,
+        invocations=state.media_ctx.invocations,
+        materialized=phase_a.materialized,
+        failures=[_failure_record(exc)],
+        filesystem_actions=state.filesystem_actions,
+        media_actions=state.media_actions,
+        requested_duration_ns=requested_duration_ns,
+        actual_duration_ns=actual_duration_ns,
+        speed_multiplier=speed.normalized,
+        overran_duration=overran_duration,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_final_replay_bundle(
+        run_context=run_context,
+        artifacts=final_artifacts,
+        executed_journal=executed_journal,
+        created_at=finished_at,
+    )
+    cleanup_failed_phase_b_run(
+        run_context.out_dir,
+        build_metadata(
+            plan_artifacts=final_artifacts,
+            scenario_yaml_bytes=run_context.run_input.raw_bytes,
+            materialization_report=materialization_report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(run_context, RunSentinelState.COMPLETE),
+        ),
+    )
+
+
+def _final_artifacts_for_executed_prefix(
+    *,
+    run_context: RunContext,
+    scenario: Scenario,
+    phase_a: _PhaseAResult,
+    state: _DispatchState,
+    executed_journal: list[JournalEntry],
+) -> PlanArtifacts:
+    prefix_artifacts = run_plan(
+        run_input=run_context.run_input,
+        validation_report=run_context.plan_artifacts.validation_report,
+        resolved_seed_override=run_context.plan_artifacts.replay_bundle.resolved_seed,
+        run_id_override=run_context.run_id,
+        applied_events_override=len(executed_journal),
+    )
+    _stamp_phase_a_metadata(prefix_artifacts.current_manifest, scenario, phase_a)
+    augment_timeline_sidecars(
+        prefix_artifacts.current_manifest,
+        state.fs_ctx.phase_b_sidecar_hashes,
+    )
+    augment_versions(prefix_artifacts.current_manifest, state.media_ctx.post_phase_b_versions)
+    augment_updated_sidecars(
+        prefix_artifacts.current_manifest,
+        state.media_ctx.post_phase_b_sidecars,
+    )
+    return dataclasses.replace(prefix_artifacts, journal=tuple(executed_journal))
+
+
+def _failure_record(exc: FilesystemActionError | MediaActionError) -> MaterializationFailure:
+    if isinstance(exc, MediaActionError):
+        stage = FailureStage.MEDIA
+        invocation_index = exc.tool_invocation_index
+    else:
+        stage = FailureStage.FILESYSTEM
+        invocation_index = None
+    cause = getattr(exc, "cause", None)
+    return MaterializationFailure(
+        asset_id=exc.asset_id,
+        stage=stage,
+        exit_code=None,
+        stderr_tail=str(cause) if cause is not None else "",
+        invocation_index=invocation_index,
     )
 
 
