@@ -948,5 +948,3 @@ _STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
 
 
 SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
-# add_file remains excluded; preflight rejects it with
-# E_MATERIALIZE_TIMELINE_UNSUPPORTED.

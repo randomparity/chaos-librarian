@@ -28,7 +28,6 @@ from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     ScenarioValidationError,
-    TimelineUnsupportedError,
     ToolFailedError,
     UnsupportedMaterializationError,
 )
@@ -108,12 +107,11 @@ def test_materialize_filesystem_only_timeline_runs_phase_b(
     assert len(report.filesystem_actions) == 2
 
 
-def test_materialize_add_file_rejected_at_preflight(
+def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: ``add_file`` is the one action still outside SUPPORTED_S7_ACTIONS.
-    ``preflight_timeline`` rejects with E_MATERIALIZE_TIMELINE_UNSUPPORTED
-    before any run-dir allocation — the lazy-allocation invariant."""
+    """WHY: add_file restores a deleted asset, and materialize must use
+    one UUID4 run_id across journal, replay bundle, sentinel, and report."""
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
@@ -158,10 +156,21 @@ def test_materialize_add_file_rejected_at_preflight(
         "    to: movies-hd/new.mkv\n"
     )
     out = tmp_path / "run-001"
-    with pytest.raises(TimelineUnsupportedError) as exc_info:
-        materialize_scenario(scenario_path, out)
-    assert not out.exists()  # lazy allocation invariant
-    assert exc_info.value.payload["action"] == "add_file"
+    artifacts = materialize_scenario(scenario_path, out)
+    library = out / "library"
+    assert not (library / "movies-hd" / "asset_main.mkv").exists()
+    assert (library / "movies-hd" / "new.mkv").read_bytes() == b"x"
+    assert artifacts.replay_bundle.run_id == artifacts.materialization_report.run_id
+
+    run_id = str(artifacts.materialization_report.run_id)
+    journal = [json.loads(line) for line in (out / "journal.jsonl").read_text().splitlines()]
+    replay_payload = json.loads((out / "replay.json").read_text())
+    report_payload = json.loads((out / "materialization.json").read_text())
+    sentinel_payload = json.loads((out / ".chaos-librarian-run").read_text())
+    assert {entry["run_id"] for entry in journal} == {run_id}
+    assert replay_payload["run_id"] == run_id
+    assert report_payload["run_id"] == run_id
+    assert sentinel_payload["run_id"] == run_id
 
 
 def test_materialize_phase_b_oserror_aborts_and_cleans_up(

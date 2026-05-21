@@ -14,6 +14,7 @@ from collections.abc import Callable
 from typing import Final
 
 from chaos_librarian.contract.scenario import (
+    AddFileEvent,
     ArchiveFileEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
@@ -42,6 +43,7 @@ type _TerminalEvent = (
     MoveAssetEvent
     | RenameFileEvent
     | DeleteFileEvent
+    | AddFileEvent
     | CreateSidecarEvent
     | SlowCopyStartEvent
     | SlowCopyCommitEvent
@@ -221,6 +223,9 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
     TimelineActionName.DELETE_FILE: lambda: DeleteFileEvent(
         id="ev", at="0ns", target="asset_hd_main"
     ),
+    TimelineActionName.ADD_FILE: lambda: AddFileEvent(
+        id="ev", at="1ns", target="asset_hd_main", to="movies-hd/restored.mkv"
+    ),
     TimelineActionName.CREATE_SIDECAR: lambda: CreateSidecarEvent(
         id="ev",
         at="0ns",
@@ -357,6 +362,18 @@ def _prepare_pending_slow_copy(state: WorldState) -> None:
     )
 
 
+def _prepare_deleted_asset(state: WorldState) -> None:
+    """Pre-apply delete_file so ``add_file`` can restore a missing asset."""
+    delete_event = DeleteFileEvent(id="prep_delete", at="0ns", target="asset_hd_main")
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(at_ns=0, declared_index=0, event=delete_event),
+        ids=IdAllocator(TraceRecorder()),
+        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
+        scenario_id="sc_test",
+    )
+
+
 def _prepare_pending_sidecar(state: WorldState) -> None:
     """Pre-apply create_sidecar so the embed/remove/update terminal can resolve it.
 
@@ -405,6 +422,8 @@ def _minimal_scenario_for_action(
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
     if action is TimelineActionName.SLOW_COPY_COMMIT:
         _prepare_pending_slow_copy(state)
+    if action is TimelineActionName.ADD_FILE:
+        _prepare_deleted_asset(state)
     if action in _NEEDS_PENDING_SIDECAR:
         _prepare_pending_sidecar(state)
 

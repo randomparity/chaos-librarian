@@ -1159,11 +1159,11 @@ def test_stdlib_actions_constant_includes_remove_sidecar():
     # Sprint 6's set plus REMOVE_SIDECAR (stdlib op), minus CREATE_SIDECAR
     # (moved to _MEDIA_ACTIONS in Sprint 7).
     assert TimelineActionName.REMOVE_SIDECAR in _STDLIB_ACTIONS
+    assert TimelineActionName.ADD_FILE in _STDLIB_ACTIONS
     assert TimelineActionName.MOVE_ASSET in _STDLIB_ACTIONS  # from S6
     assert TimelineActionName.CREATE_SIDECAR not in _STDLIB_ACTIONS
 
 
 def test_supported_s7_actions_union():
     assert SUPPORTED_S7_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS
-    # add_file remains excluded.
-    assert TimelineActionName.ADD_FILE not in SUPPORTED_S7_ACTIONS
+    assert TimelineActionName.ADD_FILE in SUPPORTED_S7_ACTIONS

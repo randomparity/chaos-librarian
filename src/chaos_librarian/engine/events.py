@@ -58,6 +58,7 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
     TimelineActionName.RENAME_FILE: frozenset({"from_path", "to_path"}),
     TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
+    TimelineActionName.ADD_FILE: frozenset({"added_path"}),
     TimelineActionName.CREATE_SIDECAR: frozenset(
         {"sidecar_path", "sidecar_id", "language", "kind"}
     ),
@@ -98,9 +99,8 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
 """Per-action contract for emitted ``state_delta`` keys.
 
 Each handler MUST emit at least these keys; extras are allowed for forward
-compatibility. ``add_file`` is intentionally absent (deferred to Sprint 7);
-``move_between_roots`` lands alongside its handler. ``create_sidecar``
-includes ``language`` and ``slow_copy_start`` includes
+compatibility. ``create_sidecar`` includes ``language`` and
+``slow_copy_start`` includes
 ``initial_path_at_start`` so Phase B and ``derive_path_history`` can drive
 purely from the journal.
 

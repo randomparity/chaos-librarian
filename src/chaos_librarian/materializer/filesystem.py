@@ -52,6 +52,7 @@ class _PhaseBContext:
     resolved_seed: int
     pending_slow_copy: dict[str, _PendingSlowCopy] = field(default_factory=dict)
     phase_b_sidecar_hashes: dict[str, str] = field(default_factory=dict)
+    restoration_cache: dict[str, bytes] = field(default_factory=dict)
 
 
 def apply_phase_b(
@@ -169,13 +170,34 @@ def _delete_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Unlink the file at ``state_delta['removed_path']``."""
     asset_id = entry.target_ids[0]
     removed_path = str(entry.state_delta["removed_path"])
-    (ctx.library_root / removed_path).unlink()
+    removed = ctx.library_root / removed_path
+    ctx.restoration_cache[asset_id] = removed.read_bytes()
+    removed.unlink()
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName.DELETE_FILE,
         target_asset_id=asset_id,
         from_path=removed_path,
         to_path=None,
+        temp_path=None,
+        duration_ns=0,
+    )
+
+
+def _add_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+    """Restore bytes removed by an earlier ``delete_file`` event."""
+    asset_id = entry.target_ids[0]
+    added_path = str(entry.state_delta["added_path"])
+    data = ctx.restoration_cache.pop(asset_id)
+    dst = ctx.library_root / added_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_bytes(data)
+    return FilesystemAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.ADD_FILE,
+        target_asset_id=asset_id,
+        from_path=None,
+        to_path=added_path,
         temp_path=None,
         duration_ns=0,
     )
@@ -262,6 +284,7 @@ _DISPATCH: Final[
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,
     TimelineActionName.DELETE_FILE: _delete_file,
+    TimelineActionName.ADD_FILE: _add_file,
     TimelineActionName.REMOVE_SIDECAR: _remove_sidecar,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,

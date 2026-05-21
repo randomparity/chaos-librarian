@@ -127,6 +127,42 @@ def test_apply_delete_file_unlinks(tmp_path: Path) -> None:
     assert actions[0].to_path is None
 
 
+def test_apply_delete_then_add_file_restores_bytes(tmp_path: Path) -> None:
+    """WHY: in materialize/run, add_file means a previously deleted file
+    reappears. Phase B must preserve the deleted bytes and write them to
+    the new path instead of synthesizing unrelated content."""
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    original = library / "movies-hd" / "asset_hd_main.mkv"
+    original.write_bytes(b"restored bytes")
+    journal = [
+        _atomic_entry(
+            event_id="del_001",
+            action=TimelineActionName.DELETE_FILE,
+            target="asset_hd_main",
+            state_delta={"removed_path": "movies-hd/asset_hd_main.mkv"},
+        ),
+        _atomic_entry(
+            event_id="add_001",
+            action=TimelineActionName.ADD_FILE,
+            target="asset_hd_main",
+            state_delta={"added_path": "movies-hd/restored.mkv"},
+        ),
+    ]
+    actions, _ = apply_phase_b(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+    assert not original.exists()
+    assert (library / "movies-hd" / "restored.mkv").read_bytes() == b"restored bytes"
+    assert [action.action for action in actions] == [
+        TimelineActionName.DELETE_FILE,
+        TimelineActionName.ADD_FILE,
+    ]
+
+
 def test_apply_archive_file_moves_to_archive_root(tmp_path: Path) -> None:
     """WHY: archive_file routes through the shared move helper but must
     emit an ARCHIVE_FILE discriminator and respect whichever destination
