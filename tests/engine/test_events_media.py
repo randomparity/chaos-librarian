@@ -9,7 +9,7 @@ import pytest
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
-from chaos_librarian.engine.events import apply_event
+from chaos_librarian.engine.events import _swap_extension, apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
 
@@ -345,6 +345,44 @@ class TestRemuxContainerHandler:
         assert to_path.endswith(".mp4")
         assert input_path == from_path
         assert output_path == to_path
+
+    def test_remux_from_container_ignores_dots_in_directory_names(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "e0",
+                    "at": "1s",
+                    "action": "remux_container",
+                    "target": "a0",
+                    "to_container": "mp4",
+                }
+            ]
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        loc_id = state.location_id_for_asset("a0")
+        state.locations[loc_id] = state.locations[loc_id].model_copy(
+            update={"path": "movies.with.dot/a0"}
+        )
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+
+        assert entry.state_delta["from_container"] == ""
+        assert entry.state_delta["to_path"] == "movies.with.dot/a0.mp4"
+
+
+@pytest.mark.parametrize(
+    ("path", "new_ext", "expected"),
+    [
+        ("library/movies-hd/x.mkv", "mp4", "library/movies-hd/x.mp4"),
+        ("file", "mp4", "file.mp4"),
+        ("foo.bar.mkv", "mp4", "foo.bar.mp4"),
+        ("/dir.with.dot/file", "mp4", "/dir.with.dot/file.mp4"),
+    ],
+)
+def test_swap_extension_uses_basename_only(path: str, new_ext: str, expected: str) -> None:
+    assert _swap_extension(path, new_ext) == expected
 
 
 class TestEditMetadataHandler:
