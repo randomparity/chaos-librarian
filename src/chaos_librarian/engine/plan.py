@@ -12,6 +12,7 @@ Sprint 4 wraps it in the public ``replay`` CLI command.
 from __future__ import annotations
 
 import hashlib
+import uuid
 from dataclasses import dataclass
 
 from chaos_librarian import __version__ as _chaos_librarian_version
@@ -62,6 +63,8 @@ def run_plan(
     validation_report: ValidationReport,
     resolved_seed_override: int | None = None,
     steps_limit: int | None = None,
+    run_id_override: uuid.UUID | None = None,
+    applied_events_override: int | None = None,
 ) -> PlanArtifacts:
     """Walk the scenario carried by ``run_input`` and assemble every plan-only artifact.
 
@@ -82,10 +85,18 @@ def run_plan(
             Values above ``len(step_boundaries(resolve_timeline(parsed)))``
             are clamped silently. A ``slow_copy_start`` + ``slow_copy_commit``
             adjacent pair counts as one step (advances together).
+        run_id_override: Internal-only. When set, use this materializer-owned
+            run id instead of deriving a deterministic plan-only id.
+        applied_events_override: Internal-only raw resolved-event count for
+            materializer-owned prefixes. Unlike ``steps_limit``, this is not
+            step-boundary translated and does not silently clamp.
 
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
+    if steps_limit is not None and applied_events_override is not None:
+        raise ValueError("steps_limit and applied_events_override are mutually exclusive")
+
     parsed = run_input.scenario
     resolved_seed = (
         resolved_seed_override if resolved_seed_override is not None else resolve_seed(parsed.seed)
@@ -98,17 +109,29 @@ def run_plan(
 
     resolved_timeline = resolve_timeline(parsed)
     boundaries = step_boundaries(resolved_timeline)
-    if steps_limit is not None and steps_limit <= 0:
+    if applied_events_override is not None:
+        if applied_events_override < 0:
+            raise ValueError("applied_events_override must be >= 0")
+        if applied_events_override > len(resolved_timeline):
+            raise ValueError(
+                "applied_events_override exceeds timeline length: "
+                f"{applied_events_override} > {len(resolved_timeline)}"
+            )
+        applied_events = applied_events_override
+    elif steps_limit is not None and steps_limit <= 0:
         applied_events = 0
     elif steps_limit is None or steps_limit >= len(boundaries):
         applied_events = boundaries[-1] if boundaries else 0
     else:
         applied_events = boundaries[steps_limit - 1]
 
-    run_id = compute_plan_only_run_id(
-        scenario_content_hash=run_input.content_hash,
-        resolved_seed=resolved_seed,
-    )
+    if run_id_override is not None:
+        run_id = run_id_override
+    else:
+        run_id = compute_plan_only_run_id(
+            scenario_content_hash=run_input.content_hash,
+            resolved_seed=resolved_seed,
+        )
 
     journal: list[JournalEntry] = []
     for resolved in resolved_timeline[:applied_events]:

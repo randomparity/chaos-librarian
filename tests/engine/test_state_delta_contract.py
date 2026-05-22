@@ -1,8 +1,8 @@
 """Parametrized lock for ``_STATE_DELTA_KEYS``.
 
-For every action in the Sprint-6-supported set, exercises the handler on a
-minimal scenario and asserts the emitted ``state_delta`` is a superset of
-the contract. Locks the surface against silent drift when future sprints
+For every action in the engine state-delta contract, exercises the handler
+on a minimal scenario and asserts the emitted ``state_delta`` is a superset
+of the contract. Locks the surface against silent drift when future sprints
 add or rename keys.
 """
 

@@ -1,5 +1,5 @@
 schema_version: 5
-scenario_id: mixed-supported-unsupported
+scenario_id: delete-add-restore
 seed: 11
 duration_scale: short
 
@@ -24,7 +24,7 @@ works:
               video:
                 source: mandelbrot
                 codec: h264
-                resolution: 720p
+                resolution: hd
               audio:
                 - codec: aac
                   channels: stereo

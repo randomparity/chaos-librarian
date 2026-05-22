@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import (
@@ -13,6 +14,7 @@ from chaos_librarian.contract import (
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import (
     FilesystemAction,
+    MaterializationExecutionMode,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
@@ -41,6 +43,11 @@ def build_report(
     failures: list[MaterializationFailure],
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
+    requested_duration_ns: int | None = None,
+    actual_duration_ns: int | None = None,
+    speed_multiplier: str | None = None,
+    overran_duration: bool = False,
+    execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE,
 ) -> MaterializationReport:
     return MaterializationReport(
         schema_version=MATERIALIZATION_SCHEMA_VERSION,
@@ -59,6 +66,11 @@ def build_report(
         failures=failures,
         filesystem_actions=filesystem_actions or [],
         media_actions=media_actions or [],
+        requested_duration_ns=requested_duration_ns,
+        actual_duration_ns=actual_duration_ns,
+        speed_multiplier=speed_multiplier,
+        overran_duration=overran_duration,
+        execution_mode=execution_mode,
     )
 
 
@@ -69,6 +81,9 @@ def build_replay_bundle(
     plan_artifacts: PlanArtifacts,
     caps: Capabilities,
     created_at: datetime,
+    execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN] = (
+        ExecutionMode.MATERIALIZE
+    ),
 ) -> MaterializeReplayBundle:
     return MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
@@ -78,7 +93,7 @@ def build_replay_bundle(
         resolved_seed=plan_artifacts.replay_bundle.resolved_seed,
         applied_events=plan_artifacts.replay_bundle.applied_events,
         journal_digest=plan_artifacts.replay_bundle.journal_digest,
-        execution_mode=ExecutionMode.MATERIALIZE,
+        execution_mode=execution_mode,
         created_at=created_at,
         toolchain=ToolchainInfo(
             ffmpeg=caps.ffmpeg.version,

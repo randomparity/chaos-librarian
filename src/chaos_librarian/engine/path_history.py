@@ -32,10 +32,9 @@ _FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 )
 """Actions whose journal entries describe an on-disk change.
 
-ADD_FILE stays in the set even though Sprint 6's materializer rejects it
-at preflight — plan-only journals are still allowed to contain add_file
-events, and path_history is a logical projection (not a materialize-only
-audit). Sprint 7 removes the materialize gate without touching this set.
+ADD_FILE stays in the set because delete-then-add represents a file
+disappearing and reappearing at a new path. path_history is a logical
+projection, not a materialize-only audit.
 """
 
 

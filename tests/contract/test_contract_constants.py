@@ -46,8 +46,8 @@ def test_asset_report_schema_version_bumped_to_4():
     assert ASSET_REPORT_SCHEMA_VERSION == 4
 
 
-def test_materialization_schema_version_bumped_to_4():
-    assert MATERIALIZATION_SCHEMA_VERSION == 4
+def test_materialization_schema_version_bumped_to_5():
+    assert MATERIALIZATION_SCHEMA_VERSION == 5
 
 
 def test_all_schema_versions_are_positive_integers() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import uuid
@@ -27,12 +28,15 @@ from chaos_librarian.contract.replay_bundle import (
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.contract.validation import ValidationReport
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer.writer import (
     SENTINEL_FILENAME,
     MaterializeMetadata,
+    WallClockBaselineMetadata,
     begin_materialize_run,
     cleanup_failed_phase_b_run,
     cleanup_failed_run,
+    publish_wall_clock_baseline,
 )
 
 
@@ -70,6 +74,63 @@ def test_begin_refuses_existing_out_dir(tmp_path: Path) -> None:
     except FileExistsError:
         return
     raise AssertionError("begin_materialize_run should refuse existing dirs")
+
+
+def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
+    """WHY: wall-clock run publishes a replay-valid baseline before
+    executing timed events. Interrupted runs must still expose coherent
+    baseline metadata without materialization.json."""
+    out_dir = tmp_path / "run"
+    staging = tmp_path / ".staging"
+    staging.mkdir()
+    (staging / "library").mkdir()
+    empty_journal_digest = hashlib.sha256(serialize_journal_bytes(())).hexdigest()
+    metadata = WallClockBaselineMetadata(
+        initial_manifest=Manifest(
+            schema_version=4,
+            works=[],
+            variants=[],
+            bundles=[],
+            assets=[],
+            versions=[],
+            locations=[],
+            sidecars=[],
+        ),
+        current_manifest=Manifest(
+            schema_version=4,
+            works=[],
+            variants=[],
+            bundles=[],
+            assets=[],
+            versions=[],
+            locations=[],
+            sidecars=[],
+        ),
+        validation_report=ValidationReport(schema_version=1, ok=True, scenario_id="x"),
+        replay_bundle=MaterializeReplayBundle(
+            schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+            chaos_librarian_version="0.1.0",
+            scenario="schema_version: 5\nscenario_id: x\n",
+            run_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
+            resolved_seed=1,
+            applied_events=0,
+            journal_digest=empty_journal_digest,
+            execution_mode=ExecutionMode.RUN,
+            created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
+            toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        ),
+        scenario_yaml_bytes=b"schema_version: 5\nscenario_id: x\n",
+        sentinel=_sentinel(RunSentinelState.IN_PROGRESS),
+    )
+    publish_wall_clock_baseline(staging, out_dir, metadata)
+    assert out_dir.exists()
+    assert not staging.exists()
+    assert (out_dir / "journal.jsonl").read_bytes() == b""
+    assert not (out_dir / "materialization.json").exists()
+    replay_payload = json.loads((out_dir / "replay.json").read_text(encoding="utf-8"))
+    assert replay_payload["execution_mode"] == "run"
+    assert replay_payload["applied_events"] == 0
+    assert replay_payload["journal_digest"] == empty_journal_digest
 
 
 def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:

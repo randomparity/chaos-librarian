@@ -45,10 +45,12 @@ __all__ = [
     "SENTINEL_FILENAME",
     "MaterializeMetadata",
     "MaterializeReports",
+    "WallClockBaselineMetadata",
     "begin_materialize_run",
     "cleanup_failed_phase_b_run",
     "cleanup_failed_run",
     "finalize_materialize_run",
+    "publish_wall_clock_baseline",
 ]
 
 
@@ -67,6 +69,18 @@ class MaterializeMetadata:
     journal_entries: Iterable[JournalEntry]
     validation_report: ValidationReport
     materialization_report: MaterializationReport
+    replay_bundle: MaterializeReplayBundle
+    scenario_yaml_bytes: bytes
+    sentinel: RunSentinel
+
+
+@dataclass(frozen=True, slots=True)
+class WallClockBaselineMetadata:
+    """Metadata written before wall-clock run starts applying timed events."""
+
+    initial_manifest: Manifest
+    current_manifest: Manifest
+    validation_report: ValidationReport
     replay_bundle: MaterializeReplayBundle
     scenario_yaml_bytes: bytes
     sentinel: RunSentinel
@@ -103,6 +117,30 @@ def finalize_materialize_run(
     _write_reports(out_dir, reports)
     # Sentinel last — the moment readers can trust the dir.
     replace_atomic_text(out_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))
+
+
+def publish_wall_clock_baseline(
+    staging_dir: Path,
+    out_dir: Path,
+    metadata: WallClockBaselineMetadata,
+) -> None:
+    """Populate staging metadata and atomically publish the baseline run dir."""
+    if out_dir.exists():
+        raise FileExistsError(f"refusing to write into existing directory: {out_dir}")
+    replace_atomic_bytes(staging_dir / "scenario.yaml", metadata.scenario_yaml_bytes)
+    replace_atomic_text(
+        staging_dir / "manifest.initial.json",
+        canonical_json(metadata.initial_manifest),
+    )
+    replace_atomic_text(
+        staging_dir / "manifest.current.json",
+        canonical_json(metadata.current_manifest),
+    )
+    replace_atomic_bytes(staging_dir / "journal.jsonl", b"")
+    replace_atomic_text(staging_dir / "validation.json", canonical_json(metadata.validation_report))
+    replace_atomic_text(staging_dir / "replay.json", canonical_json(metadata.replay_bundle))
+    replace_atomic_text(staging_dir / SENTINEL_FILENAME, canonical_json(metadata.sentinel))
+    staging_dir.replace(out_dir)
 
 
 def cleanup_failed_run(out_dir: Path, metadata: MaterializeMetadata) -> None:

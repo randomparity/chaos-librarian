@@ -31,7 +31,6 @@ from chaos_librarian.materializer.capabilities import (
 )
 from chaos_librarian.materializer.errors import (
     FilesystemActionError,
-    TimelineUnsupportedError,
 )
 from chaos_librarian.materializer.run import materialize_scenario
 from tests.integration.conftest import (
@@ -328,14 +327,19 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
     assert fs_failures[0].invocation_index is None
 
 
-def test_mixed_supported_unsupported_action_rejected(tmp_path: Path) -> None:
-    """WHY: ``preflight_timeline`` must reject any timeline that contains
-    even one unsupported action before run-dir allocation; the
-    lazy-allocation invariant means ``out_dir`` stays unallocated on
-    rejection."""
+def test_delete_add_file_restores_bytes(tmp_path: Path) -> None:
+    """WHY: add_file represents reappearance after delete. The restored
+    file must carry the same bytes produced in phase A, just at the new
+    path recorded by the timeline."""
     out_dir = tmp_path / "run-001"
-    with pytest.raises(TimelineUnsupportedError) as exc_info:
-        materialize_scenario(FIXTURE_DIR / "mixed-supported-unsupported.yaml", out_dir)
-    assert exc_info.value.error_code == "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
-    assert exc_info.value.payload["action"] == "add_file"
-    assert not out_dir.exists()
+    materialize_scenario(FIXTURE_DIR / "delete-add-restore.yaml", out_dir)
+    library = out_dir / "library"
+    restored = library / "movies-hd" / "Orbit.mkv"
+    assert not (library / "movies-hd" / "asset_main.mkv").exists()
+    assert restored.exists()
+    assert sha256_of(restored) == _initial_sha256_for("asset_main", out_dir)
+    report = _load_materialization_report(out_dir)
+    assert [action.action for action in report.filesystem_actions] == [
+        TimelineActionName.DELETE_FILE,
+        TimelineActionName.ADD_FILE,
+    ]

@@ -1,10 +1,8 @@
 """Tests for the materializer preflight gate.
 
-Sprint 6 introduced the action-set gate over the eight stdlib actions.
-Sprint 7 widens it to ``SUPPORTED_S7_ACTIONS`` (stdlib + remove_sidecar +
-the six media handlers); only ``add_file`` still raises
-``TimelineUnsupportedError`` with code ``E_MATERIALIZE_TIMELINE_UNSUPPORTED``
-before phase A allocates a run-dir.
+The action-set gate admits every timeline action the current materializer can
+execute. Unsupported actions must raise ``TimelineUnsupportedError`` before
+phase A allocates a run-dir.
 """
 
 from __future__ import annotations
@@ -12,7 +10,6 @@ from __future__ import annotations
 import pytest
 
 from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.materializer.errors import TimelineUnsupportedError
 from chaos_librarian.materializer.preflight import (
     SUPPORTED_S6_ACTIONS,
     preflight_timeline,
@@ -95,24 +92,16 @@ def test_preflight_timeline_accepts_supported_actions() -> None:
     preflight_timeline(scenario)  # should not raise
 
 
-def test_preflight_timeline_rejects_add_file() -> None:
-    """WHY: ``add_file`` lands in Sprint 7 alongside recipe-driven byte
-    synthesis. Until then, preflight must reject it with the
-    matrix-rejection error and the gate must fire on the first
-    unsupported event so phase A never allocates a run-dir."""
+def test_preflight_timeline_accepts_delete_then_add_file() -> None:
+    """WHY: ``add_file`` is restoration after a prior delete. Preflight
+    must allow the pair through so Phase B can restore the deleted bytes."""
     scenario = _scenario_with_timeline(
         [
             ("delete_file", "asset_hd_main", {}),
             ("add_file", "asset_hd_main", {"to": "movies-hd/new.mkv"}),
         ]
     )
-    with pytest.raises(TimelineUnsupportedError) as exc_info:
-        preflight_timeline(scenario)
-    assert exc_info.value.error_code == "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
-    assert exc_info.value.payload["action"] == "add_file"
-    supported = exc_info.value.payload["supported"]
-    assert isinstance(supported, list)
-    assert "add_file" not in supported
+    preflight_timeline(scenario)
 
 
 def test_preflight_timeline_empty_timeline_accepted() -> None:
@@ -122,15 +111,15 @@ def test_preflight_timeline_empty_timeline_accepted() -> None:
     preflight_timeline(scenario)
 
 
-def test_supported_s6_actions_excludes_add_file_and_reencodes() -> None:
-    """WHY: lock the explicit Sprint 6 / Sprint 7 split. ``add_file`` and
-    the ``reencode_*`` actions must stay outside the set until their own
-    sprint lifts them in."""
+def test_supported_s6_actions_includes_add_file_and_excludes_reencodes() -> None:
+    """WHY: current stdlib materialize support includes restoration via
+    ``add_file``. Media mutations stay outside this set because media.py
+    owns their dispatch."""
     supported_values = {a.value for a in SUPPORTED_S6_ACTIONS}
-    assert "add_file" not in supported_values
+    assert "add_file" in supported_values
     assert "reencode_video" not in supported_values
     assert "reencode_audio" not in supported_values
-    assert len(SUPPORTED_S6_ACTIONS) == 8
+    assert len(SUPPORTED_S6_ACTIONS) == 9
 
 
 @pytest.mark.parametrize(

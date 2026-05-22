@@ -165,6 +165,7 @@ SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.MOVE_ASSET,
         TimelineActionName.RENAME_FILE,
         TimelineActionName.DELETE_FILE,
+        TimelineActionName.ADD_FILE,
         TimelineActionName.CREATE_SIDECAR,
         TimelineActionName.SLOW_COPY_START,
         TimelineActionName.SLOW_COPY_COMMIT,
@@ -172,13 +173,10 @@ SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.MOVE_BETWEEN_ROOTS,
     }
 )
-# add_file is intentionally excluded; preflight rejects it with
-# E_MATERIALIZE_TIMELINE_UNSUPPORTED (deferred to Sprint 7 alongside
-# recipe-driven byte synthesis).
 
 
 def preflight_timeline(scenario: Scenario) -> None:
-    """Reject any timeline event whose action is outside SUPPORTED_S7_ACTIONS.
+    """Reject any timeline event outside current materialize support.
 
     Raised before phase A so the matrix-rejection contract (no run-dir
     allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.

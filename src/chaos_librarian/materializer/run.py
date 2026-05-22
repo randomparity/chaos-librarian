@@ -88,7 +88,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         ScenarioLoadError: ``scenario_path`` cannot be read or parsed.
         ScenarioValidationError: scenario fails semantic validation.
         TimelineUnsupportedError: a timeline event names an action outside
-            ``SUPPORTED_S7_ACTIONS`` (currently only ``add_file``).
+            current materialize support.
         UnsupportedMaterializationError: scenario declares a codec,
             container, or subtitle mode outside the Sprint 5 matrix.
         CapabilityGateError: ffmpeg / ffprobe / mkvtoolnix missing or
@@ -127,6 +127,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     preflight_timeline(scenario)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    run_id = uuid.uuid4()
     # materialize executes the whole timeline; pass ``steps_limit=None`` so
     # ``run_plan`` applies every resolved event. Sprint 5 capped this at 0
     # because phase B did not yet exist and the materializer reused the
@@ -134,6 +135,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     plan_artifacts = run_plan(
         run_input=run_input,
         validation_report=validation_report,
+        run_id_override=run_id,
         steps_limit=None,
     )
     for asset in iter_assets(scenario):
@@ -141,7 +143,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     ctx = RunContext(
         run_input=run_input,
         out_dir=out_dir,
-        run_id=uuid.uuid4(),
+        run_id=run_id,
         started_at=started_at,
         caps=caps,
         plan_artifacts=plan_artifacts,

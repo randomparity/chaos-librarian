@@ -2,22 +2,175 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import uuid
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from typer.testing import CliRunner
 
+from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
 from chaos_librarian.cli.app import app
+from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
+from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
+from chaos_librarian.contract.materialization import (
+    MaterializedAsset,
+    ToolchainInfo,
+    ToolInvocation,
+)
+from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel, RunSentinelState
+from chaos_librarian.engine import run_plan
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.resolution import resolve_timeline
+from chaos_librarian.engine.writer import canonical_json
+from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
+RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:
     out = tmp_path / "run"
     runner.invoke(app, ["plan", str(FIXTURE_DIR / name), "--out", str(out)])
     return out
+
+
+def _make_wall_clock_fixture(
+    tmp_path: Path,
+    *,
+    scenario_name: str = "identity-move-rename.yaml",
+    applied_events: int = 1,
+) -> Path:
+    scenario_path = FIXTURE_DIR / scenario_name
+    run_input = prepare_run_input(scenario_path)
+    report = run_validation(run_input)
+    safe_count = applied_events
+    if applied_events > len(resolve_timeline(run_input.scenario)):
+        safe_count = 0
+    artifacts = run_plan(
+        run_input=run_input,
+        validation_report=report,
+        run_id_override=RUN_ID,
+        applied_events_override=safe_count,
+    )
+    digest_entries = [
+        entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
+    ]
+    digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
+    bundle = MaterializeReplayBundle(
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+        chaos_librarian_version="0.1.0",
+        scenario=run_input.raw_bytes.decode("utf-8"),
+        run_id=RUN_ID,
+        resolved_seed=artifacts.replay_bundle.resolved_seed,
+        applied_events=applied_events,
+        journal_digest=digest,
+        execution_mode=ExecutionMode.RUN,
+        created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+    )
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "library").mkdir()
+    (run_dir / "replay.json").write_text(canonical_json(bundle), encoding="utf-8")
+    (run_dir / "journal.jsonl").write_bytes(serialize_journal_bytes(artifacts.journal))
+    (run_dir / "manifest.initial.json").write_text(
+        canonical_json(artifacts.initial_manifest), encoding="utf-8"
+    )
+    (run_dir / "manifest.current.json").write_text(
+        canonical_json(artifacts.current_manifest), encoding="utf-8"
+    )
+    (run_dir / "validation.json").write_text(canonical_json(report), encoding="utf-8")
+    (run_dir / SENTINEL_FILENAME).write_text(
+        canonical_json(
+            RunSentinel(
+                run_id=RUN_ID,
+                schema_version=RUN_SENTINEL_SCHEMA_VERSION,
+                created_by="chaos-librarian-test",
+                created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
+                state=RunSentinelState.COMPLETE,
+            )
+        ),
+        encoding="utf-8",
+    )
+    return run_dir
+
+
+def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
+    caps = Capabilities(
+        schema_version=1,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+        ),
+    )
+    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
+
+
+def _fake_materialize_one_asset(
+    asset,
+    resolved_seed,
+    out_dir: Path,
+    caps,
+    invocation_index: int,
+    *,
+    root_path: str,
+    skip_languages=frozenset(),
+):
+    del resolved_seed, caps, skip_languages
+    data = f"{asset.id}-bytes".encode()
+    path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    return (
+        ToolInvocation(
+            tool="ffmpeg",
+            version="7.1.1",
+            command=["ffmpeg", str(path)],
+            exit_code=0,
+            duration_ns=1,
+        ),
+        MaterializedAsset(
+            asset_id=asset.id,
+            location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
+            content_hash="sha256:" + hashlib.sha256(data).hexdigest(),
+            size_bytes=len(data),
+            duration_seconds=asset.duration_seconds,
+            invocation_index=invocation_index,
+        ),
+        ProbedMedia(
+            container=asset.container,
+            duration_seconds=asset.duration_seconds,
+            size_bytes=len(data),
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
+        ),
+        {},
+    )
+
+
+def _make_materialized_run_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    _patch_run_replay_materializer(monkeypatch)
+    source_bundle = _make_wall_clock_fixture(tmp_path, applied_events=1)
+    source = tmp_path / "source"
+    first_replay = runner.invoke(
+        app,
+        ["replay", str(source_bundle / "replay.json"), "--out", str(source)],
+    )
+    assert first_replay.exit_code == 0, first_replay.stdout + first_replay.stderr
+    return source
 
 
 class TestReplayHappyPath:
@@ -238,6 +391,114 @@ class TestReplayOfSteppedFixture:
             ["replay", str(paused / "replay.json"), "--out", str(out), "--against", str(paused)],
         )
         assert result.exit_code == 0, result.stdout + result.stderr
+
+
+class TestReplayRunBundles:
+    """Run-mode bundles replay by outcome, not byte-for-byte timing."""
+
+    def test_replay_accepts_run_bundle(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        _patch_run_replay_materializer(monkeypatch)
+        run_dir = _make_wall_clock_fixture(tmp_path, applied_events=1)
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            ["replay", str(run_dir / "replay.json"), "--out", str(out), "--json"],
+        )
+        assert result.exit_code == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        source_payload = json.loads((run_dir / "replay.json").read_text())
+        assert payload["run_id"] == source_payload["run_id"]
+        assert payload["compared_against"] is None
+        assert (out / "replay.json").exists()
+        assert (out / "journal.jsonl").exists()
+        assert (out / "manifest.current.json").exists()
+        replay_payload = json.loads((out / "replay.json").read_text())
+        assert replay_payload["execution_mode"] == "run"
+
+    def test_replay_run_bundle_compares_against_normalized_output(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        source = _make_materialized_run_fixture(monkeypatch, tmp_path)
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            [
+                "replay",
+                str(source / "replay.json"),
+                "--out",
+                str(out),
+                "--against",
+                str(source),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["compared_against"] == str(source)
+
+    def test_replay_run_bundle_against_catches_library_divergence(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        source = _make_materialized_run_fixture(monkeypatch, tmp_path)
+        (source / "library" / "movies-hd" / "moved.mkv").write_bytes(b"tampered")
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            [
+                "replay",
+                str(source / "replay.json"),
+                "--out",
+                str(out),
+                "--against",
+                str(source),
+                "--json",
+            ],
+        )
+        assert result.exit_code == 6
+        assert json.loads(result.stderr)["error_code"] == E_REPLAY_DIVERGENCE
+
+    def test_replay_rejects_run_bundle_prefix_past_timeline(self, tmp_path: Path) -> None:
+        run_dir = _make_wall_clock_fixture(tmp_path, applied_events=999)
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            ["replay", str(run_dir / "replay.json"), "--out", str(out), "--json"],
+        )
+        assert result.exit_code == 6
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == E_REPLAY_DIVERGENCE
+
+    def test_replay_rejects_run_bundle_mid_slow_copy_prefix(self, tmp_path: Path) -> None:
+        run_dir = _make_wall_clock_fixture(
+            tmp_path,
+            scenario_name="slow-copy.yaml",
+            applied_events=1,
+        )
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            ["replay", str(run_dir / "replay.json"), "--out", str(out), "--json"],
+        )
+        assert result.exit_code == 6
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == E_REPLAY_DIVERGENCE
+
+    def test_replay_rejects_run_bundle_tampered_digest(self, tmp_path: Path) -> None:
+        run_dir = _make_wall_clock_fixture(tmp_path, applied_events=1)
+        bundle_path = run_dir / "replay.json"
+        payload = json.loads(bundle_path.read_text())
+        payload["journal_digest"] = "0" * 64
+        bundle_path.write_text(json.dumps(payload))
+        out = tmp_path / "replay"
+        result = runner.invoke(
+            app,
+            ["replay", str(bundle_path), "--out", str(out), "--json"],
+        )
+        assert result.exit_code == 6
+        error = json.loads(result.stderr)
+        assert error["error_code"] == E_REPLAY_DIVERGENCE
 
 
 def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
