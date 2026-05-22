@@ -20,11 +20,13 @@ from chaos_librarian.contract.materialization import (
     ToolchainInfo,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.materializer import MaterializeArtifacts
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     ContainmentViolationError,
+    CorruptionActionError,
     ScenarioValidationError,
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
@@ -69,7 +71,7 @@ def _success(out: Path) -> MaterializeArtifacts:
     (out / "replay.json").write_text("{}", encoding="utf-8")
     return MaterializeArtifacts(
         current_manifest=Manifest(
-            schema_version=4,
+            schema_version=5,
             works=[],
             variants=[],
             bundles=[],
@@ -208,6 +210,42 @@ def test_run_materialization_error_exit_five(monkeypatch, tmp_path: Path) -> Non
         ],
     )
     assert result.exit_code == 5
+
+
+def test_cli_run_corruption_failure_exits_5_with_materialization_report_path(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    exc = CorruptionActionError(
+        "corrupt_container_header failed for event corrupt_header_001: short file",
+        event_id="corrupt_header_001",
+        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        cause=RuntimeError("short file"),
+        asset_id="asset_main",
+    )
+    monkeypatch.setattr(app_mod, "run_wall_clock_scenario", _raise(exc))
+    out = tmp_path / "run"
+
+    result = runner.invoke(
+        app,
+        [
+            "run",
+            str(FIXTURE_DIR / "identity-move-rename.yaml"),
+            "--out",
+            str(out),
+            "--duration",
+            "1s",
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 5
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_MATERIALIZE_CORRUPTION_FAILED"
+    assert payload["asset_id"] == "asset_main"
+    assert payload["materialization_report_path"] == str(out / "materialization.json")
+    assert payload["details"]["event_id"] == "corrupt_header_001"
+    assert payload["details"]["action"] == "corrupt_container_header"
 
 
 def test_run_filesystem_safety_error_exit_seven(monkeypatch, tmp_path: Path) -> None:

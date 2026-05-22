@@ -15,6 +15,7 @@ from chaos_librarian.clock import DurationParseError
 from chaos_librarian.materializer import (
     CapabilityGateError,
     ContainmentViolationError,
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ProbeParseError,
@@ -70,6 +71,7 @@ def run(
         ProbeParseError,
         FilesystemActionError,
         MediaActionError,
+        CorruptionActionError,
     ) as exc:
         emit_materialize_error(exc, json_output=json_output, run_dir=out)
         raise typer.Exit(code=5) from exc

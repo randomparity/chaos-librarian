@@ -42,6 +42,23 @@ _RUN_REPLAY_COMPARE_KEYS = frozenset(
         "execution_mode",
     }
 )
+_CORRUPTION_COMPARE_FIELDS = (
+    "event_id",
+    "action",
+    "target_asset_id",
+    "input_path",
+    "output_path",
+    "input_version_id",
+    "output_version_id",
+    "input_content_hash",
+    "output_content_hash",
+    "corruptor",
+    "byte_start",
+    "byte_count",
+    "seed_material",
+    "probe_outcome",
+    "probe_error_tail",
+)
 
 
 @app.command()
@@ -176,8 +193,30 @@ def compare_run_replay(left_dir: Path, right_dir: Path) -> FixtureDiff:
         normalizer=lambda data: {key: data.get(key) for key in _RUN_REPLAY_COMPARE_KEYS},
     )
     _compare_journal(diffs, left_dir, right_dir)
+    _compare_json(
+        diffs,
+        left_dir,
+        right_dir,
+        "materialization.json",
+        normalizer=_normalize_materialization_for_run_replay,
+    )
     _compare_tree_bytes(diffs, left_dir, right_dir, "library")
     return FixtureDiff(left_dir=left_dir, right_dir=right_dir, files=tuple(diffs))
+
+
+def _normalize_materialization_for_run_replay(data: dict[str, object]) -> dict[str, object]:
+    actions = data.get("corruption_actions", [])
+    if not isinstance(actions, list):
+        actions = []
+    return {
+        "outcome": data.get("outcome"),
+        "execution_mode": data.get("execution_mode"),
+        "corruption_actions": [
+            {field: action.get(field) for field in _CORRUPTION_COMPARE_FIELDS}
+            for action in actions
+            if isinstance(action, dict)
+        ],
+    }
 
 
 def _emit_replay_diff(diff: FixtureDiff, *, run_id: str, json_output: bool) -> None:
