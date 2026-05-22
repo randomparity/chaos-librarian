@@ -21,15 +21,15 @@ The sprint ships:
 1. `chaos_librarian.adapter` as a Python package for test suites.
 2. `observed-state.schema.json` as the consumer-export contract.
 3. `divergence.schema.json` as the comparison report contract.
-4. `chaos-librarian compare <run-dir> observed-state.json --json` as a thin
-   CLI wrapper over the Python API.
+4. `chaos-librarian compare <run-dir> observed-state.json --mode final-state
+   --json` as a thin CLI wrapper over the Python API.
 5. Recipe docs for scanner, prober, watcher, daemon churn, and CI profiles.
 
 Exit criteria:
 
 - A consumer can compare its observed state against a plan, materialize, or run
   fixture without importing consumer-specific code into Chaos Librarian.
-- Divergence reports identify the oracle asset, optional mutation, observed
+- Divergence reports identify the oracle asset, optional event, observed
   consumer reference, expected value, observed value, and evidence used for the
   match.
 - Short comparison recipes are fast enough for regular development.
@@ -49,11 +49,11 @@ Exit criteria:
    wrapper around the API so test suites can import the library while CI scripts
    and non-Python consumers still have a stable, agent-friendly command.
 
-4. **State and history.** Final-state comparison is always supported. Mutation
-   history comparison is activated only when the observed payload supplies
-   `events` or per-asset `path_history`. Scanner and prober tests can stay
-   minimal; watcher tests can prove that moves, deletes, re-adds, and slow-copy
-   boundaries were observed.
+4. **Comparison modes.** The compare API and CLI select the comparison mode;
+   the observed-state payload stays reusable data. `final-state` is the default
+   for scanner/prober tests. `identity-history` is opt-in for watcher and
+   reconciliation tests and requires lifecycle evidence through `events` or
+   per-asset `path_history`.
 
 5. **Oracle-ID mapping.** Consumers do not have to store Chaos Librarian oracle
    IDs. They provide their own stable `observed_ref` values and observed facts.
@@ -81,7 +81,8 @@ Exit criteria:
   - `DIVERGENCE_SCHEMA_VERSION: Final = 1`
 - Add `chaos_librarian.adapter` with fixture loading, observed-state loading,
   deterministic matching, and report generation.
-- Add `chaos-librarian compare <run-dir> observed-state.json --json`.
+- Add `chaos-librarian compare <run-dir> observed-state.json --mode
+  final-state|identity-history --json`.
 - Compare current asset paths, deleted/missing assets, content hashes, probed
   media facts, path history, and optional topology references.
 - Include sidecar path/hash comparison when consumers export sidecar observations.
@@ -254,6 +255,8 @@ class ObservedEvent(BaseModel):
 
     observed_event_ref: str
     observed_ref: str | None = None
+    before_observed_ref: str | None = None
+    after_observed_ref: str | None = None
     action: str
     observed_at: datetime | None = None
     path: str | None = None
@@ -264,7 +267,14 @@ class ObservedEvent(BaseModel):
 
 The adapter treats `events` and `assets[].path_history` as additive evidence.
 If neither is present, history assertions are skipped and the report covers
-final state only.
+final state only. `observed-state.json` does not carry the comparison mode; the
+same export can be reused for `final-state` and `identity-history` comparisons.
+
+In `identity-history` mode, the payload must provide enough lifecycle evidence
+to prove continuity across oracle path mutations. A stable `observed_ref` with
+ordered `path_history` proves continuity for one consumer asset. A consumer that
+records old and new refs separately can prove or expose continuity through
+global `events` with `before_observed_ref` and `after_observed_ref`.
 
 ## Divergence Report Contract
 
@@ -292,7 +302,7 @@ class DivergenceFinding(BaseModel):
     severity: DivergenceSeverity
     message: str
     oracle_asset_id: str | None = None
-    oracle_mutation_id: str | None = None
+    oracle_event_id: str | None = None
     observed_ref: str | None = None
     expected: object | None = None
     observed: object | None = None
@@ -309,12 +319,14 @@ Initial finding codes:
 - `D_DELETION_MISMATCH` - one side thinks the asset exists and the other does
   not.
 - `D_HASH_MISMATCH` - both sides supplied hashes and they differ.
-- `D_PROBE_MISMATCH` - both sides supplied probed facts and meaningful fields
-  differ.
+- `D_PROBE_MISMATCH` - both sides supplied probed facts and the defined probe
+  comparison fields differ.
 - `D_SIDECAR_MISSING` - oracle sidecar missing from observed sidecars.
 - `D_SIDECAR_UNEXPECTED` - observed sidecar not present in the oracle.
 - `D_TOPOLOGY_MISMATCH` - work/variant/bundle grouping differs when both sides
   supplied topology.
+- `D_IDENTITY_SPLIT` - one oracle asset lifecycle maps to multiple observed
+  asset refs across a move, rename, delete/re-add, or slow-copy boundary.
 - `D_HISTORY_MISSING` - observed history is present but does not include an
   expected path mutation.
 - `D_HISTORY_UNEXPECTED` - observed history contains a path mutation that does
@@ -336,6 +348,11 @@ class MatchEvidence(BaseModel):
     oracle_asset_id: str | None = None
     observed_ref: str | None = None
 ```
+
+`oracle_event_id` always refers to the current journal/report contract:
+`JournalEntry.event_id`, `AssetHistoryEntry.event_id`, `PathHistoryEntry.event_id`,
+or `VersionHistoryEntry.event_id`. Sprint 9 does not introduce a separate
+mutation identifier.
 
 ## Matching Rules
 
@@ -367,10 +384,32 @@ Rules:
 This matching model keeps scanner tests ergonomic while still explaining why a
 watcher or reconciliation test failed.
 
+## Comparison Modes
+
+`final-state` mode is the default. It compares current oracle state against
+current observed state and does not fail because history evidence is missing. A
+consumer that only exports `observed_ref` and `current_path` can use this mode.
+
+`identity-history` mode adds lifecycle assertions for durable identity. It still
+performs all final-state checks, then inspects oracle path-affecting journal
+events and observed history. For every oracle move, rename, delete/re-add,
+slow-copy, archive, or root-move event, the observed payload must show one of:
+
+- the matched observed asset has a `path_history` entry representing the same
+  path transition; or
+- a global `ObservedEvent` represents the transition and keeps
+  `before_observed_ref == after_observed_ref`; or
+- a global `ObservedEvent` represents a split with different before/after refs,
+  which emits `D_IDENTITY_SPLIT`.
+
+If identity-history mode is requested and the observed payload has no history
+evidence, the adapter emits `D_HISTORY_MISSING` findings for expected path
+mutations instead of silently downgrading to final-state comparison.
+
 ## Comparison Data Flow
 
 ```text
-chaos-librarian compare fixtures/run-001 observed-state.json --json
+chaos-librarian compare fixtures/run-001 observed-state.json --mode final-state --json
   cli.commands.compare
     load_fixture(run_dir)
       validate sentinel
@@ -382,6 +421,7 @@ chaos-librarian compare fixtures/run-001 observed-state.json --json
       validate observed-state schema
     compare_fixture_to_observed(fixture, observed)
       verify run_id equality
+      select final-state or identity-history mode
       build oracle evidence indexes
       build observed evidence indexes
       match assets deterministically
@@ -401,11 +441,24 @@ For materialize/run fixtures, cross-toolchain comparison should reuse
 facts are compared only when the observed payload supplies them. Missing optional
 hash/probe fields are not divergence by themselves.
 
+Probe comparison is intentionally field-specific. `D_PROBE_MISMATCH` compares
+these fields exactly when both sides supply `probed`: container, stream count,
+stream order, stream kind, codec, language, width, height, channels,
+sample_rate, default, and forced. `duration_seconds` is compared with a small
+documented tolerance of `0.05` seconds. `size_bytes` is ignored by probe
+comparison because byte-level differences are covered by `content_hash` and file
+size checks when consumers export them.
+
 ## Python API
 
 Public API:
 
 ```python
+class CompareMode(enum.StrEnum):
+    FINAL_STATE = "final-state"
+    IDENTITY_HISTORY = "identity-history"
+
+
 def load_fixture(run_dir: Path) -> OracleFixture: ...
 
 def load_observed_state(path: Path) -> ObservedState: ...
@@ -413,6 +466,8 @@ def load_observed_state(path: Path) -> ObservedState: ...
 def compare_fixture_to_observed(
     fixture: OracleFixture,
     observed: ObservedState,
+    *,
+    mode: CompareMode = CompareMode.FINAL_STATE,
 ) -> DivergenceReport: ...
 ```
 
@@ -438,13 +493,15 @@ These are command failures when surfaced through the CLI.
 Add a new command:
 
 ```text
-chaos-librarian compare fixtures/run-001 observed-state.json --json
+chaos-librarian compare fixtures/run-001 observed-state.json --mode final-state --json
 ```
 
 Arguments:
 
 - `run_dir`: existing directory, must contain a valid Chaos Librarian sentinel.
 - `observed`: existing JSON file, must validate as `ObservedState`.
+- `--mode`: `final-state` by default, or `identity-history` for watcher and
+  durable-identity checks.
 - `--json`: follows the existing command convention.
 
 Success and divergence behavior:
@@ -488,7 +545,8 @@ Recipe guidance:
 
 - Scanner recipe exports `observed_ref` and `current_path` only.
 - Prober recipe adds `content_hash` and `probed`.
-- Watcher recipe adds `path_history` or `events`.
+- Watcher recipe adds `path_history` or `events` and uses
+  `--mode identity-history`.
 - Daemon churn recipe runs `chaos-librarian run`, lets the consumer daemon
   observe the library, exports observed state, then compares.
 - Fast CI uses a short static or small mutation scenario.
@@ -519,12 +577,15 @@ Adapter behavior tests:
 - Existence disagreement produces `D_DELETION_MISMATCH`.
 - Hash mismatch produces `D_HASH_MISMATCH` only when both sides provide hashes.
 - Probe mismatch produces `D_PROBE_MISMATCH` only when both sides provide
-  probed facts.
+  probed facts, using the exact/tolerant/ignored field rules above.
 - Ambiguous same-path or same-hash evidence produces `D_MATCH_AMBIGUOUS`.
 - Missing observed sidecar produces `D_SIDECAR_MISSING`.
 - Final-state-only comparison skips history checks.
-- History-aware comparison reports `D_HISTORY_MISSING` for a missing move or
+- Identity-history comparison reports `D_HISTORY_MISSING` for a missing move or
   rename observation.
+- Identity-history comparison reports `D_IDENTITY_SPLIT` when a move or rename
+  maps one oracle asset to different before/after observed refs.
+- `DivergenceFinding` round-trips with `oracle_event_id`.
 
 CLI tests:
 
