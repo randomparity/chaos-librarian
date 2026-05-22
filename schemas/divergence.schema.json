@@ -1,0 +1,293 @@
+{
+  "$defs": {
+    "CompareMode": {
+      "description": "Comparison depth requested by the adapter or CLI.",
+      "enum": [
+        "final-state",
+        "identity-history"
+      ],
+      "title": "CompareMode",
+      "type": "string"
+    },
+    "DivergenceCode": {
+      "description": "Initial Sprint 9 divergence finding codes.",
+      "enum": [
+        "D_ASSET_MISSING",
+        "D_ASSET_UNEXPECTED",
+        "D_MATCH_AMBIGUOUS",
+        "D_PATH_MISMATCH",
+        "D_DELETION_MISMATCH",
+        "D_HASH_MISMATCH",
+        "D_PROBE_MISMATCH",
+        "D_SIDECAR_MISSING",
+        "D_SIDECAR_UNEXPECTED",
+        "D_TOPOLOGY_MISMATCH",
+        "D_IDENTITY_SPLIT",
+        "D_HISTORY_CONFLICT",
+        "D_HISTORY_MISSING",
+        "D_HISTORY_UNEXPECTED"
+      ],
+      "title": "DivergenceCode",
+      "type": "string"
+    },
+    "DivergenceFinding": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/DivergenceCode"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/MatchEvidence"
+          },
+          "title": "Evidence",
+          "type": "array"
+        },
+        "expected": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "observed": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed"
+        },
+        "observed_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Ref"
+        },
+        "oracle_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oracle Asset Id"
+        },
+        "oracle_event_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oracle Event Id"
+        },
+        "related_oracle_event_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Related Oracle Event Ids",
+          "type": "array"
+        },
+        "severity": {
+          "$ref": "#/$defs/DivergenceSeverity"
+        }
+      },
+      "required": [
+        "code",
+        "severity",
+        "message"
+      ],
+      "title": "DivergenceFinding",
+      "type": "object"
+    },
+    "DivergenceFixtureMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_count": {
+          "title": "Asset Count",
+          "type": "integer"
+        },
+        "execution_mode": {
+          "title": "Execution Mode",
+          "type": "string"
+        },
+        "journal_entries": {
+          "title": "Journal Entries",
+          "type": "integer"
+        },
+        "run_dir": {
+          "title": "Run Dir",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_dir",
+        "execution_mode",
+        "asset_count",
+        "journal_entries"
+      ],
+      "title": "DivergenceFixtureMetadata",
+      "type": "object"
+    },
+    "DivergenceObservedMetadata": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_count": {
+          "title": "Asset Count",
+          "type": "integer"
+        },
+        "consumer_name": {
+          "title": "Consumer Name",
+          "type": "string"
+        },
+        "consumer_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consumer Version"
+        },
+        "observed_at": {
+          "format": "date-time",
+          "title": "Observed At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "consumer_name",
+        "observed_at",
+        "asset_count"
+      ],
+      "title": "DivergenceObservedMetadata",
+      "type": "object"
+    },
+    "DivergenceSeverity": {
+      "description": "Severity for a divergence finding.",
+      "enum": [
+        "error",
+        "warning"
+      ],
+      "title": "DivergenceSeverity",
+      "type": "string"
+    },
+    "MatchEvidence": {
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "current_path",
+            "historical_path",
+            "content_hash",
+            "topology"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Ref"
+        },
+        "oracle_asset_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Oracle Asset Id"
+        },
+        "value": {
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "value"
+      ],
+      "title": "MatchEvidence",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "findings": {
+      "items": {
+        "$ref": "#/$defs/DivergenceFinding"
+      },
+      "title": "Findings",
+      "type": "array"
+    },
+    "fixture": {
+      "$ref": "#/$defs/DivergenceFixtureMetadata"
+    },
+    "mode": {
+      "$ref": "#/$defs/CompareMode"
+    },
+    "observed": {
+      "$ref": "#/$defs/DivergenceObservedMetadata"
+    },
+    "ok": {
+      "title": "Ok",
+      "type": "boolean"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "run_id",
+    "mode",
+    "ok",
+    "fixture",
+    "observed"
+  ],
+  "title": "DivergenceReport",
+  "type": "object"
+}

@@ -30,6 +30,7 @@ ALL_COMMANDS = [
     "inspect",
     "capabilities",
     "clean",
+    "compare",
 ]
 
 

@@ -22,3 +22,4 @@ from chaos_librarian.cli.commands import replay
 from chaos_librarian.cli.commands import inspect
 from chaos_librarian.cli.commands import capabilities
 from chaos_librarian.cli.commands import clean
+from chaos_librarian.cli.commands import compare

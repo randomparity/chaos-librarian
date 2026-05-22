@@ -16,9 +16,11 @@ from typing import Final
 from pydantic import BaseModel, TypeAdapter
 
 from chaos_librarian.contract.capabilities import Capabilities
+from chaos_librarian.contract.divergence import DivergenceReport
 from chaos_librarian.contract.journal import JournalEntry  # Annotated union
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
+from chaos_librarian.contract.observed_state import ObservedState
 from chaos_librarian.contract.replay_bundle import ReplayBundle  # Annotated union
 from chaos_librarian.contract.reports import (
     AssetReport,
@@ -46,6 +48,8 @@ MODELS: Final[list[tuple[str, object]]] = [
     ("variant-report.schema.json", VariantReport),
     ("bundle-report.schema.json", BundleReport),
     ("capabilities.schema.json", Capabilities),
+    ("observed-state.schema.json", ObservedState),
+    ("divergence.schema.json", DivergenceReport),
 ]
 
 
