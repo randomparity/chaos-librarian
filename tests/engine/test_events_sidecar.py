@@ -32,7 +32,7 @@ def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scena
     """
     return Scenario.model_validate(
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "scenario_id": "sidecar_tests",
             "seed": 1,
             "duration_scale": "short",
@@ -445,7 +445,7 @@ class TestCreateSidecarKindRouting:
         """
         return Scenario.model_validate(
             {
-                "schema_version": 5,
+                "schema_version": 6,
                 "scenario_id": "create_sidecar_kind",
                 "seed": 1,
                 "duration_scale": "short",

@@ -16,6 +16,7 @@ from typing import Final
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
     ArchiveFileEvent,
+    AudioChannelLayout,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -160,7 +161,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 5,
+            "schema_version": 6,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -261,8 +262,8 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         id="ev",
         at="0ns",
         target="asset_hd_main",
-        from_channels="stereo",
-        to_channels="mono",
+        from_channels=AudioChannelLayout.STEREO,
+        to_channels=AudioChannelLayout.MONO,
     ),
     TimelineActionName.REMUX_CONTAINER: lambda: RemuxContainerEvent(
         id="ev", at="0ns", target="asset_hd_main", to_container="mp4"

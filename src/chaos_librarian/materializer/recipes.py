@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from chaos_librarian.contract.scenario import AUDIO_CHANNEL_COUNTS_BY_NAME
+
 
 @dataclass(frozen=True, slots=True)
 class FFmpegInput:
@@ -74,9 +76,9 @@ def recipe_solid_color(
     )
 
 
-_CHANNEL_COUNTS = {"mono": 1, "stereo": 2, "5.1": 6}
-# Distinct base frequencies — pattern: doubles per channel.
-_CHANNEL_TONE_BASE = (220, 440, 880, 1760, 3520, 7040)
+_CHANNEL_COUNTS = AUDIO_CHANNEL_COUNTS_BY_NAME
+# Distinct base frequencies; all stay below the 48 kHz sample rate's Nyquist limit.
+_CHANNEL_TONE_BASE = (220, 440, 880, 1760, 3520, 7040, 10560, 14080)
 
 
 def _frequency_from_seed(seed: int) -> int:

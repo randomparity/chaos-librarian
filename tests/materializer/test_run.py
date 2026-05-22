@@ -115,7 +115,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 5\n"
+        "schema_version: 6\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -396,7 +396,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 5
+schema_version: 6
 scenario_id: static-test
 seed: 1
 duration_scale: short

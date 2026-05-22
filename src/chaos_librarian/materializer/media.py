@@ -27,7 +27,12 @@ from typing import TYPE_CHECKING, Final, cast
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
-from chaos_librarian.contract.scenario import Asset, SidecarKind, TimelineActionName
+from chaos_librarian.contract.scenario import (
+    AUDIO_CHANNEL_COUNTS_BY_NAME,
+    Asset,
+    SidecarKind,
+    TimelineActionName,
+)
 from chaos_librarian.materializer.actions import (
     _MEDIA_ACTIONS,
     _STDLIB_ACTIONS,
@@ -78,17 +83,9 @@ _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
 }
 
 
-# ffmpeg's ``-ac`` flag requires an integer channel count, but the
-# scenario contract's ``AudioTrack.channels`` is a free-form ``str`` so
-# authors can write the natural ``"stereo"`` / ``"5.1"`` shorthand.
-# Translate names to integers before invoking ffmpeg (#58).
-_CHANNEL_COUNT_BY_NAME: Final[dict[str, int]] = {
-    "mono": 1,
-    "stereo": 2,
-    "2.1": 3,
-    "5.1": 6,
-    "7.1": 8,
-}
+# ffmpeg's ``-ac`` flag requires an integer channel count; scenario authors
+# write natural layout names such as ``"stereo"`` / ``"5.1"``.
+_CHANNEL_COUNT_BY_NAME: Final = AUDIO_CHANNEL_COUNTS_BY_NAME
 
 
 def _channel_count_for(name: str) -> int:

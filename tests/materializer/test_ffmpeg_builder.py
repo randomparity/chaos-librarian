@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.scenario import (
+    AudioChannelLayout,
     AudioSource,
     AudioTrack,
     VideoSource,
@@ -27,15 +28,18 @@ def _video(resolution: str = "hd") -> VideoTrack:
     return VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution=resolution)
 
 
-def _audio(channels: str = "stereo") -> AudioTrack:
+def _audio(channels: AudioChannelLayout = AudioChannelLayout.STEREO) -> AudioTrack:
     return AudioTrack(source=AudioSource.SINE, codec="aac", channels=channels, language="eng")
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4"])
 @pytest.mark.parametrize("resolution", ["sd", "hd", "1080p"])
-@pytest.mark.parametrize("channels", ["mono", "stereo", "5.1"])
+@pytest.mark.parametrize(
+    "channels",
+    [AudioChannelLayout.MONO, AudioChannelLayout.STEREO, AudioChannelLayout.FIVE_ONE],
+)
 def test_matrix_cell_produces_argv_with_bitexact_flags(
-    container: str, resolution: str, channels: str, tmp_path: Path
+    container: str, resolution: str, channels: AudioChannelLayout, tmp_path: Path
 ) -> None:
     """WHY: 2 containers x 3 resolutions x 3 channel layouts = 18 cells that
     must all produce a stable argv. BITEXACT_FLAGS must appear in every cell
@@ -63,7 +67,12 @@ def test_unsupported_audio_codec_rejected(tmp_path: Path) -> None:
     starts so the orchestrator can record E_MATERIALIZE_UNSUPPORTED with
     field='audio[0].codec'."""
     video = _video()
-    audio = AudioTrack(source=AudioSource.SINE, codec="opus", channels="stereo", language="eng")
+    audio = AudioTrack(
+        source=AudioSource.SINE,
+        codec="opus",
+        channels=AudioChannelLayout.STEREO,
+        language="eng",
+    )
     output = tmp_path / "asset.mkv"
     with pytest.raises(UnsupportedMaterializationError) as exc:
         build_command(

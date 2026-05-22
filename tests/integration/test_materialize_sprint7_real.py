@@ -17,7 +17,7 @@ from chaos_librarian.materializer.capabilities import (
     MIN_VERSIONS,
     detect_capabilities,
 )
-from chaos_librarian.materializer.errors import MediaActionError
+from chaos_librarian.materializer.errors import MediaActionError, ScenarioValidationError
 from chaos_librarian.materializer.run import materialize_scenario
 from tests.integration.conftest import (
     _load_asset_report,
@@ -213,14 +213,12 @@ def test_phase_b_oserror_cleans_library(tmp_path: Path, monkeypatch) -> None:
     assert body["outcome"] == "media_failed"
 
 
-def test_phase_b_media_failure_cleans_library(tmp_path: Path) -> None:
-    """Hand-craft a scenario that ffmpeg rejects (reencode_audio -ac quad)."""
-    # Build the scenario in-place rather than as a fixture so the failure
-    # case stays isolated from the positive-fixture corpus.
+def test_unknown_reencode_audio_channels_fail_validation(tmp_path: Path) -> None:
+    """Unknown channel layouts fail before phase B allocates a run directory."""
     scenario_yaml = tmp_path / "fail.yaml"
     scenario_yaml.write_text(
         """\
-schema_version: 5
+schema_version: 6
 scenario_id: sc_fail
 seed: 42
 duration_scale: short
@@ -250,12 +248,6 @@ timeline:
 """
     )
     out = tmp_path / "run-fail"
-    with pytest.raises(MediaActionError):
+    with pytest.raises(ScenarioValidationError):
         materialize_scenario(scenario_yaml, out)
-    # library/ wiped.
-    assert not (out / "library").exists()
-    # materialization.json present with outcome=media_failed.
-    report_path = out / "materialization.json"
-    assert report_path.exists()
-    body = json.loads(report_path.read_text())
-    assert body["outcome"] == "media_failed"
+    assert not out.exists()
