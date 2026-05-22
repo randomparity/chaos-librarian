@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.adapter.fixture import OracleFixture, OracleReports
+from chaos_librarian.contract import ASSET_REPORT_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
@@ -82,7 +83,7 @@ def manifest(
     sidecars: tuple[ManifestSidecar, ...] = (),
 ) -> Manifest:
     return Manifest(
-        schema_version=4,
+        schema_version=MANIFEST_SCHEMA_VERSION,
         works=[ManifestWork(id="work-a", title="Synthetic")],
         variants=[ManifestVariant(id="variant-a", work_id="work-a", label="hd")],
         bundles=[ManifestBundle(id="bundle-a", variant_id="variant-a")],
@@ -133,7 +134,7 @@ def reports(current_path: str | None = "library/Synthetic.mkv") -> OracleReports
     return OracleReports(
         assets={
             "asset-a": AssetReport(
-                schema_version=4,
+                schema_version=ASSET_REPORT_SCHEMA_VERSION,
                 asset_id="asset-a",
                 initial=initial_snapshot,
                 history=[],

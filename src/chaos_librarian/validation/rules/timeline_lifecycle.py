@@ -51,6 +51,7 @@ _LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.EXTRACT_SUBTITLE,
         TimelineActionName.REMOVE_SIDECAR,
         TimelineActionName.UPDATE_SIDECAR,
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
     }
 )
 # Subset of the passthrough set that mutates the on-disk path OR reads asset
@@ -69,6 +70,7 @@ _PATH_MUTATING_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.EDIT_METADATA,
         TimelineActionName.EMBED_SUBTITLE,
         TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
     }
 )
 

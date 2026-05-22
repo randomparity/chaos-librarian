@@ -21,7 +21,7 @@ def _scenario_from_dict(data: dict[str, object]) -> Scenario:
 def _minimal_scenario() -> Scenario:
     return _scenario_from_dict(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "min",
             "seed": 1,
             "duration_scale": "short",
@@ -82,7 +82,7 @@ class TestBuildInitialState:
         state = build_initial_state(scenario, ids)
         manifest = state.to_manifest()
         assert isinstance(manifest, Manifest)
-        assert manifest.schema_version == 4
+        assert manifest.schema_version == 5
         assert [w.id for w in manifest.works] == ["w0"]
         assert [v.id for v in manifest.variants] == ["v0"]
         assert [b.id for b in manifest.bundles] == ["b0"]
@@ -93,7 +93,7 @@ class TestBuildInitialState:
     def test_two_assets_get_independent_locations(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "scenario_id": "two",
                 "seed": 1,
                 "duration_scale": "short",
@@ -168,7 +168,7 @@ class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
 
     def test_asset_id_traversal_rejected_by_validation(self) -> None:
         yaml_bytes = b"""\
-schema_version: 6
+schema_version: 7
 scenario_id: unsafe-id
 seed: 1
 duration_scale: short
@@ -314,7 +314,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_declared_sidecar_subtitle_seeds_one_row(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",
@@ -365,7 +365,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_embedded_mode_subtitle_is_not_seeded(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "scenario_id": "emb",
                 "seed": 1,
                 "duration_scale": "short",
@@ -410,7 +410,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_sidecar_id_for_path_resolves_declared_subtitle(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",

@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
+from typing import cast
 
 import pytest
 from pydantic import TypeAdapter
@@ -14,17 +15,27 @@ from pydantic import TypeAdapter
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
-from chaos_librarian.contract.materialization import FilesystemAction, MaterializedAsset
+from chaos_librarian.contract.materialization import (
+    CorruptionAction,
+    FailureStage,
+    FilesystemAction,
+    MaterializedAsset,
+    Outcome,
+)
+from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer import phase_b, wall_clock
 from chaos_librarian.materializer.errors import (
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     TimelineUnsupportedError,
 )
 
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
+_CORRUPTED_HASH = "sha256:" + "2" * 64
+_INPUT_HASH = "sha256:" + "1" * 64
 
 
 class FakeClock:
@@ -121,7 +132,7 @@ def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-cloc
     path.write_text(
         dedent(
             f"""
-            schema_version: 6
+            schema_version: 7
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -152,6 +163,60 @@ def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-cloc
                               language: eng
             timeline:
             {timeline}
+            """
+        ).lstrip(),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _write_malformed_scenario(
+    tmp_path: Path,
+    *,
+    event_at: str,
+    scenario_id: str = "wall-clock-corruption-test",
+) -> Path:
+    path = tmp_path / f"{scenario_id}.yaml"
+    path.write_text(
+        dedent(
+            f"""
+            schema_version: 7
+            scenario_id: {scenario_id}
+            seed: 7
+            duration_scale: short
+            profiles:
+              - malformed-media
+            library:
+              roots:
+                - id: movies_hd
+                  path: movies-hd
+            works:
+              - id: work_001
+                title: Broken Header
+                variants:
+                  - id: variant_001
+                    label: hd
+                    bundle:
+                      id: bundle_001
+                      assets:
+                        - id: asset_main
+                          role: primary_video
+                          container: mkv
+                          duration_seconds: 1
+                          video:
+                            source: color_bars
+                            codec: h264
+                            resolution: hd
+                          audio:
+                            - codec: aac
+                              channels: stereo
+                              language: eng
+            timeline:
+              - id: corrupt_header_001
+                at: {event_at}
+                action: corrupt_container_header
+                target: asset_main
+                bytes: 64
             """
         ).lstrip(),
         encoding="utf-8",
@@ -249,7 +314,7 @@ def test_handler_overrun_does_not_start_second_due_event(
             duration_ns=10,
         )
 
-    monkeypatch.setattr(wall_clock, "_dispatch_one", slow_dispatch)
+    monkeypatch.setattr(phase_b, "_dispatch_one", slow_dispatch)
     artifacts = wall_clock.run_wall_clock_scenario(
         scenario,
         tmp_path / "run",
@@ -320,7 +385,7 @@ def test_filesystem_failure_writes_run_failure_metadata(
             cause=OSError("disk full"),
         )
 
-    monkeypatch.setattr(wall_clock, "_dispatch_one", fail_dispatch)
+    monkeypatch.setattr(phase_b, "_dispatch_one", fail_dispatch)
     with pytest.raises(FilesystemActionError, match="move failed"):
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 
@@ -361,7 +426,7 @@ def test_media_failure_writes_run_failure_metadata(
             cause=RuntimeError("generator failed"),
         )
 
-    monkeypatch.setattr(wall_clock, "apply_media_action", fail_media)
+    monkeypatch.setattr(phase_b, "apply_media_action", fail_media)
     with pytest.raises(MediaActionError, match="sidecar failed"):
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 
@@ -372,6 +437,81 @@ def test_media_failure_writes_run_failure_metadata(
     assert report["failures"][0]["stage"] == "media"
     assert sentinel["state"] == "complete"
     assert not (out_dir / "library").exists()
+
+
+def test_run_applies_corruption_only_when_due(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_successful_corruption(monkeypatch)
+    scenario = _write_malformed_scenario(tmp_path, event_at="0ns")
+    out_dir = tmp_path / "run"
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="1ns",
+        speed="1x",
+    )
+
+    assert fake_clock.now_ns == 1
+    assert artifacts.replay_bundle.applied_events == 1
+    assert artifacts.materialization_report.corruption_actions == [
+        _corruption_action(
+            output_version_id=artifacts.materialization_report.corruption_actions[
+                0
+            ].output_version_id
+        )
+    ]
+    corrupted = _corrupted_version_payload(out_dir)
+    assert corrupted["content_hash"] == _CORRUPTED_HASH
+    corruption = cast("dict[str, object]", corrupted["corruption"])
+    assert corruption["event_id"] == "corrupt_header_001"
+
+
+def test_run_omits_future_corruption_actions(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_successful_corruption(monkeypatch)
+    scenario = _write_malformed_scenario(tmp_path, event_at="10ns")
+    out_dir = tmp_path / "run"
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="1ns",
+        speed="1x",
+    )
+
+    assert fake_clock.now_ns == 1
+    assert artifacts.replay_bundle.applied_events == 0
+    assert artifacts.materialization_report.corruption_actions == []
+    manifest = json.loads((out_dir / "manifest.current.json").read_text(encoding="utf-8"))
+    assert all("corruption" not in version for version in manifest["versions"])
+
+
+def test_run_corruption_failure_maps_to_corruption_failed(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_failing_corruption(monkeypatch)
+    scenario = _write_malformed_scenario(tmp_path, event_at="0ns")
+    out_dir = tmp_path / "run"
+
+    with pytest.raises(CorruptionActionError, match="short file"):
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == Outcome.CORRUPTION_FAILED.value
+    assert report["execution_mode"] == "run"
+    assert report["failures"][0]["stage"] == FailureStage.CORRUPTION.value
+    assert report["failures"][0]["stderr_tail"] == "short file"
+    assert not (out_dir / "library").exists()
+    assert fake_clock.now_ns == 0
 
 
 def test_slow_copy_partial_growth_writes_exact_prefix(tmp_path: Path) -> None:
@@ -424,3 +564,56 @@ def test_final_journal_keeps_timestamps_and_digest_normalizes(
     assert artifacts.replay_bundle.journal_digest == digest
     replay_payload = json.loads((out_dir / "replay.json").read_text(encoding="utf-8"))
     assert replay_payload["run_id"] == str(artifacts.materialization_report.run_id)
+
+
+def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_apply(ctx, entry: JournalEntry) -> CorruptionAction:
+        output_version_id = entry.output_version_ids[0]
+        ctx.post_phase_b_versions[output_version_id] = (
+            _CORRUPTED_HASH,
+            ProbedMedia(container="mkv", duration_seconds=1.0, size_bytes=128, streams=[]),
+        )
+        return _corruption_action(output_version_id=output_version_id)
+
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+
+
+def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_apply(_ctx, entry: JournalEntry) -> CorruptionAction:
+        raise CorruptionActionError(
+            "corrupt_container_header failed for event corrupt_header_001: short file",
+            event_id=entry.event_id,
+            action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+            cause=RuntimeError("short file"),
+            asset_id=entry.target_ids[0],
+        )
+
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+
+
+def _corruption_action(*, output_version_id: str) -> CorruptionAction:
+    return CorruptionAction(
+        event_id="corrupt_header_001",
+        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id=output_version_id,
+        input_content_hash=_INPUT_HASH,
+        output_content_hash=_CORRUPTED_HASH,
+        corruptor="container_header_v1",
+        byte_start=0,
+        byte_count=64,
+        seed_material="container_header_v1:7:corrupt_header_001:asset_main",
+        probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+        duration_ns=1,
+    )
+
+
+def _corrupted_version_payload(out_dir: Path) -> dict[str, object]:
+    manifest = json.loads((out_dir / "manifest.current.json").read_text(encoding="utf-8"))
+    for version in manifest["versions"]:
+        if version.get("corruption") is not None:
+            return version
+    raise AssertionError("expected corrupted version in manifest.current.json")

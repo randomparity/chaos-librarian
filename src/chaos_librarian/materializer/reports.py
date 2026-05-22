@@ -13,6 +13,7 @@ from chaos_librarian.contract import (
 )
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import (
+    CorruptionAction,
     FilesystemAction,
     MaterializationExecutionMode,
     MaterializationFailure,
@@ -26,6 +27,7 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.reports import build_report_set
 from chaos_librarian.materializer.writer import MaterializeMetadata, MaterializeReports
 
 __all__ = ["build_metadata", "build_replay_bundle", "build_report", "build_reports"]
@@ -43,6 +45,7 @@ def build_report(
     failures: list[MaterializationFailure],
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
+    corruption_actions: list[CorruptionAction] | None = None,
     requested_duration_ns: int | None = None,
     actual_duration_ns: int | None = None,
     speed_multiplier: str | None = None,
@@ -66,6 +69,7 @@ def build_report(
         failures=failures,
         filesystem_actions=filesystem_actions or [],
         media_actions=media_actions or [],
+        corruption_actions=corruption_actions or [],
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,
@@ -125,8 +129,12 @@ def build_metadata(
 
 
 def build_reports(plan_artifacts: PlanArtifacts) -> MaterializeReports:
-    """Convert the engine's tuple-of-reports into the writer's id→report dicts."""
-    reports = plan_artifacts.reports
+    """Build writer report dicts from final manifests."""
+    reports = build_report_set(
+        initial=plan_artifacts.initial_manifest,
+        current=plan_artifacts.current_manifest,
+        journal=plan_artifacts.journal,
+    )
     return MaterializeReports(
         assets={r.asset_id: r for r in reports.assets},
         works={r.work_id: r for r in reports.works},

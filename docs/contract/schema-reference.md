@@ -31,3 +31,18 @@ current models.
 Every artifact has a top-level `schema_version` integer. Version bumps are
 always breaking; readers MUST reject unknown versions with exit code `3`.
 See [chaos-librarian-design.md "Versioning"](../specs/chaos-librarian-design.md).
+
+Current checked-in contract versions:
+
+| artifact | schema_version |
+|----------|----------------|
+| scenario | 7 |
+| manifest | 5 |
+| materialization | 6 |
+| asset report | 5 |
+
+Scenario v7 adds explicit `profiles`, starting with `malformed-media`, and the
+`corrupt_container_header` timeline action. Manifest v5 and asset-report v5
+carry labeled corruption metadata on current versions/snapshots.
+Materialization v6 carries `corruption_actions` audit records and the
+`corruption_failed` outcome.

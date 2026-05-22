@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
+from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
-    FilesystemAction,
     MaterializationExecutionMode,
     MaterializedAsset,
-    MediaAction,
     Outcome,
     ToolInvocation,
 )
@@ -23,7 +20,6 @@ from chaos_librarian.contract.scenario import (
     CreateSidecarEvent,
     Scenario,
     SidecarKind,
-    TimelineActionName,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_plan
@@ -34,19 +30,22 @@ from chaos_librarian.materializer.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
-from chaos_librarian.materializer.filesystem import _dispatch_one, _PhaseBContext
+from chaos_librarian.materializer.errors import (
+    CorruptionActionError,
+    FilesystemActionError,
+    MediaActionError,
+)
 from chaos_librarian.materializer.finalize import build_sentinel
 from chaos_librarian.materializer.manifest_build import (
     augment_manifest,
-    augment_timeline_sidecars,
-    augment_updated_sidecars,
-    augment_versions,
 )
-from chaos_librarian.materializer.media import (
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
-    _MediaContext,
-    apply_media_action,
+from chaos_librarian.materializer.phase_b import (
+    PhaseBState,
+    augment_phase_b_outputs,
+    dispatch_phase_b_entry,
+    make_phase_b_state,
+    phase_b_failure_outcome,
+    phase_b_failure_record,
 )
 from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
 from chaos_librarian.materializer.reports import (
@@ -56,7 +55,7 @@ from chaos_librarian.materializer.reports import (
     build_reports,
 )
 from chaos_librarian.materializer.synthesis import materialize_one_asset
-from chaos_librarian.materializer.writer import finalize_materialize_run
+from chaos_librarian.materializer.writer import cleanup_failed_phase_b_run, finalize_materialize_run
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
 
 __all__ = ["replay_run_bundle"]
@@ -137,12 +136,28 @@ def _materialize_verified_run_prefix(
         artifacts=prefix_artifacts,
         caps=caps,
     )
-    filesystem_actions, media_actions = _apply_prefix_phase_b(
+    state = _make_run_replay_phase_b_state(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
         invocations=invocations,
     )
+    try:
+        _apply_prefix_phase_b(state, prefix_artifacts)
+    except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
+        _finalize_run_replay_phase_b_failure(
+            run_input=run_input,
+            prefix_artifacts=prefix_artifacts,
+            source_bundle=source_bundle,
+            out_dir=out_dir,
+            caps=caps,
+            started_at=started_at,
+            invocations=invocations,
+            materialized=materialized,
+            state=state,
+            exc=exc,
+        )
+        raise
     finished_at = datetime.now(UTC)
     report = build_report(
         outcome=Outcome.SUCCESS,
@@ -153,22 +168,17 @@ def _materialize_verified_run_prefix(
         invocations=invocations,
         materialized=materialized,
         failures=[],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
+        filesystem_actions=state.filesystem_actions,
+        media_actions=state.media_actions,
+        corruption_actions=state.corruption_actions,
         execution_mode=MaterializationExecutionMode.RUN,
     )
-    replay_bundle = build_replay_bundle(
-        run_id=source_bundle.run_id,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        plan_artifacts=prefix_artifacts,
+    replay_bundle = _build_run_replay_bundle(
+        run_input=run_input,
+        prefix_artifacts=prefix_artifacts,
+        source_bundle=source_bundle,
         caps=caps,
         created_at=finished_at,
-        execution_mode=ExecutionMode.RUN,
-    ).model_copy(
-        update={
-            "applied_events": source_bundle.applied_events,
-            "journal_digest": source_bundle.journal_digest,
-        }
     )
     ctx = RunContext(
         run_input=run_input,
@@ -193,6 +203,85 @@ def _materialize_verified_run_prefix(
         current_manifest=prefix_artifacts.current_manifest,
         materialization_report=report,
         replay_bundle=replay_bundle,
+    )
+
+
+def _build_run_replay_bundle(
+    *,
+    run_input: RunInput,
+    prefix_artifacts: PlanArtifacts,
+    source_bundle: MaterializeReplayBundle,
+    caps,
+    created_at: datetime,
+) -> MaterializeReplayBundle:
+    return build_replay_bundle(
+        run_id=source_bundle.run_id,
+        scenario_yaml_bytes=run_input.raw_bytes,
+        plan_artifacts=prefix_artifacts,
+        caps=caps,
+        created_at=created_at,
+        execution_mode=ExecutionMode.RUN,
+    ).model_copy(
+        update={
+            "applied_events": source_bundle.applied_events,
+            "journal_digest": source_bundle.journal_digest,
+        }
+    )
+
+
+def _finalize_run_replay_phase_b_failure(
+    *,
+    run_input: RunInput,
+    prefix_artifacts: PlanArtifacts,
+    source_bundle: MaterializeReplayBundle,
+    out_dir: Path,
+    caps,
+    started_at: datetime,
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    state: PhaseBState,
+    exc: FilesystemActionError | MediaActionError | CorruptionActionError,
+) -> None:
+    augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
+    finished_at = datetime.now(UTC)
+    report = build_report(
+        outcome=phase_b_failure_outcome(exc),
+        run_id=source_bundle.run_id,
+        caps=caps,
+        started_at=started_at,
+        finished_at=finished_at,
+        invocations=invocations,
+        materialized=materialized,
+        failures=[phase_b_failure_record(exc)],
+        filesystem_actions=state.filesystem_actions,
+        media_actions=state.media_actions,
+        corruption_actions=state.corruption_actions,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_run_replay_bundle(
+        run_input=run_input,
+        prefix_artifacts=prefix_artifacts,
+        source_bundle=source_bundle,
+        caps=caps,
+        created_at=finished_at,
+    )
+    ctx = RunContext(
+        run_input=run_input,
+        out_dir=out_dir,
+        run_id=source_bundle.run_id,
+        started_at=started_at,
+        caps=caps,
+        plan_artifacts=prefix_artifacts,
+    )
+    cleanup_failed_phase_b_run(
+        out_dir,
+        build_metadata(
+            plan_artifacts=prefix_artifacts,
+            scenario_yaml_bytes=run_input.raw_bytes,
+            materialization_report=report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+        ),
     )
 
 
@@ -239,42 +328,31 @@ def _stamp_phase_a_asset(
     augment_manifest(manifest, asset, materialized, probed, sidecar_hashes)
 
 
-def _apply_prefix_phase_b(
+def _make_run_replay_phase_b_state(
     *,
     scenario: Scenario,
     out_dir: Path,
     artifacts: PlanArtifacts,
     invocations: list[ToolInvocation],
-) -> tuple[list[FilesystemAction], list[MediaAction]]:
-    scenario_assets = {asset.id: asset for asset in iter_assets(scenario)}
-    fs_ctx = _PhaseBContext(
+) -> PhaseBState:
+    return make_phase_b_state(
         library_root=out_dir / "library",
-        scenario_assets=scenario_assets,
-        resolved_seed=artifacts.replay_bundle.resolved_seed,
-    )
-    media_ctx = _MediaContext(
-        library_root=out_dir / "library",
-        scenario_assets=scenario_assets,
+        scenario=scenario,
         resolved_seed=artifacts.replay_bundle.resolved_seed,
         ffmpeg_version="unknown",
         ffprobe_version="unknown",
         invocations=invocations,
-        sidecar_lookup=_sidecar_lookup_from(artifacts.current_manifest),
+        manifest=artifacts.current_manifest,
     )
-    filesystem_actions: list[FilesystemAction] = []
-    media_actions: list[MediaAction] = []
+
+
+def _apply_prefix_phase_b(
+    state: PhaseBState,
+    artifacts: PlanArtifacts,
+) -> None:
     for entry in artifacts.journal:
-        action = TimelineActionName(entry.action)
-        if action in _STDLIB_ACTIONS:
-            fs_action = _dispatch_one(fs_ctx, entry)
-            if fs_action is not None:
-                filesystem_actions.append(fs_action)
-        elif action in _MEDIA_ACTIONS:
-            media_actions.append(apply_media_action(media_ctx, entry))
-    augment_timeline_sidecars(artifacts.current_manifest, fs_ctx.phase_b_sidecar_hashes)
-    augment_versions(artifacts.current_manifest, media_ctx.post_phase_b_versions)
-    augment_updated_sidecars(artifacts.current_manifest, media_ctx.post_phase_b_sidecars)
-    return filesystem_actions, media_actions
+        dispatch_phase_b_entry(state, entry)
+    augment_phase_b_outputs(artifacts.current_manifest, state)
 
 
 def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
@@ -287,12 +365,3 @@ def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]
         assert event.language is not None
         per_asset.setdefault(event.target, set()).add(event.language)
     return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}
-
-
-def _sidecar_lookup_from(manifest: Manifest) -> Callable[[str], ManifestSidecar | None]:
-    by_id = {sidecar.id: sidecar for sidecar in manifest.sidecars}
-
-    def lookup(sidecar_id: str) -> ManifestSidecar | None:
-        return by_id.get(sidecar_id)
-
-    return lookup

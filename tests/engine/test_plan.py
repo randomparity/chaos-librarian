@@ -15,13 +15,57 @@ from chaos_librarian.contract.replay_bundle import (
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts, replay_plan_bundle, run_plan
 from chaos_librarian.engine.plan import ReplayIntegrityError
-from chaos_librarian.validation import RunInput, prepare_run_input, run_validation
+from chaos_librarian.validation import (
+    RunInput,
+    prepare_run_input,
+    prepare_run_input_from_bytes,
+    run_validation,
+)
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 def _input_and_report(name: str) -> tuple[RunInput, ValidationReport]:
     run_input = prepare_run_input(FIXTURE_DIR / name)
+    return run_input, run_validation(run_input)
+
+
+def _corruption_input_and_report(seed: str = "42") -> tuple[RunInput, ValidationReport]:
+    scenario = f"""
+schema_version: 7
+scenario_id: corruption-plan-test
+seed: {seed}
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_001
+    title: Broken Header
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: corrupt_header_001
+    at: 1s
+    action: corrupt_container_header
+    target: asset_main
+    bytes: 64
+""".lstrip()
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=scenario.encode("utf-8"),
+        source_label="inline-corruption-plan",
+    )
     return run_input, run_validation(run_input)
 
 
@@ -36,8 +80,8 @@ class TestRunPlanBasics:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         artifacts = run_plan(run_input=run_input, validation_report=report)
         assert isinstance(artifacts, PlanArtifacts)
-        assert artifacts.initial_manifest.schema_version == 4
-        assert artifacts.current_manifest.schema_version == 4
+        assert artifacts.initial_manifest.schema_version == 5
+        assert artifacts.current_manifest.schema_version == 5
         assert len(artifacts.journal) == 2  # move + rename
         assert isinstance(artifacts.replay_bundle, PlanOnlyReplayBundle)
         assert artifacts.replay_bundle.execution_mode == ExecutionMode.PLAN_ONLY
@@ -173,6 +217,21 @@ class TestReplayPlanBundle:
         assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
         assert replayed.replay_bundle == original.replay_bundle
         assert replayed.journal == original.journal
+
+    def test_seed_random_replay_preserves_corruption_seed_material(self) -> None:
+        run_input, report = _corruption_input_and_report(seed="random")
+        assert report.ok, [i.code for i in report.issues]
+        original = run_plan(run_input=run_input, validation_report=report)
+        replayed = replay_plan_bundle(original.replay_bundle)
+
+        original_entry = original.journal[0]
+        replayed_entry = replayed.journal[0]
+
+        assert original_entry.state_delta["seed_material"] == (
+            f"container_header_v1:{original.replay_bundle.resolved_seed}:"
+            "corrupt_header_001:asset_main"
+        )
+        assert replayed_entry.state_delta == original_entry.state_delta
 
     def test_replay_raises_on_run_id_mismatch(self) -> None:
         """Tampered bundles raise ``ReplayIntegrityError`` instead of silently diverging.

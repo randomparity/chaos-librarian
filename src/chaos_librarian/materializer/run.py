@@ -11,15 +11,11 @@ converts them to exit codes.
 from __future__ import annotations
 
 import uuid
-from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
 from chaos_librarian.contract.materialization import (
-    FilesystemAction,
     MaterializedAsset,
-    MediaAction,
     Outcome,
     ToolInvocation,
 )
@@ -28,7 +24,6 @@ from chaos_librarian.contract.scenario import (
     CreateSidecarEvent,
     Scenario,
     SidecarKind,
-    TimelineActionName,
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
@@ -37,19 +32,13 @@ from chaos_librarian.materializer.capabilities import (
     detect_capabilities,
 )
 from chaos_librarian.materializer.errors import (
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ProbeParseError,
     ScenarioValidationError,
     ToolFailedError,
 )
-
-# _PhaseBContext and _dispatch_one are underscore-private in filesystem.py
-# but the orchestrator needs them to dispatch one journal entry at a
-# time alongside media.apply_media_action. Keep the underscore prefix
-# rather than widening the public API surface — both modules are
-# materializer-internal.
-from chaos_librarian.materializer.filesystem import _dispatch_one, _PhaseBContext
 from chaos_librarian.materializer.finalize import (
     build_sentinel,
     finalize_failure,
@@ -58,15 +47,13 @@ from chaos_librarian.materializer.finalize import (
 )
 from chaos_librarian.materializer.manifest_build import (
     augment_manifest,
-    augment_timeline_sidecars,
-    augment_updated_sidecars,
-    augment_versions,
 )
-from chaos_librarian.materializer.media import (
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
-    _MediaContext,
-    apply_media_action,
+from chaos_librarian.materializer.phase_b import (
+    PhaseBState,
+    augment_phase_b_outputs,
+    dispatch_phase_b_entry,
+    make_phase_b_state,
+    phase_b_failure_outcome,
 )
 from chaos_librarian.materializer.preflight import (
     iter_assets,
@@ -156,8 +143,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     """Steps 7-8: per-asset synthesis loop, unified phase-B walk, finalize/cleanup."""
     invocations: list[ToolInvocation] = []
     materialized: list[MaterializedAsset] = []
-    filesystem_actions: list[FilesystemAction] = []
-    media_actions: list[MediaAction] = []
+    phase_b_state: PhaseBState | None = None
     # Engine's ``build_initial_state`` lays every asset under the primary
     # root (scenario.library.roots[0]); synthesis must mirror that layout
     # so the on-disk file lives where phase B's ``state_delta['from_path']``
@@ -191,97 +177,45 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                 sidecar_hashes,
                 skip_languages=skip_languages,
             )
-        # Phase B — unified journal walk. Each entry routes to stdlib
-        # (filesystem._dispatch_one) or media (media.apply_media_action).
-        scenario_assets = {asset.id: asset for asset in iter_assets(scenario)}
-        library_root = ctx.out_dir / "library"
-        resolved_seed = ctx.plan_artifacts.replay_bundle.resolved_seed
-        fs_ctx = _PhaseBContext(
-            library_root=library_root,
-            scenario_assets=scenario_assets,
-            resolved_seed=resolved_seed,
-        )
-        media_ctx = _MediaContext(
-            library_root=library_root,
-            scenario_assets=scenario_assets,
-            resolved_seed=resolved_seed,
+        phase_b_state = make_phase_b_state(
+            library_root=ctx.out_dir / "library",
+            scenario=scenario,
+            resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
             ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
             ffprobe_version=ctx.caps.ffprobe.version or "unknown",
             invocations=invocations,
-            sidecar_lookup=_sidecar_lookup_from(ctx.plan_artifacts.current_manifest),
+            manifest=ctx.plan_artifacts.current_manifest,
         )
         for entry in ctx.plan_artifacts.journal:
-            action = TimelineActionName(entry.action)
-            if action in _STDLIB_ACTIONS:
-                result = _dispatch_one(fs_ctx, entry)
-                if result is not None:
-                    filesystem_actions.append(result)
-            elif action in _MEDIA_ACTIONS:
-                media_actions.append(apply_media_action(media_ctx, entry))
-            else:
-                # Defense in depth — preflight should have rejected this.
-                raise MediaActionError(
-                    f"unsupported phase-B action {action.value!r}",
-                    event_id=entry.event_id,
-                    action=action,
-                    cause=RuntimeError("not in _STDLIB_ACTIONS or _MEDIA_ACTIONS"),
-                )
-        # Drain phase-B sidecar hashes from BOTH dispatchers, plus the
-        # post-phase-B version map (reencode_* / remux / edit_metadata /
-        # embed_subtitle) and the post-phase-B sidecar map
-        # (update_sidecar / extract_subtitle).
-        augment_timeline_sidecars(
-            ctx.plan_artifacts.current_manifest, fs_ctx.phase_b_sidecar_hashes
-        )
-        augment_versions(ctx.plan_artifacts.current_manifest, media_ctx.post_phase_b_versions)
-        augment_updated_sidecars(
-            ctx.plan_artifacts.current_manifest, media_ctx.post_phase_b_sidecars
-        )
+            dispatch_phase_b_entry(phase_b_state, entry)
+        augment_phase_b_outputs(ctx.plan_artifacts.current_manifest, phase_b_state)
     except (ToolFailedError, ProbeParseError) as exc:
         if isinstance(exc, ToolFailedError):
             invocations.append(exc.invocation)
         finalize_failure(ctx, exc, Outcome.TOOL_FAILED, invocations, materialized)
         raise
-    except FilesystemActionError as exc:
+    except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
+        assert phase_b_state is not None
         finalize_failure_phase_b(
             ctx,
             exc,
-            Outcome.FS_FAILED,
+            phase_b_failure_outcome(exc),
             invocations,
             materialized,
-            filesystem_actions,
-            media_actions,
+            phase_b_state.filesystem_actions,
+            phase_b_state.media_actions,
+            phase_b_state.corruption_actions,
         )
         raise
-    except MediaActionError as exc:
-        finalize_failure_phase_b(
-            ctx,
-            exc,
-            Outcome.MEDIA_FAILED,
-            invocations,
-            materialized,
-            filesystem_actions,
-            media_actions,
-        )
-        raise
-    return finalize_success(ctx, invocations, materialized, filesystem_actions, media_actions)
-
-
-def _sidecar_lookup_from(manifest: Manifest) -> Callable[[str], ManifestSidecar | None]:
-    """Build a ``sidecar_id -> ManifestSidecar`` lookup callable.
-
-    Used by ``update_sidecar`` handlers to recover the kind/language
-    recorded on the existing manifest row. The lookup is a closure over
-    a dict snapshot taken before the phase-B walk, so concurrent
-    mutations during the walk (handlers may append new rows) don't
-    affect lookups for ids that already existed.
-    """
-    by_id = {sidecar.id: sidecar for sidecar in manifest.sidecars}
-
-    def lookup(sidecar_id: str) -> ManifestSidecar | None:
-        return by_id.get(sidecar_id)
-
-    return lookup
+    assert phase_b_state is not None
+    return finalize_success(
+        ctx,
+        invocations,
+        materialized,
+        phase_b_state.filesystem_actions,
+        phase_b_state.media_actions,
+        phase_b_state.corruption_actions,
+    )
 
 
 def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:

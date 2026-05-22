@@ -10,6 +10,7 @@ from chaos_librarian.engine.diff import (
     FixtureDiff,
     FixtureFileDiff,
     compare_fixtures,
+    compare_run_replay,
 )
 from chaos_librarian.engine.plan import (
     PlanArtifacts,
@@ -42,6 +43,7 @@ __all__ = [
     "append_step",
     "build_report_set",
     "compare_fixtures",
+    "compare_run_replay",
     "replay_plan_bundle",
     "resolve_timeline",
     "run_plan",

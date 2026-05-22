@@ -8,7 +8,7 @@ add or rename keys.
 
 from __future__ import annotations
 
-import uuid
+import inspect
 
 import pytest
 
@@ -16,7 +16,30 @@ from chaos_librarian.contract.journal import JournalPhase
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _STATE_DELTA_KEYS, apply_event
-from tests.engine.conftest import _minimal_scenario_for_action
+from tests.engine.conftest import _engine_event_context, _minimal_scenario_for_action
+
+
+def test_apply_event_uses_engine_event_context_signature() -> None:
+    assert list(inspect.signature(apply_event).parameters) == [
+        "state",
+        "resolved",
+        "ids",
+        "ctx",
+    ]
+
+
+def test_corruption_state_delta_contract_keys() -> None:
+    assert _STATE_DELTA_KEYS[TimelineActionName.CORRUPT_CONTAINER_HEADER] == frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "byte_start",
+            "byte_count",
+            "seed_material",
+        }
+    )
 
 
 @pytest.mark.parametrize("action", sorted(_STATE_DELTA_KEYS, key=lambda a: a.value))
@@ -27,8 +50,7 @@ def test_state_delta_keys_match_contract(action: TimelineActionName) -> None:
         state=state,
         resolved=resolved_event,
         ids=IdAllocator(TraceRecorder()),
-        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-        scenario_id="sc_test",
+        ctx=_engine_event_context(),
     )
     # Walk all emitted entries: slow_copy_start emits a Started entry whose
     # state_delta carries the start-time fields, slow_copy_commit emits a

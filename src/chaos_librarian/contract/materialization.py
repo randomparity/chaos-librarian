@@ -1,4 +1,4 @@
-"""Materialization report schema (v5).
+"""Materialization report schema (v6).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 
 
@@ -33,6 +34,7 @@ class Outcome(enum.StrEnum):
     CONTAINMENT_VIOLATION = "containment_violation"
     FS_FAILED = "fs_failed"
     MEDIA_FAILED = "media_failed"
+    CORRUPTION_FAILED = "corruption_failed"
 
 
 class FailureStage(enum.StrEnum):
@@ -42,6 +44,7 @@ class FailureStage(enum.StrEnum):
     FFPROBE = "ffprobe"
     FILESYSTEM = "filesystem"
     MEDIA = "media"
+    CORRUPTION = "corruption"
 
 
 class MaterializationExecutionMode(enum.StrEnum):
@@ -153,12 +156,35 @@ class MediaAction(BaseModel):
     duration_ns: int
 
 
+class CorruptionAction(BaseModel):
+    """One phase-B intentional corruption audit record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: Literal[TimelineActionName.CORRUPT_CONTAINER_HEADER]
+    target_asset_id: str
+    input_path: str
+    output_path: str
+    input_version_id: str | None = None
+    output_version_id: str
+    input_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    output_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    corruptor: str
+    byte_start: int
+    byte_count: int
+    seed_material: str
+    probe_outcome: CorruptionProbeOutcome
+    probe_error_tail: str | None = None
+    duration_ns: int
+
+
 class MaterializationReport(BaseModel):
     """Top-level ``materialization.json`` body."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[5]
+    schema_version: Literal[6]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -170,6 +196,7 @@ class MaterializationReport(BaseModel):
     failures: list[MaterializationFailure] = Field(default_factory=list)
     filesystem_actions: list[FilesystemAction] = Field(default_factory=list)
     media_actions: list[MediaAction] = Field(default_factory=list)
+    corruption_actions: list[CorruptionAction] = Field(default_factory=list)
     requested_duration_ns: int | None = None
     actual_duration_ns: int | None = None
     speed_multiplier: str | None = None

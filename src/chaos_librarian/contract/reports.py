@@ -7,7 +7,7 @@ load the matching exported schema.
 
 Asset reports carry content hashes, probed media facts, a typed
 projection of filesystem-affecting events, and a typed projection of
-version-affecting events at ``schema_version: 4``; the other three
+version-affecting events at ``schema_version: 5``; the other three
 entity reports remain at ``schema_version: 1`` because they describe
 manifest topology only.
 """
@@ -19,6 +19,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.profiles import CorruptionRecord
 from chaos_librarian.contract.scenario import TimelineActionName
 
 
@@ -32,6 +33,7 @@ class AssetSnapshot(BaseModel):
     version_index: int
     content_hash: str | None = None
     probed: ProbedMedia | None = None
+    corruption: CorruptionRecord | None = None
 
 
 class AssetHistoryEntry(BaseModel):
@@ -94,7 +96,7 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     asset_id: str
     initial: AssetSnapshot
     history: list[AssetHistoryEntry] = Field(default_factory=list)

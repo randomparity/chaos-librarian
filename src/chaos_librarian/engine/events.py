@@ -12,7 +12,6 @@ later sprint is a localized change.
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Callable
 from typing import Final
 
@@ -28,9 +27,11 @@ from chaos_librarian.contract.manifest import (
     ManifestSidecar,
     ManifestVersion,
 )
+from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
     ArchiveFileEvent,
+    CorruptContainerHeaderEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -50,6 +51,7 @@ from chaos_librarian.contract.scenario import (
     UpdateSidecarEvent,
 )
 from chaos_librarian.determinism import IdAllocator
+from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 from chaos_librarian.errors import ChaosLibrarianValueError
@@ -95,6 +97,17 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     ),
     TimelineActionName.REMOVE_SIDECAR: frozenset({"removed_sidecar_id", "removed_sidecar_path"}),
     TimelineActionName.UPDATE_SIDECAR: frozenset({"sidecar_id", "sidecar_path"}),
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "byte_start",
+            "byte_count",
+            "seed_material",
+        }
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -113,16 +126,15 @@ def apply_event(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Dispatch one resolved event to its handler and return its journal entries."""
     handler = _HANDLERS[resolved.event.action]
-    return handler(state, resolved, ids, run_id, scenario_id)
+    return handler(state, resolved, ids, ctx)
 
 
 _Handler = Callable[
-    [WorldState, ResolvedEvent, IdAllocator, uuid.UUID, str],
+    [WorldState, ResolvedEvent, IdAllocator, EngineEventContext],
     tuple[JournalEntry, ...],
 ]
 
@@ -130,8 +142,7 @@ _Handler = Callable[
 def _new_atomic_entry(
     *,
     resolved: ResolvedEvent,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
     action: str,
     target_ids: list[str],
     location_ids: list[str],
@@ -142,8 +153,8 @@ def _new_atomic_entry(
     return AtomicJournalEntry(
         schema_version=1,
         event_id=resolved.event.id,
-        scenario_id=scenario_id,
-        run_id=run_id,
+        scenario_id=ctx.scenario_id,
+        run_id=ctx.run_id,
         logical_time_ns=resolved.at_ns,
         action=action,
         target_ids=target_ids,
@@ -159,8 +170,7 @@ def _handle_move_asset(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, MoveAssetEvent)
@@ -169,8 +179,7 @@ def _handle_move_asset(
     state.locations[loc_id] = previous.model_copy(update={"path": event.to})
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.MOVE_ASSET,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -183,8 +192,7 @@ def _handle_rename_file(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, RenameFileEvent)
@@ -193,8 +201,7 @@ def _handle_rename_file(
     state.locations[loc_id] = previous.model_copy(update={"path": event.to})
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.RENAME_FILE,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -207,8 +214,7 @@ def _handle_delete_file(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, DeleteFileEvent)
@@ -217,8 +223,7 @@ def _handle_delete_file(
     state.unbind_location(event.target)
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.DELETE_FILE,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -231,8 +236,7 @@ def _handle_add_file(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, AddFileEvent)
@@ -249,8 +253,7 @@ def _handle_add_file(
     state.bind_location(event.target, location)
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.ADD_FILE,
         target_ids=[event.target],
         location_ids=[location_id],
@@ -263,8 +266,7 @@ def _handle_reencode_video(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, ReencodeVideoEvent)
@@ -279,8 +281,7 @@ def _handle_reencode_video(
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.REENCODE_VIDEO,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -300,8 +301,7 @@ def _handle_reencode_audio(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, ReencodeAudioEvent)
@@ -316,8 +316,7 @@ def _handle_reencode_audio(
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.REENCODE_AUDIO,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -337,8 +336,7 @@ def _handle_create_sidecar(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a sidecar row; route on ``event.kind``.
 
@@ -383,8 +381,7 @@ def _handle_create_sidecar(
     }
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.CREATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
@@ -397,8 +394,7 @@ def _handle_slow_copy_start(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, SlowCopyStartEvent)
@@ -409,8 +405,8 @@ def _handle_slow_copy_start(
     entry = StartedJournalEntry(
         schema_version=1,
         event_id=event.id,
-        scenario_id=scenario_id,
-        run_id=run_id,
+        scenario_id=ctx.scenario_id,
+        run_id=ctx.run_id,
         logical_time_ns=resolved.at_ns,
         action=TimelineActionName.SLOW_COPY_START,
         target_ids=[event.target],
@@ -430,8 +426,7 @@ def _handle_slow_copy_commit(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = resolved.event
     assert isinstance(event, SlowCopyCommitEvent)
@@ -441,8 +436,8 @@ def _handle_slow_copy_commit(
     entry = CommittedJournalEntry(
         schema_version=1,
         event_id=event.id,
-        scenario_id=scenario_id,
-        run_id=run_id,
+        scenario_id=ctx.scenario_id,
+        run_id=ctx.run_id,
         logical_time_ns=resolved.at_ns,
         action=TimelineActionName.SLOW_COPY_COMMIT,
         target_ids=[previous.asset_id],
@@ -458,8 +453,7 @@ def _handle_archive_file(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Move ``target`` to its archive destination.
 
@@ -475,8 +469,7 @@ def _handle_archive_file(
     state.locations[loc_id] = previous.model_copy(update={"path": archive_path})
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.ARCHIVE_FILE,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -489,8 +482,7 @@ def _handle_move_between_roots(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Move ``target`` from ``from_root_id`` to ``to_root_id``.
 
@@ -507,8 +499,7 @@ def _handle_move_between_roots(
     state.locations[loc_id] = previous.model_copy(update={"path": destination})
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.MOVE_BETWEEN_ROOTS,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -546,8 +537,7 @@ def _handle_remux_container(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a new version; rewrite the asset's location path extension.
 
@@ -576,8 +566,7 @@ def _handle_remux_container(
     state.locations[loc_id] = previous.model_copy(update={"path": new_path})
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.REMUX_CONTAINER,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -599,8 +588,7 @@ def _handle_edit_metadata(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a new version; record the fields delta. Path unchanged."""
     event = resolved.event
@@ -620,8 +608,7 @@ def _handle_edit_metadata(
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.EDIT_METADATA,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -640,8 +627,7 @@ def _handle_embed_subtitle(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a new version; remove the named sidecar from state.
 
@@ -669,8 +655,7 @@ def _handle_embed_subtitle(
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.EMBED_SUBTITLE,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -692,8 +677,7 @@ def _handle_extract_subtitle(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a new sidecar row; asset's version is UNCHANGED.
 
@@ -714,8 +698,7 @@ def _handle_extract_subtitle(
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.EXTRACT_SUBTITLE,
         target_ids=[event.target],
         location_ids=[loc_id],
@@ -733,8 +716,7 @@ def _handle_remove_sidecar(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Drop the named sidecar from state. No version change."""
     event = resolved.event
@@ -744,8 +726,7 @@ def _handle_remove_sidecar(
     del state.sidecars[sidecar_id]
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.REMOVE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
@@ -761,8 +742,7 @@ def _handle_update_sidecar(
     state: WorldState,
     resolved: ResolvedEvent,
     ids: IdAllocator,
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Emit a journal entry; no state mutation. Phase B regenerates bytes."""
     event = resolved.event
@@ -770,8 +750,7 @@ def _handle_update_sidecar(
     sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
     entry = _new_atomic_entry(
         resolved=resolved,
-        run_id=run_id,
-        scenario_id=scenario_id,
+        ctx=ctx,
         action=TimelineActionName.UPDATE_SIDECAR,
         target_ids=[event.target],
         location_ids=[state.location_id_for_asset(event.target)],
@@ -781,6 +760,60 @@ def _handle_update_sidecar(
         },
     )
     return (entry,)
+
+
+def _handle_corrupt_container_header(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, CorruptContainerHeaderEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    corruptor = "container_header_v1"
+    seed_material = f"{corruptor}:{ctx.resolved_seed}:{event.id}:{event.target}"
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        byte_start=0,
+        byte_count=event.bytes,
+        seed_material=seed_material,
+    )
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+            corruption=record,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "byte_start": 0,
+                "byte_count": event.bytes,
+                "seed_material": seed_material,
+            },
+        ),
+    )
 
 
 _HANDLERS: dict[TimelineActionName, _Handler] = {
@@ -801,4 +834,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
     TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
     TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: _handle_corrupt_container_header,
 }

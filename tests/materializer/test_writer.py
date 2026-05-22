@@ -87,7 +87,7 @@ def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
     empty_journal_digest = hashlib.sha256(serialize_journal_bytes(())).hexdigest()
     metadata = WallClockBaselineMetadata(
         initial_manifest=Manifest(
-            schema_version=4,
+            schema_version=5,
             works=[],
             variants=[],
             bundles=[],
@@ -97,7 +97,7 @@ def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
             sidecars=[],
         ),
         current_manifest=Manifest(
-            schema_version=4,
+            schema_version=5,
             works=[],
             variants=[],
             bundles=[],
@@ -110,7 +110,7 @@ def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
         replay_bundle=MaterializeReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version="0.1.0",
-            scenario="schema_version: 6\nscenario_id: x\n",
+            scenario="schema_version: 7\nscenario_id: x\n",
             run_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
             resolved_seed=1,
             applied_events=0,
@@ -119,7 +119,7 @@ def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
             created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
             toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
         ),
-        scenario_yaml_bytes=b"schema_version: 6\nscenario_id: x\n",
+        scenario_yaml_bytes=b"schema_version: 7\nscenario_id: x\n",
         sentinel=_sentinel(RunSentinelState.IN_PROGRESS),
     )
     publish_wall_clock_baseline(staging, out_dir, metadata)
@@ -147,7 +147,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=4,
+        schema_version=5,
         works=[],
         variants=[],
         bundles=[],
@@ -177,7 +177,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 6\nscenario_id: static\n",
+        scenario="schema_version: 7\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         applied_events=0,
@@ -195,7 +195,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
             validation_report=validation_report,
             materialization_report=materialization_report,
             replay_bundle=replay_bundle,
-            scenario_yaml_bytes=b"schema_version: 6\nscenario_id: static\n",
+            scenario_yaml_bytes=b"schema_version: 7\nscenario_id: static\n",
             sentinel=_sentinel(RunSentinelState.COMPLETE),
         ),
     )
@@ -250,7 +250,7 @@ def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
 
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=4,
+        schema_version=5,
         works=[],
         variants=[],
         bundles=[],
@@ -272,7 +272,7 @@ def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 6\nscenario_id: static\n",
+        scenario="schema_version: 7\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         applied_events=0,
@@ -288,7 +288,7 @@ def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
         validation_report=validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
-        scenario_yaml_bytes=b"schema_version: 6\nscenario_id: static\n",
+        scenario_yaml_bytes=b"schema_version: 7\nscenario_id: static\n",
         sentinel=_sentinel(RunSentinelState.COMPLETE),
     )
     with pytest.raises(OSError, match="Permission denied") as exc_info:
@@ -322,7 +322,7 @@ def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> N
     shutil.rmtree(out_dir / "library")
     run_id = uuid.uuid4()
     manifest = Manifest(
-        schema_version=4,
+        schema_version=5,
         works=[],
         variants=[],
         bundles=[],
@@ -344,7 +344,7 @@ def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> N
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.1.0",
-        scenario="schema_version: 6\nscenario_id: static\n",
+        scenario="schema_version: 7\nscenario_id: static\n",
         run_id=run_id,
         resolved_seed=1,
         applied_events=0,
@@ -360,7 +360,7 @@ def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> N
         validation_report=validation_report,
         materialization_report=materialization_report,
         replay_bundle=replay_bundle,
-        scenario_yaml_bytes=b"schema_version: 6\nscenario_id: static\n",
+        scenario_yaml_bytes=b"schema_version: 7\nscenario_id: static\n",
         sentinel=_sentinel(RunSentinelState.COMPLETE),
     )
     cleanup_failed_phase_b_run(out_dir, metadata)

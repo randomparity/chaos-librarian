@@ -172,7 +172,7 @@ def cleanup_failed_run(out_dir: Path, metadata: MaterializeMetadata) -> None:
 def cleanup_failed_phase_b_run(out_dir: Path, metadata: MaterializeMetadata) -> None:
     """Wipe ``library/`` entirely (no placeholder), write metadata, flip sentinel.
 
-    Used by the phase-B failure path (filesystem OR media). Unlike
+    Used by the phase-B failure path (filesystem, media, or corruption). Unlike
     ``cleanup_failed_run``, no empty ``library/`` directory is recreated:
     a phase-B crash leaves the run-dir in a state where the
     partially-mutated tree is gone, and the rest of the metadata

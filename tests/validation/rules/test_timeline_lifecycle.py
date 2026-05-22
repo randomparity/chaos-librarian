@@ -565,3 +565,64 @@ class TestSprint7LifecycleExtensions:
         collector = IssueCollector()
         rule_timeline_lifecycle(raw, empty_index, collector)
         assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+
+class TestSprint10CorruptionLifecycle:
+    """Corruption mutates asset bytes and requires a placed, non-copying target."""
+
+    def test_corruption_after_delete_emits_lifecycle_invalid(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            profiles=["malformed-media"],
+            timeline=[
+                {"id": "ev_del", "at": "0s", "action": "delete_file", "target": "a"},
+                {
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a",
+                },
+            ],
+        )
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        issues = [i for i in collector.issues if i.code == E_LIFECYCLE_INVALID]
+        assert any(
+            "corrupt_container_header" in i.message and "unplaced" in i.message for i in issues
+        )
+
+    def test_corruption_during_slow_copy_emits_lifecycle_invalid(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = minimal_scenario(
+            profiles=["malformed-media"],
+            timeline=[
+                {
+                    "id": "e_sc",
+                    "at": "1s",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "a.mkv",
+                    "temp_path": "a.mkv.copying",
+                    "duration": "5s",
+                },
+                {
+                    "id": "corrupt_header_001",
+                    "at": "2s",
+                    "action": "corrupt_container_header",
+                    "target": "a",
+                },
+            ],
+        )
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        issues = [i for i in collector.issues if i.code == E_LIFECYCLE_INVALID]
+        assert any(
+            "corrupt_container_header" in i.message and "pending slow_copy" in i.message
+            for i in issues
+        )

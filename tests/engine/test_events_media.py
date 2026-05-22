@@ -7,61 +7,172 @@ import uuid
 import pytest
 
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
+from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _swap_extension, apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
+from tests.engine.conftest import _engine_event_context
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
 
-def _scenario(timeline: list[dict[str, object]]) -> Scenario:
-    return Scenario.model_validate(
-        {
-            "schema_version": 6,
-            "scenario_id": "media",
-            "seed": 1,
-            "duration_scale": "short",
-            "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
-            "works": [
+def _scenario(
+    timeline: list[dict[str, object]],
+    *,
+    profiles: list[str] | None = None,
+) -> Scenario:
+    payload: dict[str, object] = {
+        "schema_version": 7,
+        "scenario_id": "media",
+        "seed": 1,
+        "duration_scale": "short",
+        "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+        "works": [
+            {
+                "id": "w0",
+                "title": "T",
+                "variants": [
+                    {
+                        "id": "v0",
+                        "label": "hd",
+                        "bundle": {
+                            "id": "b0",
+                            "assets": [
+                                {
+                                    "id": "a0",
+                                    "role": "primary_video",
+                                    "container": "mkv",
+                                    "duration_seconds": 1,
+                                    "video": {
+                                        "source": "color_bars",
+                                        "codec": "h264",
+                                        "resolution": "1080p",
+                                    },
+                                    "audio": [
+                                        {
+                                            "codec": "aac",
+                                            "channels": "5.1",
+                                            "language": "eng",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+        "timeline": timeline,
+    }
+    if profiles is not None:
+        payload["profiles"] = profiles
+    return Scenario.model_validate(payload)
+
+
+class TestCorruptContainerHeaderHandler:
+    """corrupt_container_header allocates a deterministic corruption version."""
+
+    def test_corrupt_container_header_allocates_new_version_and_keeps_path(self) -> None:
+        scenario = _scenario(
+            [
                 {
-                    "id": "w0",
-                    "title": "T",
-                    "variants": [
-                        {
-                            "id": "v0",
-                            "label": "hd",
-                            "bundle": {
-                                "id": "b0",
-                                "assets": [
-                                    {
-                                        "id": "a0",
-                                        "role": "primary_video",
-                                        "container": "mkv",
-                                        "duration_seconds": 1,
-                                        "video": {
-                                            "source": "color_bars",
-                                            "codec": "h264",
-                                            "resolution": "1080p",
-                                        },
-                                        "audio": [
-                                            {
-                                                "codec": "aac",
-                                                "channels": "5.1",
-                                                "language": "eng",
-                                            }
-                                        ],
-                                    }
-                                ],
-                            },
-                        }
-                    ],
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
                 }
             ],
-            "timeline": timeline,
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        original_path = state.locations[state.location_id_for_asset("a0")].path
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        new_version_id = state.version_id_for_asset("a0")
+        assert new_version_id != prior_version_id
+        assert state.locations[state.location_id_for_asset("a0")].path == original_path
+        assert entry.input_version_ids == [prior_version_id]
+        assert entry.output_version_ids == [new_version_id]
+
+    def test_corrupt_container_header_journal_records_corruption_metadata(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
+                    "bytes": 128,
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        assert entry.state_delta == {
+            "input_path": "movies-hd/a0.mkv",
+            "output_path": "movies-hd/a0.mkv",
+            "profile": ProfileName.MALFORMED_MEDIA.value,
+            "corruptor": "container_header_v1",
+            "byte_start": 0,
+            "byte_count": 128,
+            "seed_material": "container_header_v1:42:corrupt_header_001:a0",
         }
-    )
+        version = state.versions[entry.output_version_ids[0]]
+        assert version.corruption is not None
+        assert version.corruption.model_dump(mode="json") == {
+            "profile": "malformed-media",
+            "event_id": "corrupt_header_001",
+            "corruptor": "container_header_v1",
+            "byte_start": 0,
+            "byte_count": 128,
+            "seed_material": "container_header_v1:42:corrupt_header_001:a0",
+        }
+
+    def test_corrupt_container_header_uses_resolved_seed_in_seed_material(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=777),
+        )
+
+        assert entry.state_delta["seed_material"] == "container_header_v1:777:corrupt_header_001:a0"
 
 
 class TestReencodeVideoHandler:
@@ -88,7 +199,7 @@ class TestReencodeVideoHandler:
         state = build_initial_state(scenario, ids)
         before_versions = set(state.versions.keys())
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert isinstance(entry, AtomicJournalEntry)
         assert entry.phase == JournalPhase.ATOMIC
         assert entry.action == "reencode_video"
@@ -113,7 +224,7 @@ class TestReencodeVideoHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert isinstance(entry, AtomicJournalEntry)
         input_path = entry.state_delta["input_path"]
         output_path = entry.state_delta["output_path"]
@@ -147,7 +258,7 @@ class TestReencodeAudioHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert entry.action == "reencode_audio"
         assert entry.state_delta["from_channels"] == "5.1"
         assert entry.state_delta["to_channels"] == "stereo"
@@ -168,7 +279,7 @@ class TestReencodeAudioHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert isinstance(entry, AtomicJournalEntry)
         input_path = entry.state_delta["input_path"]
         output_path = entry.state_delta["output_path"]
@@ -202,7 +313,7 @@ class TestCreateSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "media")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert entry.action == "create_sidecar"
         assert entry.state_delta == {
             "sidecar_path": "movies-hd/a0.eng.srt",
@@ -236,7 +347,7 @@ class TestReencodeAudioOnUnplacedAssetCrashes:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (delete_resolved,) = resolve_timeline(scenario)
-        apply_event(state, delete_resolved, ids, _RUN_ID, "media")
+        apply_event(state, delete_resolved, ids, _engine_event_context("media", run_id=_RUN_ID))
         assert not state.has_location("a0")
 
         bad_scenario = _scenario(
@@ -253,7 +364,9 @@ class TestReencodeAudioOnUnplacedAssetCrashes:
         )
         (reencode_resolved,) = resolve_timeline(bad_scenario)
         with pytest.raises(KeyError):
-            apply_event(state, reencode_resolved, ids, _RUN_ID, "media")
+            apply_event(
+                state, reencode_resolved, ids, _engine_event_context("media", run_id=_RUN_ID)
+            )
 
 
 class TestRemuxContainerHandler:
@@ -280,7 +393,9 @@ class TestRemuxContainerHandler:
         state = build_initial_state(scenario, ids)
         prior_version_id = state.version_id_for_asset("a0")
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         entry = entries[0]
         assert isinstance(entry, AtomicJournalEntry)
         assert entry.input_version_ids == [prior_version_id]
@@ -306,7 +421,9 @@ class TestRemuxContainerHandler:
         old_path = state.locations[loc_id].path
         assert old_path.endswith(".mkv")
         (resolved,) = resolve_timeline(scenario)
-        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         new_path = state.locations[loc_id].path
         assert new_path == old_path[:-4] + ".mp4"
 
@@ -325,7 +442,9 @@ class TestRemuxContainerHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         delta = entries[0].state_delta
         from_container = delta["from_container"]
         to_container = delta["to_container"]
@@ -366,7 +485,9 @@ class TestRemuxContainerHandler:
         )
         (resolved,) = resolve_timeline(scenario)
 
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        (entry,) = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
 
         assert entry.state_delta["from_container"] == ""
         assert entry.state_delta["to_path"] == "movies.with.dot/a0.mp4"
@@ -409,7 +530,9 @@ class TestEditMetadataHandler:
         state = build_initial_state(scenario, ids)
         prior_version_id = state.version_id_for_asset("a0")
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         entry = entries[0]
         assert entry.input_version_ids == [prior_version_id]
         new_version_id = entry.output_version_ids[0]
@@ -430,7 +553,9 @@ class TestEditMetadataHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         delta = entries[0].state_delta
         fields = delta["fields"]
         assert isinstance(fields, dict)
@@ -456,5 +581,7 @@ class TestEditMetadataHandler:
         loc_id = state.location_id_for_asset("a0")
         old_path = state.locations[loc_id].path
         (resolved,) = resolve_timeline(scenario)
-        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         assert state.locations[loc_id].path == old_path

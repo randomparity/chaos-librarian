@@ -41,3 +41,11 @@ _STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
 ) | frozenset({TimelineActionName.REMOVE_SIDECAR})
 
 SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
+
+_CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {TimelineActionName.CORRUPT_CONTAINER_HEADER}
+)
+
+SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
+)

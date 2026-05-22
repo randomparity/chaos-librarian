@@ -70,7 +70,7 @@ def minimal_scenario() -> ScenarioBuilder:
         if asset_subtitles is not None:
             asset["subtitles"] = asset_subtitles
         base: dict[str, object] = {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",

@@ -748,6 +748,12 @@ Future bump-in-the-wire interceptors:
 Corruption and malformed-media scenarios are not V1 defaults. They are explicit
 opt-in profiles so early failures remain easy to interpret.
 
+Sprint 10 implements the first explicit malformed-media lane:
+`profiles: ["malformed-media"]` plus the atomic `corrupt_container_header`
+timeline action. The broader interceptor framework, packet-range corruption,
+duration-metadata corruption, network-lag profile, and expanded profile packs
+are deferred to GitHub issues #70-#75.
+
 ## Materializer Backends
 
 The first materializer uses local command-line tools when available:
@@ -975,8 +981,7 @@ Exit criteria:
 
 Deliverables (may split into multiple PRs):
 
-- Corruption interceptor framework
-- First malformed-media profile
+- Explicit malformed-media opt-in and `corrupt_container_header`
 - Public-domain / TTS content source hooks
 - Larger performance profiles
 - Network filesystem lag profile

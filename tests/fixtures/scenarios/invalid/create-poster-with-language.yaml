@@ -1,5 +1,5 @@
 # expected: E_FIELD_SHAPE
-schema_version: 6
+schema_version: 7
 scenario_id: sc_inv_cs_001
 seed: 1
 duration_scale: short

@@ -20,7 +20,11 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.plan import run_plan
 from chaos_librarian.engine.writer import append_step, write_fixture
-from chaos_librarian.validation import prepare_run_input, run_validation
+from chaos_librarian.validation import (
+    prepare_run_input,
+    prepare_run_input_from_bytes,
+    run_validation,
+)
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
@@ -35,6 +39,56 @@ def _make_fixture(tmp_path: Path, scenario_name: str, *, steps_limit: int | None
         steps_limit=steps_limit,
     )
     tmp_path.mkdir(parents=True, exist_ok=True)
+    out = tmp_path / "run"
+    write_fixture(out, artifacts, run_input.raw_bytes)
+    return out
+
+
+def _corruption_scenario_bytes(seed: str = "42") -> bytes:
+    return f"""
+schema_version: 7
+scenario_id: corruption-step-test
+seed: {seed}
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_001
+    title: Broken Header
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: corrupt_header_001
+    at: 1s
+    action: corrupt_container_header
+    target: asset_main
+    bytes: 64
+""".lstrip().encode("utf-8")
+
+
+def _make_inline_fixture(tmp_path: Path, scenario_bytes: bytes, *, steps_limit: int) -> Path:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=scenario_bytes,
+        source_label="inline-corruption-step",
+    )
+    report = run_validation(run_input)
+    artifacts = run_plan(
+        run_input=run_input,
+        validation_report=report,
+        steps_limit=steps_limit,
+    )
     out = tmp_path / "run"
     write_fixture(out, artifacts, run_input.raw_bytes)
     return out
@@ -276,3 +330,34 @@ class TestStepFixtureRoundFour:
         full = _make_fixture(tmp_path / "full", "version-evolution.yaml", steps_limit=1)
         full_bundle = PlanOnlyReplayBundle.model_validate_json((full / "replay.json").read_text())
         assert result.new_replay_bundle.execution_trace == full_bundle.execution_trace
+
+
+class TestStepFixtureCorruption:
+    """Step recovery keeps corruption seed evidence stable."""
+
+    def test_step_recovery_regenerates_corruption_journal_byte_identically(
+        self, tmp_path: Path
+    ) -> None:
+        scenario_bytes = _corruption_scenario_bytes()
+        paused = _make_inline_fixture(tmp_path, scenario_bytes, steps_limit=0)
+        run_input = prepare_run_input_from_bytes(
+            raw_bytes=scenario_bytes,
+            source_label="inline-corruption-full",
+        )
+        full = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+
+        result = step_fixture(paused, n_steps=1)
+
+        assert result.new_entries == full.journal
+
+    def test_step_from_random_seed_bundle_uses_recorded_resolved_seed(self, tmp_path: Path) -> None:
+        scenario_bytes = _corruption_scenario_bytes(seed="random")
+        paused = _make_inline_fixture(tmp_path, scenario_bytes, steps_limit=0)
+        bundle = PlanOnlyReplayBundle.model_validate_json((paused / "replay.json").read_text())
+
+        result = step_fixture(paused, n_steps=1)
+
+        entry = result.new_entries[0]
+        assert entry.state_delta["seed_material"] == (
+            f"container_header_v1:{bundle.resolved_seed}:corrupt_header_001:asset_main"
+        )

@@ -27,6 +27,7 @@ _VERSION_AFFECTING_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.REMUX_CONTAINER,
         TimelineActionName.EDIT_METADATA,
         TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
     }
 )
 
@@ -37,6 +38,9 @@ _PRESERVED_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.REMUX_CONTAINER: frozenset({"from_container", "to_container"}),
     TimelineActionName.EDIT_METADATA: frozenset({"fields"}),
     TimelineActionName.EMBED_SUBTITLE: frozenset({"language", "kind"}),
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: frozenset(
+        {"profile", "corruptor", "byte_start", "byte_count", "seed_material"}
+    ),
 }
 
 

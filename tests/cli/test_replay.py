@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
 from chaos_librarian.cli.app import app
+from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
@@ -23,11 +24,13 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel, RunSentinelState
-from chaos_librarian.engine import run_plan
+from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.engine import compare_run_replay, run_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
@@ -500,6 +503,177 @@ class TestReplayRunBundles:
         error = json.loads(result.stderr)
         assert error["error_code"] == E_REPLAY_DIVERGENCE
 
+    def test_replay_run_bundle_materializer_failure_uses_error_envelope(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        run_dir = _make_wall_clock_fixture(tmp_path, applied_events=1)
+
+        def fail_replay(_bundle, _out):
+            raise FilesystemActionError(
+                "phase-B replay failed",
+                event_id="move_001",
+                action=TimelineActionName.MOVE_ASSET,
+                asset_id="asset_hd_main",
+                cause=OSError("disk full"),
+            )
+
+        monkeypatch.setattr(replay_cmd, "replay_run_bundle", fail_replay)
+        out = tmp_path / "replay"
+
+        result = runner.invoke(
+            app,
+            ["replay", str(run_dir / "replay.json"), "--out", str(out), "--json"],
+        )
+
+        assert result.exit_code == 5
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_MATERIALIZE_FS_FAILED"
+        assert payload["asset_id"] == "asset_hd_main"
+        assert payload["materialization_report_path"] == str(out / "materialization.json")
+
+
+def test_compare_run_replay_compares_materialization_corruption_fields(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(
+        tmp_path / "right",
+        probe_outcome="failed_expected",
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert not diff.is_clean()
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
+def test_compare_run_replay_ignores_corruption_duration_ns(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left", duration_ns=1)
+    right = _write_run_compare_fixture(tmp_path / "right", duration_ns=99)
+
+    diff = compare_run_replay(left, right)
+
+    assert diff.is_clean()
+
+
+def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(
+        tmp_path / "left",
+        platform="darwin",
+        toolchain={"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
+        invocations=[{"tool": "ffmpeg", "version": "7.1.1", "command": ["a"], "exit_code": 0}],
+    )
+    right = _write_run_compare_fixture(
+        tmp_path / "right",
+        platform="linux",
+        toolchain={"ffmpeg": "8.0.0", "ffprobe": "8.0.0"},
+        invocations=[{"tool": "ffmpeg", "version": "8.0.0", "command": ["b"], "exit_code": 0}],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert diff.is_clean()
+
+
+def test_compare_run_replay_compares_report_tree(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _write_asset_report(left, content_hash="sha256:" + "1" * 64)
+    _write_asset_report(right, content_hash="sha256:" + "2" * 64)
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["reports/assets/asset_main.json"]
+
+
+def test_compare_run_replay_catches_missing_report_file(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _write_asset_report(left, content_hash="sha256:" + "1" * 64)
+
+    diff = compare_run_replay(left, right)
+
+    assert [(item.path, item.kind) for item in diff.files] == [
+        ("reports/assets/asset_main.json", "missing_in_right")
+    ]
+
+
+def test_compare_run_replay_compares_materialization_filesystem_actions(
+    tmp_path: Path,
+) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(
+        right,
+        "filesystem_actions",
+        [
+            {
+                "event_id": "move_001",
+                "action": "move_asset",
+                "target_asset_id": "asset_main",
+                "from_path": "movies-hd/asset_main.mkv",
+                "to_path": "movies-hd/moved.mkv",
+                "temp_path": None,
+                "duration_ns": 1,
+            }
+        ],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
+def test_compare_run_replay_compares_materialization_media_actions(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(
+        right,
+        "media_actions",
+        [
+            {
+                "event_id": "reencode_video_001",
+                "action": "reencode_video",
+                "target_asset_id": "asset_main",
+                "input_path": "movies-hd/asset_main.mkv",
+                "output_path": "movies-hd/asset_main.mkv",
+                "input_version_id": "version_0001",
+                "output_version_id": "version_0002",
+                "output_sidecar_id": None,
+                "input_content_hash": "sha256:" + "1" * 64,
+                "output_content_hash": "sha256:" + "2" * 64,
+                "tool_invocation_index": 0,
+                "duration_ns": 1,
+            }
+        ],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
+def test_compare_run_replay_ignores_materialization_action_duration_ns(
+    tmp_path: Path,
+) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    action = {
+        "event_id": "move_001",
+        "action": "move_asset",
+        "target_asset_id": "asset_main",
+        "from_path": "movies-hd/asset_main.mkv",
+        "to_path": "movies-hd/moved.mkv",
+        "temp_path": None,
+        "duration_ns": 1,
+    }
+    _update_materialization(left, "filesystem_actions", [action])
+    _update_materialization(right, "filesystem_actions", [dict(action, duration_ns=99)])
+
+    diff = compare_run_replay(left, right)
+
+    assert diff.is_clean()
+
 
 def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     """WHY: Sprint 5 ships the MaterializeReplayBundle variant for schema
@@ -512,7 +686,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
             {
                 "schema_version": 5,
                 "chaos_librarian_version": "0.1.0",
-                "scenario": "schema_version: 6\nscenario_id: x\n",
+                "scenario": "schema_version: 7\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",
                 "resolved_seed": 1,
                 "applied_events": 0,
@@ -530,3 +704,83 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     payload = json.loads(result.stderr)
     assert payload["error_code"] == "E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED"
     assert payload["details"]["execution_mode"] == "materialize"
+
+
+def _write_run_compare_fixture(
+    root: Path,
+    *,
+    probe_outcome: str = "still_probeable",
+    duration_ns: int = 1,
+    platform: str = "test",
+    toolchain: dict[str, str] | None = None,
+    invocations: list[dict[str, object]] | None = None,
+) -> Path:
+    root.mkdir()
+    (root / "library").mkdir()
+    (root / "library" / "asset.mkv").write_bytes(b"same")
+    (root / "manifest.current.json").write_text(json.dumps({"versions": []}), encoding="utf-8")
+    (root / "replay.json").write_text(
+        json.dumps(
+            {
+                "scenario": "schema_version: 7\n",
+                "run_id": str(RUN_ID),
+                "resolved_seed": 7,
+                "applied_events": 1,
+                "journal_digest": "0" * 64,
+                "execution_mode": "run",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (root / "journal.jsonl").write_text("", encoding="utf-8")
+    (root / "materialization.json").write_text(
+        json.dumps(
+            {
+                "outcome": "success",
+                "execution_mode": "run",
+                "platform": platform,
+                "toolchain": toolchain or {"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
+                "invocations": invocations or [],
+                "started_at": "2026-05-21T00:00:00Z",
+                "finished_at": "2026-05-21T00:00:01Z",
+                "corruption_actions": [
+                    {
+                        "event_id": "corrupt_header_001",
+                        "action": "corrupt_container_header",
+                        "target_asset_id": "asset_main",
+                        "input_path": "movies-hd/asset_main.mkv",
+                        "output_path": "movies-hd/asset_main.mkv",
+                        "input_version_id": "version_0001",
+                        "output_version_id": "version_0002",
+                        "input_content_hash": "sha256:" + "1" * 64,
+                        "output_content_hash": "sha256:" + "2" * 64,
+                        "corruptor": "container_header_v1",
+                        "byte_start": 0,
+                        "byte_count": 64,
+                        "seed_material": "container_header_v1:7:corrupt_header_001:asset_main",
+                        "probe_outcome": probe_outcome,
+                        "probe_error_tail": None,
+                        "duration_ns": duration_ns,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _write_asset_report(root: Path, *, content_hash: str) -> None:
+    reports_dir = root / "reports" / "assets"
+    reports_dir.mkdir(parents=True)
+    (reports_dir / "asset_main.json").write_text(
+        json.dumps({"asset_id": "asset_main", "current": {"content_hash": content_hash}}),
+        encoding="utf-8",
+    )
+
+
+def _update_materialization(root: Path, field: str, value: object) -> None:
+    path = root / "materialization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")

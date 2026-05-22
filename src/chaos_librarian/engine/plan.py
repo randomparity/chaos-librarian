@@ -31,6 +31,7 @@ from chaos_librarian.determinism import (
     TraceRecorder,
     resolve_seed,
 )
+from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.reports import ReportSet, build_report_set
@@ -132,6 +133,11 @@ def run_plan(
             scenario_content_hash=run_input.content_hash,
             resolved_seed=resolved_seed,
         )
+    ctx = EngineEventContext(
+        run_id=run_id,
+        scenario_id=parsed.scenario_id,
+        resolved_seed=resolved_seed,
+    )
 
     journal: list[JournalEntry] = []
     for resolved in resolved_timeline[:applied_events]:
@@ -139,8 +145,7 @@ def run_plan(
             initial_state,
             resolved,
             ids,
-            run_id,
-            parsed.scenario_id,
+            ctx,
         )
         journal.extend(entries)
 

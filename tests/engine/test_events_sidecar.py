@@ -17,6 +17,7 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
+from tests.engine.conftest import _engine_event_context
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -32,7 +33,7 @@ def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scena
     """
     return Scenario.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "sidecar_tests",
             "seed": 1,
             "duration_scale": "short",
@@ -111,9 +112,19 @@ class TestEmbedSubtitleHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         prior_version_id = state.version_id_for_asset("a0")
-        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         entry = entries[0]
         assert entry.input_version_ids == [prior_version_id]
         assert entry.output_version_ids[0] != prior_version_id
@@ -141,9 +152,19 @@ class TestEmbedSubtitleHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         assert len(state.sidecars) == 1
-        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         assert len(state.sidecars) == 0
 
     def test_embed_state_delta_records_sidecar_id_and_path(self) -> None:
@@ -169,9 +190,19 @@ class TestEmbedSubtitleHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         sidecar_id = next(iter(state.sidecars.keys()))
-        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         delta = entries[0].state_delta
         assert delta["embedded_sidecar_id"] == sidecar_id
         assert delta["embedded_sidecar_path"] == "a0.eng.srt"
@@ -209,7 +240,9 @@ class TestExtractSubtitleHandler:
         baseline = len(state.sidecars)
         assert baseline == 1
         (resolved,) = resolve_timeline(scenario)
-        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         assert len(state.sidecars) == baseline + 1
         sidecar = next(s for s in state.sidecars.values() if s.language == "fra")
         assert sidecar.kind == "subtitle"
@@ -233,7 +266,9 @@ class TestExtractSubtitleHandler:
         state = build_initial_state(scenario, ids)
         prior_version_id = state.version_id_for_asset("a0")
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         # Same version after — extract is read-only.
         assert state.version_id_for_asset("a0") == prior_version_id
         # And the journal entry's input/output version ids are EMPTY.
@@ -256,7 +291,9 @@ class TestExtractSubtitleHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         delta = entries[0].state_delta
         assert delta["sidecar_path"] == "a0.fra.srt"
         assert delta["language"] == "fra"
@@ -293,9 +330,19 @@ class TestRemoveSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         assert len(state.sidecars) == 1
-        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         assert len(state.sidecars) == 0
 
     def test_remove_state_delta_records_id_and_path(self) -> None:
@@ -321,9 +368,19 @@ class TestRemoveSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         sidecar_id = next(iter(state.sidecars.keys()))
-        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         delta = entries[0].state_delta
         assert delta["removed_sidecar_id"] == sidecar_id
         assert delta["removed_sidecar_path"] == "a0.eng.srt"
@@ -351,9 +408,19 @@ class TestRemoveSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         prior_version_id = state.version_id_for_asset("a0")
-        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         assert state.version_id_for_asset("a0") == prior_version_id
 
 
@@ -389,9 +456,19 @@ class TestUpdateSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         sidecars_before = dict(state.sidecars)
-        apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         # Same dict; same sidecar_ids; same fields.
         assert state.sidecars.keys() == sidecars_before.keys()
 
@@ -418,9 +495,19 @@ class TestUpdateSidecarHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved_events = list(resolve_timeline(scenario))
-        apply_event(state, resolved_events[0], ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state,
+            resolved_events[0],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         sidecar_id = next(iter(state.sidecars.keys()))
-        entries = apply_event(state, resolved_events[1], ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state,
+            resolved_events[1],
+            ids,
+            _engine_event_context(scenario.scenario_id, run_id=_RUN_ID),
+        )
         delta = entries[0].state_delta
         assert delta["sidecar_id"] == sidecar_id
         assert delta["sidecar_path"] == "a0.eng.srt"
@@ -445,7 +532,7 @@ class TestCreateSidecarKindRouting:
         """
         return Scenario.model_validate(
             {
-                "schema_version": 6,
+                "schema_version": 7,
                 "scenario_id": "create_sidecar_kind",
                 "seed": 1,
                 "duration_scale": "short",
@@ -506,7 +593,9 @@ class TestCreateSidecarKindRouting:
         state = build_initial_state(scenario, ids)
         prior_version_id = state.version_id_for_asset("a0")
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         # One new sidecar row, labeled poster, with no language.
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))
@@ -544,7 +633,9 @@ class TestCreateSidecarKindRouting:
         state = build_initial_state(scenario, ids)
         prior_version_id = state.version_id_for_asset("a0")
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        entries = apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))
         assert sidecar.kind == "nfo"
@@ -581,7 +672,9 @@ class TestCreateSidecarKindRouting:
         state = build_initial_state(scenario, ids)
         assert len(state.sidecars) == 1  # declared row from build_initial_state
         (resolved,) = resolve_timeline(scenario)
-        apply_event(state, resolved, ids, _RUN_ID, scenario.scenario_id)
+        apply_event(
+            state, resolved, ids, _engine_event_context(scenario.scenario_id, run_id=_RUN_ID)
+        )
         # Still one row — the declared row was replaced, not duplicated.
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))

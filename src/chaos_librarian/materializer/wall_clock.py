@@ -6,21 +6,18 @@ import dataclasses
 import hashlib
 import time
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
-from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
+from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
-    FailureStage,
     FilesystemAction,
     MaterializationExecutionMode,
-    MaterializationFailure,
     MaterializedAsset,
-    MediaAction,
     Outcome,
     ToolInvocation,
 )
@@ -42,24 +39,23 @@ from chaos_librarian.materializer.capabilities import (
     detect_capabilities,
 )
 from chaos_librarian.materializer.errors import (
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ScenarioValidationError,
     TimelineUnsupportedError,
 )
-from chaos_librarian.materializer.filesystem import _dispatch_one, _PhaseBContext
 from chaos_librarian.materializer.finalize import build_sentinel
 from chaos_librarian.materializer.manifest_build import (
     augment_manifest,
-    augment_timeline_sidecars,
-    augment_updated_sidecars,
-    augment_versions,
 )
-from chaos_librarian.materializer.media import (
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
-    _MediaContext,
-    apply_media_action,
+from chaos_librarian.materializer.phase_b import (
+    PhaseBState,
+    augment_phase_b_outputs,
+    dispatch_phase_b_entry,
+    make_phase_b_state,
+    phase_b_failure_outcome,
+    phase_b_failure_record,
 )
 from chaos_librarian.materializer.preflight import (
     iter_assets,
@@ -122,11 +118,7 @@ class _PhaseAResult:
 
 
 @dataclass(slots=True)
-class _DispatchState:
-    fs_ctx: _PhaseBContext
-    media_ctx: _MediaContext
-    filesystem_actions: list[FilesystemAction] = field(default_factory=list)
-    media_actions: list[MediaAction] = field(default_factory=list)
+class _DispatchState(PhaseBState):
     slow_copies: dict[str, WallClockSlowCopySession] = field(default_factory=dict)
     slow_copy_initial_paths: dict[str, str] = field(default_factory=dict)
 
@@ -403,7 +395,7 @@ def _run_timed_phase(
                 out_dir=run_context.out_dir,
             )
             overran_duration = True
-    except (FilesystemActionError, MediaActionError) as exc:
+    except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
         _finalize_wall_clock_phase_b_failure(
             run_context=run_context,
@@ -440,22 +432,19 @@ def _make_dispatch_state(
     scenario: Scenario,
     invocations: list[ToolInvocation],
 ) -> _DispatchState:
-    scenario_assets = {asset.id: asset for asset in iter_assets(scenario)}
+    state = make_phase_b_state(
+        library_root=run_context.out_dir / "library",
+        scenario=scenario,
+        resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
+        ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
+        ffprobe_version=run_context.caps.ffprobe.version or "unknown",
+        invocations=invocations,
+        manifest=run_context.plan_artifacts.current_manifest,
+    )
     return _DispatchState(
-        fs_ctx=_PhaseBContext(
-            library_root=run_context.out_dir / "library",
-            scenario_assets=scenario_assets,
-            resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
-        ),
-        media_ctx=_MediaContext(
-            library_root=run_context.out_dir / "library",
-            scenario_assets=scenario_assets,
-            resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
-            ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
-            ffprobe_version=run_context.caps.ffprobe.version or "unknown",
-            invocations=invocations,
-            sidecar_lookup=_sidecar_lookup_from(run_context.plan_artifacts.current_manifest),
-        ),
+        fs_ctx=state.fs_ctx,
+        media_ctx=state.media_ctx,
+        corruption_ctx=state.corruption_ctx,
     )
 
 
@@ -509,20 +498,7 @@ def _execute_entry(
     if action is TimelineActionName.SLOW_COPY_COMMIT:
         state.filesystem_actions.append(_wall_clock_slow_copy_commit(state, entry))
         return
-    if action in _STDLIB_ACTIONS:
-        fs_action = _dispatch_one(state.fs_ctx, entry)
-        if fs_action is not None:
-            state.filesystem_actions.append(fs_action)
-        return
-    if action in _MEDIA_ACTIONS:
-        state.media_actions.append(apply_media_action(state.media_ctx, entry))
-        return
-    raise MediaActionError(
-        f"unsupported phase-B action {action.value!r}",
-        event_id=entry.event_id,
-        action=action,
-        cause=RuntimeError("not in wall-clock dispatch sets"),
-    )
+    dispatch_phase_b_entry(state, entry)
 
 
 def _wall_clock_slow_copy_start(
@@ -688,6 +664,7 @@ def _finalize_wall_clock_run(
         failures=[],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
+        corruption_actions=state.corruption_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
@@ -729,7 +706,7 @@ def _finalize_wall_clock_phase_b_failure(
     actual_duration_ns: int,
     speed: SpeedMultiplier,
     overran_duration: bool,
-    exc: FilesystemActionError | MediaActionError,
+    exc: FilesystemActionError | MediaActionError | CorruptionActionError,
 ) -> None:
     final_artifacts = _final_artifacts_for_executed_prefix(
         run_context=run_context,
@@ -739,7 +716,7 @@ def _finalize_wall_clock_phase_b_failure(
         executed_journal=executed_journal,
     )
     finished_at = _utc_now()
-    outcome = Outcome.MEDIA_FAILED if isinstance(exc, MediaActionError) else Outcome.FS_FAILED
+    outcome = phase_b_failure_outcome(exc)
     materialization_report = build_report(
         outcome=outcome,
         run_id=run_context.run_id,
@@ -748,9 +725,10 @@ def _finalize_wall_clock_phase_b_failure(
         finished_at=finished_at,
         invocations=state.media_ctx.invocations,
         materialized=phase_a.materialized,
-        failures=[_failure_record(exc)],
+        failures=[phase_b_failure_record(exc)],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
+        corruption_actions=state.corruption_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
@@ -791,33 +769,8 @@ def _final_artifacts_for_executed_prefix(
         applied_events_override=len(executed_journal),
     )
     _stamp_phase_a_metadata(prefix_artifacts.current_manifest, scenario, phase_a)
-    augment_timeline_sidecars(
-        prefix_artifacts.current_manifest,
-        state.fs_ctx.phase_b_sidecar_hashes,
-    )
-    augment_versions(prefix_artifacts.current_manifest, state.media_ctx.post_phase_b_versions)
-    augment_updated_sidecars(
-        prefix_artifacts.current_manifest,
-        state.media_ctx.post_phase_b_sidecars,
-    )
+    augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
     return dataclasses.replace(prefix_artifacts, journal=tuple(executed_journal))
-
-
-def _failure_record(exc: FilesystemActionError | MediaActionError) -> MaterializationFailure:
-    if isinstance(exc, MediaActionError):
-        stage = FailureStage.MEDIA
-        invocation_index = exc.tool_invocation_index
-    else:
-        stage = FailureStage.FILESYSTEM
-        invocation_index = None
-    cause = getattr(exc, "cause", None)
-    return MaterializationFailure(
-        asset_id=exc.asset_id,
-        stage=stage,
-        exit_code=None,
-        stderr_tail=str(cause) if cause is not None else "",
-        invocation_index=invocation_index,
-    )
 
 
 def _build_final_replay_bundle(
@@ -857,12 +810,3 @@ def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]
         assert event.language is not None
         per_asset.setdefault(event.target, set()).add(event.language)
     return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}
-
-
-def _sidecar_lookup_from(manifest: Manifest) -> Callable[[str], ManifestSidecar | None]:
-    by_id = {sidecar.id: sidecar for sidecar in manifest.sidecars}
-
-    def lookup(sidecar_id: str) -> ManifestSidecar | None:
-        return by_id.get(sidecar_id)
-
-    return lookup

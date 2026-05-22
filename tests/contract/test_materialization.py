@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract import materialization as materialization_contract
 from chaos_librarian.contract.materialization import (
+    CorruptionAction,
     FailureStage,
     FilesystemAction,
     MaterializationFailure,
@@ -21,6 +22,7 @@ from chaos_librarian.contract.materialization import (
     ToolchainInfo,
     ToolInvocation,
 )
+from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 
 
@@ -94,6 +96,7 @@ def test_outcome_enum_accepts_all_documented_values():
         Outcome.TOOL_FAILED,
         Outcome.TOOL_MISSING,
         Outcome.CONTAINMENT_VIOLATION,
+        Outcome.CORRUPTION_FAILED,
     ):
         assert _minimal_report(outcome=value).outcome is value
 
@@ -112,8 +115,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_five() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 5
+def test_materialization_schema_version_is_six() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 6
 
 
 def test_materialization_report_run_timing_defaults() -> None:
@@ -129,7 +132,7 @@ def test_materialization_report_run_timing_defaults() -> None:
 
 def test_materialization_report_accepts_run_timing() -> None:
     report = _minimal_report(
-        schema_version=5,
+        schema_version=6,
         requested_duration_ns=90_000_000_000,
         actual_duration_ns=90_123_456_789,
         speed_multiplier="10",
@@ -243,6 +246,10 @@ def test_failure_stage_includes_media():
     assert FailureStage.MEDIA.value == "media"
 
 
+def test_failure_stage_includes_corruption():
+    assert FailureStage.CORRUPTION.value == "corruption"
+
+
 def test_materialization_report_carries_media_actions():
     report = MaterializationReport(
         schema_version=MATERIALIZATION_SCHEMA_VERSION,
@@ -255,3 +262,84 @@ def test_materialization_report_carries_media_actions():
     )
     assert report.media_actions == []
     assert report.schema_version == MATERIALIZATION_SCHEMA_VERSION
+
+
+def test_corruption_probe_outcome_accepts_declared_values_only() -> None:
+    assert CorruptionProbeOutcome("failed_expected") is CorruptionProbeOutcome.FAILED_EXPECTED
+    assert CorruptionProbeOutcome("still_probeable") is CorruptionProbeOutcome.STILL_PROBEABLE
+
+    with pytest.raises(ValueError, match="unexpected"):
+        CorruptionProbeOutcome("unexpected")
+
+
+def test_corruption_action_round_trips_hashes_and_probe_outcome() -> None:
+    action = CorruptionAction(
+        event_id="corrupt_header_001",
+        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        input_content_hash="sha256:" + "0" * 64,
+        output_content_hash="sha256:" + "1" * 64,
+        corruptor="container_header_v1",
+        byte_start=0,
+        byte_count=64,
+        seed_material="container_header_v1:42:corrupt_header_001:asset_main",
+        probe_outcome=CorruptionProbeOutcome.FAILED_EXPECTED,
+        probe_error_tail="Invalid data found",
+        duration_ns=1_234_567,
+    )
+
+    loaded = CorruptionAction.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+    assert loaded.input_content_hash == "sha256:" + "0" * 64
+    assert loaded.probe_outcome is CorruptionProbeOutcome.FAILED_EXPECTED
+
+
+def test_corruption_action_rejects_bad_input_content_hash() -> None:
+    payload = {
+        "event_id": "corrupt_header_001",
+        "action": "corrupt_container_header",
+        "target_asset_id": "asset_main",
+        "input_path": "movies-hd/asset_main.mkv",
+        "output_path": "movies-hd/asset_main.mkv",
+        "input_version_id": "version_0001",
+        "output_version_id": "version_0002",
+        "input_content_hash": "sha256:not-a-hash",
+        "output_content_hash": "sha256:" + "1" * 64,
+        "corruptor": "container_header_v1",
+        "byte_start": 0,
+        "byte_count": 64,
+        "seed_material": "container_header_v1:42:corrupt_header_001:asset_main",
+        "probe_outcome": "failed_expected",
+        "duration_ns": 1_234_567,
+    }
+
+    with pytest.raises(ValidationError):
+        CorruptionAction.model_validate(payload)
+
+
+def test_corruption_action_rejects_bad_output_content_hash() -> None:
+    payload = {
+        "event_id": "corrupt_header_001",
+        "action": "corrupt_container_header",
+        "target_asset_id": "asset_main",
+        "input_path": "movies-hd/asset_main.mkv",
+        "output_path": "movies-hd/asset_main.mkv",
+        "input_version_id": "version_0001",
+        "output_version_id": "version_0002",
+        "input_content_hash": "sha256:" + "0" * 64,
+        "output_content_hash": "sha256:not-a-hash",
+        "corruptor": "container_header_v1",
+        "byte_start": 0,
+        "byte_count": 64,
+        "seed_material": "container_header_v1:42:corrupt_header_001:asset_main",
+        "probe_outcome": "failed_expected",
+        "duration_ns": 1_234_567,
+    }
+
+    with pytest.raises(ValidationError):
+        CorruptionAction.model_validate(payload)

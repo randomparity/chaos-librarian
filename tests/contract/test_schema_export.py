@@ -38,6 +38,7 @@ def test_all_schemas_listed() -> None:
         "variant-report.schema.json",
         "work-report.schema.json",
     }
+    assert "profiles.schema.json" not in names
 
 
 def test_journal_schema_has_oneof_on_phase() -> None:

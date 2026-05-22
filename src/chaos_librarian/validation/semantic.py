@@ -21,6 +21,7 @@ from chaos_librarian.validation.rules.extract_track_unknown import (
 from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
 from chaos_librarian.validation.rules.path_containment import rule_path_containment
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
+from chaos_librarian.validation.rules.profile_opt_in import rule_profile_opt_in
 from chaos_librarian.validation.rules.sidecar_language import rule_sidecar_language_consistent
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 from chaos_librarian.validation.rules.slow_copy import (
@@ -45,6 +46,7 @@ _RULES: list[Rule] = [
     rule_path_duplicate,
     rule_duration_syntax,
     rule_target_unknown,
+    rule_profile_opt_in,
     rule_root_unknown,
     rule_slow_copy_unpaired,
     rule_slow_copy_timing,

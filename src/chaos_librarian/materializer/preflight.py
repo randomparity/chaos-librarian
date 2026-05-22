@@ -29,7 +29,7 @@ from chaos_librarian.contract.scenario import (
     VideoSource,
     VideoTrack,
 )
-from chaos_librarian.materializer.actions import SUPPORTED_S6_ACTIONS, SUPPORTED_S7_ACTIONS
+from chaos_librarian.materializer.actions import SUPPORTED_S6_ACTIONS, SUPPORTED_S10_ACTIONS
 from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
@@ -50,6 +50,7 @@ __all__ = [
     "FPS_DEFAULT",
     "RESOLUTION_PIXELS",
     "SUPPORTED_S6_ACTIONS",
+    "SUPPORTED_S10_ACTIONS",
     "VIDEO_RECIPES",
     "iter_assets",
     "preflight_asset",
@@ -167,13 +168,13 @@ def preflight_timeline(scenario: Scenario) -> None:
     allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
     """
     for index, event in enumerate(scenario.timeline):
-        if event.action not in SUPPORTED_S7_ACTIONS:
+        if event.action not in SUPPORTED_S10_ACTIONS:
             raise TimelineUnsupportedError(
                 f"timeline action {event.action.value!r} not supported",
                 field=f"timeline[{index}].action",
                 payload={
                     "event_id": event.id,
                     "action": event.action.value,
-                    "supported": sorted(a.value for a in SUPPORTED_S7_ACTIONS),
+                    "supported": sorted(a.value for a in SUPPORTED_S10_ACTIONS),
                 },
             )

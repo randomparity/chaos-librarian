@@ -133,6 +133,44 @@ def test_version_history_includes_reencode_video_with_summary() -> None:
     assert entry.state_delta_summary == {"resolution": "sd", "codec": "h264"}
 
 
+def test_derive_version_history_includes_corruption_summary() -> None:
+    journal = [
+        _validated_entry(
+            _atomic(
+                event_id="corrupt_header_001",
+                action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+                logical_time_ns=1_000_000_000,
+                target="asset_hd_main",
+                input_version_ids=["version_0001"],
+                output_version_ids=["version_0002"],
+                profile="malformed-media",
+                corruptor="container_header_v1",
+                byte_start=0,
+                byte_count=64,
+                seed_material="container_header_v1:42:corrupt_header_001:asset_hd_main",
+                input_path="movies-hd/a.mkv",
+                output_path="movies-hd/a.mkv",
+            )
+        ),
+    ]
+
+    history = derive_version_history("asset_hd_main", journal)
+
+    assert len(history) == 1
+    entry = history[0]
+    assert entry.event_id == "corrupt_header_001"
+    assert entry.action == TimelineActionName.CORRUPT_CONTAINER_HEADER
+    assert entry.input_version_id == "version_0001"
+    assert entry.output_version_id == "version_0002"
+    assert entry.state_delta_summary == {
+        "profile": "malformed-media",
+        "corruptor": "container_header_v1",
+        "byte_start": 0,
+        "byte_count": 64,
+        "seed_material": "container_header_v1:42:corrupt_header_001:asset_hd_main",
+    }
+
+
 def test_version_history_orders_by_journal_order_across_all_5_actions() -> None:
     """WHY: all five version-affecting actions surface in order with their summaries."""
     journal = [

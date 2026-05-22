@@ -96,7 +96,7 @@ def build_report_set(
 
 
 def _snapshot_for(asset_id: str, manifest: Manifest) -> AssetSnapshot | None:
-    version = _find_by_asset_id(asset_id, manifest.versions)
+    version = _current_version_for(asset_id, manifest.versions)
     if version is None:
         return None
     location = _find_by_asset_id(asset_id, manifest.locations)
@@ -106,7 +106,17 @@ def _snapshot_for(asset_id: str, manifest: Manifest) -> AssetSnapshot | None:
         location_path=location.path,
         version_id=version.id,
         version_index=version.index,
+        content_hash=version.content_hash,
+        probed=version.probed,
+        corruption=version.corruption,
     )
+
+
+def _current_version_for(asset_id: str, versions: list[ManifestVersion]) -> ManifestVersion | None:
+    matches = [version for version in versions if version.asset_id == asset_id]
+    if not matches:
+        return None
+    return max(matches, key=lambda version: version.index)
 
 
 def _find_by_asset_id[T: ManifestVersion | ManifestLocation](
@@ -139,7 +149,7 @@ def _build_asset_report(
         if asset_id in entry.target_ids
     ]
     return AssetReport(
-        schema_version=4,
+        schema_version=5,
         asset_id=asset_id,
         initial=initial_snapshot,
         history=history,
