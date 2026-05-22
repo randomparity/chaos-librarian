@@ -16,9 +16,6 @@ from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer import media as media_module
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.media import (
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
-    SUPPORTED_S7_ACTIONS,
     _MediaContext,
     _subtitle_codec_for_container,
     apply_media_action,
@@ -1135,35 +1132,3 @@ class TestApplyMediaActionIOErrorWrapping:
         assert exc_info.value.event_id == "ev_io_es"
         assert exc_info.value.action == TimelineActionName.EMBED_SUBTITLE
         assert isinstance(exc_info.value.cause, OSError)
-
-
-def test_media_actions_constant_contents():
-    assert (
-        frozenset(
-            {
-                TimelineActionName.REENCODE_VIDEO,
-                TimelineActionName.REENCODE_AUDIO,
-                TimelineActionName.REMUX_CONTAINER,
-                TimelineActionName.EDIT_METADATA,
-                TimelineActionName.EMBED_SUBTITLE,
-                TimelineActionName.EXTRACT_SUBTITLE,
-                TimelineActionName.UPDATE_SIDECAR,
-                TimelineActionName.CREATE_SIDECAR,
-            }
-        )
-        == _MEDIA_ACTIONS
-    )
-
-
-def test_stdlib_actions_constant_includes_remove_sidecar():
-    # Sprint 6's set plus REMOVE_SIDECAR (stdlib op), minus CREATE_SIDECAR
-    # (moved to _MEDIA_ACTIONS in Sprint 7).
-    assert TimelineActionName.REMOVE_SIDECAR in _STDLIB_ACTIONS
-    assert TimelineActionName.ADD_FILE in _STDLIB_ACTIONS
-    assert TimelineActionName.MOVE_ASSET in _STDLIB_ACTIONS  # from S6
-    assert TimelineActionName.CREATE_SIDECAR not in _STDLIB_ACTIONS
-
-
-def test_supported_s7_actions_union():
-    assert SUPPORTED_S7_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS
-    assert TimelineActionName.ADD_FILE in SUPPORTED_S7_ACTIONS

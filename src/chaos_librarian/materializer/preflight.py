@@ -26,10 +26,10 @@ from chaos_librarian.contract.scenario import (
     SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
-    TimelineActionName,
     VideoSource,
     VideoTrack,
 )
+from chaos_librarian.materializer.actions import SUPPORTED_S6_ACTIONS, SUPPORTED_S7_ACTIONS
 from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
@@ -160,37 +160,12 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
             )
 
 
-SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.MOVE_ASSET,
-        TimelineActionName.RENAME_FILE,
-        TimelineActionName.DELETE_FILE,
-        TimelineActionName.ADD_FILE,
-        TimelineActionName.CREATE_SIDECAR,
-        TimelineActionName.SLOW_COPY_START,
-        TimelineActionName.SLOW_COPY_COMMIT,
-        TimelineActionName.ARCHIVE_FILE,
-        TimelineActionName.MOVE_BETWEEN_ROOTS,
-    }
-)
-
-
 def preflight_timeline(scenario: Scenario) -> None:
     """Reject any timeline event outside current materialize support.
 
     Raised before phase A so the matrix-rejection contract (no run-dir
     allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
-
-    ``SUPPORTED_S7_ACTIONS`` is imported lazily: ``materializer.media``
-    already imports ``SUPPORTED_S6_ACTIONS`` from this module at load
-    time (to compose ``_STDLIB_ACTIONS``), so a top-level import here
-    would form a circular import. Resolving the symbol at call time
-    keeps the module-level dependency one-way.
     """
-    from chaos_librarian.materializer.media import (  # noqa: PLC0415 — see docstring
-        SUPPORTED_S7_ACTIONS,
-    )
-
     for index, event in enumerate(scenario.timeline):
         if event.action not in SUPPORTED_S7_ACTIONS:
             raise TimelineUnsupportedError(
