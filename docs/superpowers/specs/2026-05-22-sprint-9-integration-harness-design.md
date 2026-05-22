@@ -231,15 +231,35 @@ the wire contract must keep these semantics:
 - Sidecars are nested under the observed asset because the Chaos Librarian
   manifest also binds sidecars to `asset_id`.
 - `path_history` is per-asset and ordered by observation time.
+- `assets[].observed_ref`, `works[].observed_ref`, `variants[].observed_ref`,
+  and `bundles[].observed_ref` are unique within their own collection.
+- `sidecars[].observed_ref` is unique within the parent asset's sidecar list.
+- When topology refs are supplied, they must point to supplied observed objects:
+  asset `work_ref`, `variant_ref`, and `bundle_ref`; variant `work_ref`; bundle
+  `variant_ref`; bundle `asset_refs`; and bundle `sidecar_refs`.
+- `ObservedBundle.sidecar_refs` resolve against the sidecars nested under the
+  bundle's `asset_refs`. A sidecar ref must match exactly one sidecar in that
+  asset set.
+- Duplicate refs, ambiguous sidecar refs, and dangling refs make the
+  `ObservedState` an input error, not a divergence finding.
 
 Observed path history:
 
 ```python
+class ObservedAction(enum.StrEnum):
+    MOVE = "move"
+    RENAME = "rename"
+    DELETE_READD = "delete_readd"
+    SLOW_COPY = "slow_copy"
+    ARCHIVE = "archive"
+    ROOT_MOVE = "root_move"
+
+
 class ObservedPathHistoryEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_event_ref: str | None = None
-    action: str
+    action: ObservedAction
     observed_at: datetime | None = None
     from_path: str | None = None
     to_path: str | None = None
@@ -257,7 +277,7 @@ class ObservedEvent(BaseModel):
     observed_ref: str | None = None
     before_observed_ref: str | None = None
     after_observed_ref: str | None = None
-    action: str
+    action: ObservedAction
     observed_at: datetime | None = None
     path: str | None = None
     from_path: str | None = None
@@ -265,10 +285,23 @@ class ObservedEvent(BaseModel):
     temp_path: str | None = None
 ```
 
+History actions are a fixed consumer-neutral vocabulary. The adapter rejects
+unknown actions instead of normalizing aliases. Per-action path requirements are:
+
+- `move`, `rename`, `delete_readd`, `archive`, and `root_move` require
+  `from_path` and `to_path`.
+- `slow_copy` requires `from_path` and `to_path`; `temp_path` is optional.
+
+Global `ObservedEvent` entries must also identify the consumer lifecycle being
+described: either `observed_ref`, or both `before_observed_ref` and
+`after_observed_ref`, must be present. Missing per-action fields or missing ref
+evidence make the `ObservedState` an input error.
+
 The adapter treats `events` and `assets[].path_history` as additive evidence.
-If neither is present, history assertions are skipped and the report covers
-final state only. `observed-state.json` does not carry the comparison mode; the
-same export can be reused for `final-state` and `identity-history` comparisons.
+In `final-state` mode, if neither is present, history assertions are skipped and
+the report covers final state only. `observed-state.json` does not carry the
+comparison mode; the same export can be reused for `final-state` and
+`identity-history` comparisons.
 
 In `identity-history` mode, the payload must provide enough lifecycle evidence
 to prove continuity across oracle path mutations. A stable `observed_ref` with
@@ -278,6 +311,7 @@ global `events` with `before_observed_ref` and `after_observed_ref`.
 If per-asset history and global events make contradictory claims for the same
 oracle path mutation, the adapter fails closed with `D_HISTORY_CONFLICT` rather
 than choosing one source as authoritative.
+`identity-history` never silently downgrades to final-state behavior.
 
 ## Divergence Report Contract
 
@@ -313,6 +347,11 @@ class DivergenceFinding(BaseModel):
     evidence: list[MatchEvidence] = Field(default_factory=list)
 ```
 
+`ok` is derived from the findings: `ok == not any(f.severity == "error" for f in
+findings)`. Model validation rejects reports where `ok` disagrees with the
+presence or absence of error findings. Sprint 9 emits `"error"` for every listed
+initial finding code, so any Sprint 9 finding makes `ok=false`.
+
 Initial finding codes:
 
 - `D_ASSET_MISSING` - an oracle asset has no observed match.
@@ -333,8 +372,8 @@ Initial finding codes:
   asset refs across a move, rename, delete/re-add, or slow-copy boundary.
 - `D_HISTORY_CONFLICT` - per-asset history and global events make contradictory
   claims about the same oracle path mutation.
-- `D_HISTORY_MISSING` - observed history is present but does not include an
-  expected path mutation.
+- `D_HISTORY_MISSING` - identity-history mode has no observed lifecycle evidence
+  for an expected path mutation.
 - `D_HISTORY_UNEXPECTED` - observed history contains a path mutation that does
   not map to the oracle journal.
 
@@ -576,10 +615,18 @@ Contract tests:
 - `ObservedState` round-trips valid scanner, prober, and watcher payloads.
 - `ObservedState` rejects extra fields, invalid hash syntax, missing
   `observed_ref`, and absolute paths.
+- `ObservedState` rejects unknown history actions and missing per-action path
+  fields.
+- `ObservedState` rejects duplicate observed refs within each declared uniqueness
+  scope.
+- `ObservedState` rejects dangling topology refs, dangling sidecar refs, and
+  ambiguous bundle sidecar refs.
 - `DivergenceReport` round-trips `mode="final-state"` findings with
   expected/observed values and match evidence.
 - `DivergenceReport` round-trips `mode="identity-history"` findings with
   expected/observed values and match evidence.
+- `DivergenceReport` rejects `ok=true` with error findings and `ok=false` with no
+  error findings.
 - Schema export includes `observed-state.schema.json` and
   `divergence.schema.json`.
 - Schema version constants are positive integers and equal to `1`.
@@ -597,6 +644,8 @@ Adapter behavior tests:
 - Ambiguous same-path or same-hash evidence produces `D_MATCH_AMBIGUOUS`.
 - Missing observed sidecar produces `D_SIDECAR_MISSING`.
 - Final-state-only comparison skips history checks.
+- Identity-history comparison with no history evidence emits `D_HISTORY_MISSING`
+  instead of silently running as final-state comparison.
 - Identity-history comparison reports `D_HISTORY_MISSING` for a missing move or
   rename observation.
 - Identity-history comparison reports `D_IDENTITY_SPLIT` when a move or rename
@@ -609,6 +658,8 @@ CLI tests:
 
 - Clean compare exits `0` and writes the report to stdout.
 - Divergent compare exits `6` and writes the report to stdout.
+- Identity-history comparison with no history evidence exits `6` and writes a
+  `D_HISTORY_MISSING` report to stdout.
 - Malformed observed JSON uses the CLI error envelope on stderr.
 - Run-id mismatch is an adapter input error, not a divergence report.
 - Missing or malformed sentinel uses existing sentinel error behavior.
@@ -622,8 +673,9 @@ CLI tests:
   POSIX paths so the adapter does not guess path maps.
 - **Overfitting to voom-v2.** The schema names use generic `observed_ref` and
   optional topology fields, not voom table names.
-- **History availability.** Some consumers cannot export event history. History
-  checks are activated only when history evidence exists.
+- **History availability.** Some consumers cannot export event history.
+  `final-state` keeps history optional; `identity-history` turns missing
+  lifecycle evidence into `D_HISTORY_MISSING` instead of downgrading.
 - **Report sprawl.** Start with a small fixed finding-code vocabulary. Add codes
   only when tests prove a distinct failure mode needs a distinct diagnosis.
 
