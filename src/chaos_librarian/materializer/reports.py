@@ -13,6 +13,7 @@ from chaos_librarian.contract import (
 )
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import (
+    CorruptionAction,
     FilesystemAction,
     MaterializationExecutionMode,
     MaterializationFailure,
@@ -44,6 +45,7 @@ def build_report(
     failures: list[MaterializationFailure],
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
+    corruption_actions: list[CorruptionAction] | None = None,
     requested_duration_ns: int | None = None,
     actual_duration_ns: int | None = None,
     speed_multiplier: str | None = None,
@@ -67,6 +69,7 @@ def build_report(
         failures=failures,
         filesystem_actions=filesystem_actions or [],
         media_actions=media_actions or [],
+        corruption_actions=corruption_actions or [],
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,

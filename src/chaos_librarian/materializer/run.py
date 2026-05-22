@@ -17,6 +17,7 @@ from pathlib import Path
 
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
 from chaos_librarian.contract.materialization import (
+    CorruptionAction,
     FilesystemAction,
     MaterializedAsset,
     MediaAction,
@@ -32,11 +33,14 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.actions import _CORRUPTION_ACTIONS
 from chaos_librarian.materializer.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
+from chaos_librarian.materializer.corruption import _CorruptionContext, apply_corruption_action
 from chaos_librarian.materializer.errors import (
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ProbeParseError,
@@ -57,6 +61,7 @@ from chaos_librarian.materializer.finalize import (
     finalize_success,
 )
 from chaos_librarian.materializer.manifest_build import (
+    augment_corrupted_versions,
     augment_manifest,
     augment_timeline_sidecars,
     augment_updated_sidecars,
@@ -158,6 +163,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     materialized: list[MaterializedAsset] = []
     filesystem_actions: list[FilesystemAction] = []
     media_actions: list[MediaAction] = []
+    corruption_actions: list[CorruptionAction] = []
     # Engine's ``build_initial_state`` lays every asset under the primary
     # root (scenario.library.roots[0]); synthesis must mirror that layout
     # so the on-disk file lives where phase B's ``state_delta['from_path']``
@@ -210,6 +216,10 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             invocations=invocations,
             sidecar_lookup=_sidecar_lookup_from(ctx.plan_artifacts.current_manifest),
         )
+        corruption_ctx = _CorruptionContext(
+            library_root=library_root,
+            resolved_seed=resolved_seed,
+        )
         for entry in ctx.plan_artifacts.journal:
             action = TimelineActionName(entry.action)
             if action in _STDLIB_ACTIONS:
@@ -218,6 +228,8 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                     filesystem_actions.append(result)
             elif action in _MEDIA_ACTIONS:
                 media_actions.append(apply_media_action(media_ctx, entry))
+            elif action in _CORRUPTION_ACTIONS:
+                corruption_actions.append(apply_corruption_action(corruption_ctx, entry))
             else:
                 # Defense in depth — preflight should have rejected this.
                 raise MediaActionError(
@@ -234,6 +246,10 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             ctx.plan_artifacts.current_manifest, fs_ctx.phase_b_sidecar_hashes
         )
         augment_versions(ctx.plan_artifacts.current_manifest, media_ctx.post_phase_b_versions)
+        augment_corrupted_versions(
+            ctx.plan_artifacts.current_manifest,
+            corruption_ctx.post_phase_b_versions,
+        )
         augment_updated_sidecars(
             ctx.plan_artifacts.current_manifest, media_ctx.post_phase_b_sidecars
         )
@@ -251,6 +267,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             materialized,
             filesystem_actions,
             media_actions,
+            corruption_actions,
         )
         raise
     except MediaActionError as exc:
@@ -262,9 +279,29 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             materialized,
             filesystem_actions,
             media_actions,
+            corruption_actions,
         )
         raise
-    return finalize_success(ctx, invocations, materialized, filesystem_actions, media_actions)
+    except CorruptionActionError as exc:
+        finalize_failure_phase_b(
+            ctx,
+            exc,
+            Outcome.CORRUPTION_FAILED,
+            invocations,
+            materialized,
+            filesystem_actions,
+            media_actions,
+            corruption_actions,
+        )
+        raise
+    return finalize_success(
+        ctx,
+        invocations,
+        materialized,
+        filesystem_actions,
+        media_actions,
+        corruption_actions,
+    )
 
 
 def _sidecar_lookup_from(manifest: Manifest) -> Callable[[str], ManifestSidecar | None]:

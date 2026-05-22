@@ -9,6 +9,7 @@ from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset
 
 __all__ = [
+    "augment_corrupted_versions",
     "augment_manifest",
     "augment_timeline_sidecars",
     "augment_updated_sidecars",
@@ -108,6 +109,14 @@ def augment_versions(
         content_hash, probed = entry
         version.content_hash = content_hash
         version.probed = probed
+
+
+def augment_corrupted_versions(
+    manifest: Manifest,
+    post_phase_b_versions: Mapping[str, tuple[str, ProbedMedia | None]],
+) -> None:
+    """Stamp content evidence for versions produced by corruption handlers."""
+    augment_versions(manifest, post_phase_b_versions)
 
 
 def augment_updated_sidecars(

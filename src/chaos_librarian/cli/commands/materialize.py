@@ -13,6 +13,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.materializer import (
     CapabilityGateError,
     ContainmentViolationError,
+    CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ProbeParseError,
@@ -54,28 +55,18 @@ def materialize(
         # downstream agents key off the same convention.
         emit_materialize_error(exc, json_output=json_output, run_dir=None)
         raise typer.Exit(code=3) from exc
-    except TimelineUnsupportedError as exc:
+    except (TimelineUnsupportedError, UnsupportedMaterializationError) as exc:
         emit_materialize_error(exc, json_output=json_output, run_dir=None)
         raise typer.Exit(code=5) from exc
-    except UnsupportedMaterializationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=5) from exc
-    except ToolFailedError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except ProbeParseError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except FilesystemActionError as exc:
-        # Phase B has already wiped library/ and written the failure
-        # report; surface E_MATERIALIZE_FS_FAILED with run_dir=out so the
-        # envelope advertises materialization_report_path.
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except MediaActionError as exc:
-        # Phase B has already wiped library/ and written the failure
-        # report; surface E_MATERIALIZE_MEDIA_FAILED with run_dir=out so
-        # the envelope advertises materialization_report_path.
+    except (
+        ToolFailedError,
+        ProbeParseError,
+        FilesystemActionError,
+        MediaActionError,
+        CorruptionActionError,
+    ) as exc:
+        # These paths allocate a run directory and write materialization.json
+        # before raising, so the envelope advertises materialization_report_path.
         emit_materialize_error(exc, json_output=json_output, run_dir=out)
         raise typer.Exit(code=5) from exc
     except ContainmentViolationError as exc:
