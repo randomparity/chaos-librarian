@@ -275,6 +275,9 @@ to prove continuity across oracle path mutations. A stable `observed_ref` with
 ordered `path_history` proves continuity for one consumer asset. A consumer that
 records old and new refs separately can prove or expose continuity through
 global `events` with `before_observed_ref` and `after_observed_ref`.
+If per-asset history and global events make contradictory claims for the same
+oracle path mutation, the adapter fails closed with `D_HISTORY_CONFLICT` rather
+than choosing one source as authoritative.
 
 ## Divergence Report Contract
 
@@ -289,6 +292,7 @@ class DivergenceReport(BaseModel):
 
     schema_version: Literal[1]
     run_id: uuid.UUID
+    mode: CompareMode
     ok: bool
     fixture: DivergenceFixtureMetadata
     observed: DivergenceObservedMetadata
@@ -327,6 +331,8 @@ Initial finding codes:
   supplied topology.
 - `D_IDENTITY_SPLIT` - one oracle asset lifecycle maps to multiple observed
   asset refs across a move, rename, delete/re-add, or slow-copy boundary.
+- `D_HISTORY_CONFLICT` - per-asset history and global events make contradictory
+  claims about the same oracle path mutation.
 - `D_HISTORY_MISSING` - observed history is present but does not include an
   expected path mutation.
 - `D_HISTORY_UNEXPECTED` - observed history contains a path mutation that does
@@ -406,6 +412,14 @@ If identity-history mode is requested and the observed payload has no history
 evidence, the adapter emits `D_HISTORY_MISSING` findings for expected path
 mutations instead of silently downgrading to final-state comparison.
 
+When history sources disagree, contradiction wins over inference. For a given
+oracle path mutation, the adapter evaluates all matching per-asset history and
+global events. If one source proves continuity while another proves different
+before/after observed refs, emit `D_HISTORY_CONFLICT` for that oracle event.
+Emit `D_IDENTITY_SPLIT` only when the available evidence consistently shows the
+oracle lifecycle mapped to multiple observed refs. Do not emit both
+`D_HISTORY_CONFLICT` and `D_IDENTITY_SPLIT` for the same oracle event.
+
 ## Comparison Data Flow
 
 ```text
@@ -429,7 +443,7 @@ chaos-librarian compare fixtures/run-001 observed-state.json --mode final-state 
       compare optional sidecars
       compare optional topology
       compare optional history
-      return DivergenceReport
+      return DivergenceReport with mode set to the selected comparison mode
 ```
 
 `observed.run_id` must match the fixture replay bundle's `run_id`. A mismatch is
@@ -562,8 +576,10 @@ Contract tests:
 - `ObservedState` round-trips valid scanner, prober, and watcher payloads.
 - `ObservedState` rejects extra fields, invalid hash syntax, missing
   `observed_ref`, and absolute paths.
-- `DivergenceReport` round-trips findings with expected/observed values and
-  match evidence.
+- `DivergenceReport` round-trips `mode="final-state"` findings with
+  expected/observed values and match evidence.
+- `DivergenceReport` round-trips `mode="identity-history"` findings with
+  expected/observed values and match evidence.
 - Schema export includes `observed-state.schema.json` and
   `divergence.schema.json`.
 - Schema version constants are positive integers and equal to `1`.
@@ -585,6 +601,8 @@ Adapter behavior tests:
   rename observation.
 - Identity-history comparison reports `D_IDENTITY_SPLIT` when a move or rename
   maps one oracle asset to different before/after observed refs.
+- Identity-history comparison reports `D_HISTORY_CONFLICT` when per-asset
+  history and global events contradict each other for the same move or rename.
 - `DivergenceFinding` round-trips with `oracle_event_id`.
 
 CLI tests:
