@@ -20,12 +20,10 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.errors import (
-    CorruptionActionError,
-    FilesystemActionError,
     MaterializationError,
-    MediaActionError,
     ProbeParseError,
 )
+from chaos_librarian.materializer.phase_b import PhaseBError, phase_b_failure_record
 from chaos_librarian.materializer.reports import (
     build_metadata,
     build_replay_bundle,
@@ -175,7 +173,7 @@ def finalize_failure(
 
 def finalize_failure_phase_b(
     ctx: RunContext,
-    exc: MaterializationError,
+    exc: PhaseBError,
     outcome: Outcome,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
@@ -192,29 +190,7 @@ def finalize_failure_phase_b(
     failing event.
     """
     finished_at = datetime.now(UTC)
-    if isinstance(exc, MediaActionError):
-        stage = FailureStage.MEDIA
-        invocation_index = exc.tool_invocation_index
-    elif isinstance(exc, FilesystemActionError):
-        stage = FailureStage.FILESYSTEM
-        invocation_index = None
-    elif isinstance(exc, CorruptionActionError):
-        stage = FailureStage.CORRUPTION
-        invocation_index = None
-    else:
-        # Defensive default — preflight + dispatcher should keep this
-        # branch unreachable. Mirrors the FS shape so downstream consumers
-        # still see a well-formed failure record.
-        stage = FailureStage.FILESYSTEM
-        invocation_index = None
-    cause = getattr(exc, "cause", None)
-    failure = MaterializationFailure(
-        asset_id=exc.asset_id,
-        stage=stage,
-        exit_code=None,
-        stderr_tail=str(cause) if cause is not None else "",
-        invocation_index=invocation_index,
-    )
+    failure = phase_b_failure_record(exc)
     report = build_report(
         outcome=outcome,
         run_id=ctx.run_id,

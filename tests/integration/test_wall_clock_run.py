@@ -17,7 +17,7 @@ from chaos_librarian.contract.materialization import MaterializedAsset, MediaAct
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import run_plan
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer import phase_b, wall_clock
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE = (
@@ -67,7 +67,7 @@ def fake_tool_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
-    monkeypatch.setattr(wall_clock, "apply_media_action", _fake_apply_media_action)
+    monkeypatch.setattr(phase_b, "apply_media_action", _fake_apply_media_action)
 
 
 def _fake_materialize_one_asset(

@@ -11,14 +11,32 @@ Zero new runtime dependencies.
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
+
+from pydantic import TypeAdapter
+
+from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
 
 _DiffKind = Literal["byte_diff", "missing_in_left", "missing_in_right"]
 _TEXT_SUFFIXES = frozenset({".json", ".jsonl", ".yaml", ".yml"})
 _SENTINEL_BASENAME = ".chaos-librarian-run"
 _PREVIEW_LIMIT = 80
+_JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
+_RUN_REPLAY_COMPARE_KEYS = frozenset(
+    {
+        "scenario",
+        "run_id",
+        "resolved_seed",
+        "applied_events",
+        "journal_digest",
+        "execution_mode",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -124,6 +142,36 @@ def compare_fixtures(left_dir: Path, right_dir: Path) -> FixtureDiff:
     return FixtureDiff(left_dir=left_dir, right_dir=right_dir, files=tuple(diffs))
 
 
+def compare_run_replay(left_dir: Path, right_dir: Path) -> FixtureDiff:
+    """Compare run replay outputs while ignoring wall-clock-only volatility."""
+    diffs: list[FixtureFileDiff] = []
+    _compare_json(
+        diffs,
+        left_dir,
+        right_dir,
+        "manifest.current.json",
+        normalizer=lambda data: data,
+    )
+    _compare_json(
+        diffs,
+        left_dir,
+        right_dir,
+        "replay.json",
+        normalizer=_normalize_replay_bundle_for_run_replay,
+    )
+    _compare_journal(diffs, left_dir, right_dir)
+    _compare_json(
+        diffs,
+        left_dir,
+        right_dir,
+        "materialization.json",
+        normalizer=_normalize_materialization_for_run_replay,
+    )
+    _compare_tree_bytes(diffs, left_dir, right_dir, "library")
+    _compare_tree_bytes(diffs, left_dir, right_dir, "reports")
+    return FixtureDiff(left_dir=left_dir, right_dir=right_dir, files=tuple(diffs))
+
+
 def _collect(root: Path) -> set[str]:
     """Return the set of file paths under ``root`` as POSIX-relative strings.
 
@@ -136,6 +184,156 @@ def _collect(root: Path) -> set[str]:
             continue
         rels.add(path.relative_to(root).as_posix())
     return rels
+
+
+def _compare_json(
+    diffs: list[FixtureFileDiff],
+    left_dir: Path,
+    right_dir: Path,
+    rel: str,
+    *,
+    normalizer: Callable[[object], object],
+) -> None:
+    left = left_dir / rel
+    right = right_dir / rel
+    if not _record_missing(diffs, left, right, rel):
+        return
+    left_blob = _canonical_compare_json(normalizer(json.loads(left.read_text(encoding="utf-8"))))
+    right_blob = _canonical_compare_json(normalizer(json.loads(right.read_text(encoding="utf-8"))))
+    if left_blob != right_blob:
+        diffs.append(_plain_byte_diff_entry(rel, left_blob, right_blob))
+
+
+def _compare_journal(diffs: list[FixtureFileDiff], left_dir: Path, right_dir: Path) -> None:
+    rel = "journal.jsonl"
+    left = left_dir / rel
+    right = right_dir / rel
+    if not _record_missing(diffs, left, right, rel):
+        return
+    left_blob = _normalized_journal_bytes(left)
+    right_blob = _normalized_journal_bytes(right)
+    if left_blob != right_blob:
+        diffs.append(_plain_byte_diff_entry(rel, left_blob, right_blob))
+
+
+def _compare_tree_bytes(
+    diffs: list[FixtureFileDiff],
+    left_dir: Path,
+    right_dir: Path,
+    rel_root: str,
+) -> None:
+    left_files = _collect(left_dir / rel_root)
+    right_files = _collect(right_dir / rel_root)
+    for rel in sorted(left_files | right_files):
+        fixture_rel = f"{rel_root}/{rel}"
+        left = left_dir / fixture_rel
+        right = right_dir / fixture_rel
+        if not _record_missing(diffs, left, right, fixture_rel):
+            continue
+        left_blob = left.read_bytes()
+        right_blob = right.read_bytes()
+        if left_blob != right_blob:
+            diffs.append(_plain_byte_diff_entry(fixture_rel, left_blob, right_blob))
+
+
+def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]:
+    data_obj = _str_keyed_dict(data)
+    if data_obj is None:
+        data_obj = {}
+    return {
+        "outcome": data_obj.get("outcome"),
+        "execution_mode": data_obj.get("execution_mode"),
+        "materialized": _list_or_empty(data_obj.get("materialized")),
+        "failures": _list_or_empty(data_obj.get("failures")),
+        "filesystem_actions": _normalize_action_list(data_obj.get("filesystem_actions")),
+        "media_actions": _normalize_action_list(data_obj.get("media_actions")),
+        "corruption_actions": _normalize_action_list(data_obj.get("corruption_actions")),
+    }
+
+
+def _normalize_replay_bundle_for_run_replay(data: object) -> dict[str, object]:
+    data_obj = _str_keyed_dict(data)
+    if data_obj is None:
+        data_obj = {}
+    return {key: data_obj.get(key) for key in _RUN_REPLAY_COMPARE_KEYS}
+
+
+def _list_or_empty(value: object) -> list[object]:
+    if not isinstance(value, list):
+        return []
+    return cast("list[object]", value)
+
+
+def _normalize_action_list(value: object) -> list[object]:
+    actions = _list_or_empty(value)
+    normalized: list[object] = []
+    for action in actions:
+        action_data = _str_keyed_dict(action)
+        if action_data is None:
+            normalized.append(action)
+            continue
+        normalized.append(
+            {
+                field: field_value
+                for field, field_value in action_data.items()
+                if field != "duration_ns"
+            }
+        )
+    return normalized
+
+
+def _str_keyed_dict(data: object) -> dict[str, object] | None:
+    if not isinstance(data, dict):
+        return None
+    return cast("dict[str, object]", data)
+
+
+def _normalized_journal_bytes(path: Path) -> bytes:
+    entries = [
+        _JOURNAL_ADAPTER.validate_json(line).model_copy(update={"wall_clock_time": None})
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    return serialize_journal_bytes(entries)
+
+
+def _canonical_compare_json(data: object) -> bytes:
+    return json.dumps(data, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _record_missing(
+    diffs: list[FixtureFileDiff],
+    left: Path,
+    right: Path,
+    rel: str,
+) -> bool:
+    if left.exists() and right.exists():
+        return True
+    if not left.exists():
+        diffs.append(
+            FixtureFileDiff(
+                path=rel,
+                kind="missing_in_left",
+                left_bytes=None,
+                right_bytes=right.stat().st_size if right.exists() else None,
+                first_diff_line=None,
+                preview_left=None,
+                preview_right=None,
+            )
+        )
+        return False
+    diffs.append(
+        FixtureFileDiff(
+            path=rel,
+            kind="missing_in_right",
+            left_bytes=left.stat().st_size,
+            right_bytes=None,
+            first_diff_line=None,
+            preview_left=None,
+            preview_right=None,
+        )
+    )
+    return False
 
 
 def _is_text_like(rel: str) -> bool:
@@ -163,6 +361,18 @@ def _byte_diff_entry(rel: str, left: bytes, right: bytes) -> FixtureFileDiff:
         first_diff_line=first_diff_line,
         preview_left=preview_left,
         preview_right=preview_right,
+    )
+
+
+def _plain_byte_diff_entry(rel: str, left: bytes, right: bytes) -> FixtureFileDiff:
+    return FixtureFileDiff(
+        path=rel,
+        kind="byte_diff",
+        left_bytes=len(left),
+        right_bytes=len(right),
+        first_diff_line=None,
+        preview_left=None,
+        preview_right=None,
     )
 
 

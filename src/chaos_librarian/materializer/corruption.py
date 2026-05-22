@@ -119,8 +119,6 @@ def apply_corruption_action(ctx: _CorruptionContext, entry: JournalEntry) -> Cor
         probe_outcome, probe_error_tail, probed = _probe_corrupted_output(output_path)
         output_version_id = _output_version_id(entry)
     except Exception as exc:
-        if isinstance(exc, ProbeParseError):
-            raise
         raise CorruptionActionError(
             f"{entry.action} failed for event {entry.event_id}: {exc}",
             event_id=entry.event_id,

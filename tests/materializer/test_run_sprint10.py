@@ -38,6 +38,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
+from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.corruption import _CorruptionContext
@@ -302,7 +303,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         ctx.post_phase_b_versions[output_version_id] = (_CORRUPTED_HASH, _probed())
         return _corruption_action(output_version_id)
 
-    monkeypatch.setattr(run_mod, "apply_corruption_action", fake_apply, raising=False)
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -315,7 +316,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(run_mod, "apply_corruption_action", fake_apply, raising=False)
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
 
 
 def _probed() -> ProbedMedia:

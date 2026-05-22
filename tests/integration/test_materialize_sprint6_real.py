@@ -24,7 +24,7 @@ from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import FailureStage, FilesystemAction, Outcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import filesystem as filesystem_mod
-from chaos_librarian.materializer import run as run_mod
+from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer.capabilities import (
     MIN_VERSIONS,
     detect_capabilities,
@@ -309,7 +309,7 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
         return original_dispatch(ctx, entry)
 
     monkeypatch.setattr(filesystem_mod, "_dispatch_one", tampered_dispatch_one)
-    monkeypatch.setattr(run_mod, "_dispatch_one", tampered_dispatch_one)
+    monkeypatch.setattr(phase_b, "_dispatch_one", tampered_dispatch_one)
 
     out_dir = tmp_path / "run-001"
     with pytest.raises(FilesystemActionError):

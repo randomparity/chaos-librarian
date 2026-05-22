@@ -28,6 +28,7 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeRep
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import run_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
@@ -234,7 +235,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return _corruption_action(output_version_id=output_version_id)
 
-    monkeypatch.setattr(replay_mod, "apply_corruption_action", fake_apply, raising=False)
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -247,7 +248,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(replay_mod, "apply_corruption_action", fake_apply, raising=False)
+    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
 
 
 def _corruption_action(*, output_version_id: str) -> CorruptionAction:
