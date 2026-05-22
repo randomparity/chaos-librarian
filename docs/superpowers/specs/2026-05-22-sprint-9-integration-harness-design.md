@@ -210,13 +210,20 @@ class ObservedVariant(BaseModel):
     label: str | None = None
 
 
+class ObservedBundleSidecarRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    asset_ref: str
+    sidecar_ref: str
+
+
 class ObservedBundle(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_ref: str
     variant_ref: str | None = None
     asset_refs: list[str] = Field(default_factory=list)
-    sidecar_refs: list[str] = Field(default_factory=list)
+    sidecar_refs: list[ObservedBundleSidecarRef] = Field(default_factory=list)
 ```
 
 The implementation plan can split the supporting classes into focused files, but
@@ -237,28 +244,39 @@ the wire contract must keep these semantics:
 - When topology refs are supplied, they must point to supplied observed objects:
   asset `work_ref`, `variant_ref`, and `bundle_ref`; variant `work_ref`; bundle
   `variant_ref`; bundle `asset_refs`; and bundle `sidecar_refs`.
-- `ObservedBundle.sidecar_refs` resolve against the sidecars nested under the
-  bundle's `asset_refs`. A sidecar ref must match exactly one sidecar in that
-  asset set.
-- Duplicate refs, ambiguous sidecar refs, and dangling refs make the
-  `ObservedState` an input error, not a divergence finding.
+- `ObservedBundle.sidecar_refs` use `{asset_ref, sidecar_ref}` pairs. `asset_ref`
+  must be listed in the same bundle's `asset_refs`, and `sidecar_ref` must exist
+  under that asset's nested sidecars.
+- Duplicate refs, dangling refs, and cross-bundle sidecar refs make the
+  `ObservedState` an `E_ADAPTER_OBSERVED_INVALID` input error, not a divergence
+  finding.
+- Contradictory observed topology also makes the `ObservedState` an
+  `E_ADAPTER_OBSERVED_INVALID` input error. Asset `work_ref`, `variant_ref`, and
+  `bundle_ref` must agree with supplied work/variant/bundle objects; an asset's
+  `work_ref` must agree with the referenced variant's `work_ref`; bundle
+  `asset_refs` must agree with each listed asset's `bundle_ref`; and a bundle's
+  `variant_ref` must agree with the listed assets' `variant_ref` values when both
+  directions are supplied.
 
 Observed path history:
 
 ```python
 class ObservedAction(enum.StrEnum):
-    MOVE = "move"
-    RENAME = "rename"
-    DELETE_READD = "delete_readd"
-    SLOW_COPY = "slow_copy"
-    ARCHIVE = "archive"
-    ROOT_MOVE = "root_move"
+    MOVE_ASSET = "move_asset"
+    RENAME_FILE = "rename_file"
+    DELETE_FILE = "delete_file"
+    ADD_FILE = "add_file"
+    SLOW_COPY_START = "slow_copy_start"
+    SLOW_COPY_COMMIT = "slow_copy_commit"
+    ARCHIVE_FILE = "archive_file"
+    MOVE_BETWEEN_ROOTS = "move_between_roots"
 
 
 class ObservedPathHistoryEntry(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_event_ref: str | None = None
+    related_observed_event_ref: str | None = None
     action: ObservedAction
     observed_at: datetime | None = None
     from_path: str | None = None
@@ -274,6 +292,7 @@ class ObservedEvent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_event_ref: str
+    related_observed_event_ref: str | None = None
     observed_ref: str | None = None
     before_observed_ref: str | None = None
     after_observed_ref: str | None = None
@@ -285,17 +304,29 @@ class ObservedEvent(BaseModel):
     temp_path: str | None = None
 ```
 
-History actions are a fixed consumer-neutral vocabulary. The adapter rejects
-unknown actions instead of normalizing aliases. Per-action path requirements are:
+History actions are the path-affecting `TimelineActionName` subset used by the
+oracle journal and `AssetReport.path_history`. The adapter rejects unknown
+actions and does not normalize aliases. Per-action path requirements are:
 
-- `move`, `rename`, `delete_readd`, `archive`, and `root_move` require
+- `move_asset`, `rename_file`, `archive_file`, and `move_between_roots` require
   `from_path` and `to_path`.
-- `slow_copy` requires `from_path` and `to_path`; `temp_path` is optional.
+- `delete_file` requires `from_path`.
+- `add_file` requires `to_path`.
+- `slow_copy_start` requires `from_path`, `to_path`, and `temp_path`.
+- `slow_copy_commit` requires `to_path`; `from_path` may be present when the
+  consumer records the temp-to-final rename.
 
 Global `ObservedEvent` entries must also identify the consumer lifecycle being
 described: either `observed_ref`, or both `before_observed_ref` and
 `after_observed_ref`, must be present. Missing per-action fields or missing ref
 evidence make the `ObservedState` an input error.
+
+Grouped lifecycle evidence uses the same event vocabulary as the oracle instead
+of a synthetic action. A `delete_file` + `add_file` lifecycle and a
+`slow_copy_start` + `slow_copy_commit` lifecycle are represented as separate
+observed history entries. When `observed_event_ref` values are supplied, paired
+entries link with `related_observed_event_ref`; otherwise the adapter pairs them
+by matched asset, action type, path fields, and observation order.
 
 The adapter treats `events` and `assets[].path_history` as additive evidence.
 In `final-state` mode, if neither is present, history assertions are skipped and
@@ -341,6 +372,7 @@ class DivergenceFinding(BaseModel):
     message: str
     oracle_asset_id: str | None = None
     oracle_event_id: str | None = None
+    related_oracle_event_ids: list[str] = Field(default_factory=list)
     observed_ref: str | None = None
     expected: object | None = None
     observed: object | None = None
@@ -369,7 +401,9 @@ Initial finding codes:
 - `D_TOPOLOGY_MISMATCH` - work/variant/bundle grouping differs when both sides
   supplied topology.
 - `D_IDENTITY_SPLIT` - one oracle asset lifecycle maps to multiple observed
-  asset refs across a move, rename, delete/re-add, or slow-copy boundary.
+  asset refs across a path-affecting lifecycle such as `move_asset`,
+  `rename_file`, `delete_file` + `add_file`, `slow_copy_start` +
+  `slow_copy_commit`, `archive_file`, or `move_between_roots`.
 - `D_HISTORY_CONFLICT` - per-asset history and global events make contradictory
   claims about the same oracle path mutation.
 - `D_HISTORY_MISSING` - identity-history mode has no observed lifecycle evidence
@@ -397,7 +431,10 @@ class MatchEvidence(BaseModel):
 `oracle_event_id` always refers to the current journal/report contract:
 `JournalEntry.event_id`, `AssetHistoryEntry.event_id`, `PathHistoryEntry.event_id`,
 or `VersionHistoryEntry.event_id`. Sprint 9 does not introduce a separate
-mutation identifier.
+mutation identifier. For grouped lifecycle findings, `oracle_event_id` is the
+first participating oracle event in journal order, and `related_oracle_event_ids`
+contains the remaining participating event IDs in journal order. For single-event
+findings, `related_oracle_event_ids` is empty.
 
 ## Matching Rules
 
@@ -436,9 +473,14 @@ current observed state and does not fail because history evidence is missing. A
 consumer that only exports `observed_ref` and `current_path` can use this mode.
 
 `identity-history` mode adds lifecycle assertions for durable identity. It still
-performs all final-state checks, then inspects oracle path-affecting journal
-events and observed history. For every oracle move, rename, delete/re-add,
-slow-copy, archive, or root-move event, the observed payload must show one of:
+performs all final-state checks, then inspects oracle path-history entries
+derived from journal state deltas and observed history. The adapter compares the
+oracle's concrete path-affecting actions: `move_asset`, `rename_file`,
+`delete_file`, `add_file`, `slow_copy_start`, `slow_copy_commit`,
+`archive_file`, and `move_between_roots`.
+
+For every single-event oracle path mutation (`move_asset`, `rename_file`,
+`archive_file`, or `move_between_roots`), the observed payload must show one of:
 
 - the matched observed asset has a `path_history` entry representing the same
   path transition; or
@@ -446,6 +488,17 @@ slow-copy, archive, or root-move event, the observed payload must show one of:
   `before_observed_ref == after_observed_ref`; or
 - a global `ObservedEvent` represents a split with different before/after refs,
   which emits `D_IDENTITY_SPLIT`.
+
+For grouped oracle lifecycles, the observed payload must show the whole group:
+
+- `delete_file` + `add_file`: require delete evidence for the removed path and
+  add evidence for the restored path when both oracle events are present.
+- `slow_copy_start` + `slow_copy_commit`: require start evidence for the
+  initial/temp/final paths and commit evidence for the final path when both oracle
+  events are present.
+
+Grouped lifecycle findings use `oracle_event_id` for the first oracle event in
+journal order and `related_oracle_event_ids` for the other grouped event IDs.
 
 If identity-history mode is requested and the observed payload has no history
 evidence, the adapter emits `D_HISTORY_MISSING` findings for expected path
@@ -615,18 +668,21 @@ Contract tests:
 - `ObservedState` round-trips valid scanner, prober, and watcher payloads.
 - `ObservedState` rejects extra fields, invalid hash syntax, missing
   `observed_ref`, and absolute paths.
-- `ObservedState` rejects unknown history actions and missing per-action path
-  fields.
+- `ObservedState` rejects history actions outside the supported path-affecting
+  `TimelineActionName` subset and missing per-action path fields.
 - `ObservedState` rejects duplicate observed refs within each declared uniqueness
   scope.
 - `ObservedState` rejects dangling topology refs, dangling sidecar refs, and
-  ambiguous bundle sidecar refs.
+  cross-bundle sidecar refs.
+- `ObservedState` accepts bundle sidecar refs scoped by `{asset_ref, sidecar_ref}`.
+- `ObservedState` rejects contradictory observed topology before comparison.
 - `DivergenceReport` round-trips `mode="final-state"` findings with
   expected/observed values and match evidence.
 - `DivergenceReport` round-trips `mode="identity-history"` findings with
   expected/observed values and match evidence.
 - `DivergenceReport` rejects `ok=true` with error findings and `ok=false` with no
   error findings.
+- `DivergenceFinding` round-trips `related_oracle_event_ids`.
 - Schema export includes `observed-state.schema.json` and
   `divergence.schema.json`.
 - Schema version constants are positive integers and equal to `1`.
@@ -644,14 +700,22 @@ Adapter behavior tests:
 - Ambiguous same-path or same-hash evidence produces `D_MATCH_AMBIGUOUS`.
 - Missing observed sidecar produces `D_SIDECAR_MISSING`.
 - Final-state-only comparison skips history checks.
+- Identity-history clean comparison covers `move_asset`, `rename_file`,
+  `archive_file`, `move_between_roots`, `slow_copy_start` + `slow_copy_commit`,
+  and `delete_file` + `add_file` lifecycles.
 - Identity-history comparison with no history evidence emits `D_HISTORY_MISSING`
   instead of silently running as final-state comparison.
-- Identity-history comparison reports `D_HISTORY_MISSING` for a missing move or
-  rename observation.
-- Identity-history comparison reports `D_IDENTITY_SPLIT` when a move or rename
-  maps one oracle asset to different before/after observed refs.
+- Identity-history comparison reports `D_HISTORY_MISSING` for missing
+  `move_asset`, `rename_file`, `archive_file`, `move_between_roots`,
+  `slow_copy_start` + `slow_copy_commit`, and `delete_file` + `add_file`
+  observations.
+- Identity-history comparison reports `D_IDENTITY_SPLIT` when a path-affecting
+  lifecycle maps one oracle asset to different before/after observed refs.
 - Identity-history comparison reports `D_HISTORY_CONFLICT` when per-asset
-  history and global events contradict each other for the same move or rename.
+  history and global events contradict each other for the same path-affecting
+  lifecycle.
+- Slow-copy split and conflict findings report grouped oracle event IDs instead
+  of dropping either the start or commit event.
 - `DivergenceFinding` round-trips with `oracle_event_id`.
 
 CLI tests:
