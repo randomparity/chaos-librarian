@@ -14,7 +14,11 @@ from chaos_librarian.contract.manifest import (
     ManifestVariant,
     ManifestVersion,
     ManifestWork,
+    ProbedMedia,
+    ProbedStream,
+    StreamKind,
 )
+from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.reports import ReportSet, build_report_set
 
@@ -51,6 +55,42 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
         locations=locations,
         sidecars=[],
     )
+
+
+def _corruption_record() -> CorruptionRecord:
+    return CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id="corrupt_header_001",
+        corruptor="container_header_v1",
+        byte_start=0,
+        byte_count=64,
+        seed_material="container_header_v1:42:corrupt_header_001:asset_hd_main",
+    )
+
+
+def _probed_media() -> ProbedMedia:
+    return ProbedMedia(
+        container="matroska,webm",
+        duration_seconds=1.0,
+        size_bytes=12345,
+        streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
+    )
+
+
+def _manifest_with_two_versions() -> Manifest:
+    manifest = _manifest_with_one_asset()
+    manifest.versions = [
+        ManifestVersion(id="version_0001", asset_id="asset_hd_main", index=0),
+        ManifestVersion(
+            id="version_0002",
+            asset_id="asset_hd_main",
+            index=1,
+            content_hash="sha256:" + "1" * 64,
+            probed=_probed_media(),
+            corruption=_corruption_record(),
+        ),
+    ]
+    return manifest
 
 
 def _atomic_entry(
@@ -236,6 +276,37 @@ class TestBuildReportSet:
             "resolution": "sd",
             "codec": "h264",
         }
+
+    def test_asset_snapshot_uses_current_greatest_index_version(self) -> None:
+        initial = _manifest_with_one_asset()
+        current = _manifest_with_two_versions()
+
+        rs = build_report_set(initial=initial, current=current, journal=[])
+
+        assert rs.assets[0].current is not None
+        assert rs.assets[0].current.version_id == "version_0002"
+        assert rs.assets[0].current.version_index == 1
+
+    def test_asset_snapshot_copies_hash_probe_and_corruption(self) -> None:
+        initial = _manifest_with_one_asset()
+        current = _manifest_with_two_versions()
+
+        rs = build_report_set(initial=initial, current=current, journal=[])
+
+        snapshot = rs.assets[0].current
+        assert snapshot is not None
+        assert snapshot.content_hash == "sha256:" + "1" * 64
+        assert snapshot.probed == _probed_media()
+        assert snapshot.corruption == _corruption_record()
+
+    def test_asset_report_json_emits_current_corruption_metadata(self) -> None:
+        initial = _manifest_with_one_asset()
+        current = _manifest_with_two_versions()
+
+        rs = build_report_set(initial=initial, current=current, journal=[])
+        payload = rs.assets[0].model_dump(mode="json", exclude_none=True)
+
+        assert payload["current"]["corruption"]["event_id"] == "corrupt_header_001"
 
     def test_iteration_order_is_stable(self) -> None:
         """Reports sort by id lexicographically.
