@@ -6,6 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
+from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     ArchiveFileEvent,
@@ -14,6 +15,7 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     Bundle,
+    CorruptContainerHeaderEvent,
     CreateSidecarEvent,
     DurationScale,
     EditMetadataEvent,
@@ -207,8 +209,67 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_six() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 6
+def test_scenario_schema_version_is_seven() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 7
+
+
+def test_scenario_accepts_malformed_media_profile() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["schema_version"] = 7
+    payload["profiles"] = ["malformed-media"]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.profiles == (ProfileName.MALFORMED_MEDIA,)
+
+
+def test_scenario_rejects_unknown_profile_value() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["schema_version"] = 7
+    payload["profiles"] = ["not-a-profile"]
+
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def test_corrupt_container_header_defaults_to_64_bytes() -> None:
+    event = CorruptContainerHeaderEvent.model_validate(
+        {
+            "id": "corrupt_header_001",
+            "at": "1s",
+            "action": "corrupt_container_header",
+            "target": "asset_main",
+        }
+    )
+
+    assert event.bytes == 64
+    assert event.action == TimelineActionName.CORRUPT_CONTAINER_HEADER
+
+
+def test_corrupt_container_header_rejects_zero_bytes() -> None:
+    payload = {
+        "id": "corrupt_header_001",
+        "at": "1s",
+        "action": "corrupt_container_header",
+        "target": "asset_main",
+        "bytes": 0,
+    }
+
+    with pytest.raises(ValidationError):
+        CorruptContainerHeaderEvent.model_validate(payload)
+
+
+def test_corrupt_container_header_rejects_4097_bytes() -> None:
+    payload = {
+        "id": "corrupt_header_001",
+        "at": "1s",
+        "action": "corrupt_container_header",
+        "target": "asset_main",
+        "bytes": 4097,
+    }
+
+    with pytest.raises(ValidationError):
+        CorruptContainerHeaderEvent.model_validate(payload)
 
 
 def test_archive_file_event_round_trip():
@@ -291,9 +352,9 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v6():
+def test_scenario_v4_actions_round_trip_at_v7():
     payload = {
-        "schema_version": 6,
+        "schema_version": 7,
         "scenario_id": "sc_arch_001",
         "seed": 42,
         "duration_scale": "short",
@@ -312,7 +373,7 @@ def test_scenario_v4_actions_round_trip_at_v6():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 6
+    assert scenario.schema_version == 7
     assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE
 
 
@@ -479,9 +540,9 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v6_round_trip_with_sprint_7_events():
+def test_scenario_v7_round_trip_with_sprint_7_events():
     payload = {
-        "schema_version": 6,
+        "schema_version": 7,
         "scenario_id": "sc_s7_001",
         "seed": 42,
         "duration_scale": "short",
@@ -498,5 +559,5 @@ def test_scenario_v6_round_trip_with_sprint_7_events():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 6
+    assert scenario.schema_version == 7
     assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER

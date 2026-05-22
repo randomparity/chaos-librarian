@@ -1,12 +1,127 @@
 {
   "$defs": {
+    "CorruptionAction": {
+      "additionalProperties": false,
+      "description": "One phase-B intentional corruption audit record.",
+      "properties": {
+        "action": {
+          "const": "corrupt_container_header",
+          "title": "Action",
+          "type": "string"
+        },
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "byte_start": {
+          "title": "Byte Start",
+          "type": "integer"
+        },
+        "corruptor": {
+          "title": "Corruptor",
+          "type": "string"
+        },
+        "duration_ns": {
+          "title": "Duration Ns",
+          "type": "integer"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Input Content Hash",
+          "type": "string"
+        },
+        "input_path": {
+          "title": "Input Path",
+          "type": "string"
+        },
+        "input_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Version Id"
+        },
+        "output_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Output Content Hash",
+          "type": "string"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "output_version_id": {
+          "title": "Output Version Id",
+          "type": "string"
+        },
+        "probe_error_tail": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probe Error Tail"
+        },
+        "probe_outcome": {
+          "$ref": "#/$defs/CorruptionProbeOutcome"
+        },
+        "seed_material": {
+          "title": "Seed Material",
+          "type": "string"
+        },
+        "target_asset_id": {
+          "title": "Target Asset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "target_asset_id",
+        "input_path",
+        "output_path",
+        "output_version_id",
+        "input_content_hash",
+        "output_content_hash",
+        "corruptor",
+        "byte_start",
+        "byte_count",
+        "seed_material",
+        "probe_outcome",
+        "duration_ns"
+      ],
+      "title": "CorruptionAction",
+      "type": "object"
+    },
+    "CorruptionProbeOutcome": {
+      "enum": [
+        "failed_expected",
+        "still_probeable"
+      ],
+      "title": "CorruptionProbeOutcome",
+      "type": "string"
+    },
     "FailureStage": {
       "description": "Subprocess stage that produced a MaterializationFailure.",
       "enum": [
         "ffmpeg",
         "ffprobe",
         "filesystem",
-        "media"
+        "media",
+        "corruption"
       ],
       "title": "FailureStage",
       "type": "string"
@@ -302,7 +417,8 @@
         "tool_missing",
         "containment_violation",
         "fs_failed",
-        "media_failed"
+        "media_failed",
+        "corruption_failed"
       ],
       "title": "Outcome",
       "type": "string"
@@ -326,7 +442,8 @@
         "embed_subtitle",
         "extract_subtitle",
         "remove_sidecar",
-        "update_sidecar"
+        "update_sidecar",
+        "corrupt_container_header"
       ],
       "title": "TimelineActionName",
       "type": "string"
@@ -429,6 +546,13 @@
       "default": null,
       "title": "Actual Duration Ns"
     },
+    "corruption_actions": {
+      "items": {
+        "$ref": "#/$defs/CorruptionAction"
+      },
+      "title": "Corruption Actions",
+      "type": "array"
+    },
     "execution_mode": {
       "$ref": "#/$defs/MaterializationExecutionMode",
       "default": "materialize"
@@ -503,7 +627,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 5,
+      "const": 6,
       "title": "Schema Version",
       "type": "integer"
     },

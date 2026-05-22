@@ -1,5 +1,5 @@
 # expected: E_FIELD_LITERAL
-schema_version: 6
+schema_version: 7
 scenario_id: invalid_reencode_audio_unknown_channels
 seed: 42
 duration_scale: short

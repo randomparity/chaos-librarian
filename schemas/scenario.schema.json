@@ -190,6 +190,43 @@
       "title": "Bundle",
       "type": "object"
     },
+    "CorruptContainerHeaderEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "corrupt_container_header",
+          "default": "corrupt_container_header",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "bytes": {
+          "default": 64,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "CorruptContainerHeaderEvent",
+      "type": "object"
+    },
     "CreateSidecarEvent": {
       "additionalProperties": false,
       "properties": {
@@ -516,6 +553,13 @@
       ],
       "title": "MoveBetweenRootsEvent",
       "type": "object"
+    },
+    "ProfileName": {
+      "enum": [
+        "malformed-media"
+      ],
+      "title": "ProfileName",
+      "type": "string"
     },
     "ReencodeAudioEvent": {
       "additionalProperties": false,
@@ -957,12 +1001,19 @@
     "library": {
       "$ref": "#/$defs/Library"
     },
+    "profiles": {
+      "items": {
+        "$ref": "#/$defs/ProfileName"
+      },
+      "title": "Profiles",
+      "type": "array"
+    },
     "scenario_id": {
       "title": "Scenario Id",
       "type": "string"
     },
     "schema_version": {
-      "const": 6,
+      "const": 7,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -984,6 +1035,7 @@
           "mapping": {
             "add_file": "#/$defs/AddFileEvent",
             "archive_file": "#/$defs/ArchiveFileEvent",
+            "corrupt_container_header": "#/$defs/CorruptContainerHeaderEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
             "edit_metadata": "#/$defs/EditMetadataEvent",
@@ -1053,6 +1105,9 @@
           },
           {
             "$ref": "#/$defs/UpdateSidecarEvent"
+          },
+          {
+            "$ref": "#/$defs/CorruptContainerHeaderEvent"
           }
         ]
       },

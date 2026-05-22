@@ -1,5 +1,43 @@
 {
   "$defs": {
+    "CorruptionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "byte_start": {
+          "title": "Byte Start",
+          "type": "integer"
+        },
+        "corruptor": {
+          "title": "Corruptor",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileName"
+        },
+        "seed_material": {
+          "title": "Seed Material",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "event_id",
+        "corruptor",
+        "byte_start",
+        "byte_count",
+        "seed_material"
+      ],
+      "title": "CorruptionRecord",
+      "type": "object"
+    },
     "ManifestAsset": {
       "additionalProperties": false,
       "properties": {
@@ -199,6 +237,17 @@
           "default": null,
           "title": "Content Hash"
         },
+        "corruption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CorruptionRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -394,6 +443,13 @@
       "title": "ProbedStream",
       "type": "object"
     },
+    "ProfileName": {
+      "enum": [
+        "malformed-media"
+      ],
+      "title": "ProfileName",
+      "type": "string"
+    },
     "StreamKind": {
       "description": "Kind of a probed media stream.",
       "enum": [
@@ -429,7 +485,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
     },

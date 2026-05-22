@@ -19,6 +19,18 @@ from chaos_librarian.contract.manifest import (
     ProbedStream,
     StreamKind,
 )
+from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
+
+
+def _corruption_record() -> CorruptionRecord:
+    return CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id="corrupt_header_001",
+        corruptor="container_header_v1",
+        byte_start=0,
+        byte_count=64,
+        seed_material="container_header_v1:42:corrupt_header_001:asset_main",
+    )
 
 
 def _empty_manifest() -> Manifest:
@@ -112,8 +124,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_four():
-    assert MANIFEST_SCHEMA_VERSION == 4
+def test_manifest_schema_version_is_five():
+    assert MANIFEST_SCHEMA_VERSION == 5
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -150,9 +162,9 @@ def test_manifest_sidecar_subtitle_keeps_language():
     assert sidecar.language == "eng"
 
 
-def test_manifest_v4_schema_version():
+def test_manifest_v5_schema_version():
     manifest = Manifest(
-        schema_version=4,
+        schema_version=5,
         works=[],
         variants=[],
         bundles=[],
@@ -161,7 +173,22 @@ def test_manifest_v4_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 4
+    assert manifest.schema_version == 5
+
+
+def test_manifest_version_round_trips_corruption_metadata() -> None:
+    version = ManifestVersion(
+        id="version_0002",
+        asset_id="asset_main",
+        index=1,
+        corruption=_corruption_record(),
+    )
+
+    loaded = ManifestVersion.model_validate_json(version.model_dump_json())
+
+    assert loaded == version
+    assert loaded.corruption is not None
+    assert loaded.corruption.profile is ProfileName.MALFORMED_MEDIA
 
 
 def test_manifest_poster_sidecar_json_round_trip():

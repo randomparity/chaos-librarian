@@ -11,6 +11,8 @@ from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
+from chaos_librarian.contract.profiles import ProfileName
+
 
 class TimelineActionName(enum.StrEnum):
     """All valid ``action:`` values for a timeline event.
@@ -38,6 +40,7 @@ class TimelineActionName(enum.StrEnum):
     EXTRACT_SUBTITLE = "extract_subtitle"
     REMOVE_SIDECAR = "remove_sidecar"
     UPDATE_SIDECAR = "update_sidecar"
+    CORRUPT_CONTAINER_HEADER = "corrupt_container_header"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -345,6 +348,14 @@ class UpdateSidecarEvent(_TimelineEventBase):
     sidecar_path: str
 
 
+class CorruptContainerHeaderEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.CORRUPT_CONTAINER_HEADER] = (
+        TimelineActionName.CORRUPT_CONTAINER_HEADER
+    )
+    target: str
+    bytes: int = Field(default=64, ge=1, le=4096)
+
+
 TimelineEvent = Annotated[
     MoveAssetEvent
     | RenameFileEvent
@@ -362,7 +373,8 @@ TimelineEvent = Annotated[
     | EmbedSubtitleEvent
     | ExtractSubtitleEvent
     | RemoveSidecarEvent
-    | UpdateSidecarEvent,
+    | UpdateSidecarEvent
+    | CorruptContainerHeaderEvent,
     Field(discriminator="action"),
 ]
 
@@ -374,10 +386,11 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[6]
+    schema_version: Literal[7]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
+    profiles: tuple[ProfileName, ...] = Field(default_factory=tuple)
     library: Library
     works: tuple[Work, ...]
     timeline: tuple[TimelineEvent, ...]

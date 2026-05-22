@@ -47,6 +47,17 @@
           "default": null,
           "title": "Content Hash"
         },
+        "corruption": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CorruptionRecord"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "location_path": {
           "anyOf": [
             {
@@ -84,6 +95,44 @@
         "version_index"
       ],
       "title": "AssetSnapshot",
+      "type": "object"
+    },
+    "CorruptionRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "byte_count": {
+          "title": "Byte Count",
+          "type": "integer"
+        },
+        "byte_start": {
+          "title": "Byte Start",
+          "type": "integer"
+        },
+        "corruptor": {
+          "title": "Corruptor",
+          "type": "string"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/ProfileName"
+        },
+        "seed_material": {
+          "title": "Seed Material",
+          "type": "string"
+        }
+      },
+      "required": [
+        "profile",
+        "event_id",
+        "corruptor",
+        "byte_start",
+        "byte_count",
+        "seed_material"
+      ],
+      "title": "CorruptionRecord",
       "type": "object"
     },
     "PathHistoryEntry": {
@@ -294,6 +343,13 @@
       "title": "ProbedStream",
       "type": "object"
     },
+    "ProfileName": {
+      "enum": [
+        "malformed-media"
+      ],
+      "title": "ProfileName",
+      "type": "string"
+    },
     "StreamKind": {
       "description": "Kind of a probed media stream.",
       "enum": [
@@ -323,7 +379,8 @@
         "embed_subtitle",
         "extract_subtitle",
         "remove_sidecar",
-        "update_sidecar"
+        "update_sidecar",
+        "corrupt_container_header"
       ],
       "title": "TimelineActionName",
       "type": "string"
@@ -417,7 +474,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
     },

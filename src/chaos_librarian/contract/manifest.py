@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.profiles import CorruptionRecord
+
 
 class StreamKind(enum.StrEnum):
     """Kind of a probed media stream."""
@@ -89,6 +91,7 @@ class ManifestVersion(BaseModel):
     index: int
     content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     probed: ProbedMedia | None = None
+    corruption: CorruptionRecord | None = None
 
 
 class ManifestLocation(BaseModel):
@@ -119,7 +122,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]
