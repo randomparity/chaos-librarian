@@ -6,8 +6,8 @@ media action, each reads every path from the journal entry's
 
 The orchestrator in ``materializer/run.py`` walks the journal once and
 dispatches each entry to ``apply_media_action`` here OR to the stdlib
-dispatcher in ``filesystem.py``. See ``_MEDIA_ACTIONS`` /
-``_STDLIB_ACTIONS`` below.
+dispatcher in ``filesystem.py``. See ``materializer.actions`` for the
+routing action sets.
 
 Per-action ffmpeg sketches are in the Sprint 7 spec
 §"Per-action behavior" table.
@@ -28,9 +28,13 @@ from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
 from chaos_librarian.contract.scenario import Asset, SidecarKind, TimelineActionName
+from chaos_librarian.materializer.actions import (
+    _MEDIA_ACTIONS,
+    _STDLIB_ACTIONS,
+    SUPPORTED_S7_ACTIONS,
+)
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
-from chaos_librarian.materializer.preflight import SUPPORTED_S6_ACTIONS
 from chaos_librarian.materializer.probe import probe_file
 from chaos_librarian.materializer.recipes import srt_payload
 from chaos_librarian.materializer.sidecar_bytes import (
@@ -921,30 +925,3 @@ def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
             cause=exc,
             asset_id=entry.target_ids[0] if entry.target_ids else None,
         ) from exc
-
-
-_MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.REENCODE_VIDEO,
-        TimelineActionName.REENCODE_AUDIO,
-        TimelineActionName.REMUX_CONTAINER,
-        TimelineActionName.EDIT_METADATA,
-        TimelineActionName.EMBED_SUBTITLE,
-        TimelineActionName.EXTRACT_SUBTITLE,
-        TimelineActionName.UPDATE_SIDECAR,
-        TimelineActionName.CREATE_SIDECAR,
-    }
-)
-
-
-# create_sidecar moved to _MEDIA_ACTIONS in Sprint 7 — the per-kind byte
-# generators (subtitle / NFO / poster) belong in media.py alongside the
-# other byte-changing handlers, so SUPPORTED_S6_ACTIONS (which still lists
-# CREATE_SIDECAR as a Sprint 6 supported action) is filtered here to keep
-# routing single-dispatch.
-_STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    SUPPORTED_S6_ACTIONS - {TimelineActionName.CREATE_SIDECAR}
-) | frozenset({TimelineActionName.REMOVE_SIDECAR})
-
-
-SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
