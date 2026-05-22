@@ -111,6 +111,36 @@ def test_probe_failure_records_failed_expected(tmp_path, monkeypatch) -> None:
     assert ctx.post_phase_b_versions["version_0002"][1] is None
 
 
+def test_probe_failure_tail_replaces_absolute_output_path(tmp_path, monkeypatch) -> None:
+    asset = tmp_path / "movies-hd" / "asset.mkv"
+    asset.parent.mkdir()
+    asset.write_bytes(b"0123456789abcdef")
+
+    def fail_probe(path):
+        raise ProbeParseError(
+            f"ffprobe exit 1 on {path}",
+            payload={
+                "path": str(path),
+                "stderr": (
+                    f"[matroska,webm @ 0xca6c7c000] EBML header parsing failed\n{path}: "
+                    "Invalid data found when processing input\n"
+                ),
+            },
+        )
+
+    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", fail_probe)
+    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+
+    action = apply_corruption_action(ctx, _entry(byte_count=8))
+
+    assert str(asset) not in action.probe_error_tail
+    assert "0xca6c7c000" not in action.probe_error_tail
+    assert action.probe_error_tail == (
+        "[matroska,webm @ <addr>] EBML header parsing failed\n"
+        "<corrupted-output>: Invalid data found when processing input\n"
+    )
+
+
 def test_probe_success_records_still_probeable(tmp_path, monkeypatch) -> None:
     asset = tmp_path / "movies-hd" / "asset.mkv"
     asset.parent.mkdir()

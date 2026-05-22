@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -14,6 +15,8 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
 from chaos_librarian.materializer.probe import probe_file
+
+_FFMPEG_POINTER_RE = re.compile(r"(@ )0x[0-9a-fA-F]+")
 
 
 @dataclass(slots=True)
@@ -49,8 +52,17 @@ def _probe_corrupted_output(
     try:
         probed = probe_file(output_path)
     except ProbeParseError as exc:
-        return CorruptionProbeOutcome.FAILED_EXPECTED, str(exc)[-2048:], None
+        return CorruptionProbeOutcome.FAILED_EXPECTED, _probe_error_tail(exc), None
     return CorruptionProbeOutcome.STILL_PROBEABLE, None, probed
+
+
+def _probe_error_tail(exc: ProbeParseError) -> str:
+    tail = str(exc.payload.get("stderr") or exc)
+    path = exc.payload.get("path")
+    if isinstance(path, str) and path:
+        tail = tail.replace(path, "<corrupted-output>")
+    tail = _FFMPEG_POINTER_RE.sub(r"\1<addr>", tail)
+    return tail[-2048:]
 
 
 def _target_asset_id(entry: JournalEntry) -> str | None:
