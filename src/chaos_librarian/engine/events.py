@@ -522,13 +522,21 @@ def _handle_move_between_roots(
     return (entry,)
 
 
+def _extract_extension(path: str) -> str:
+    """Return the basename extension without a dot, or ``""`` when absent."""
+    basename = path.rsplit("/", 1)[-1]
+    if "." not in basename:
+        return ""
+    return basename.rsplit(".", 1)[-1]
+
+
 def _swap_extension(path: str, new_ext: str) -> str:
     """Replace the path's file extension with ``new_ext`` (no leading dot).
 
     Pure string surgery: ``"library/movies-hd/x.mkv"`` + ``"mp4"`` →
     ``"library/movies-hd/x.mp4"``. If the path has no extension, appends.
     """
-    if "." in path.rsplit("/", 1)[-1]:
+    if _extract_extension(path):
         base = path.rsplit(".", 1)[0]
         return f"{base}.{new_ext}"
     return f"{path}.{new_ext}"
@@ -563,7 +571,7 @@ def _handle_remux_container(
     )
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
-    prev_container = previous.path.rsplit(".", 1)[-1] if "." in previous.path else ""
+    prev_container = _extract_extension(previous.path)
     new_path = _swap_extension(previous.path, event.to_container)
     state.locations[loc_id] = previous.model_copy(update={"path": new_path})
     entry = _new_atomic_entry(
