@@ -442,6 +442,8 @@ def test_load_fixture_rejects_malformed_present_report(tmp_path: Path) -> None: 
 def test_load_fixture_rejects_sentinel_run_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_journal_run_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_mixed_journal_scenario_ids(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_journal_digest_mismatch(tmp_path: Path) -> None: ...
+def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_report_filename_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_report_id_missing_from_manifest(tmp_path: Path) -> None: ...
 ```
@@ -532,13 +534,19 @@ class OracleFixture:
 6. Cross-check `sentinel.run_id == replay_bundle.run_id`.
 7. Cross-check every journal entry's `run_id` equals `replay_bundle.run_id`.
 8. Cross-check every journal entry's `scenario_id` equals the parsed `scenario_id`.
-9. Load `reports/` when present and validate every JSON file.
-10. For present reports, require each filename stem to match the report id field.
-11. For present reports, require report ids to exist in the corresponding manifest collection:
+9. Cross-check parsed journal bytes against `replay_bundle.journal_digest`.
+   For `execution_mode="run"`, follow the existing run replay rule: hash
+   `entry.model_copy(update={"wall_clock_time": None})` entries via
+   `serialize_journal_bytes()` before computing sha256. For plan-only and
+   materialize fixtures, hash the parsed journal entries directly via
+   `serialize_journal_bytes()`.
+10. Load `reports/` when present and validate every JSON file.
+11. For present reports, require each filename stem to match the report id field.
+12. For present reports, require report ids to exist in the corresponding manifest collection:
     asset reports in `initial_manifest.assets`, work reports in `initial_manifest.works`,
     variant reports in `initial_manifest.variants`, and bundle reports in
     `initial_manifest.bundles`.
-12. Derive `ReportSet` via `build_report_set()` when `reports/` is absent.
+13. Derive `ReportSet` via `build_report_set()` when `reports/` is absent.
 
 Every malformed or internally inconsistent fixture artifact except the sentinel raises `AdapterInputError(error_code=E_ADAPTER_FIXTURE_INVALID)`.
 
@@ -597,6 +605,9 @@ Add tests for:
 def test_matches_by_unique_current_path_before_hash() -> None: ...
 def test_matches_deleted_asset_by_historical_path() -> None: ...
 def test_matches_by_hash_when_paths_are_absent() -> None: ...
+def test_matches_by_unique_topology_when_path_and_hash_absent() -> None: ...
+def test_topology_match_records_match_evidence() -> None: ...
+def test_topology_ambiguity_emits_d_match_ambiguous() -> None: ...
 def test_unique_higher_precedence_match_wins_over_lower_conflict() -> None: ...
 def test_observed_asset_mapping_to_two_oracles_is_ambiguous() -> None: ...
 def test_oracle_asset_mapping_to_two_observed_assets_is_ambiguous() -> None: ...
@@ -647,6 +658,33 @@ class ObservedAssetView:
 
 Build `OracleIndex` from `OracleFixture` and `ObservedIndex` from `ObservedState`. Keep maps keyed by ids/refs and precompute path/hash lookup dictionaries.
 
+Required topology indexes:
+
+```python
+@dataclass(frozen=True)
+class OracleTopologyView:
+    asset_id: str
+    bundle_id: str
+    variant_id: str
+    work_id: str
+    work_title: str | None
+    variant_label: str | None
+    bundle_asset_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ObservedTopologyView:
+    observed_ref: str
+    bundle_ref: str | None
+    variant_ref: str | None
+    work_ref: str | None
+    work_title: str | None
+    variant_label: str | None
+    bundle_asset_refs: tuple[str, ...]
+```
+
+Topology evidence may match only when both sides provide enough facts to form a unique topology key. A key can include work title, variant label, and bundle member count / membership refs. Missing optional topology fields mean "no topology evidence", not a mismatch.
+
 - [ ] **Step 4: Implement ranked matching**
 
 Implement `match_assets(oracle_index, observed_index) -> MatchResult` with:
@@ -675,7 +713,7 @@ Process precedence in order:
 3. content hash
 4. topology
 
-At each level, match only pairs where neither side is already matched or already marked ambiguous. If any key maps to multiple candidates on either side, add `D_MATCH_AMBIGUOUS` findings, record those oracle ids / observed refs in the ambiguous fields, and do not match those candidates at that or later precedence levels.
+At each level, match only pairs where neither side is already matched or already marked ambiguous. If any key maps to multiple candidates on either side, add `D_MATCH_AMBIGUOUS` findings, record those oracle ids / observed refs in the ambiguous fields, and do not match those candidates at that or later precedence levels. A topology-only match records `MatchEvidence(kind="topology")`.
 
 - [ ] **Step 5: Add missing/unexpected findings**
 
@@ -730,6 +768,8 @@ def test_probe_mismatch_requires_both_probed_values() -> None: ...
 def test_probe_duration_uses_point_zero_five_second_tolerance() -> None: ...
 def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None: ...
 def test_unexpected_observed_sidecar_emits_d_sidecar_unexpected() -> None: ...
+def test_sidecar_hash_mismatch_emits_d_hash_mismatch() -> None: ...
+def test_missing_observed_sidecar_hash_is_not_divergence() -> None: ...
 def test_topology_mismatch_emits_d_topology_mismatch_when_both_sides_supply_refs() -> None: ...
 def test_final_state_mode_skips_history_when_no_history_supplied() -> None: ...
 ```
@@ -794,6 +834,14 @@ Then:
 7. Compare topology when both sides supply refs.
 8. Add history findings only in `IDENTITY_HISTORY` mode; leave this call empty until Task 6.
 9. Return `DivergenceReport(ok=not any(error findings), mode=mode, ...)`.
+
+Sidecar comparison rules:
+
+- Missing oracle sidecar path under the matched observed asset emits `D_SIDECAR_MISSING`.
+- Extra observed sidecar path under the matched observed asset emits `D_SIDECAR_UNEXPECTED`.
+- If oracle and observed sidecar paths match and both sidecar hashes are present but differ, emit `D_HASH_MISMATCH`.
+- For sidecar hash findings, set `oracle_asset_id` to the parent oracle asset id, `observed_ref` to the observed sidecar ref, and use `expected` / `observed` dicts containing `path` and `content_hash`.
+- Missing sidecar hash on either side is not a divergence by itself.
 
 - [ ] **Step 5: Populate report metadata**
 
@@ -1223,6 +1271,9 @@ Do not create an empty commit when no fixes are needed.
 - Observed grouped-link validation does not import from `chaos_librarian.adapter`.
 - Ambiguous matches are excluded from missing/unexpected asset-presence findings.
 - Fixture loading rejects mixed journal/report artifacts as invalid fixture input.
+- Fixture loading rejects journal bytes that do not match `replay_bundle.journal_digest`.
+- Topology-only matching is tested and records topology match evidence.
+- Sidecar hash mismatches use `D_HASH_MISMATCH`; missing optional sidecar hashes are ignored.
 - Compare path validation tests cover both positional path arguments directly.
 - `final-state` never fails only because history is absent.
 - `identity-history` never silently downgrades to final-state behavior.
