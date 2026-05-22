@@ -28,10 +28,10 @@ Exit criteria:
 
 - Corruption is impossible unless the scenario explicitly opts in with
   `profiles: ["malformed-media"]`.
-- A malformed-media fixture materializes successfully even when post-corruption
-  `ffprobe` fails.
-- Replay reproduces the same corrupted bytes for the same scenario, seed, and
-  event.
+- A malformed-media fixture materializes successfully and records whether
+  post-corruption `ffprobe` failed or still parsed the file.
+- Replay reproduces the same logical corruption event: corruptor, byte range,
+  seed material, and replacement-byte stream.
 - Fast CI can exclude this profile by selecting scenarios without profile labels.
 
 ## Decisions Resolved In Brainstorming
@@ -66,11 +66,12 @@ Exit criteria:
    `(resolved_seed, event_id, target_asset_id, corruptor_name)`. This avoids a
    materializer-only RNG stream while still making replay evidence explicit.
 
-7. **Probe failure is expected success.** The corruption handler attempts
-   `ffprobe` after mutation. A parse/subprocess failure is recorded as the
-   expected malformed-media outcome and does not change the run outcome to
-   `media_failed`. If `ffprobe` still succeeds, materialize fails with a
-   corruption error because the first profile did not produce malformed media.
+7. **Probe outcome is evidence, not the success gate.** The corruption handler
+   attempts `ffprobe` after mutation. A parse/subprocess failure records
+   `probe_outcome="failed_expected"` and leaves `probed=None`. A successful
+   probe records `probe_outcome="still_probeable"` and stores the returned probe
+   facts on the corrupted version. Both outcomes are successful malformed-media
+   runs; actual corruptor failures use `CORRUPTION_FAILED`.
 
 8. **No new dependencies.** Use `hashlib` and existing file I/O only. The header
    corruptor does not require FFmpeg beyond the existing phase-A synthesis and
@@ -146,6 +147,7 @@ src/chaos_librarian/
     reports.py           # AssetSnapshot.corruption
 
   engine/
+    context.py            # EngineEventContext(resolved_seed)
     events.py            # plan-only handler allocates corrupted output version
     version_history.py   # includes corrupt_container_header as version-affecting
 
@@ -196,7 +198,6 @@ class ProfileName(enum.StrEnum):
 class CorruptionProbeOutcome(enum.StrEnum):
     FAILED_EXPECTED = "failed_expected"
     STILL_PROBEABLE = "still_probeable"
-    NOT_RUN = "not_run"
 
 
 class CorruptionRecord(BaseModel):
@@ -250,7 +251,8 @@ corruption: CorruptionRecord | None = None
 
 Plan-only runs set `corruption` on the output version with `content_hash=None`
 and `probed=None`. Materialize and run fill `content_hash` after byte mutation.
-When post-corruption probe fails as expected, `probed` remains `None`.
+When post-corruption probe fails, `probed` remains `None`; when probing still
+succeeds, `probed` carries the returned `ProbedMedia`.
 
 ### Asset Reports
 
@@ -260,8 +262,30 @@ When post-corruption probe fails as expected, `probed` remains `None`.
 corruption: CorruptionRecord | None = None
 ```
 
-`VersionHistoryEntry` already carries version-affecting actions through
-`state_delta_summary`; `corrupt_container_header` joins that derived history.
+`engine/reports.py` copies snapshot evidence from the currently bound
+`ManifestVersion`. Because the serialized `Manifest` carries every version and
+does not carry `WorldState._asset_to_version`, `_snapshot_for` must resolve the
+current version as the `ManifestVersion` for that asset with the greatest
+`index`. It must not use the first version row for an asset. `_snapshot_for`
+sets `content_hash`, `probed`, and `corruption` from that resolved version for
+both `initial` and `current` snapshots. A model-only round-trip is not
+sufficient; report-builder tests must prove the fields are emitted into
+`reports/assets/<asset_id>.json`.
+
+Materialize, wall-clock run, and run replay success finalizers rebuild
+per-entity reports from the final augmented `manifest.current.json` before
+writing `reports/`. They must not persist the plan-time `PlanArtifacts.reports`
+after phase A or phase B has added `content_hash`, `probed`, or corruption
+evidence. The persisted asset report for a corrupted asset must match
+`manifest.current.json` for `current.content_hash`, `current.probed`, and
+`current.corruption`.
+
+`derive_version_history` treats `corrupt_container_header` as version-affecting.
+Add `TimelineActionName.CORRUPT_CONTAINER_HEADER` to
+`_VERSION_AFFECTING_ACTIONS` and add `_PRESERVED_DELTA_KEYS` for that action
+with `profile`, `corruptor`, `byte_start`, `byte_count`, and `seed_material`.
+The derived `VersionHistoryEntry` preserves the input/output version IDs and
+copies only those corruption delta fields into `state_delta_summary`.
 
 ### Materialization Report
 
@@ -278,8 +302,8 @@ class CorruptionAction(BaseModel):
     output_path: str
     input_version_id: str | None = None
     output_version_id: str
-    input_content_hash: str
-    output_content_hash: str
+    input_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    output_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     corruptor: str
     byte_start: int
     byte_count: int
@@ -296,16 +320,58 @@ corruption_actions: list[CorruptionAction] = Field(default_factory=list)
 ```
 
 Add `FailureStage.CORRUPTION` and `Outcome.CORRUPTION_FAILED` for cases where
-the corruptor cannot safely apply or where the output remains probeable.
+the corruptor cannot safely apply: missing file, file shorter than the requested
+byte range, atomic write failure, hash failure, or unexpected internal errors.
+`materializer/errors.py` adds `CorruptionActionError` with
+`error_code="E_MATERIALIZE_CORRUPTION_FAILED"`. The public CLI shape does not
+change: `materialize` and `run` still exit `5`, use the existing materialization
+error envelope, and include `materialization_report_path` when a run directory
+was allocated.
 
 ## Engine Semantics
+
+Add a small engine event context so handlers can use deterministic run inputs
+without expanding the positional handler signature for every future addition:
+
+```python
+@dataclass(frozen=True, slots=True)
+class EngineEventContext:
+    run_id: uuid.UUID
+    scenario_id: str
+    resolved_seed: int
+```
+
+The context replaces the current separate `run_id` and `scenario_id` handler
+arguments; it does not add a new positional parameter. The public engine-internal
+shape is:
+
+```python
+apply_event(state, resolved, ids, ctx)
+_Handler = Callable[
+    [WorldState, ResolvedEvent, IdAllocator, EngineEventContext],
+    tuple[JournalEntry, ...],
+]
+```
+
+`run_plan` constructs
+`EngineEventContext(run_id=run_id, scenario_id=parsed.scenario_id, resolved_seed=resolved_seed)`
+after seed and run ID resolution and passes it into `apply_event`.
+`step_fixture` constructs the same context from `replay.json`, the parsed
+scenario ID, and `bundle.resolved_seed`, then passes it into both step
+advancement and `_recover_cursor` journal regeneration. `apply_event` passes the
+same context to each handler. Direct event unit tests use an explicit fixed
+context with a fixed UUID and scenario ID.
+
+Plan replay, run replay, and step recovery all reuse the recorded concrete seed
+from the bundle. They never resolve a fresh seed from the scenario literal, so
+`seed: random` fixtures regenerate the same corruption `seed_material`.
 
 `corrupt_container_header` is an atomic event. The handler:
 
 1. Requires the target asset to have a current location and current version.
 2. Allocates a new `version_id`.
 3. Rebinds the asset to the new version without changing path or location ID.
-4. Sets `ManifestVersion.corruption` with:
+4. Sets `ManifestVersion.corruption` using `ctx.resolved_seed`:
    - `profile="malformed-media"`
    - `event_id`
    - `corruptor="container_header_v1"`
@@ -325,8 +391,12 @@ mutations such as `edit_metadata`: logically new bytes, same visible file path.
 
 ## Materializer Semantics
 
-`materializer/corruption.py` exposes
+`materializer/corruption.py` exposes `_CorruptionContext` and
 `apply_corruption_action(ctx: _CorruptionContext, entry: JournalEntry) -> CorruptionAction`.
+`_CorruptionContext` mirrors `_MediaContext`: it carries `library_root`,
+`resolved_seed`, `post_phase_b_versions`, and any probe/capability state needed
+by the helper. The dispatch state in materialize, wall-clock run, and run replay
+also carries `corruption_actions: list[CorruptionAction]`.
 
 The handler:
 
@@ -337,12 +407,16 @@ The handler:
 5. Replaces bytes `[0:byte_count]` with deterministic replacement bytes.
 6. Writes through a sibling temp path and atomically replaces the output path.
 7. Hashes the output file.
-8. Attempts `probe_file(output_path)`.
-9. Treats `ProbeParseError` as expected and records
-   `probe_outcome="failed_expected"`.
-10. Fails with `Outcome.CORRUPTION_FAILED` if probing still succeeds.
-11. Stashes `(output_content_hash, None)` for `augment_versions`.
-12. Returns `CorruptionAction`.
+8. Attempts `probe_file(output_path)` after mutation.
+9. Records `probe_outcome="failed_expected"` and `probe_error_tail` if probing
+   raises `ProbeParseError`.
+10. Records `probe_outcome="still_probeable"` and keeps the returned
+    `ProbedMedia` if probing succeeds.
+11. Stashes `(output_content_hash, probed_or_none)` for `augment_versions`.
+12. Raises `CorruptionActionError` for missing input files, files shorter than
+    `byte_count`, read failures, temp/write/replace failures, input/output hash
+    failures, or unexpected internal errors.
+13. Returns `CorruptionAction`.
 
 The deterministic replacement bytes are generated by repeatedly hashing:
 
@@ -357,6 +431,41 @@ and does not introduce unrecorded random draws.
 same helper. Batch materialize applies the action immediately in phase B. Wall
 clock `run` applies it when the event becomes due, just like other atomic media
 mutations.
+
+Every successful corruption dispatch appends the returned `CorruptionAction` to
+the active `corruption_actions` list. `build_report(...)`, success finalizers,
+and phase-B failure finalizers accept and serialize that list. If a later phase-B
+event fails, the failure report preserves corruption actions that completed
+before the failing event.
+
+`CorruptionActionError` is caught by the same phase-B finalization layer as
+filesystem and media action errors, but maps to `Outcome.CORRUPTION_FAILED` and
+`FailureStage.CORRUPTION`. Materialize, wall-clock run, and run replay use this
+mapping consistently.
+
+There is no no-probe success branch in Sprint 10. Missing or unusable `ffprobe`
+is handled by the existing materializer capability gates before phase B, not by
+`CorruptionProbeOutcome`.
+
+Replay comparisons have two modes:
+
+- Existing `replay --against` remains strict same-toolchain comparison. It
+  compares full manifests, normalized journal/replay metadata, `library/` bytes,
+  output hashes, and normalized `materialization.json` corruption audit
+  evidence. The materialization normalizer compares `corruption_actions` fields
+  `event_id`, `action`, `target_asset_id`, `input_path`, `output_path`,
+  `input_version_id`, `output_version_id`, `input_content_hash`,
+  `output_content_hash`, `corruptor`, `byte_start`, `byte_count`,
+  `seed_material`, `probe_outcome`, and `probe_error_tail`. It ignores volatile
+  fields such as `duration_ns`, run timestamps, platform/toolchain version
+  strings, and wall-clock duration metadata.
+- Cross-toolchain comparison is a separate corruption-evidence comparison used
+  by tests and docs. It does not change `replay --against`. It compares
+  canonicalized manifests plus deterministic `CorruptionAction` fields: event
+  ID, target asset, output version ID, corruptor, byte range, and seed material.
+  It records but does not fail on `probe_outcome`, `probe_error_tail`,
+  `output_content_hash`, `duration_ns`, or `library/` byte differences because
+  those values are descriptive across toolchains.
 
 ## Validation
 
@@ -465,10 +574,20 @@ Contract tests:
 - `Scenario` rejects unknown profile values.
 - `CorruptContainerHeaderEvent` round-trips with default `bytes=64`.
 - `CorruptContainerHeaderEvent` rejects `bytes=0` and `bytes=4097`.
+- `CorruptionProbeOutcome` accepts only `FAILED_EXPECTED` and
+  `STILL_PROBEABLE`.
+- `CorruptionAction` rejects malformed `input_content_hash` and
+  `output_content_hash` values that do not match `sha256:<64 lowercase hex>`.
 - `ManifestVersion` round-trips corruption metadata.
 - `AssetSnapshot` round-trips corruption metadata.
 - `MaterializationReport` round-trips `corruption_actions`.
 - Schema export includes the bumped versions and no drift.
+- Asset report builder tests construct a current manifest with an initial
+  version plus a corrupted output version and prove `current.version_id`,
+  `current.content_hash`, `current.probed`, and `current.corruption` come from
+  the greatest-index version, not the first version row.
+- Asset report builder tests prove the asset `version_history` includes the
+  corruption event and its preserved summary fields.
 
 Validation tests:
 
@@ -483,6 +602,22 @@ Engine tests:
 - Plan-only corruption allocates a new version.
 - Current location path does not change.
 - Journal state delta contains the corruption metadata fields.
+- Direct event tests pass `EngineEventContext(run_id=<fixed UUID>,
+  scenario_id=<fixed id>, resolved_seed=42)`.
+- `apply_event` and handler signatures stay within the project positional
+  parameter limit after introducing `EngineEventContext`.
+- A `seed: random` replay preserves the same `seed_material` because it uses the
+  recorded resolved seed.
+- A malformed-media fixture created with `plan --steps 0` and advanced with
+  `step --next 1` produces the same corruption journal entry and `seed_material`
+  as a full `run_plan`.
+- A malformed-media fixture stepped once, persisted, and recovered regenerates
+  the existing corruption journal entry byte-identically during cursor recovery.
+- A `seed: random` malformed-media fixture stepped from `--steps 0` uses
+  `bundle.resolved_seed`, not a newly resolved seed.
+- `derive_version_history` includes `corrupt_container_header` with input/output
+  version IDs and a `state_delta_summary` containing `profile`, `corruptor`,
+  `byte_start`, `byte_count`, and `seed_material`.
 - Same scenario and seed produce identical plan artifacts.
 
 Materializer tests:
@@ -491,29 +626,68 @@ Materializer tests:
 - Header corruptor does not change file length.
 - Corruption action records input and output hashes.
 - Expected post-corruption probe failure does not make the run fail.
-- Probe success after corruption is treated as `CORRUPTION_FAILED`.
+- Probe success records `STILL_PROBEABLE`, stores probe facts, and succeeds.
+- Actual corruptor application failure raises `CorruptionActionError`, writes
+  `outcome="corruption_failed"` and `stage="corruption"`, and preserves prior
+  phase-B audit records.
+- Missing input files and files shorter than the requested `bytes` raise
+  `CorruptionActionError`.
 - Materialize writes manifest/report corruption metadata.
+- Materialize writes exactly one `corruption_actions` record for the fixture.
+- Materialize persists asset report JSON generated after manifest augmentation,
+  so `reports/assets/<asset_id>.json` matches `manifest.current.json` for
+  current hash, probe facts, corruption metadata, and corruption version history.
 
 Wall-clock and replay tests:
 
 - `run` applies corruption only when the event is due.
-- Completed run replay reproduces the same corrupted output hash.
+- `run` writes `corruption_actions` for due corruption events and omits future
+  corruption events that were not reached before the duration ended.
+- Wall-clock run persists asset report JSON generated after manifest
+  augmentation for due corruption events.
+- Same-toolchain run replay reproduces the same corrupted output hash and
+  `probe_outcome`.
+- Same-toolchain `replay --against` remains strict and catches manifest,
+  normalized journal/replay metadata, `library/` bytes, output hash, and
+  `probe_outcome` divergence.
+- Same-toolchain `replay --against` reports divergence when only
+  `materialization.json.corruption_actions` deterministic audit fields differ,
+  including `probe_outcome`, `input_content_hash`, or `output_content_hash`.
+- Same-toolchain `replay --against` ignores volatile materialization fields such
+  as `duration_ns` so replay does not fail solely due to timing drift.
+- Run replay persists asset report JSON generated after manifest augmentation.
+- Cross-toolchain corruption-evidence comparison uses canonicalized manifests
+  plus deterministic `CorruptionAction` evidence, excluding `probe_outcome`,
+  `probe_error_tail`, `output_content_hash`, `duration_ns`, and `library/`
+  bytes.
+- Cross-toolchain replay tolerates diagnostic probe-outcome drift, including
+  `failed_expected` versus `still_probeable`.
+- Run replay writes all corruption action evidence fields, including diagnostic
+  `probe_outcome`.
+- Wall-clock run and run replay map corruption action failures to
+  `outcome="corruption_failed"` and `stage="corruption"`.
 - Journal digest remains stable after stripping wall-clock fields.
 
 CLI tests:
 
 - Valid malformed-media materialize exits `0`.
 - Missing profile exits `3` and creates no run directory.
-- Corruption application failure exits `5` with the existing error envelope.
+- Corruption application failure exits `5` with
+  `error_code="E_MATERIALIZE_CORRUPTION_FAILED"` and
+  `materialization_report_path` in the existing error envelope.
+- Missing-file and short-file corruption failures exit `5`, emit
+  `E_MATERIALIZE_CORRUPTION_FAILED`, include `materialization_report_path`, and
+  write `outcome="corruption_failed"` with `stage="corruption"`.
 
 ## Risks And Mitigations
 
 - **Accidental corruption in ordinary fixtures.** The explicit `profiles` gate
   makes corruption impossible in scenarios that are not labeled.
 
-- **Probe behavior varies by container/tool version.** The first fixture uses a
-  short MKV synthesized by the existing pipeline. Tests assert that the chosen
-  byte range produces an expected probe failure on the supported toolchain.
+- **Probe behavior varies by container/tool version.** Probe outcome is recorded
+  evidence, not the materialize success criterion. This preserves the existing
+  materialize/run rule that hashes and probe facts are descriptive across
+  toolchains.
 
 - **Hidden randomness.** The corruptor uses deterministic hash expansion, not a
   materializer-local RNG draw.
