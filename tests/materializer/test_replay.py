@@ -7,6 +7,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -93,7 +94,8 @@ def test_run_replay_reproduces_corruption_action_evidence(
     ]
     corrupted = _corrupted_version_payload(tmp_path / "replay")
     assert corrupted["content_hash"] == _CORRUPTED_HASH
-    assert corrupted["corruption"]["event_id"] == "corrupt_header_001"
+    corruption = cast("dict[str, object]", corrupted["corruption"])
+    assert corruption["event_id"] == "corrupt_header_001"
 
 
 def test_run_replay_persists_regenerated_asset_reports(

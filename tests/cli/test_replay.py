@@ -554,7 +554,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
             {
                 "schema_version": 5,
                 "chaos_librarian_version": "0.1.0",
-                "scenario": "schema_version: 6\nscenario_id: x\n",
+                "scenario": "schema_version: 7\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",
                 "resolved_seed": 1,
                 "applied_events": 0,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
 import typer
 from pydantic import TypeAdapter, ValidationError
@@ -208,15 +208,23 @@ def _normalize_materialization_for_run_replay(data: dict[str, object]) -> dict[s
     actions = data.get("corruption_actions", [])
     if not isinstance(actions, list):
         actions = []
+    normalized_actions: list[dict[str, object]] = []
+    for action in actions:
+        normalized = _normalize_corruption_action(action)
+        if normalized is not None:
+            normalized_actions.append(normalized)
     return {
         "outcome": data.get("outcome"),
         "execution_mode": data.get("execution_mode"),
-        "corruption_actions": [
-            {field: action.get(field) for field in _CORRUPTION_COMPARE_FIELDS}
-            for action in actions
-            if isinstance(action, dict)
-        ],
+        "corruption_actions": normalized_actions,
     }
+
+
+def _normalize_corruption_action(action: object) -> dict[str, object] | None:
+    if not isinstance(action, dict):
+        return None
+    action_data = cast("dict[str, object]", action)
+    return {field: action_data.get(field) for field in _CORRUPTION_COMPARE_FIELDS}
 
 
 def _emit_replay_diff(diff: FixtureDiff, *, run_id: str, json_output: bool) -> None:

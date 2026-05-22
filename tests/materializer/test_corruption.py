@@ -107,7 +107,7 @@ def test_probe_failure_records_failed_expected(tmp_path, monkeypatch) -> None:
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
     assert action.probe_outcome is CorruptionProbeOutcome.FAILED_EXPECTED
-    assert action.probe_error_tail == "ffprobe exit 1"
+    assert action.probe_error_tail == "invalid data"
     assert ctx.post_phase_b_versions["version_0002"][1] is None
 
 
@@ -133,6 +133,7 @@ def test_probe_failure_tail_replaces_absolute_output_path(tmp_path, monkeypatch)
 
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
+    assert action.probe_error_tail is not None
     assert str(asset) not in action.probe_error_tail
     assert "0xca6c7c000" not in action.probe_error_tail
     assert action.probe_error_tail == (

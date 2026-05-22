@@ -168,7 +168,7 @@ class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
 
     def test_asset_id_traversal_rejected_by_validation(self) -> None:
         yaml_bytes = b"""\
-schema_version: 6
+schema_version: 7
 scenario_id: unsafe-id
 seed: 1
 duration_scale: short

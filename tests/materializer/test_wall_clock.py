@@ -7,6 +7,7 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
+from typing import cast
 
 import pytest
 from pydantic import TypeAdapter
@@ -465,7 +466,8 @@ def test_run_applies_corruption_only_when_due(
     ]
     corrupted = _corrupted_version_payload(out_dir)
     assert corrupted["content_hash"] == _CORRUPTED_HASH
-    assert corrupted["corruption"]["event_id"] == "corrupt_header_001"
+    corruption = cast("dict[str, object]", corrupted["corruption"])
+    assert corruption["event_id"] == "corrupt_header_001"
 
 
 def test_run_omits_future_corruption_actions(

@@ -73,17 +73,34 @@ def _output_version_id(entry: JournalEntry) -> str:
     return entry.output_version_ids[0]
 
 
+def _state_delta_str(delta: dict[str, object], field: str) -> str:
+    value = delta[field]
+    if not isinstance(value, str):
+        raise TypeError(f"state_delta.{field} must be a string")
+    return value
+
+
+def _state_delta_int(delta: dict[str, object], field: str) -> int:
+    value = delta[field]
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"state_delta.{field} must be an integer")
+    return value
+
+
 def apply_corruption_action(ctx: _CorruptionContext, entry: JournalEntry) -> CorruptionAction:
     action = TimelineActionName(entry.action)
     target_asset_id = _target_asset_id(entry)
     started = time.monotonic_ns()
     try:
         delta = entry.state_delta
-        input_path = ctx.library_root / str(delta["input_path"])
-        output_path = ctx.library_root / str(delta["output_path"])
-        byte_start = int(delta["byte_start"])
-        byte_count = int(delta["byte_count"])
-        seed_material = str(delta["seed_material"])
+        input_path_rel = _state_delta_str(delta, "input_path")
+        output_path_rel = _state_delta_str(delta, "output_path")
+        byte_start = _state_delta_int(delta, "byte_start")
+        byte_count = _state_delta_int(delta, "byte_count")
+        seed_material = _state_delta_str(delta, "seed_material")
+        corruptor = _state_delta_str(delta, "corruptor")
+        input_path = ctx.library_root / input_path_rel
+        output_path = ctx.library_root / output_path_rel
         input_bytes = input_path.read_bytes()
         required_length = byte_start + byte_count
         if len(input_bytes) < required_length:
@@ -117,16 +134,16 @@ def apply_corruption_action(ctx: _CorruptionContext, entry: JournalEntry) -> Cor
         event_id=entry.event_id,
         action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
         target_asset_id=target_asset_id or "",
-        input_path=str(entry.state_delta["input_path"]),
-        output_path=str(entry.state_delta["output_path"]),
+        input_path=input_path_rel,
+        output_path=output_path_rel,
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
         output_version_id=output_version_id,
         input_content_hash=input_hash,
         output_content_hash=output_hash,
-        corruptor=str(entry.state_delta["corruptor"]),
-        byte_start=int(entry.state_delta["byte_start"]),
-        byte_count=int(entry.state_delta["byte_count"]),
-        seed_material=str(entry.state_delta["seed_material"]),
+        corruptor=corruptor,
+        byte_start=byte_start,
+        byte_count=byte_count,
+        seed_material=seed_material,
         probe_outcome=probe_outcome,
         probe_error_tail=probe_error_tail,
         duration_ns=duration_ns,

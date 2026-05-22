@@ -85,7 +85,7 @@ class TestRunValidationHappyPath:
         # no timeline events (all rules guard on emptiness and skip).
         path = _write(
             tmp_path,
-            "schema_version: 6\n"
+            "schema_version: 7\n"
             "scenario_id: minimal\n"
             "seed: 1\n"
             "duration_scale: short\n"
@@ -172,7 +172,7 @@ class TestRunValidationReportSorting:
         # A scenario with two field-level errors at different lines.
         path = _write(
             tmp_path,
-            "schema_version: 6\n"
+            "schema_version: 7\n"
             "scenario_id: dup\n"
             "seed: 1\n"
             "duration_scale: short\n"

@@ -12,8 +12,10 @@ from typer.testing import CliRunner
 from chaos_librarian.cli import commands as commands_pkg
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract import (
+    MANIFEST_SCHEMA_VERSION,
     MATERIALIZATION_SCHEMA_VERSION,
     REPLAY_BUNDLE_SCHEMA_VERSION,
+    SCENARIO_SCHEMA_VERSION,
 )
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import (
@@ -49,7 +51,7 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 def _success() -> MaterializeArtifacts:
     return MaterializeArtifacts(
         current_manifest=Manifest(
-            schema_version=4,
+            schema_version=MANIFEST_SCHEMA_VERSION,
             works=[],
             variants=[],
             bundles=[],
@@ -70,7 +72,7 @@ def _success() -> MaterializeArtifacts:
         replay_bundle=MaterializeReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version="0.1.0",
-            scenario="schema_version: 6\nscenario_id: x\n",
+            scenario=f"schema_version: {SCENARIO_SCHEMA_VERSION}\nscenario_id: x\n",
             run_id=uuid.uuid4(),
             resolved_seed=1,
             applied_events=0,
