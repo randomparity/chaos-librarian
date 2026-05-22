@@ -27,9 +27,11 @@ from chaos_librarian.contract.manifest import (
     ManifestSidecar,
     ManifestVersion,
 )
+from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
 from chaos_librarian.contract.scenario import (
     AddFileEvent,
     ArchiveFileEvent,
+    CorruptContainerHeaderEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -95,6 +97,17 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     ),
     TimelineActionName.REMOVE_SIDECAR: frozenset({"removed_sidecar_id", "removed_sidecar_path"}),
     TimelineActionName.UPDATE_SIDECAR: frozenset({"sidecar_id", "sidecar_path"}),
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "byte_start",
+            "byte_count",
+            "seed_material",
+        }
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -749,6 +762,60 @@ def _handle_update_sidecar(
     return (entry,)
 
 
+def _handle_corrupt_container_header(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = resolved.event
+    assert isinstance(event, CorruptContainerHeaderEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    corruptor = "container_header_v1"
+    seed_material = f"{corruptor}:{ctx.resolved_seed}:{event.id}:{event.target}"
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        byte_start=0,
+        byte_count=event.bytes,
+        seed_material=seed_material,
+    )
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+            corruption=record,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "byte_start": 0,
+                "byte_count": event.bytes,
+                "seed_material": seed_material,
+            },
+        ),
+    )
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -767,4 +834,5 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.EXTRACT_SUBTITLE: _handle_extract_subtitle,
     TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
     TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: _handle_corrupt_container_header,
 }

@@ -28,6 +28,20 @@ def test_apply_event_uses_engine_event_context_signature() -> None:
     ]
 
 
+def test_corruption_state_delta_contract_keys() -> None:
+    assert _STATE_DELTA_KEYS[TimelineActionName.CORRUPT_CONTAINER_HEADER] == frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "byte_start",
+            "byte_count",
+            "seed_material",
+        }
+    )
+
+
 @pytest.mark.parametrize("action", sorted(_STATE_DELTA_KEYS, key=lambda a: a.value))
 def test_state_delta_keys_match_contract(action: TimelineActionName) -> None:
     """Every handler's emitted state_delta is a superset of _STATE_DELTA_KEYS[action]."""

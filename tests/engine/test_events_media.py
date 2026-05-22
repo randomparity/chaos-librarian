@@ -7,6 +7,7 @@ import uuid
 import pytest
 
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
+from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _swap_extension, apply_event
@@ -17,52 +18,161 @@ from tests.engine.conftest import _engine_event_context
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
 
-def _scenario(timeline: list[dict[str, object]]) -> Scenario:
-    return Scenario.model_validate(
-        {
-            "schema_version": 7,
-            "scenario_id": "media",
-            "seed": 1,
-            "duration_scale": "short",
-            "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
-            "works": [
+def _scenario(
+    timeline: list[dict[str, object]],
+    *,
+    profiles: list[str] | None = None,
+) -> Scenario:
+    payload: dict[str, object] = {
+        "schema_version": 7,
+        "scenario_id": "media",
+        "seed": 1,
+        "duration_scale": "short",
+        "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+        "works": [
+            {
+                "id": "w0",
+                "title": "T",
+                "variants": [
+                    {
+                        "id": "v0",
+                        "label": "hd",
+                        "bundle": {
+                            "id": "b0",
+                            "assets": [
+                                {
+                                    "id": "a0",
+                                    "role": "primary_video",
+                                    "container": "mkv",
+                                    "duration_seconds": 1,
+                                    "video": {
+                                        "source": "color_bars",
+                                        "codec": "h264",
+                                        "resolution": "1080p",
+                                    },
+                                    "audio": [
+                                        {
+                                            "codec": "aac",
+                                            "channels": "5.1",
+                                            "language": "eng",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ],
+        "timeline": timeline,
+    }
+    if profiles is not None:
+        payload["profiles"] = profiles
+    return Scenario.model_validate(payload)
+
+
+class TestCorruptContainerHeaderHandler:
+    """corrupt_container_header allocates a deterministic corruption version."""
+
+    def test_corrupt_container_header_allocates_new_version_and_keeps_path(self) -> None:
+        scenario = _scenario(
+            [
                 {
-                    "id": "w0",
-                    "title": "T",
-                    "variants": [
-                        {
-                            "id": "v0",
-                            "label": "hd",
-                            "bundle": {
-                                "id": "b0",
-                                "assets": [
-                                    {
-                                        "id": "a0",
-                                        "role": "primary_video",
-                                        "container": "mkv",
-                                        "duration_seconds": 1,
-                                        "video": {
-                                            "source": "color_bars",
-                                            "codec": "h264",
-                                            "resolution": "1080p",
-                                        },
-                                        "audio": [
-                                            {
-                                                "codec": "aac",
-                                                "channels": "5.1",
-                                                "language": "eng",
-                                            }
-                                        ],
-                                    }
-                                ],
-                            },
-                        }
-                    ],
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
                 }
             ],
-            "timeline": timeline,
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        original_path = state.locations[state.location_id_for_asset("a0")].path
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        new_version_id = state.version_id_for_asset("a0")
+        assert new_version_id != prior_version_id
+        assert state.locations[state.location_id_for_asset("a0")].path == original_path
+        assert entry.input_version_ids == [prior_version_id]
+        assert entry.output_version_ids == [new_version_id]
+
+    def test_corrupt_container_header_journal_records_corruption_metadata(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
+                    "bytes": 128,
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        assert entry.state_delta == {
+            "input_path": "movies-hd/a0.mkv",
+            "output_path": "movies-hd/a0.mkv",
+            "profile": ProfileName.MALFORMED_MEDIA.value,
+            "corruptor": "container_header_v1",
+            "byte_start": 0,
+            "byte_count": 128,
+            "seed_material": "container_header_v1:42:corrupt_header_001:a0",
         }
-    )
+        version = state.versions[entry.output_version_ids[0]]
+        assert version.corruption is not None
+        assert version.corruption.model_dump(mode="json") == {
+            "profile": "malformed-media",
+            "event_id": "corrupt_header_001",
+            "corruptor": "container_header_v1",
+            "byte_start": 0,
+            "byte_count": 128,
+            "seed_material": "container_header_v1:42:corrupt_header_001:a0",
+        }
+
+    def test_corrupt_container_header_uses_resolved_seed_in_seed_material(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_header_001",
+                    "at": "1s",
+                    "action": "corrupt_container_header",
+                    "target": "a0",
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=777),
+        )
+
+        assert entry.state_delta["seed_material"] == "container_header_v1:777:corrupt_header_001:a0"
 
 
 class TestReencodeVideoHandler:

@@ -17,6 +17,7 @@ from chaos_librarian.contract.scenario import (
     AddFileEvent,
     ArchiveFileEvent,
     AudioChannelLayout,
+    CorruptContainerHeaderEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -59,6 +60,7 @@ type _TerminalEvent = (
     | ExtractSubtitleEvent
     | RemoveSidecarEvent
     | UpdateSidecarEvent
+    | CorruptContainerHeaderEvent
 )
 
 # Shared id linking the pre-applied slow_copy_start event to the commit
@@ -310,6 +312,12 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         at="0ns",
         target="asset_hd_main",
         sidecar_path=_PENDING_SIDECAR_PATH,
+    ),
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: lambda: CorruptContainerHeaderEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        bytes=64,
     ),
 }
 
