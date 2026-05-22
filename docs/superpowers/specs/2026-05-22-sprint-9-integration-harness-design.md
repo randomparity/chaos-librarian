@@ -304,9 +304,9 @@ class ObservedEvent(BaseModel):
     temp_path: str | None = None
 ```
 
-History actions are the path-affecting `TimelineActionName` subset used by the
-oracle journal and `AssetReport.path_history`. The adapter rejects unknown
-actions and does not normalize aliases. Per-action path requirements are:
+History actions are the asset-identity `TimelineActionName` subset used for
+durable asset lifecycle comparison. The adapter rejects unknown actions and does
+not normalize aliases. Per-action path requirements are:
 
 - `move_asset`, `rename_file`, `archive_file`, and `move_between_roots` require
   `from_path` and `to_path`.
@@ -321,12 +321,23 @@ described: either `observed_ref`, or both `before_observed_ref` and
 `after_observed_ref`, must be present. Missing per-action fields or missing ref
 evidence make the `ObservedState` an input error.
 
+`AssetReport.path_history` may also contain sidecar filesystem entries such as
+`create_sidecar`. Identity-history filters those entries out before lifecycle
+comparison. Sidecar creation, removal, update, and sidecar hashes are validated
+by sidecar comparison, not by durable asset identity comparison.
+
 Grouped lifecycle evidence uses the same event vocabulary as the oracle instead
 of a synthetic action. A `delete_file` + `add_file` lifecycle and a
 `slow_copy_start` + `slow_copy_commit` lifecycle are represented as separate
-observed history entries. When `observed_event_ref` values are supplied, paired
-entries link with `related_observed_event_ref`; otherwise the adapter pairs them
-by matched asset, action type, path fields, and observation order.
+observed history entries. Per-asset `path_history` grouped entries may be fully
+implicit only when both entries omit `observed_event_ref` and
+`related_observed_event_ref`; the adapter then pairs by matched asset, action
+type, path fields, and observation order. Global `ObservedEvent` grouped entries
+always have `observed_event_ref`, so they must use explicit links. Explicit links
+are valid only when both entries provide reciprocal `observed_event_ref` /
+`related_observed_event_ref` values. Dangling, one-sided, non-reciprocal, mixed
+explicit/implicit, or ambiguous implicit links make the `ObservedState` an
+`E_ADAPTER_OBSERVED_INVALID` input error.
 
 The adapter treats `events` and `assets[].path_history` as additive evidence.
 In `final-state` mode, if neither is present, history assertions are skipped and
@@ -474,10 +485,12 @@ consumer that only exports `observed_ref` and `current_path` can use this mode.
 
 `identity-history` mode adds lifecycle assertions for durable identity. It still
 performs all final-state checks, then inspects oracle path-history entries
-derived from journal state deltas and observed history. The adapter compares the
-oracle's concrete path-affecting actions: `move_asset`, `rename_file`,
-`delete_file`, `add_file`, `slow_copy_start`, `slow_copy_commit`,
-`archive_file`, and `move_between_roots`.
+derived from journal state deltas and observed history. Before comparison, the
+adapter filters oracle path-history entries to the asset-identity actions:
+`move_asset`, `rename_file`, `delete_file`, `add_file`, `slow_copy_start`,
+`slow_copy_commit`, `archive_file`, and `move_between_roots`. Oracle sidecar
+filesystem entries such as `create_sidecar` do not produce
+`D_HISTORY_MISSING` or `D_HISTORY_UNEXPECTED`; sidecar comparison covers them.
 
 For every single-event oracle path mutation (`move_asset`, `rename_file`,
 `archive_file`, or `move_between_roots`), the observed payload must show one of:
@@ -668,8 +681,10 @@ Contract tests:
 - `ObservedState` round-trips valid scanner, prober, and watcher payloads.
 - `ObservedState` rejects extra fields, invalid hash syntax, missing
   `observed_ref`, and absolute paths.
-- `ObservedState` rejects history actions outside the supported path-affecting
+- `ObservedState` rejects history actions outside the supported asset-identity
   `TimelineActionName` subset and missing per-action path fields.
+- `ObservedState` rejects `create_sidecar` as an identity-history observed action
+  while sidecar comparison still covers sidecar state.
 - `ObservedState` rejects duplicate observed refs within each declared uniqueness
   scope.
 - `ObservedState` rejects dangling topology refs, dangling sidecar refs, and
@@ -683,6 +698,12 @@ Contract tests:
 - `DivergenceReport` rejects `ok=true` with error findings and `ok=false` with no
   error findings.
 - `DivergenceFinding` round-trips `related_oracle_event_ids`.
+- Grouped lifecycle entries accept reciprocal explicit links.
+- Grouped lifecycle entries accept fully implicit per-asset links only when
+  pairing is deterministic.
+- Grouped lifecycle entries reject dangling, one-sided, non-reciprocal, mixed
+  explicit/implicit, and ambiguous implicit links as
+  `E_ADAPTER_OBSERVED_INVALID`.
 - Schema export includes `observed-state.schema.json` and
   `divergence.schema.json`.
 - Schema version constants are positive integers and equal to `1`.
@@ -703,6 +724,8 @@ Adapter behavior tests:
 - Identity-history clean comparison covers `move_asset`, `rename_file`,
   `archive_file`, `move_between_roots`, `slow_copy_start` + `slow_copy_commit`,
   and `delete_file` + `add_file` lifecycles.
+- Identity-history ignores oracle `create_sidecar` path-history entries when
+  deciding `D_HISTORY_MISSING` and `D_HISTORY_UNEXPECTED`.
 - Identity-history comparison with no history evidence emits `D_HISTORY_MISSING`
   instead of silently running as final-state comparison.
 - Identity-history comparison reports `D_HISTORY_MISSING` for missing
