@@ -45,6 +45,22 @@ Plan-only runs (Sprint 3) write a strict subset of the full layout:
 `materialization.json`, `library/`, and `reports/` are written by later
 sprints (5 / 6+ / 4 respectively).
 
+## Malformed-Media Fixtures
+
+Malformed-media scenarios are ordinary fixtures with explicit profile opt-in:
+
+```yaml
+profiles:
+  - malformed-media
+```
+
+When `corrupt_container_header` runs, the final manifest version and the
+matching asset report snapshot carry a `corruption` record with the profile,
+event id, corruptor name, byte range, and seed material. `materialization.json`
+also includes one `corruption_actions[]` entry with input/output hashes and the
+probe outcome. A probe failure after intentional corruption is success evidence,
+not a materialization failure.
+
 ## External Observed State
 
 `observed-state.json` is not written into the fixture directory by Chaos

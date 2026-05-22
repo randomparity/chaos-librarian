@@ -44,6 +44,23 @@ needs wall-clock changes. Export observed state after the daemon settles and
 compare it with the same command. Run-mode journal digests ignore volatile
 `wall_clock_time` during fixture validation.
 
+## Malformed Media
+
+Malformed-media fixtures are opt-in and label their corruption evidence in both
+the manifest and materialization report:
+
+```bash
+chaos-librarian materialize \
+  tests/fixtures/scenarios/malformed-container-header.yaml \
+  --out run-malformed-header \
+  --json
+```
+
+Adapters should treat `manifest.current.json` as the oracle for identity,
+location, and version lineage. `materialization.json.corruption_actions[]`
+records the byte-level corruption audit trail and whether ffprobe failed as
+expected or still parsed the output.
+
 ## CI Guidance
 
 Fast CI should run small final-state fixtures with scanner/prober exports and
