@@ -14,6 +14,7 @@ from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
 from tests.engine.conftest import (
     _build_minimal_scenario,
+    _engine_event_context,
     _resolve_archive_file,
     _resolve_move_between_roots,
 )
@@ -24,7 +25,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "fs",
             "seed": 1,
             "duration_scale": "short",
@@ -85,7 +86,7 @@ class TestMoveAssetHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        entries = apply_event(state, resolved, ids, _RUN_ID, "fs")
+        entries = apply_event(state, resolved, ids, _engine_event_context("fs", run_id=_RUN_ID))
         (entry,) = entries
         assert isinstance(entry, AtomicJournalEntry)
         assert entry.phase == JournalPhase.ATOMIC
@@ -120,7 +121,7 @@ class TestRenameFileHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "fs")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("fs", run_id=_RUN_ID))
         assert entry.action == "rename_file"
         (loc,) = state.locations.values()
         assert loc.path == "movies-hd/Renamed.mkv"
@@ -139,7 +140,7 @@ class TestDeleteFileHandler:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
-        (entry,) = apply_event(state, resolved, ids, _RUN_ID, "fs")
+        (entry,) = apply_event(state, resolved, ids, _engine_event_context("fs", run_id=_RUN_ID))
         assert entry.action == "delete_file"
         assert entry.state_delta["removed_path"] == "movies-hd/a0.mkv"
         assert state.locations == {}
@@ -169,7 +170,7 @@ class TestAddFileHandler:
         state = build_initial_state(scenario, ids)
         resolved = resolve_timeline(scenario)
         for r in resolved:
-            apply_event(state, r, ids, _RUN_ID, "fs")
+            apply_event(state, r, ids, _engine_event_context("fs", run_id=_RUN_ID))
         (loc,) = state.locations.values()
         assert loc.path == "archive/a0.mkv"
 
@@ -189,7 +190,7 @@ class TestAddFileHandler:
         state = build_initial_state(scenario, ids)
         (resolved,) = resolve_timeline(scenario)
         with pytest.raises(ValueError, match="already has a location"):
-            apply_event(state, resolved, ids, _RUN_ID, "fs")
+            apply_event(state, resolved, ids, _engine_event_context("fs", run_id=_RUN_ID))
 
 
 class TestArchiveFileHandler:
@@ -213,8 +214,7 @@ class TestArchiveFileHandler:
             state=state,
             resolved=resolved,
             ids=IdAllocator(TraceRecorder()),
-            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-            scenario_id="sc_test",
+            ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
         assert state.locations[loc_id].path == "library/movies-hd/archive/asset_hd_main.mkv"
@@ -243,8 +243,7 @@ class TestArchiveFileHandler:
             state=state,
             resolved=resolved,
             ids=IdAllocator(TraceRecorder()),
-            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-            scenario_id="sc_test",
+            ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
         assert state.locations[loc_id].path == "library/cold-storage/asset_hd_main.mkv"
@@ -279,8 +278,7 @@ class TestMoveBetweenRootsHandler:
             state=state,
             resolved=resolved,
             ids=IdAllocator(TraceRecorder()),
-            run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-            scenario_id="sc_test",
+            ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
         assert state.locations[loc_id].path == "library/staging/asset_hd_main.mkv"

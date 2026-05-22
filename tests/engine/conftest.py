@@ -36,6 +36,7 @@ from chaos_librarian.contract.scenario import (
     UpdateSidecarEvent,
 )
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
+from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState, build_initial_state
@@ -71,6 +72,20 @@ _PENDING_COPY_ID: Final = "start"
 # embed/remove/update terminal events. The sidecar handlers look the
 # sidecar up by (target, path), so the prereq and terminal must agree.
 _PENDING_SIDECAR_PATH: Final = "library/movies-hd/asset_hd_main.eng.srt"
+_TEST_RUN_ID: Final = uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01")
+
+
+def _engine_event_context(
+    scenario_id: str = "sc_test",
+    *,
+    run_id: uuid.UUID = _TEST_RUN_ID,
+    resolved_seed: int = 42,
+) -> EngineEventContext:
+    return EngineEventContext(
+        run_id=run_id,
+        scenario_id=scenario_id,
+        resolved_seed=resolved_seed,
+    )
 
 
 def _build_minimal_scenario(
@@ -111,7 +126,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=5``.
+        A fully-validated Scenario at ``schema_version=7``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -161,7 +176,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -358,8 +373,7 @@ def _prepare_pending_slow_copy(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=start_event),
         ids=IdAllocator(TraceRecorder()),
-        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-        scenario_id="sc_test",
+        ctx=_engine_event_context(),
     )
 
 
@@ -370,8 +384,7 @@ def _prepare_deleted_asset(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=delete_event),
         ids=IdAllocator(TraceRecorder()),
-        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-        scenario_id="sc_test",
+        ctx=_engine_event_context(),
     )
 
 
@@ -393,8 +406,7 @@ def _prepare_pending_sidecar(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=create_event),
         ids=IdAllocator(TraceRecorder()),
-        run_id=uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01"),
-        scenario_id="sc_test",
+        ctx=_engine_event_context(),
     )
 
 

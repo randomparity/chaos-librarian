@@ -16,7 +16,6 @@ without committed).
 from __future__ import annotations
 
 import hashlib
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -30,6 +29,7 @@ from chaos_librarian.contract.replay_bundle import (
 )
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
+from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.reports import ReportSet, build_report_set
@@ -130,6 +130,11 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
     ids = IdAllocator(recorder)
     state = build_initial_state(scenario, ids)
     initial_manifest = state.to_manifest()
+    ctx = EngineEventContext(
+        run_id=bundle.run_id,
+        scenario_id=scenario.scenario_id,
+        resolved_seed=bundle.resolved_seed,
+    )
 
     resolved_timeline = resolve_timeline(scenario)
     boundaries = step_boundaries(resolved_timeline)
@@ -138,8 +143,7 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
         ids=ids,
         resolved_timeline=resolved_timeline,
         existing_journal=existing_journal,
-        run_id=bundle.run_id,
-        scenario_id=scenario.scenario_id,
+        ctx=ctx,
     )
 
     # Translate n_steps (step units) → raw event count via boundaries.
@@ -149,7 +153,7 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
 
     new_entries_list: list[JournalEntry] = []
     for resolved in resolved_timeline[cursor_index:target_raw]:
-        entries = apply_event(state, resolved, ids, bundle.run_id, scenario.scenario_id)
+        entries = apply_event(state, resolved, ids, ctx)
         new_entries_list.extend(entries)
 
     return _finalize_step_result(
@@ -255,8 +259,7 @@ def _recover_cursor(
     ids: IdAllocator,
     resolved_timeline: list[ResolvedEvent],
     existing_journal: list[JournalEntry],
-    run_id: uuid.UUID,
-    scenario_id: str,
+    ctx: EngineEventContext,
 ) -> int:
     """Replay the timeline until the regenerated journal matches existing_journal.
 
@@ -272,7 +275,7 @@ def _recover_cursor(
     valid = {0, *boundaries}
     matched = 0
     for resolved_index, resolved in enumerate(resolved_timeline):
-        regenerated = apply_event(state, resolved, ids, run_id, scenario_id)
+        regenerated = apply_event(state, resolved, ids, ctx)
         for entry in regenerated:
             if matched >= len(existing_journal):
                 raise JournalCorruptError(

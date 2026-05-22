@@ -16,6 +16,7 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
+from tests.engine.conftest import _engine_event_context
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -23,7 +24,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "sc",
             "seed": 7,
             "duration_scale": "short",
@@ -90,7 +91,7 @@ class TestSlowCopyStart:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         start_event, _ = resolve_timeline(scenario)
-        (entry,) = apply_event(state, start_event, ids, _RUN_ID, "sc")
+        (entry,) = apply_event(state, start_event, ids, _engine_event_context("sc", run_id=_RUN_ID))
         assert isinstance(entry, StartedJournalEntry)
         assert entry.phase == JournalPhase.STARTED
         assert entry.temp_path == "movies-hd/Nova.mkv.part"
@@ -117,7 +118,7 @@ class TestSlowCopyCommit:
         resolved = resolve_timeline(scenario)
         entries: tuple[object, ...] = ()
         for r in resolved:
-            entries = apply_event(state, r, ids, _RUN_ID, "sc")
+            entries = apply_event(state, r, ids, _engine_event_context("sc", run_id=_RUN_ID))
         (commit_entry,) = entries
         assert isinstance(commit_entry, CommittedJournalEntry)
         assert commit_entry.phase == JournalPhase.COMMITTED
@@ -145,7 +146,7 @@ class TestSlowCopyCommitAfterDeleteCrashes:
         state = build_initial_state(scenario, ids)
         start_event, commit_event = resolve_timeline(scenario)
 
-        apply_event(state, start_event, ids, _RUN_ID, "sc")
+        apply_event(state, start_event, ids, _engine_event_context("sc", run_id=_RUN_ID))
         assert "copy_start_001" in state.pending_slow_copies
 
         # Hand-build a delete: scenario.Scenario.model_validate would reject
@@ -155,4 +156,4 @@ class TestSlowCopyCommitAfterDeleteCrashes:
         state.unbind_location("a0")
 
         with pytest.raises(KeyError):
-            apply_event(state, commit_event, ids, _RUN_ID, "sc")
+            apply_event(state, commit_event, ids, _engine_event_context("sc", run_id=_RUN_ID))
