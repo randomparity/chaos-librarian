@@ -26,13 +26,13 @@
 
 3. **Observed-state validation fails before comparison.** Duplicate refs, invalid paths, missing per-action path fields, dangling topology refs, contradictory topology, and invalid grouped lifecycle links are Pydantic validation errors. `adapter.observed.load_observed_state()` catches those and raises `AdapterInputError(error_code="E_ADAPTER_OBSERVED_INVALID")`.
 
-4. **Fixture loading derives reports when reports are absent.** Modern fixtures contain `reports/`, but the loader should still compare older plan-only fixtures by deriving an in-memory `ReportSet` from `manifest.initial.json`, `manifest.current.json`, and `journal.jsonl`. If a `reports/` directory is present but malformed, fail with `E_ADAPTER_FIXTURE_INVALID`.
+4. **Fixture loading derives reports only when reports are absent.** Modern fixtures contain `reports/`, but the loader should still compare older plan-only fixtures by deriving an in-memory `ReportSet` from `manifest.initial.json`, `manifest.current.json`, and `journal.jsonl`. If a `reports/` directory is present, it must contain a complete exact report set for every initial asset, work, variant, and bundle; malformed, missing, or extra present reports fail with `E_ADAPTER_FIXTURE_INVALID`.
 
 5. **No fuzzy or policy matching.** Matching uses only current path, historical path, content hash, and exact supplied topology evidence. If evidence is ambiguous at a precedence level, emit `D_MATCH_AMBIGUOUS`; do not choose a best guess.
 
-6. **Topology matching is conservative.** Topology can add evidence only when supplied work titles, variant labels, bundle refs, and bundle membership produce a unique mapping. Topology mismatches are reported only after asset matching; they do not remap an already matched pair.
+6. **Topology matching is conservative and consumer-neutral.** Topology can add evidence only when supplied work titles, variant labels, bundle member counts, and other non-identifier structure produce a unique mapping. Oracle IDs and observed refs are never cross-side match-key values. Topology mismatches are reported only after asset matching; they do not remap an already matched pair.
 
-7. **Sidecar comparison is scoped by matched asset.** Observed sidecars are nested under observed assets. Oracle sidecars are compared only against the matched observed asset's sidecars, by path first and content hash second when present.
+7. **Sidecar comparison is scoped by matched asset.** Observed sidecars are nested under observed assets. Oracle sidecars are compared only against the matched observed asset's sidecars, by `(path, kind)` first and content hash second when present.
 
 8. **Identity-history filters oracle sidecar filesystem actions.** `create_sidecar` and other non-asset-identity entries are ignored for durable asset lifecycle comparison. Sidecar current state is covered by sidecar comparison.
 
@@ -291,13 +291,19 @@ Add tests for:
 ```python
 def test_observed_state_rejects_absolute_current_path() -> None: ...
 def test_observed_state_rejects_parent_segment_in_path() -> None: ...
+def test_observed_state_rejects_dot_segment_in_path() -> None: ...
+def test_observed_state_rejects_empty_segment_in_path() -> None: ...
+def test_observed_state_rejects_trailing_slash_path() -> None: ...
 def test_observed_state_rejects_backslash_path_separator() -> None: ...
+def test_observed_state_rejects_nul_byte_in_path() -> None: ...
+def test_observed_state_rejects_windows_drive_prefix_path() -> None: ...
 def test_observed_state_rejects_create_sidecar_history_action() -> None: ...
 def test_observed_state_rejects_move_without_from_and_to_paths() -> None: ...
 def test_observed_state_rejects_delete_without_from_path() -> None: ...
 def test_observed_state_rejects_add_without_to_path() -> None: ...
 def test_observed_state_rejects_slow_copy_start_without_temp_path() -> None: ...
 def test_observed_state_rejects_global_event_without_ref_evidence() -> None: ...
+def test_observed_state_rejects_global_event_with_mixed_ref_modes() -> None: ...
 ```
 
 Each test should mutate one field in a valid base payload and assert `ValidationError`.
@@ -325,6 +331,8 @@ Add tests for:
 ```python
 def test_grouped_history_accepts_reciprocal_explicit_links() -> None: ...
 def test_grouped_history_accepts_deterministic_implicit_per_asset_links() -> None: ...
+def test_grouped_history_rejects_duplicate_per_asset_observed_event_ref() -> None: ...
+def test_grouped_history_rejects_duplicate_global_observed_event_ref() -> None: ...
 def test_grouped_history_rejects_dangling_related_event_ref() -> None: ...
 def test_grouped_history_rejects_one_sided_link() -> None: ...
 def test_grouped_history_rejects_non_reciprocal_link() -> None: ...
@@ -352,10 +360,17 @@ Add a shared private helper in `observed_state.py`:
 def _validate_observed_path(value: str | None, *, field_name: str) -> str | None:
     if value is None:
         return None
-    path = PurePosixPath(value)
-    if value == "" or path.is_absolute() or "\\" in value:
+    if value == "" or value.startswith("/") or "\\" in value or "\x00" in value:
         raise ValueError(f"{field_name} must be a relative POSIX path")
-    if any(part in {"", ".", ".."} for part in path.parts):
+    first_segment = value.split("/", 1)[0]
+    has_drive_prefix = (
+        len(first_segment) == 2
+        and first_segment[1] == ":"
+        and first_segment[0].isalpha()
+    )
+    if has_drive_prefix:
+        raise ValueError(f"{field_name} must not contain a Windows drive prefix")
+    if any(part in {"", ".", ".."} for part in value.split("/")):
         raise ValueError(f"{field_name} must not contain empty, dot, or parent segments")
     return value
 ```
@@ -376,7 +391,16 @@ slow_copy_start -> from_path + to_path + temp_path
 slow_copy_commit -> to_path
 ```
 
-For `ObservedEvent`, also require `observed_ref` or both `before_observed_ref` and `after_observed_ref`.
+For `ObservedEvent`, require exactly one identity mode:
+
+```text
+observed_ref present, with before_observed_ref and after_observed_ref absent
+OR
+observed_ref absent, with before_observed_ref and after_observed_ref both present
+```
+
+Reject mixed identity evidence with `E_ADAPTER_OBSERVED_INVALID`; a global event
+must not be able to describe multiple consumer lifecycles at once.
 
 - [ ] **Step 7: Implement `ObservedState` reference validators**
 
@@ -394,6 +418,12 @@ In a model-level validator:
 Raise `ValueError` with a message containing the invalid reference kind.
 
 - [ ] **Step 8: Implement grouped lifecycle link validation**
+
+Before building link maps, reject duplicate non-null `observed_event_ref` values
+within each asset's `path_history` and within global `events`. These scopes are
+separate; per-asset history refs do not need to be globally unique across all
+assets. Reject duplicates before reciprocal-link pairing so map construction
+cannot overwrite evidence.
 
 Validate explicit links by building a map of `observed_event_ref -> entry` for each per-asset history list and for global events. A valid explicit group has both entries present and reciprocal `related_observed_event_ref` values. Reject one-sided, dangling, non-reciprocal, and mixed explicit/implicit pairings.
 
@@ -442,10 +472,16 @@ def test_load_fixture_rejects_malformed_present_report(tmp_path: Path) -> None: 
 def test_load_fixture_rejects_sentinel_run_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_journal_run_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_mixed_journal_scenario_ids(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_scenario_yaml_replay_scenario_mismatch(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_plan_only_scenario_yaml_run_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_journal_digest_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_report_filename_id_mismatch(tmp_path: Path) -> None: ...
 def test_load_fixture_rejects_report_id_missing_from_manifest(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_missing_asset_report_when_reports_present(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_missing_work_report_when_reports_present(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_missing_variant_report_when_reports_present(tmp_path: Path) -> None: ...
+def test_load_fixture_rejects_missing_bundle_report_when_reports_present(tmp_path: Path) -> None: ...
 ```
 
 Use existing contract models to write the fixture files. Keep fixture builders in this test file; do not add project-wide test utilities until another file needs them.
@@ -528,25 +564,31 @@ class OracleFixture:
 
 1. Call `verify_sentinel(run_dir)` and map `SentinelInvalidError` through unchanged for CLI exit 7.
 2. Parse `replay.json` with `TypeAdapter(ReplayBundle)`.
-3. Parse `scenario.yaml` with `prepare_run_input_from_bytes()` to obtain `scenario_id`.
+3. Read `scenario.yaml` bytes and parse them with `prepare_run_input_from_bytes()` to obtain `scenario_id`.
 4. Parse `manifest.initial.json` and `manifest.current.json`.
 5. Parse `journal.jsonl`, skipping blank lines and reporting the 1-based line number on parse failure.
 6. Cross-check `sentinel.run_id == replay_bundle.run_id`.
-7. Cross-check every journal entry's `run_id` equals `replay_bundle.run_id`.
-8. Cross-check every journal entry's `scenario_id` equals the parsed `scenario_id`.
-9. Cross-check parsed journal bytes against `replay_bundle.journal_digest`.
+7. Cross-check `scenario.yaml` bytes equal `replay_bundle.scenario.encode("utf-8")`.
+8. For `execution_mode="plan_only"` only, recompute
+   `compute_plan_only_run_id(hashlib.sha256(scenario_yaml_bytes).hexdigest(), replay_bundle.resolved_seed)`
+   and require it to equal `replay_bundle.run_id`. Materialize and run fixtures use
+   UUID run ids, so scenario byte equality is their scenario tamper check.
+9. Cross-check every journal entry's `run_id` equals `replay_bundle.run_id`.
+10. Cross-check every journal entry's `scenario_id` equals the parsed `scenario_id`.
+11. Cross-check parsed journal bytes against `replay_bundle.journal_digest`.
    For `execution_mode="run"`, follow the existing run replay rule: hash
    `entry.model_copy(update={"wall_clock_time": None})` entries via
    `serialize_journal_bytes()` before computing sha256. For plan-only and
    materialize fixtures, hash the parsed journal entries directly via
    `serialize_journal_bytes()`.
-10. Load `reports/` when present and validate every JSON file.
-11. For present reports, require each filename stem to match the report id field.
-12. For present reports, require report ids to exist in the corresponding manifest collection:
-    asset reports in `initial_manifest.assets`, work reports in `initial_manifest.works`,
-    variant reports in `initial_manifest.variants`, and bundle reports in
-    `initial_manifest.bundles`.
-13. Derive `ReportSet` via `build_report_set()` when `reports/` is absent.
+12. When `reports/` is absent, derive `ReportSet` via `build_report_set()`.
+13. When `reports/` is present, require all four subdirectories:
+    `assets`, `works`, `variants`, and `bundles`.
+14. Load and validate every JSON file under those four report subdirectories.
+15. For present reports, require each filename stem to match the report id field.
+16. For present reports, require each subdirectory's filename stems to exactly match
+    the corresponding `initial_manifest` id set: assets, works, variants, and
+    bundles. Missing or extra report files are invalid fixture input.
 
 Every malformed or internally inconsistent fixture artifact except the sentinel raises `AdapterInputError(error_code=E_ADAPTER_FIXTURE_INVALID)`.
 
@@ -563,13 +605,13 @@ __all__ = [
     "AdapterInputError",
     "CompareMode",
     "OracleFixture",
-    "compare_fixture_to_observed",
     "load_fixture",
     "load_observed_state",
 ]
 ```
 
-Import `compare_fixture_to_observed` lazily from `adapter.compare` only after Task 6 creates it, or export it in Task 6 to avoid a temporary broken import.
+Do not export `compare_fixture_to_observed` in this task. `adapter.compare` does
+not exist until Task 5.
 
 - [ ] **Step 8: Run loader checks**
 
@@ -606,6 +648,7 @@ def test_matches_by_unique_current_path_before_hash() -> None: ...
 def test_matches_deleted_asset_by_historical_path() -> None: ...
 def test_matches_by_hash_when_paths_are_absent() -> None: ...
 def test_matches_by_unique_topology_when_path_and_hash_absent() -> None: ...
+def test_topology_matching_ignores_oracle_ids_and_observed_refs() -> None: ...
 def test_topology_match_records_match_evidence() -> None: ...
 def test_topology_ambiguity_emits_d_match_ambiguous() -> None: ...
 def test_unique_higher_precedence_match_wins_over_lower_conflict() -> None: ...
@@ -683,7 +726,7 @@ class ObservedTopologyView:
     bundle_asset_refs: tuple[str, ...]
 ```
 
-Topology evidence may match only when both sides provide enough facts to form a unique topology key. A key can include work title, variant label, and bundle member count / membership refs. Missing optional topology fields mean "no topology evidence", not a mismatch.
+Topology evidence may match only when both sides provide enough facts to form a unique topology key. A key can include work title, variant label, bundle member count, and other non-identifier structure that both sides independently provide. A key must not include oracle IDs, observed refs, bundle refs, asset refs, variant refs, or work refs as cross-side values; those identifiers are only allowed for building local topology context on each side. Missing optional topology fields mean "no topology evidence", not a mismatch.
 
 - [ ] **Step 4: Implement ranked matching**
 
@@ -768,8 +811,10 @@ def test_probe_mismatch_requires_both_probed_values() -> None: ...
 def test_probe_duration_uses_point_zero_five_second_tolerance() -> None: ...
 def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None: ...
 def test_unexpected_observed_sidecar_emits_d_sidecar_unexpected() -> None: ...
+def test_sidecar_kind_mismatch_emits_missing_and_unexpected() -> None: ...
 def test_sidecar_hash_mismatch_emits_d_hash_mismatch() -> None: ...
 def test_missing_observed_sidecar_hash_is_not_divergence() -> None: ...
+def test_topology_refs_can_differ_when_relationship_structure_matches() -> None: ...
 def test_topology_mismatch_emits_d_topology_mismatch_when_both_sides_supply_refs() -> None: ...
 def test_final_state_mode_skips_history_when_no_history_supplied() -> None: ...
 ```
@@ -831,16 +876,31 @@ Then:
 4. Compare hashes only when both sides supply a hash.
 5. Compare probed media only when both sides supply `probed`.
 6. Compare sidecars for matched assets.
-7. Compare topology when both sides supply refs.
+7. Compare topology relationship structure when both sides supply topology refs.
 8. Add history findings only in `IDENTITY_HISTORY` mode; leave this call empty until Task 6.
 9. Return `DivergenceReport(ok=not any(error findings), mode=mode, ...)`.
 
+After `adapter.compare` exists, export `compare_fixture_to_observed` from
+`adapter/__init__.py` and include it in `__all__`.
+
+Topology comparison rules:
+
+- Never compare Chaos Librarian entity ids directly to consumer-owned observed refs.
+- Use established asset matches to translate cross-side relationships before comparison.
+- A matched asset's topology is clean when its matched observed asset belongs to the
+  corresponding observed work, variant, and bundle groups, even when the observed refs
+  use names that do not resemble oracle ids.
+- Emit `D_TOPOLOGY_MISMATCH` only when matched assets disagree on neutral grouping
+  structure after this translation.
+
 Sidecar comparison rules:
 
-- Missing oracle sidecar path under the matched observed asset emits `D_SIDECAR_MISSING`.
-- Extra observed sidecar path under the matched observed asset emits `D_SIDECAR_UNEXPECTED`.
-- If oracle and observed sidecar paths match and both sidecar hashes are present but differ, emit `D_HASH_MISMATCH`.
-- For sidecar hash findings, set `oracle_asset_id` to the parent oracle asset id, `observed_ref` to the observed sidecar ref, and use `expected` / `observed` dicts containing `path` and `content_hash`.
+- Compare sidecars under the matched observed asset by `(path, kind)`, not path alone.
+- Missing oracle `(path, kind)` under the matched observed asset emits `D_SIDECAR_MISSING`.
+- Extra observed `(path, kind)` under the matched observed asset emits `D_SIDECAR_UNEXPECTED`.
+- A sidecar with the same path but a different kind is reported as one missing oracle sidecar and one unexpected observed sidecar.
+- If oracle and observed sidecar `(path, kind)` match and both sidecar hashes are present but differ, emit `D_HASH_MISMATCH`.
+- For sidecar findings, set `oracle_asset_id` to the parent oracle asset id, set `observed_ref` to the observed sidecar ref when one exists, and use `expected` / `observed` dicts containing `path`, `kind`, and `content_hash` when supplied.
 - Missing sidecar hash on either side is not a divergence by itself.
 
 - [ ] **Step 5: Populate report metadata**
@@ -901,6 +961,7 @@ def test_identity_history_clean_archive_file() -> None: ...
 def test_identity_history_clean_move_between_roots() -> None: ...
 def test_identity_history_clean_slow_copy_group() -> None: ...
 def test_identity_history_clean_delete_add_group() -> None: ...
+def test_identity_history_groups_non_adjacent_delete_add_restore() -> None: ...
 ```
 
 Add failure tests for:
@@ -942,7 +1003,7 @@ IDENTITY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset({
 })
 ```
 
-Convert each matched oracle asset's `AssetReport.path_history` into expected lifecycle objects. Group adjacent `delete_file` + `add_file` for the same oracle asset when paths represent removal and restoration. Group `slow_copy_start` + `slow_copy_commit` by journal ordering and related path fields.
+Convert each matched oracle asset's `AssetReport.path_history` into expected lifecycle objects. Group `delete_file` with the next compatible `add_file` for the same oracle asset while the asset is absent, even when unrelated journal entries appear between them. The pair is compatible when the delete removes the old path and the add restores the asset at the expected replacement path from the same asset history. Group `slow_copy_start` + `slow_copy_commit` by journal ordering and related path fields.
 
 - [ ] **Step 4: Implement observed lifecycle extraction**
 
@@ -1269,11 +1330,18 @@ Do not create an empty commit when no fixes are needed.
 - New contract model files regenerate checked-in JSON Schema artifacts in the same change.
 - Divergence metadata fields are defined before the first divergence schema export.
 - Observed grouped-link validation does not import from `chaos_librarian.adapter`.
+- Observed path validation rejects raw empty, dot, parent, trailing slash, backslash, NUL, and Windows drive-prefix segments before path normalization.
+- Observed grouped-link validation rejects duplicate non-null event refs before building link maps.
 - Ambiguous matches are excluded from missing/unexpected asset-presence findings.
 - Fixture loading rejects mixed journal/report artifacts as invalid fixture input.
+- Fixture loading rejects `scenario.yaml` bytes that diverge from `replay_bundle.scenario`.
+- Plan-only fixture loading recomputes scenario-derived `run_id`; materialize/run fixtures rely on scenario byte equality because their run ids are UUIDs.
 - Fixture loading rejects journal bytes that do not match `replay_bundle.journal_digest`.
-- Topology-only matching is tested and records topology match evidence.
-- Sidecar hash mismatches use `D_HASH_MISMATCH`; missing optional sidecar hashes are ignored.
+- Present `reports/` trees must exactly match the initial manifest entity ids.
+- Topology-only matching is consumer-neutral, tested, and records topology match evidence.
+- Topology mismatch comparison uses matched relationship structure, not raw oracle id / observed ref equality.
+- Sidecar comparison keys on `(path, kind)`; sidecar hash mismatches use `D_HASH_MISMATCH`; missing optional sidecar hashes are ignored.
+- Identity-history groups non-adjacent delete/add restore lifecycles for the same oracle asset.
 - Compare path validation tests cover both positional path arguments directly.
 - `final-state` never fails only because history is absent.
 - `identity-history` never silently downgrades to final-state behavior.

@@ -1,0 +1,741 @@
+{
+  "$defs": {
+    "ObservedAction": {
+      "description": "Path-affecting action vocabulary accepted from consumers.",
+      "enum": [
+        "move_asset",
+        "rename_file",
+        "delete_file",
+        "add_file",
+        "slow_copy_start",
+        "slow_copy_commit",
+        "archive_file",
+        "move_between_roots"
+      ],
+      "title": "ObservedAction",
+      "type": "string"
+    },
+    "ObservedAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Bundle Ref"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "current_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Current Path"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "path_history": {
+          "items": {
+            "$ref": "#/$defs/ObservedPathHistoryEntry"
+          },
+          "title": "Path History",
+          "type": "array"
+        },
+        "probed": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProbedMedia"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sidecars": {
+          "items": {
+            "$ref": "#/$defs/ObservedSidecar"
+          },
+          "title": "Sidecars",
+          "type": "array"
+        },
+        "variant_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Ref"
+        },
+        "work_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Ref"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "current_path"
+      ],
+      "title": "ObservedAsset",
+      "type": "object"
+    },
+    "ObservedBundle": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_refs": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Asset Refs",
+          "type": "array"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "sidecar_refs": {
+          "items": {
+            "$ref": "#/$defs/ObservedBundleSidecarRef"
+          },
+          "title": "Sidecar Refs",
+          "type": "array"
+        },
+        "variant_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variant Ref"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedBundle",
+      "type": "object"
+    },
+    "ObservedBundleSidecarRef": {
+      "additionalProperties": false,
+      "properties": {
+        "asset_ref": {
+          "title": "Asset Ref",
+          "type": "string"
+        },
+        "sidecar_ref": {
+          "title": "Sidecar Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "asset_ref",
+        "sidecar_ref"
+      ],
+      "title": "ObservedBundleSidecarRef",
+      "type": "object"
+    },
+    "ObservedConsumer": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ObservedConsumer",
+      "type": "object"
+    },
+    "ObservedEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ObservedAction"
+        },
+        "after_observed_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "After Observed Ref"
+        },
+        "before_observed_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Before Observed Ref"
+        },
+        "from_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Path"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "observed_event_ref": {
+          "title": "Observed Event Ref",
+          "type": "string"
+        },
+        "observed_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Ref"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "related_observed_event_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Related Observed Event Ref"
+        },
+        "temp_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Path"
+        },
+        "to_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Path"
+        }
+      },
+      "required": [
+        "observed_event_ref",
+        "action"
+      ],
+      "title": "ObservedEvent",
+      "type": "object"
+    },
+    "ObservedPathHistoryEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/ObservedAction"
+        },
+        "from_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Path"
+        },
+        "observed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed At"
+        },
+        "observed_event_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Observed Event Ref"
+        },
+        "related_observed_event_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Related Observed Event Ref"
+        },
+        "temp_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Temp Path"
+        },
+        "to_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Path"
+        }
+      },
+      "required": [
+        "action"
+      ],
+      "title": "ObservedPathHistoryEntry",
+      "type": "object"
+    },
+    "ObservedSidecar": {
+      "additionalProperties": false,
+      "properties": {
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "kind": {
+          "title": "Kind",
+          "type": "string"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "kind",
+        "path"
+      ],
+      "title": "ObservedSidecar",
+      "type": "object"
+    },
+    "ObservedVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Label"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "work_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Ref"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedVariant",
+      "type": "object"
+    },
+    "ObservedWork": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedWork",
+      "type": "object"
+    },
+    "ProbedMedia": {
+      "additionalProperties": false,
+      "description": "Output of ``ffprobe -show_format -show_streams`` mapped into a model.",
+      "properties": {
+        "container": {
+          "title": "Container",
+          "type": "string"
+        },
+        "duration_seconds": {
+          "title": "Duration Seconds",
+          "type": "number"
+        },
+        "size_bytes": {
+          "title": "Size Bytes",
+          "type": "integer"
+        },
+        "streams": {
+          "items": {
+            "$ref": "#/$defs/ProbedStream"
+          },
+          "title": "Streams",
+          "type": "array"
+        }
+      },
+      "required": [
+        "container",
+        "duration_seconds",
+        "size_bytes",
+        "streams"
+      ],
+      "title": "ProbedMedia",
+      "type": "object"
+    },
+    "ProbedStream": {
+      "additionalProperties": false,
+      "description": "One stream from ``ffprobe -show_streams``.\n\nOptional fields are populated only for the matching ``kind``; ffprobe\nsilently omits the others, and ``exclude_none=True`` keeps the serialized\noutput compact.",
+      "properties": {
+        "channels": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channels"
+        },
+        "codec": {
+          "title": "Codec",
+          "type": "string"
+        },
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "forced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced"
+        },
+        "fps": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fps"
+        },
+        "height": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Height"
+        },
+        "kind": {
+          "$ref": "#/$defs/StreamKind"
+        },
+        "language": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Language"
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
+        },
+        "width": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Width"
+        }
+      },
+      "required": [
+        "kind",
+        "codec"
+      ],
+      "title": "ProbedStream",
+      "type": "object"
+    },
+    "StreamKind": {
+      "description": "Kind of a probed media stream.",
+      "enum": [
+        "video",
+        "audio",
+        "subtitle"
+      ],
+      "title": "StreamKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assets": {
+      "items": {
+        "$ref": "#/$defs/ObservedAsset"
+      },
+      "title": "Assets",
+      "type": "array"
+    },
+    "bundles": {
+      "items": {
+        "$ref": "#/$defs/ObservedBundle"
+      },
+      "title": "Bundles",
+      "type": "array"
+    },
+    "consumer": {
+      "$ref": "#/$defs/ObservedConsumer"
+    },
+    "events": {
+      "items": {
+        "$ref": "#/$defs/ObservedEvent"
+      },
+      "title": "Events",
+      "type": "array"
+    },
+    "observed_at": {
+      "format": "date-time",
+      "title": "Observed At",
+      "type": "string"
+    },
+    "run_id": {
+      "format": "uuid",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/ObservedVariant"
+      },
+      "title": "Variants",
+      "type": "array"
+    },
+    "works": {
+      "items": {
+        "$ref": "#/$defs/ObservedWork"
+      },
+      "title": "Works",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "consumer",
+    "run_id",
+    "observed_at",
+    "assets"
+  ],
+  "title": "ObservedState",
+  "type": "object"
+}

@@ -44,3 +44,15 @@ Plan-only runs (Sprint 3) write a strict subset of the full layout:
 
 `materialization.json`, `library/`, and `reports/` are written by later
 sprints (5 / 6+ / 4 respectively).
+
+## External Observed State
+
+`observed-state.json` is not written into the fixture directory by Chaos
+Librarian. It is an external consumer export passed to:
+
+```bash
+chaos-librarian compare run/ observed-state.json --json
+```
+
+The compare command validates the fixture first, then validates the external
+observed-state input against `observed-state.schema.json`.

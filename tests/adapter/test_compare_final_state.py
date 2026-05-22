@@ -1,0 +1,212 @@
+"""Tests for final-state adapter comparison."""
+
+from __future__ import annotations
+
+import uuid
+
+import pytest
+
+from chaos_librarian.adapter.compare import compare_fixture_to_observed
+from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
+from chaos_librarian.contract.divergence import CompareMode
+from chaos_librarian.contract.manifest import ManifestSidecar
+from chaos_librarian.contract.observed_state import ObservedSidecar
+from tests.support.adapter import (
+    HASH_A,
+    HASH_B,
+)
+from tests.support.adapter import (
+    fixture as _fixture,
+)
+from tests.support.adapter import (
+    observed as _observed,
+)
+from tests.support.adapter import (
+    probe as _probe,
+)
+
+
+def _codes(report) -> list[str]:
+    return [finding.code for finding in report.findings]
+
+
+def test_clean_observed_state_returns_ok_report() -> None:
+    report = compare_fixture_to_observed(_fixture(), _observed())
+
+    assert report.ok is True
+    assert report.findings == []
+    assert report.fixture.asset_count == 1
+    assert report.observed.consumer_name == "voom-v2"
+
+
+def test_run_id_mismatch_is_input_error_not_divergence() -> None:
+    with pytest.raises(AdapterInputError) as exc_info:
+        compare_fixture_to_observed(_fixture(), _observed(run_id=uuid.uuid4()))
+    assert exc_info.value.error_code == E_ADAPTER_RUN_ID_MISMATCH
+
+
+def test_path_mismatch_emits_d_path_mismatch() -> None:
+    report = compare_fixture_to_observed(
+        _fixture(),
+        _observed(current_path="library/Different.mkv"),
+    )
+
+    assert "D_PATH_MISMATCH" in _codes(report)
+
+
+def test_deletion_mismatch_emits_d_deletion_mismatch() -> None:
+    report = compare_fixture_to_observed(
+        _fixture(current_path=None),
+        _observed(current_path="library/Synthetic.mkv"),
+    )
+
+    assert "D_DELETION_MISMATCH" in _codes(report)
+
+
+def test_hash_mismatch_requires_both_hashes() -> None:
+    with_hashes = compare_fixture_to_observed(_fixture(), _observed(content_hash=HASH_B))
+    missing_hash = compare_fixture_to_observed(_fixture(), _observed(content_hash=None))
+
+    assert "D_HASH_MISMATCH" in _codes(with_hashes)
+    assert "D_HASH_MISMATCH" not in _codes(missing_hash)
+
+
+def test_probe_mismatch_requires_both_probed_values() -> None:
+    with_probes = compare_fixture_to_observed(
+        _fixture(probed=_probe(codec="h264")),
+        _observed(probed=_probe(codec="hevc")),
+    )
+    missing_probe = compare_fixture_to_observed(_fixture(probed=_probe()), _observed(probed=None))
+
+    assert "D_PROBE_MISMATCH" in _codes(with_probes)
+    assert "D_PROBE_MISMATCH" not in _codes(missing_probe)
+
+
+def test_probe_duration_uses_point_zero_five_second_tolerance() -> None:
+    tolerated = compare_fixture_to_observed(
+        _fixture(probed=_probe(duration=60.0)),
+        _observed(probed=_probe(duration=60.05)),
+    )
+    outside = compare_fixture_to_observed(
+        _fixture(probed=_probe(duration=60.0)),
+        _observed(probed=_probe(duration=60.051)),
+    )
+
+    assert "D_PROBE_MISMATCH" not in _codes(tolerated)
+    assert "D_PROBE_MISMATCH" in _codes(outside)
+
+
+def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None:
+    sidecar = ManifestSidecar(
+        id="sidecar-a",
+        asset_id="asset-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=HASH_A,
+    )
+
+    report = compare_fixture_to_observed(_fixture(sidecars=(sidecar,)), _observed())
+
+    assert "D_SIDECAR_MISSING" in _codes(report)
+
+
+def test_unexpected_observed_sidecar_emits_d_sidecar_unexpected() -> None:
+    observed_sidecar = ObservedSidecar(
+        observed_ref="observed-sidecar-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=HASH_A,
+    )
+
+    report = compare_fixture_to_observed(_fixture(), _observed(sidecars=(observed_sidecar,)))
+
+    assert "D_SIDECAR_UNEXPECTED" in _codes(report)
+
+
+def test_sidecar_kind_mismatch_emits_missing_and_unexpected() -> None:
+    oracle_sidecar = ManifestSidecar(
+        id="sidecar-a",
+        asset_id="asset-a",
+        kind="subtitle",
+        path="library/Synthetic.sidecar",
+    )
+    observed_sidecar = ObservedSidecar(
+        observed_ref="observed-sidecar-a",
+        kind="poster",
+        path="library/Synthetic.sidecar",
+    )
+
+    report = compare_fixture_to_observed(
+        _fixture(sidecars=(oracle_sidecar,)),
+        _observed(sidecars=(observed_sidecar,)),
+    )
+
+    assert "D_SIDECAR_MISSING" in _codes(report)
+    assert "D_SIDECAR_UNEXPECTED" in _codes(report)
+
+
+def test_sidecar_hash_mismatch_emits_d_hash_mismatch() -> None:
+    oracle_sidecar = ManifestSidecar(
+        id="sidecar-a",
+        asset_id="asset-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=HASH_A,
+    )
+    observed_sidecar = ObservedSidecar(
+        observed_ref="observed-sidecar-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=HASH_B,
+    )
+
+    report = compare_fixture_to_observed(
+        _fixture(sidecars=(oracle_sidecar,)),
+        _observed(sidecars=(observed_sidecar,)),
+    )
+
+    assert "D_HASH_MISMATCH" in _codes(report)
+
+
+def test_missing_observed_sidecar_hash_is_not_divergence() -> None:
+    oracle_sidecar = ManifestSidecar(
+        id="sidecar-a",
+        asset_id="asset-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=HASH_A,
+    )
+    observed_sidecar = ObservedSidecar(
+        observed_ref="observed-sidecar-a",
+        kind="subtitle",
+        path="library/Synthetic.eng.srt",
+        content_hash=None,
+    )
+
+    report = compare_fixture_to_observed(
+        _fixture(sidecars=(oracle_sidecar,)),
+        _observed(sidecars=(observed_sidecar,)),
+    )
+
+    assert "D_HASH_MISMATCH" not in _codes(report)
+
+
+def test_topology_refs_can_differ_when_relationship_structure_matches() -> None:
+    report = compare_fixture_to_observed(_fixture(), _observed())
+
+    assert "D_TOPOLOGY_MISMATCH" not in _codes(report)
+
+
+def test_topology_mismatch_emits_d_topology_mismatch_when_both_sides_supply_refs() -> None:
+    report = compare_fixture_to_observed(_fixture(), _observed(topology_label="sd"))
+
+    assert "D_TOPOLOGY_MISMATCH" in _codes(report)
+
+
+def test_final_state_mode_skips_history_when_no_history_supplied() -> None:
+    observed = _observed()
+    observed.assets[0].path_history.clear()
+
+    report = compare_fixture_to_observed(_fixture(), observed, mode=CompareMode.FINAL_STATE)
+
+    assert "D_HISTORY_MISSING" not in _codes(report)

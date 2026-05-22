@@ -9,9 +9,11 @@ from chaos_librarian.contract import (
     BUNDLE_REPORT_SCHEMA_VERSION,
     CAPABILITIES_SCHEMA_VERSION,
     CHAOS_LIBRARIAN_NAMESPACE_UUID,
+    DIVERGENCE_SCHEMA_VERSION,
     JOURNAL_SCHEMA_VERSION,
     MANIFEST_SCHEMA_VERSION,
     MATERIALIZATION_SCHEMA_VERSION,
+    OBSERVED_STATE_SCHEMA_VERSION,
     REPLAY_BUNDLE_SCHEMA_VERSION,
     RUN_SENTINEL_SCHEMA_VERSION,
     SCENARIO_SCHEMA_VERSION,
@@ -55,9 +57,11 @@ def test_all_schema_versions_are_positive_integers() -> None:
         ASSET_REPORT_SCHEMA_VERSION,
         BUNDLE_REPORT_SCHEMA_VERSION,
         CAPABILITIES_SCHEMA_VERSION,
+        DIVERGENCE_SCHEMA_VERSION,
         JOURNAL_SCHEMA_VERSION,
         MANIFEST_SCHEMA_VERSION,
         MATERIALIZATION_SCHEMA_VERSION,
+        OBSERVED_STATE_SCHEMA_VERSION,
         REPLAY_BUNDLE_SCHEMA_VERSION,
         RUN_SENTINEL_SCHEMA_VERSION,
         SCENARIO_SCHEMA_VERSION,
@@ -66,3 +70,8 @@ def test_all_schema_versions_are_positive_integers() -> None:
         WORK_REPORT_SCHEMA_VERSION,
     ]
     assert all(isinstance(v, int) and v >= 1 for v in versions)
+
+
+def test_sprint_9_adapter_schema_versions_start_at_one() -> None:
+    assert OBSERVED_STATE_SCHEMA_VERSION == 1
+    assert DIVERGENCE_SCHEMA_VERSION == 1

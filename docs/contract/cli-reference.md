@@ -10,6 +10,7 @@ chaos-librarian replay fixtures/run-001/replay.json --out fixtures/replay-001 --
 chaos-librarian inspect fixtures/run-001 --json
 chaos-librarian capabilities --json
 chaos-librarian clean fixtures/run-001 --json
+chaos-librarian compare fixtures/run-001 observed-state.json --mode final-state --json
 ```
 
 All commands support `--json`. Exit codes:
@@ -22,11 +23,12 @@ All commands support `--json`. Exit codes:
 | `3`  | scenario validation failed                                    |
 | `4`  | required external tool missing or version too low             |
 | `5`  | materialization failed                                        |
-| `6`  | replay diverged                                               |
+| `6`  | replay or compare diverged                                    |
 | `7`  | filesystem safety violation (containment or sentinel)         |
 
 `validate` (Sprint 1), `plan` (Sprint 3), and the plan-mode follow-ups —
 `step`, `inspect`, `clean`, `replay` (Sprint 4) — are real commands.
-`materialize` and `capabilities` (Sprint 5) are also implemented. `run`
-remains a stub that exits `1`. See
+`materialize` and `capabilities` (Sprint 5) are also implemented. `compare`
+returns a `divergence.schema.json` report and exits `6` when comparison finds
+differences. `run` remains a stub that exits `1`. See
 [`chaos-librarian-design.md` "CLI Contract"](../specs/chaos-librarian-design.md).
