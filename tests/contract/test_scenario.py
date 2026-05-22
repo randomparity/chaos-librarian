@@ -7,8 +7,10 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
 from chaos_librarian.contract.scenario import (
+    AUDIO_CHANNEL_COUNTS_BY_NAME,
     ArchiveFileEvent,
     Asset,
+    AudioChannelLayout,
     AudioSource,
     AudioTrack,
     Bundle,
@@ -21,6 +23,7 @@ from chaos_librarian.contract.scenario import (
     LibraryRoot,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    ReencodeAudioEvent,
     ReencodeVideoEvent,
     RemoveSidecarEvent,
     RemuxContainerEvent,
@@ -71,7 +74,7 @@ def _minimal_scenario() -> Scenario:
                                     audio=(
                                         AudioTrack(
                                             codec="aac",
-                                            channels="stereo",
+                                            channels=AudioChannelLayout.STEREO,
                                             language="eng",
                                         ),
                                     ),
@@ -160,8 +163,43 @@ def test_video_track_source_rejects_unknown_value() -> None:
 def test_audio_track_source_defaults_to_sine() -> None:
     """WHY: existing fixtures don't set AudioTrack.source; the default
     must preserve their parse without edits."""
-    track = AudioTrack(codec="aac", channels="stereo", language="eng")
+    track = AudioTrack.model_validate({"codec": "aac", "channels": "stereo", "language": "eng"})
     assert track.source is AudioSource.SINE
+    assert track.channels is AudioChannelLayout.STEREO
+
+
+def test_audio_channel_layout_enum_values() -> None:
+    assert AudioChannelLayout.MONO.value == "mono"
+    assert AudioChannelLayout.STEREO.value == "stereo"
+    assert AudioChannelLayout.TWO_ONE.value == "2.1"
+    assert AudioChannelLayout.FIVE_ONE.value == "5.1"
+    assert AudioChannelLayout.SEVEN_ONE.value == "7.1"
+    assert AUDIO_CHANNEL_COUNTS_BY_NAME == {
+        "mono": 1,
+        "stereo": 2,
+        "2.1": 3,
+        "5.1": 6,
+        "7.1": 8,
+    }
+
+
+def test_audio_track_channels_rejects_unknown_value() -> None:
+    payload = {"codec": "aac", "channels": "quad", "language": "eng"}
+    with pytest.raises(ValidationError):
+        AudioTrack.model_validate(payload)
+
+
+def test_reencode_audio_event_channels_reject_unknown_value() -> None:
+    payload = {
+        "id": "ev_ra_001",
+        "at": "1s",
+        "action": "reencode_audio",
+        "target": "asset_main",
+        "from_channels": "stereo",
+        "to_channels": "quad",
+    }
+    with pytest.raises(ValidationError):
+        ReencodeAudioEvent.model_validate(payload)
 
 
 def test_subtitle_track_source_defaults_to_generated_srt() -> None:
@@ -169,8 +207,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_five() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 5
+def test_scenario_schema_version_is_six() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 6
 
 
 def test_archive_file_event_round_trip():
@@ -253,9 +291,9 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v5():
+def test_scenario_v4_actions_round_trip_at_v6():
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "scenario_id": "sc_arch_001",
         "seed": 42,
         "duration_scale": "short",
@@ -274,7 +312,7 @@ def test_scenario_v4_actions_round_trip_at_v5():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 5
+    assert scenario.schema_version == 6
     assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE
 
 
@@ -441,9 +479,9 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v5_round_trip_with_new_events():
+def test_scenario_v6_round_trip_with_sprint_7_events():
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "scenario_id": "sc_s7_001",
         "seed": 42,
         "duration_scale": "short",
@@ -460,5 +498,5 @@ def test_scenario_v5_round_trip_with_new_events():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 5
+    assert scenario.schema_version == 6
     assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER

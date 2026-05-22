@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from chaos_librarian.contract.scenario import AudioChannelLayout
 from chaos_librarian.materializer.recipes import (
     FFmpegInput,
     recipe_channel_tones,
@@ -99,6 +100,24 @@ def test_channel_tones_5_1_emits_six_frequencies():
     fi = recipe_channel_tones(channels="5.1", duration_s=1.0, seed=1)
     assert fi.lavfi is not None
     assert fi.lavfi.count("sine=frequency=") == 6
+
+
+@pytest.mark.parametrize(
+    ("layout", "count"),
+    [
+        (AudioChannelLayout.MONO, 1),
+        (AudioChannelLayout.STEREO, 2),
+        (AudioChannelLayout.TWO_ONE, 3),
+        (AudioChannelLayout.FIVE_ONE, 6),
+        (AudioChannelLayout.SEVEN_ONE, 8),
+    ],
+)
+def test_channel_tones_supports_every_audio_channel_layout(
+    layout: AudioChannelLayout, count: int
+) -> None:
+    fi = recipe_channel_tones(channels=layout, duration_s=1.0, seed=1)
+    assert fi.lavfi is not None
+    assert fi.lavfi.count("sine=frequency=") == count
 
 
 def test_srt_payload_is_deterministic_for_seed():

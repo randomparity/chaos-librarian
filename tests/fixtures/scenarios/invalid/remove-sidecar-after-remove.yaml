@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 5
+schema_version: 6
 scenario_id: sc_inv_rs_001
 seed: 1
 duration_scale: short

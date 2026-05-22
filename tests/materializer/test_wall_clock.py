@@ -121,7 +121,7 @@ def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-cloc
     path.write_text(
         dedent(
             f"""
-            schema_version: 5
+            schema_version: 6
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short

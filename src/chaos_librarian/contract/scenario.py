@@ -75,6 +75,25 @@ class AudioSource(enum.StrEnum):
     CHANNEL_TONES = "channel_tones"
 
 
+class AudioChannelLayout(enum.StrEnum):
+    """Supported author-facing audio channel layouts."""
+
+    MONO = "mono"
+    STEREO = "stereo"
+    TWO_ONE = "2.1"
+    FIVE_ONE = "5.1"
+    SEVEN_ONE = "7.1"
+
+
+AUDIO_CHANNEL_COUNTS_BY_NAME: Final[dict[str, int]] = {
+    AudioChannelLayout.MONO.value: 1,
+    AudioChannelLayout.STEREO.value: 2,
+    AudioChannelLayout.TWO_ONE.value: 3,
+    AudioChannelLayout.FIVE_ONE.value: 6,
+    AudioChannelLayout.SEVEN_ONE.value: 8,
+}
+
+
 class SubtitleSource(enum.StrEnum):
     """Synthesis recipe for a subtitle track."""
 
@@ -130,7 +149,7 @@ class AudioTrack(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     source: AudioSource = AudioSource.SINE
     codec: str
-    channels: str
+    channels: AudioChannelLayout
     language: str
 
 
@@ -218,8 +237,8 @@ class ReencodeVideoEvent(_TimelineEventBase):
 class ReencodeAudioEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.REENCODE_AUDIO] = TimelineActionName.REENCODE_AUDIO
     target: str
-    from_channels: str
-    to_channels: str
+    from_channels: AudioChannelLayout
+    to_channels: AudioChannelLayout
 
 
 class CreateSidecarEvent(_TimelineEventBase):
@@ -355,7 +374,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[5]
+    schema_version: Literal[6]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

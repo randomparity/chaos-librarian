@@ -1,4 +1,4 @@
-schema_version: 5
+schema_version: 6
 scenario_id: static-library
 seed: 1
 duration_scale: short

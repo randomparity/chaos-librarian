@@ -119,6 +119,18 @@
       "title": "Asset",
       "type": "object"
     },
+    "AudioChannelLayout": {
+      "description": "Supported author-facing audio channel layouts.",
+      "enum": [
+        "mono",
+        "stereo",
+        "2.1",
+        "5.1",
+        "7.1"
+      ],
+      "title": "AudioChannelLayout",
+      "type": "string"
+    },
     "AudioSource": {
       "description": "Synthesis recipe for an audio stream.",
       "enum": [
@@ -133,8 +145,7 @@
       "additionalProperties": false,
       "properties": {
         "channels": {
-          "title": "Channels",
-          "type": "string"
+          "$ref": "#/$defs/AudioChannelLayout"
         },
         "codec": {
           "title": "Codec",
@@ -520,8 +531,7 @@
           "type": "string"
         },
         "from_channels": {
-          "title": "From Channels",
-          "type": "string"
+          "$ref": "#/$defs/AudioChannelLayout"
         },
         "id": {
           "title": "Id",
@@ -532,8 +542,7 @@
           "type": "string"
         },
         "to_channels": {
-          "title": "To Channels",
-          "type": "string"
+          "$ref": "#/$defs/AudioChannelLayout"
         }
       },
       "required": [
@@ -953,7 +962,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 5,
+      "const": 6,
       "title": "Schema Version",
       "type": "integer"
     },

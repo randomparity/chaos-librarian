@@ -30,8 +30,8 @@ def test_namespace_uuid_is_v5() -> None:
     assert CHAOS_LIBRARIAN_NAMESPACE_UUID.version == 5
 
 
-def test_scenario_schema_version_bumped_to_5():
-    assert SCENARIO_SCHEMA_VERSION == 5
+def test_scenario_schema_version_bumped_to_6():
+    assert SCENARIO_SCHEMA_VERSION == 6
 
 
 def test_manifest_schema_version_bumped_to_4():
