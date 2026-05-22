@@ -12,6 +12,7 @@ from chaos_librarian.contract.validation import (
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     ContainmentViolationError,
+    CorruptionActionError,
     FilesystemActionError,
     MaterializationError,
     MediaActionError,
@@ -33,6 +34,7 @@ def test_every_subclass_carries_an_error_code():
         ToolFailedError,
         ProbeParseError,
         FilesystemActionError,
+        CorruptionActionError,
         ContainmentViolationError,
         CapabilityGateError,
         ScenarioValidationError,
@@ -181,3 +183,22 @@ def test_media_action_error_subclass_of_materialization_error():
         cause=RuntimeError("y"),
     )
     assert isinstance(err, MaterializationError)
+
+
+def test_corruption_action_error_payload_carries_event_action() -> None:
+    cause = OSError(5, "Input/output error")
+    err = CorruptionActionError(
+        "corruption failed for event corrupt_header_001",
+        event_id="corrupt_header_001",
+        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        cause=cause,
+        asset_id="asset_main",
+    )
+
+    assert err.error_code == "E_MATERIALIZE_CORRUPTION_FAILED"
+    assert err.event_id == "corrupt_header_001"
+    assert err.action is TimelineActionName.CORRUPT_CONTAINER_HEADER
+    assert err.cause is cause
+    assert err.asset_id == "asset_main"
+    assert err.payload["event_id"] == "corrupt_header_001"
+    assert err.payload["action"] == "corrupt_container_header"

@@ -12,6 +12,7 @@ from chaos_librarian.materializer.capabilities import (
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     ContainmentViolationError,
+    CorruptionActionError,
     FilesystemActionError,
     MaterializationError,
     MediaActionError,
@@ -33,6 +34,7 @@ from chaos_librarian.materializer.wall_clock import (
 __all__ = [
     "CapabilityGateError",
     "ContainmentViolationError",
+    "CorruptionActionError",
     "FilesystemActionError",
     "MaterializationError",
     "MaterializeArtifacts",
