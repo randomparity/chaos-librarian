@@ -12,6 +12,7 @@ import pytest
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.materializer.preflight import (
     SUPPORTED_S6_ACTIONS,
+    SUPPORTED_S10_ACTIONS,
     preflight_timeline,
 )
 
@@ -36,7 +37,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 6,
+            "schema_version": 7,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",
@@ -141,3 +142,15 @@ def test_preflight_timeline_accepts_sprint_7_actions(
     stdlib dispatchers can execute it."""
     scenario = _scenario_with_timeline([(action_name, "asset_hd_main", extra_fields)])
     preflight_timeline(scenario)  # should not raise
+
+
+def test_preflight_accepts_corrupt_container_header() -> None:
+    scenario = _scenario_with_timeline(
+        [("corrupt_container_header", "asset_hd_main", {"bytes": 64})]
+    )
+
+    preflight_timeline(scenario)
+
+
+def test_supported_s10_actions_exported_from_preflight() -> None:
+    assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
