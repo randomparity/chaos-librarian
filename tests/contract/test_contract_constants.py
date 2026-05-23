@@ -48,8 +48,8 @@ def test_asset_report_schema_version_bumped_to_5():
     assert ASSET_REPORT_SCHEMA_VERSION == 5
 
 
-def test_materialization_schema_version_bumped_to_7():
-    assert MATERIALIZATION_SCHEMA_VERSION == 7
+def test_materialization_schema_version_bumped_to_8():
+    assert MATERIALIZATION_SCHEMA_VERSION == 8
 
 
 def test_capabilities_schema_version_bumped_to_2() -> None:

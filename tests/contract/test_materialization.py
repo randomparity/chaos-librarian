@@ -28,7 +28,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 
 
 def _source_evidence() -> ContentSourceEvidence:
@@ -137,8 +137,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_seven() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 7
+def test_materialization_schema_version_is_eight() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 8
 
 
 def test_materialization_report_run_timing_defaults() -> None:
@@ -154,7 +154,7 @@ def test_materialization_report_run_timing_defaults() -> None:
 
 def test_materialization_report_accepts_run_timing() -> None:
     report = _minimal_report(
-        schema_version=7,
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
         requested_duration_ns=90_000_000_000,
         actual_duration_ns=90_123_456_789,
         speed_multiplier="10",
@@ -300,6 +300,54 @@ def test_materialization_report_carries_media_actions():
     )
     assert report.media_actions == []
     assert report.schema_version == MATERIALIZATION_SCHEMA_VERSION
+
+
+def test_network_lag_action_round_trip() -> None:
+    action = materialization_contract.NetworkLagAction(
+        event_id="lag_start_001",
+        commit_event_id="lag_commit_001",
+        effect=NetworkLagEffect.DELAYED_RENAME,
+        target_ref="asset_main",
+        after_event_id="rename_001",
+        logical_start_ns=10_000_000_000,
+        logical_commit_ns=12_000_000_000,
+        requested_duration_ns=2_000_000_000,
+        actual_duration_ns=200_000_000,
+        from_path="library/movies-hd/asset_main.mkv",
+        to_path="movies-hd/renamed.mkv",
+        provider="stdlib-local",
+        enforced=True,
+    )
+
+    loaded = materialization_contract.NetworkLagAction.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+    assert loaded.effect.value == "delayed_rename"
+
+
+def test_materialization_report_carries_network_lag_actions() -> None:
+    report = _minimal_report(
+        network_lag_actions=[
+            {
+                "event_id": "lag_start_001",
+                "commit_event_id": "lag_commit_001",
+                "effect": "held_handle",
+                "target_ref": "asset_main",
+                "after_event_id": "metadata_001",
+                "logical_start_ns": 1,
+                "logical_commit_ns": 2,
+                "requested_duration_ns": 1,
+                "actual_duration_ns": None,
+                "from_path": "library/movies-hd/asset_main.mkv",
+                "to_path": None,
+                "provider": "stdlib-local",
+                "enforced": False,
+            }
+        ]
+    )
+
+    assert len(report.network_lag_actions) == 1
+    assert report.network_lag_actions[0].effect.value == "held_handle"
 
 
 def test_materialization_report_carries_content_source_evidence() -> None:

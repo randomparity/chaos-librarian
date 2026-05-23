@@ -52,6 +52,11 @@ class WorldState:
     # Maps slow_copy_start event_id → (location_id, final_path). Drained on commit.
     pending_slow_copies: dict[str, tuple[str, str]] = field(default_factory=dict)
 
+    # Journal-derived evidence used by later multi-phase events. These maps are
+    # not serialized into the manifest; they only support same-run handlers.
+    event_state_deltas: dict[str, dict[str, object]] = field(default_factory=dict)
+    pending_network_lags: dict[str, dict[str, object]] = field(default_factory=dict)
+
     # Sprint 6 additions: populated once in ``build_initial_state`` from
     # ``scenario.library`` so the archive_file / move_between_roots handlers
     # can resolve a root id or compute an asset's archive destination

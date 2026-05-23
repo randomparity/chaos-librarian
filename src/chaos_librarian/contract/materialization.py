@@ -1,4 +1,4 @@
-"""Materialization report schema (v7).
+"""Materialization report schema (v8).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 
 
 class Outcome(enum.StrEnum):
@@ -181,12 +181,32 @@ class CorruptionAction(BaseModel):
     duration_ns: int
 
 
+class NetworkLagAction(BaseModel):
+    """One watcher-visible network filesystem lag audit record."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    commit_event_id: str
+    effect: NetworkLagEffect
+    target_ref: str
+    after_event_id: str
+    logical_start_ns: int
+    logical_commit_ns: int
+    requested_duration_ns: int
+    actual_duration_ns: int | None = None
+    from_path: str | None = None
+    to_path: str | None = None
+    provider: str
+    enforced: bool
+
+
 class MaterializationReport(BaseModel):
     """Top-level ``materialization.json`` body."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[7]
+    schema_version: Literal[8]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -200,6 +220,7 @@ class MaterializationReport(BaseModel):
     filesystem_actions: list[FilesystemAction] = Field(default_factory=list)
     media_actions: list[MediaAction] = Field(default_factory=list)
     corruption_actions: list[CorruptionAction] = Field(default_factory=list)
+    network_lag_actions: list[NetworkLagAction] = Field(default_factory=list)
     requested_duration_ns: int | None = None
     actual_duration_ns: int | None = None
     speed_multiplier: str | None = None

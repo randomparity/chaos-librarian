@@ -530,6 +530,111 @@
       "title": "MediaAction",
       "type": "object"
     },
+    "NetworkLagAction": {
+      "additionalProperties": false,
+      "description": "One watcher-visible network filesystem lag audit record.",
+      "properties": {
+        "actual_duration_ns": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Actual Duration Ns"
+        },
+        "after_event_id": {
+          "title": "After Event Id",
+          "type": "string"
+        },
+        "commit_event_id": {
+          "title": "Commit Event Id",
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/$defs/NetworkLagEffect"
+        },
+        "enforced": {
+          "title": "Enforced",
+          "type": "boolean"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "from_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "From Path"
+        },
+        "logical_commit_ns": {
+          "title": "Logical Commit Ns",
+          "type": "integer"
+        },
+        "logical_start_ns": {
+          "title": "Logical Start Ns",
+          "type": "integer"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "requested_duration_ns": {
+          "title": "Requested Duration Ns",
+          "type": "integer"
+        },
+        "target_ref": {
+          "title": "Target Ref",
+          "type": "string"
+        },
+        "to_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Path"
+        }
+      },
+      "required": [
+        "event_id",
+        "commit_event_id",
+        "effect",
+        "target_ref",
+        "after_event_id",
+        "logical_start_ns",
+        "logical_commit_ns",
+        "requested_duration_ns",
+        "provider",
+        "enforced"
+      ],
+      "title": "NetworkLagAction",
+      "type": "object"
+    },
+    "NetworkLagEffect": {
+      "description": "Watcher-visible filesystem lag artifact requested by a lag window.",
+      "enum": [
+        "delayed_visibility",
+        "delayed_rename",
+        "held_handle"
+      ],
+      "title": "NetworkLagEffect",
+      "type": "string"
+    },
     "Outcome": {
       "description": "High-level materialize result.\n\n``unsupported`` covers both timeline-rejection and matrix-rejection.\n``tool_failed`` covers both ffmpeg subprocess errors and ffprobe parse\nfailures.",
       "enum": [
@@ -728,6 +833,13 @@
       "title": "Media Actions",
       "type": "array"
     },
+    "network_lag_actions": {
+      "items": {
+        "$ref": "#/$defs/NetworkLagAction"
+      },
+      "title": "Network Lag Actions",
+      "type": "array"
+    },
     "outcome": {
       "$ref": "#/$defs/Outcome"
     },
@@ -758,7 +870,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 7,
+      "const": 8,
       "title": "Schema Version",
       "type": "integer"
     },

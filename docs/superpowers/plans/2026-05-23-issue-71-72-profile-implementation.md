@@ -107,16 +107,16 @@ Modify:
 
 ## Task 4: Planning And Audit Contract
 
-- [ ] Add engine tests showing lag start emits `phase=started`, lag commit emits
+- [x] Add engine tests showing lag start emits `phase=started`, lag commit emits
   `phase=committed`, and both carry effect/after/path timing evidence.
-- [ ] Implement plan-only handlers that do not alter logical manifest state
+- [x] Implement plan-only handlers that do not alter logical manifest state
   beyond the referenced mutation; lag entries are evidence around the referenced
   disk effect.
-- [ ] Add `NetworkLagAction` to `MaterializationReport` and
+- [x] Add `NetworkLagAction` to `MaterializationReport` and
   `network_lag_actions: list[NetworkLagAction]`.
-- [ ] Bump `MATERIALIZATION_SCHEMA_VERSION` and
+- [x] Bump `MATERIALIZATION_SCHEMA_VERSION` and
   `MaterializationReport.schema_version` from `7` to `8`; update tests.
-- [ ] Run:
+- [x] Run:
   `uv run pytest tests/engine/test_events_network_lag.py tests/contract/test_materialization.py -q --no-cov`.
 
 ## Task 5: Runtime Behavior
