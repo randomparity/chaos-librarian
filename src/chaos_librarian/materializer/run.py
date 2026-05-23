@@ -192,6 +192,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     except (ToolFailedError, ProbeParseError) as exc:
         if isinstance(exc, ToolFailedError):
             invocations.append(exc.invocation)
+        content_sources.extend(exc.content_sources)
         finalize_failure(
             ctx,
             exc,

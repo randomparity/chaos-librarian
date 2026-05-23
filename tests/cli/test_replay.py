@@ -606,6 +606,26 @@ def test_compare_run_replay_ignores_corruption_duration_ns(tmp_path: Path) -> No
     assert diff.is_clean()
 
 
+def test_compare_run_replay_compares_replay_content_sources(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_replay(right, "content_sources", [_run_compare_source_evidence()])
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["replay.json"]
+
+
+def test_compare_run_replay_compares_materialization_content_sources(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(right, "content_sources", [_run_compare_source_evidence()])
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
 def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
     left = _write_run_compare_fixture(
         tmp_path / "left",
@@ -821,6 +841,17 @@ def _write_run_compare_fixture(
     return root
 
 
+def _run_compare_source_evidence() -> dict[str, object]:
+    return {
+        "asset_id": "asset_main",
+        "track_kind": "video",
+        "source": "color_bars",
+        "provider": "builtin-lavfi",
+        "recipe_digest": "sha256:" + "1" * 64,
+        "cache_disposition": "not_cacheable",
+    }
+
+
 def _write_asset_report(root: Path, *, content_hash: str) -> None:
     reports_dir = root / "reports" / "assets"
     reports_dir.mkdir(parents=True)
@@ -832,6 +863,13 @@ def _write_asset_report(root: Path, *, content_hash: str) -> None:
 
 def _update_materialization(root: Path, field: str, value: object) -> None:
     path = root / "materialization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _update_replay(root: Path, field: str, value: object) -> None:
+    path = root / "replay.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload[field] = value
     path.write_text(json.dumps(payload), encoding="utf-8")

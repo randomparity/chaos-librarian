@@ -35,6 +35,7 @@ _RUN_REPLAY_COMPARE_KEYS = frozenset(
         "applied_events",
         "journal_digest",
         "execution_mode",
+        "content_sources",
     }
 )
 
@@ -243,6 +244,7 @@ def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]
     return {
         "outcome": data_obj.get("outcome"),
         "execution_mode": data_obj.get("execution_mode"),
+        "content_sources": _list_or_empty(data_obj.get("content_sources")),
         "materialized": _list_or_empty(data_obj.get("materialized")),
         "failures": _list_or_empty(data_obj.get("failures")),
         "filesystem_actions": _normalize_action_list(data_obj.get("filesystem_actions")),

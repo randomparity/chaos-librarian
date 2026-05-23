@@ -279,6 +279,12 @@ def test_orchestrator_records_ffmpeg_failure_and_wipes_library(
     assert list((out / "library").iterdir()) == []
     materialization = (out / "materialization.json").read_text()
     assert '"outcome": "tool_failed"' in materialization
+    report_payload = json.loads(materialization)
+    replay_payload = json.loads((out / "replay.json").read_text())
+    expected_sources = ["color_bars", "sine"]
+    assert [item["source"] for item in report_payload["content_sources"]] == expected_sources
+    assert [item["source"] for item in replay_payload["content_sources"]] == expected_sources
+    assert {item["provider"] for item in report_payload["content_sources"]} == {"builtin-lavfi"}
 
 
 def test_orchestrator_success_path_populates_manifest(

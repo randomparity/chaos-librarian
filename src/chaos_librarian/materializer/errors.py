@@ -8,6 +8,7 @@ stdout JSON.
 
 from __future__ import annotations
 
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
@@ -29,12 +30,14 @@ class MaterializationError(ChaosLibrarianError):
         asset_id: str | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
+        content_sources: tuple[ContentSourceEvidence, ...] = (),
     ) -> None:
         super().__init__(message)
         self.message = message
         self.asset_id = asset_id
         self.field = field
         self.payload: dict[str, object] = dict(payload or {})
+        self.content_sources = content_sources
 
 
 class TimelineUnsupportedError(MaterializationError):
@@ -62,12 +65,14 @@ class ToolFailedError(MaterializationError):
         asset_id: str | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
+        content_sources: tuple[ContentSourceEvidence, ...] = (),
     ) -> None:
         super().__init__(
             message,
             asset_id=asset_id,
             field=field,
             payload=payload,
+            content_sources=content_sources,
         )
         self.invocation = invocation
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,12 +21,25 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.persistence import finalize as finalize_mod
+from chaos_librarian.materializer.persistence import reports as reports_mod
 from chaos_librarian.materializer.persistence._context import RunContext
 from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
+
+
+def test_report_and_finalize_builders_require_explicit_content_sources() -> None:
+    for func in (
+        reports_mod.build_report,
+        reports_mod.build_replay_bundle,
+        finalize_mod.finalize_success,
+        finalize_mod.finalize_failure,
+        finalize_mod.finalize_failure_phase_b,
+    ):
+        parameter = inspect.signature(func).parameters["content_sources"]
+        assert parameter.default is inspect.Signature.empty
 
 
 def _caps() -> Capabilities:
@@ -91,7 +105,15 @@ def test_finalize_success_writes_complete_metadata(
         )
     ]
 
-    artifacts = finalize_mod.finalize_success(ctx, [invocation], materialized, [], [], [])
+    artifacts = finalize_mod.finalize_success(
+        ctx,
+        [invocation],
+        materialized,
+        [],
+        [],
+        [],
+        content_sources=[],
+    )
 
     assert len(captured) == 1
     out_dir, metadata, reports = captured[0]
@@ -132,7 +154,17 @@ def test_finalize_failure_phase_b_records_failure_metadata(
         asset_id="asset_main",
     )
 
-    finalize_mod.finalize_failure_phase_b(ctx, exc, Outcome.FS_FAILED, [], [], [action], [], [])
+    finalize_mod.finalize_failure_phase_b(
+        ctx,
+        exc,
+        Outcome.FS_FAILED,
+        [],
+        [],
+        [action],
+        [],
+        [],
+        content_sources=[],
+    )
 
     assert len(captured) == 1
     out_dir, metadata = captured[0]

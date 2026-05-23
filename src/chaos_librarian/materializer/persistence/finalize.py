@@ -72,7 +72,7 @@ def finalize_success(
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
     *,
-    content_sources: list[ContentSourceEvidence] | None = None,
+    content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
     finished_at = datetime.now(UTC)
@@ -126,7 +126,7 @@ def finalize_failure(
     media_actions: list[MediaAction] | None = None,
     corruption_actions: list[CorruptionAction] | None = None,
     *,
-    content_sources: list[ContentSourceEvidence] | None = None,
+    content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
@@ -190,7 +190,7 @@ def finalize_failure_phase_b(
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
     *,
-    content_sources: list[ContentSourceEvidence] | None = None,
+    content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Caught phase-B failure path: phase-B outcome set by caller; library/ wiped.
 

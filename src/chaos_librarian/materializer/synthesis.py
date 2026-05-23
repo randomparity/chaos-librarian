@@ -26,7 +26,11 @@ from chaos_librarian.materializer.content_sources import (
     resolve_audio_source,
     resolve_video_source,
 )
-from chaos_librarian.materializer.errors import ToolFailedError, UnsupportedMaterializationError
+from chaos_librarian.materializer.errors import (
+    ProbeParseError,
+    ToolFailedError,
+    UnsupportedMaterializationError,
+)
 from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
@@ -138,9 +142,14 @@ def materialize_one_asset(
                 "exit_code": invocation.exit_code,
             },
             invocation=invocation,
+            content_sources=tuple(content_sources),
         )
     sidecar_hashes = write_sidecars(asset, library_dir, seed, skip_languages=skip_languages)
-    probed = probe_file(output_path)
+    try:
+        probed = probe_file(output_path)
+    except ProbeParseError as exc:
+        exc.content_sources = tuple(content_sources)
+        raise
     with output_path.open("rb") as fh:
         content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
     materialized_asset = MaterializedAsset(
