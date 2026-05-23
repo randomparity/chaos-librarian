@@ -11,6 +11,7 @@ import pytest
 from pydantic import TypeAdapter
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import MaterializedAsset, MediaAction
@@ -53,11 +54,12 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 @pytest.fixture(autouse=True)
 def fake_tool_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,

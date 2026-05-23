@@ -153,6 +153,7 @@ class TestInspect:
             execution_mode=ExecutionMode.RUN,
             created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
             toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+            content_sources=[],
         )
         (out / "replay.json").write_text(canonical_json(run_bundle), encoding="utf-8")
         (out / "journal.jsonl").write_bytes(serialize_journal_bytes(live_artifacts.journal))

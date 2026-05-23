@@ -16,6 +16,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     MaterializedAsset,
@@ -77,6 +78,7 @@ def _make_wall_clock_fixture(
         execution_mode=ExecutionMode.RUN,
         created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -107,11 +109,12 @@ def _make_wall_clock_fixture(
 
 def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,
@@ -684,7 +687,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     bundle_path.write_text(
         json.dumps(
             {
-                "schema_version": 5,
+                "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
                 "chaos_librarian_version": "0.1.0",
                 "scenario": "schema_version: 7\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",
@@ -695,6 +698,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
                 "execution_mode": "materialize",
                 "created_at": "2026-05-18T00:00:00Z",
                 "toolchain": {"ffmpeg": "7.1.1"},
+                "content_sources": [],
             }
         )
     )

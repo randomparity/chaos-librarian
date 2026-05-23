@@ -1,5 +1,127 @@
 {
   "$defs": {
+    "CacheDisposition": {
+      "description": "How a provider used the content-source cache for one resolution.",
+      "enum": [
+        "not_cacheable",
+        "hit",
+        "miss_stored"
+      ],
+      "title": "CacheDisposition",
+      "type": "string"
+    },
+    "ContentSourceEvidence": {
+      "additionalProperties": false,
+      "description": "Replay evidence for one resolved content source.",
+      "properties": {
+        "asset_id": {
+          "title": "Asset Id",
+          "type": "string"
+        },
+        "cache_disposition": {
+          "$ref": "#/$defs/CacheDisposition"
+        },
+        "cache_key": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Key"
+        },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
+        "license": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "License"
+        },
+        "origin_uri": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Origin Uri"
+        },
+        "provider": {
+          "title": "Provider",
+          "type": "string"
+        },
+        "recipe_digest": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Recipe Digest",
+          "type": "string"
+        },
+        "source": {
+          "title": "Source",
+          "type": "string"
+        },
+        "track_index": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Index"
+        },
+        "track_kind": {
+          "$ref": "#/$defs/ContentTrackKind"
+        }
+      },
+      "required": [
+        "asset_id",
+        "track_kind",
+        "source",
+        "provider",
+        "recipe_digest",
+        "cache_disposition"
+      ],
+      "title": "ContentSourceEvidence",
+      "type": "object"
+    },
+    "ContentTrackKind": {
+      "description": "Track family a content source resolved.",
+      "enum": [
+        "video",
+        "audio",
+        "subtitle"
+      ],
+      "title": "ContentTrackKind",
+      "type": "string"
+    },
     "CorruptionAction": {
       "additionalProperties": false,
       "description": "One phase-B intentional corruption audit record.",
@@ -546,6 +668,13 @@
       "default": null,
       "title": "Actual Duration Ns"
     },
+    "content_sources": {
+      "items": {
+        "$ref": "#/$defs/ContentSourceEvidence"
+      },
+      "title": "Content Sources",
+      "type": "array"
+    },
     "corruption_actions": {
       "items": {
         "$ref": "#/$defs/CorruptionAction"
@@ -627,7 +756,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 6,
+      "const": 7,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -659,7 +788,8 @@
     "platform",
     "started_at",
     "finished_at",
-    "toolchain"
+    "toolchain",
+    "content_sources"
   ],
   "title": "MaterializationReport",
   "type": "object"

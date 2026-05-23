@@ -9,7 +9,9 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian import __version__ as _chaos_librarian_version
+from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import (
     Manifest,
@@ -146,7 +148,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         current_manifest=current,
         journal=(),
         replay_bundle=PlanOnlyReplayBundle(
-            schema_version=5,
+            schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
             scenario="schema_version: 7\n",
             run_id=_RUN_ID,
@@ -284,11 +286,12 @@ def _patch_successful_synthesis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _fake_capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,

@@ -21,6 +21,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import Outcome, ToolInvocation
 from chaos_librarian.materializer.errors import MediaActionError
@@ -74,11 +75,12 @@ def _write_scenario(tmp_path: Path, body: str) -> Path:
 
 def _fake_capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,

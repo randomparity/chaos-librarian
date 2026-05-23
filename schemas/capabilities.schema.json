@@ -1,5 +1,105 @@
 {
   "$defs": {
+    "ContentSourceCapabilities": {
+      "additionalProperties": false,
+      "description": "All registered content-source providers visible to capabilities.",
+      "properties": {
+        "providers": {
+          "items": {
+            "$ref": "#/$defs/ContentSourceProviderCapability"
+          },
+          "title": "Providers",
+          "type": "array"
+        }
+      },
+      "title": "ContentSourceCapabilities",
+      "type": "object"
+    },
+    "ContentSourceProviderCapability": {
+      "additionalProperties": false,
+      "description": "Capability report for one registered content-source provider.",
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "cache_dir": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Dir"
+        },
+        "cache_writable": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cache Writable"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "required_tool": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Tool"
+        },
+        "requires_cache": {
+          "title": "Requires Cache",
+          "type": "boolean"
+        },
+        "requires_network": {
+          "title": "Requires Network",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "available",
+        "requires_network",
+        "requires_cache"
+      ],
+      "title": "ContentSourceProviderCapability",
+      "type": "object"
+    },
     "ReadyFor": {
       "additionalProperties": false,
       "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nThe current CLI only consults ``materialize_static``. The other two\nflags are populated so adapter authors can skip the corresponding\nmutation-mode tests cleanly.",
@@ -73,6 +173,9 @@
   "additionalProperties": false,
   "description": "Full ``capabilities --json`` payload.",
   "properties": {
+    "content_sources": {
+      "$ref": "#/$defs/ContentSourceCapabilities"
+    },
     "ffmpeg": {
       "$ref": "#/$defs/ToolStatus"
     },
@@ -90,7 +193,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
     }
@@ -101,6 +204,7 @@
     "ffprobe",
     "mkvtoolnix",
     "platform",
+    "content_sources",
     "ready_for"
   ],
   "title": "Capabilities",
