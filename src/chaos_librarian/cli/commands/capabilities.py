@@ -44,3 +44,18 @@ def _render_capabilities_human(caps: Capabilities) -> None:
         f"  materialize_filesystem_mutations: {caps.ready_for.materialize_filesystem_mutations}"
     )
     typer.echo(f"  materialize_media_mutations:      {caps.ready_for.materialize_media_mutations}")
+    typer.echo("content_sources:")
+    for provider in caps.content_sources.providers:
+        status = "OK" if provider.available else "UNAVAILABLE"
+        suffix = f" ({provider.reason})" if provider.reason else ""
+        typer.echo(f"  {provider.name:<16} [{status}]{suffix}")
+        typer.echo(f"    requires_network: {provider.requires_network}")
+        typer.echo(f"    requires_cache:   {provider.requires_cache}")
+        if provider.required_tool is not None:
+            typer.echo(f"    required_tool:    {provider.required_tool}")
+        if provider.cache_dir is not None:
+            typer.echo(f"    cache_dir:        {provider.cache_dir}")
+        if provider.cache_writable is not None:
+            typer.echo(f"    cache_writable:   {provider.cache_writable}")
+        if provider.sources:
+            typer.echo(f"    sources:          {', '.join(provider.sources)}")

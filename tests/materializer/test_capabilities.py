@@ -100,6 +100,10 @@ def test_detect_capabilities_all_present_above_minimum(
     assert caps.mkvtoolnix.meets_minimum
     assert caps.ready_for.materialize_static
     assert caps.ready_for.materialize_media_mutations
+    provider = caps.content_sources.providers[0]
+    assert provider.name == "builtin-lavfi"
+    assert provider.available
+    assert "video:color_bars" in provider.sources
 
 
 def test_detect_capabilities_ffmpeg_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,6 +121,9 @@ def test_detect_capabilities_ffmpeg_below_minimum(monkeypatch: pytest.MonkeyPatc
     assert caps.ffmpeg.found
     assert not caps.ffmpeg.meets_minimum
     assert not caps.ready_for.materialize_static
+    provider = caps.content_sources.providers[0]
+    assert not provider.available
+    assert provider.reason == "required tool unavailable: ffmpeg"
 
 
 def test_detect_capabilities_mkvtoolnix_missing_static_still_ready(
@@ -154,6 +161,28 @@ def test_detect_capabilities_subprocess_timeout(monkeypatch: pytest.MonkeyPatch)
     caps = detect_capabilities()
     assert not caps.ffmpeg.meets_minimum
     assert caps.ffmpeg.version is None
+    provider = caps.content_sources.providers[0]
+    assert not provider.available
+    assert provider.reason == "required tool unavailable: ffmpeg"
+
+
+def test_detect_capabilities_ffmpeg_missing_marks_content_sources_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which({"ffprobe": "/usr/bin/ffprobe"}),
+    )
+    monkeypatch.setattr(
+        cap_mod.subprocess,
+        "run",
+        _stub_subprocess_run({"ffprobe": OK_FFPROBE}),
+    )
+    caps = detect_capabilities()
+    provider = caps.content_sources.providers[0]
+    assert not provider.available
+    assert provider.reason == "required tool unavailable: ffmpeg"
 
 
 def test_assert_capable_raises_on_regression() -> None:

@@ -13,7 +13,10 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
-from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.content_sources import (
+    ContentSourceCapabilities,
+    ContentSourceProviderCapability,
+)
 
 # Patch detect_capabilities at the call site (cli.commands.capabilities)
 # after the cli/app.py split (#23).
@@ -41,7 +44,19 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
         ffprobe=ffprobe,
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test-arch",
-        content_sources=ContentSourceCapabilities(),
+        content_sources=ContentSourceCapabilities(
+            providers=[
+                ContentSourceProviderCapability(
+                    name="builtin-lavfi",
+                    available=all_ok,
+                    requires_network=False,
+                    requires_cache=False,
+                    required_tool="ffmpeg",
+                    reason=None if all_ok else "required tool unavailable: ffmpeg",
+                    sources=("video:color_bars",),
+                )
+            ]
+        ),
         ready_for=ReadyFor(
             materialize_static=all_ok,
             materialize_filesystem_mutations=all_ok,
@@ -73,6 +88,16 @@ def test_capabilities_exit_four_when_ffmpeg_missing(monkeypatch):
     assert payload["ready_for"]["materialize_static"] is False
 
 
+def test_capabilities_json_includes_content_sources(monkeypatch):
+    """WHY: agents need the structured provider list to choose only sources
+    this host can materialize."""
+    monkeypatch.setattr(app_mod, "detect_capabilities", lambda: _caps(all_ok=True))
+    result = runner.invoke(app, ["capabilities", "--json"])
+    assert result.exit_code == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["content_sources"]["providers"][0]["name"] == "builtin-lavfi"
+
+
 def test_capabilities_human_output_formats_each_tool(monkeypatch):
     """WHY: the human output must list every tool the design contract names
     (ffmpeg, ffprobe, mkvtoolnix), so operators reading the terminal can spot
@@ -83,3 +108,13 @@ def test_capabilities_human_output_formats_each_tool(monkeypatch):
     assert "ffmpeg" in result.stdout
     assert "ffprobe" in result.stdout
     assert "mkvtoolnix" in result.stdout
+
+
+def test_capabilities_human_output_formats_content_sources(monkeypatch):
+    """WHY: operators need to see source-provider readiness without switching
+    to the JSON output."""
+    monkeypatch.setattr(app_mod, "detect_capabilities", lambda: _caps(all_ok=True))
+    result = runner.invoke(app, ["capabilities"])
+    assert result.exit_code == 0
+    assert "content_sources:" in result.stdout
+    assert "builtin-lavfi" in result.stdout
