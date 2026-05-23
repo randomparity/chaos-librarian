@@ -5,7 +5,7 @@ application database details.
 
 ## Scanner Final-State
 
-1. Run `chaos-librarian plan scenario.yaml --out run-dir`.
+1. Run `chaos-librarian materialize scenario.yaml --out run-dir`.
 2. Scan `run-dir/library/`.
 3. Export `observed-state.json` with `observed_ref` and `current_path` for each
    observed asset.

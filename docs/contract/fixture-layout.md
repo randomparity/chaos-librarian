@@ -32,18 +32,11 @@ after symlink/`..` normalization. Violations fail with exit code `7`.
 
 ## Plan-Only Subset
 
-Plan-only runs (Sprint 3) write a strict subset of the full layout:
+Plan-only runs write every oracle artifact except `materialization.json` and
+`library/`. The `reports/` tree is part of plan output and is updated by
+`step`.
 
-- `.chaos-librarian-run` (sentinel)
-- `scenario.yaml`
-- `replay.json`
-- `manifest.initial.json`
-- `manifest.current.json`
-- `journal.jsonl`
-- `validation.json`
-
-`materialization.json`, `library/`, and `reports/` are written by later
-sprints (5 / 6+ / 4 respectively).
+`reports/` are written by plan, materialize, and run outputs.
 
 ## Malformed-Media Fixtures
 
