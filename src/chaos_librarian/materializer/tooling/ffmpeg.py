@@ -121,6 +121,14 @@ def _audio_input_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
     return args
 
 
+def _map_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
+    """Argv slice selecting only the resolved video and audio streams."""
+    args = ["-map", "0:v:0"]
+    for index, _audio_input in enumerate(audio_inputs, start=1):
+        args.extend(["-map", f"{index}:a:0"])
+    return args
+
+
 def build_command(
     *,
     video: VideoTrack,
@@ -145,6 +153,7 @@ def build_command(
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
+    argv.extend(_map_args(audio_inputs))
     argv.extend(["-c:v", "libx264", "-preset", "medium"])
     argv.extend(["-c:a", "aac"])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)

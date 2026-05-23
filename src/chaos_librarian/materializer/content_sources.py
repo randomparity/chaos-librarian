@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Final, Protocol
 
@@ -88,6 +88,7 @@ class ContentSourceProvider(Protocol):
 @dataclass(frozen=True, slots=True)
 class _BuiltinLavfiVideoProvider:
     provider_name: str = PROVIDER_NAME
+    source_keys: tuple[VideoSource, ...] = tuple(VIDEO_RECIPES)
 
     def resolve(
         self,
@@ -97,6 +98,7 @@ class _BuiltinLavfiVideoProvider:
     ) -> SourceResolution:
         if not isinstance(source, VideoSource) or source not in VIDEO_RECIPES:
             raise _unsupported_source("video.source", VIDEO_RECIPES)
+        _validate_request_source(field="video.source", expected=source.value, actual=request.source)
         if request.width is None or request.height is None or request.fps is None:
             raise UnsupportedMaterializationError(
                 "video source request requires width, height, and fps",
@@ -117,12 +119,16 @@ class _BuiltinLavfiVideoProvider:
         )
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
-        return _builtin_capability(ffmpeg_available=ffmpeg_available)
+        return _builtin_capability(
+            ffmpeg_available=ffmpeg_available,
+            sources=[f"video:{source.value}" for source in self.source_keys],
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class _BuiltinLavfiAudioProvider:
     provider_name: str = PROVIDER_NAME
+    source_keys: tuple[AudioSource, ...] = tuple(AUDIO_RECIPES)
 
     def resolve(
         self,
@@ -132,6 +138,7 @@ class _BuiltinLavfiAudioProvider:
     ) -> SourceResolution:
         if not isinstance(source, AudioSource) or source not in AUDIO_RECIPES:
             raise _unsupported_source("audio.source", AUDIO_RECIPES)
+        _validate_request_source(field="audio.source", expected=source.value, actual=request.source)
         if request.channels is None:
             raise UnsupportedMaterializationError(
                 "audio source request requires channels",
@@ -150,31 +157,45 @@ class _BuiltinLavfiAudioProvider:
         )
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
-        return _builtin_capability(ffmpeg_available=ffmpeg_available)
+        return _builtin_capability(
+            ffmpeg_available=ffmpeg_available,
+            sources=[f"audio:{source.value}" for source in self.source_keys],
+        )
 
 
 _VIDEO_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiVideoProvider()
 _AUDIO_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiAudioProvider()
+_VIDEO_PROVIDERS: Final[dict[VideoSource, ContentSourceProvider]] = {
+    source: _VIDEO_PROVIDER for source in VIDEO_RECIPES
+}
+_AUDIO_PROVIDERS: Final[dict[AudioSource, ContentSourceProvider]] = {
+    source: _AUDIO_PROVIDER for source in AUDIO_RECIPES
+}
 
 
 def resolve_video_source(source: VideoSource, request: SourceRequest) -> SourceResolution:
     """Resolve a video source through the registered provider."""
-    if source not in VIDEO_RECIPES:
-        raise _unsupported_source("video.source", VIDEO_RECIPES)
-    return _VIDEO_PROVIDER.resolve(source=source, request=request)
+    provider = _VIDEO_PROVIDERS.get(source)
+    if provider is None:
+        raise _unsupported_source("video.source", _VIDEO_PROVIDERS)
+    return provider.resolve(source=source, request=request)
 
 
 def resolve_audio_source(source: AudioSource, request: SourceRequest) -> SourceResolution:
     """Resolve an audio source through the registered provider."""
-    if source not in AUDIO_RECIPES:
-        raise _unsupported_source("audio.source", AUDIO_RECIPES)
-    return _AUDIO_PROVIDER.resolve(source=source, request=request)
+    provider = _AUDIO_PROVIDERS.get(source)
+    if provider is None:
+        raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
+    return provider.resolve(source=source, request=request)
 
 
 def collect_content_source_capabilities(ffmpeg_available: bool) -> ContentSourceCapabilities:
     """Collect content-source capabilities for all registered providers."""
     return ContentSourceCapabilities(
-        providers=[_builtin_capability(ffmpeg_available=ffmpeg_available)],
+        providers=_merge_provider_capabilities(
+            provider.capability(ffmpeg_available=ffmpeg_available)
+            for provider in _registered_providers()
+        ),
     )
 
 
@@ -190,7 +211,11 @@ def _builtin_evidence(request: SourceRequest) -> ContentSourceEvidence:
     )
 
 
-def _builtin_capability(*, ffmpeg_available: bool) -> ContentSourceProviderCapability:
+def _builtin_capability(
+    *,
+    ffmpeg_available: bool,
+    sources: list[str],
+) -> ContentSourceProviderCapability:
     return ContentSourceProviderCapability(
         name=PROVIDER_NAME,
         available=ffmpeg_available,
@@ -198,24 +223,62 @@ def _builtin_capability(*, ffmpeg_available: bool) -> ContentSourceProviderCapab
         requires_cache=False,
         required_tool="ffmpeg",
         reason=None if ffmpeg_available else "required tool unavailable: ffmpeg",
-        sources=_capability_sources(),
+        sources=tuple(sorted(sources)),
     )
 
 
-def _capability_sources() -> tuple[str, ...]:
-    sources = [f"video:{source.value}" for source in VIDEO_RECIPES]
-    sources.extend(f"audio:{source.value}" for source in AUDIO_RECIPES)
-    return tuple(sorted(sources))
+def _registered_providers() -> tuple[ContentSourceProvider, ...]:
+    providers: list[ContentSourceProvider] = []
+    seen: set[int] = set()
+    for provider in (*_VIDEO_PROVIDERS.values(), *_AUDIO_PROVIDERS.values()):
+        provider_id = id(provider)
+        if provider_id in seen:
+            continue
+        providers.append(provider)
+        seen.add(provider_id)
+    return tuple(providers)
+
+
+def _merge_provider_capabilities(
+    capabilities: Iterable[ContentSourceProviderCapability],
+) -> list[ContentSourceProviderCapability]:
+    merged: dict[str, ContentSourceProviderCapability] = {}
+    sources_by_provider: dict[str, set[str]] = {}
+    for capability in capabilities:
+        existing = merged.get(capability.name)
+        if existing is None:
+            merged[capability.name] = capability
+            sources_by_provider[capability.name] = set(capability.sources)
+            continue
+        sources_by_provider[capability.name].update(capability.sources)
+        merged[capability.name] = existing.model_copy(
+            update={
+                "available": existing.available and capability.available,
+                "reason": existing.reason or capability.reason,
+                "sources": tuple(sorted(sources_by_provider[capability.name])),
+            }
+        )
+    return [merged[name] for name in sorted(merged)]
 
 
 def _unsupported_source(
     field: str,
-    supported: dict[VideoSource, VideoRecipe] | dict[AudioSource, AudioRecipe],
+    supported: Iterable[VideoSource | AudioSource],
 ) -> UnsupportedMaterializationError:
     return UnsupportedMaterializationError(
         f"{field} is not supported",
         field=field,
         payload={"supported": sorted(source.value for source in supported)},
+    )
+
+
+def _validate_request_source(*, field: str, expected: str, actual: str) -> None:
+    if actual == expected:
+        return
+    raise UnsupportedMaterializationError(
+        f"{field} request source does not match resolver source",
+        field=field,
+        payload={"expected": expected, "actual": actual},
     )
 
 
