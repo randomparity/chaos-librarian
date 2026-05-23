@@ -82,14 +82,14 @@ Modify:
 
 ## Task 2: Performance Budget Validation
 
-- [ ] Add `E_PROFILE_BUDGET_EXCEEDED`.
-- [ ] Add tests for scenarios that exceed `performance-smoke` asset and timeline
+- [x] Add `E_PROFILE_BUDGET_EXCEEDED`.
+- [x] Add tests for scenarios that exceed `performance-smoke` asset and timeline
   ceilings and for a scenario that stays within the ceilings.
-- [ ] Implement static count budgets for assets, works, variants, bundles,
+- [x] Implement static count budgets for assets, works, variants, bundles,
   sidecars, and timeline events. Skip materialized-byte, wall-clock-duration,
   and free-disk budgets until profile fixtures exist because those require run
   artifacts or CI infrastructure.
-- [ ] Run:
+- [x] Run:
   `uv run pytest tests/validation/rules/test_profile_budgets.py -q --no-cov`.
 
 ## Task 3: Network Lag Contract And Validation

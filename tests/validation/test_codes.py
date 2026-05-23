@@ -115,6 +115,7 @@ class TestCodeConstants:
             "E_SIDECAR_KIND_MISMATCH",
             "E_SIDECAR_PATH_COLLISION",
             "E_PROFILE_REQUIRED",
+            "E_PROFILE_BUDGET_EXCEEDED",
         ],
     )
     def test_constant_defined(self, name: str) -> None:
