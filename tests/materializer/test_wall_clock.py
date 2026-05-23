@@ -459,6 +459,65 @@ def test_delayed_rename_keeps_old_path_visible_until_lag_commit(
     assert artifacts.materialization_report.network_lag_actions[0].enforced is True
 
 
+def test_delayed_visibility_keeps_restored_path_absent_until_lag_commit(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: delete_001
+                at: 0ns
+                action: delete_file
+                target: asset_main
+              - id: add_001
+                at: 1ns
+                action: add_file
+                target: asset_main
+                to: movies-hd/restored.mkv
+              - id: lag_start_001
+                at: 1ns
+                action: network_lag_start
+                effect: delayed_visibility
+                target: asset_main
+                after: add_001
+                duration: 10ns
+              - id: lag_commit_001
+                at: 11ns
+                action: network_lag_commit
+                for: lag_start_001
+        """,
+        scenario_id="delayed-visibility",
+        profiles="  - network-fs-lag",
+    )
+    out_dir = tmp_path / "run"
+    restored_path = out_dir / "library" / "movies-hd" / "restored.mkv"
+    observations: list[bool] = []
+
+    def observe_sleep(deadline_ns: int) -> None:
+        if deadline_ns == 11:
+            observations.append(restored_path.exists())
+        fake_clock.sleep_until(deadline_ns)
+
+    monkeypatch.setattr(wall_clock, "_sleep_until", observe_sleep)
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="20ns",
+        speed="1x",
+    )
+
+    assert observations == [False]
+    assert restored_path.read_bytes() == b"asset_main-bytes"
+    action = artifacts.materialization_report.network_lag_actions[0]
+    assert action.effect.value == "delayed_visibility"
+    assert action.from_path is None
+    assert action.to_path == "movies-hd/restored.mkv"
+    assert action.enforced is True
+
+
 def test_mid_network_lag_timeout_executes_commit_and_marks_overrun(
     fake_clock: FakeClock, tmp_path: Path
 ) -> None:
