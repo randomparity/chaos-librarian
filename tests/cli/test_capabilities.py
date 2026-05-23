@@ -118,3 +118,8 @@ def test_capabilities_human_output_formats_content_sources(monkeypatch):
     assert result.exit_code == 0
     assert "content_sources:" in result.stdout
     assert "builtin-lavfi" in result.stdout
+    assert "[OK]" in result.stdout
+    assert "requires_network: False" in result.stdout
+    assert "requires_cache:   False" in result.stdout
+    assert "required_tool:    ffmpeg" in result.stdout
+    assert "sources:          video:color_bars" in result.stdout
