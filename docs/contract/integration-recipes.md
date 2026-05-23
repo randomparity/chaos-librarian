@@ -24,6 +24,31 @@ Use the scanner recipe, but include `content_hash` and `probed` for each asset.
 The adapter compares hashes only when both sides supply them and compares probed
 media only when both sides supply `probed`.
 
+## Duplicate And Variant Pack
+
+Use this pack when a consumer needs duplicate-candidate and variant-topology
+coverage without changing the baseline first-pack fixture:
+
+```bash
+chaos-librarian materialize \
+  tests/fixtures/scenarios/duplicate-variant-expanded.yaml \
+  --out run-duplicate-variant-expanded \
+  --json
+```
+
+Recommended exports:
+
+- Scanner recipe: export every asset with `observed_ref` and `current_path`.
+  Current paths disambiguate the same-label duplicate variants and the duplicate
+  assets inside one bundle.
+- Prober recipe: add `content_hash` and `probed` for each asset. Equal hashes
+  are duplicate-candidate evidence, not a policy command to merge records.
+- Topology recipe: add work, variant, and bundle refs when the consumer tracks
+  them. A pathless topology export can surface the ambiguous `Synthetic Echo`
+  and `Synthetic Pair` keys, but `current_path: null` still means deleted; add
+  paths or hashes before treating the compare result as a clean final-state
+  check.
+
 ## Watcher Identity-History
 
 Export either per-asset `path_history` or global `events` for observed path

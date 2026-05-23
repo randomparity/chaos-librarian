@@ -199,6 +199,15 @@ def test_network_filesystem_lag_profile_policy_docs_are_discoverable() -> None:
     assert "Network Filesystem Lag Profile Testing" in testing
 
 
+def test_duplicate_variant_expansion_pack_docs_are_discoverable() -> None:
+    source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+
+    assert "duplicate-variant-expanded.yaml" in source_design
+    assert "Duplicate And Variant Pack" in integration_recipes
+    assert "pathless topology export can surface the ambiguous" in integration_recipes
+
+
 def test_schema_reference_lists_current_contract_versions() -> None:
     text = _read(DOCS / "contract" / "schema-reference.md")
 
