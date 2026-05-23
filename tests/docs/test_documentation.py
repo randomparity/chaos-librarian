@@ -180,6 +180,24 @@ def test_performance_profile_policy_docs_are_discoverable() -> None:
     assert "Performance Profile Policy" in testing
 
 
+def test_network_filesystem_lag_profile_policy_docs_are_discoverable() -> None:
+    source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+    time_model = _read(DOCS / "contract" / "time-model.md")
+    testing = _read(DOCS / "developer" / "testing.md")
+
+    assert "## Network Filesystem Lag Profile Policy" in source_design
+    assert "`network-fs-lag`" in source_design
+    assert (
+        "Network filesystem lag profile that satisfies "
+        "the Network Filesystem Lag Profile Policy" in source_design
+    )
+    assert "Network Filesystem Lag" in integration_recipes
+    assert "path-state windows" in integration_recipes
+    assert "Lag windows use the same logical clock" in time_model
+    assert "Network Filesystem Lag Profile Testing" in testing
+
+
 def test_schema_reference_lists_current_contract_versions() -> None:
     text = _read(DOCS / "contract" / "schema-reference.md")
 
