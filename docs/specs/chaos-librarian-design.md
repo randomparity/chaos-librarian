@@ -709,6 +709,42 @@ Fast CI may add a `performance-smoke` job only if that job is independently
 selectable. `performance-scale` and `performance-stress` must never run on every
 pull request.
 
+## Network Filesystem Lag Profile Policy
+
+Future network filesystem lag scenarios are reserved for opt-in watcher
+fixtures. The current contract still rejects `network-fs-lag` until a profile
+implementation explicitly adds it.
+
+Reserved label:
+
+- `network-fs-lag`
+
+The profile label permits lag-specific events; it never changes existing
+timeline action behavior by itself. Lag artifacts require explicit
+`network_lag_start` / `network_lag_commit` events so scenario authors can see
+which watcher-visible timing artifact is part of the oracle.
+
+Initial event shape:
+
+- `network_lag_start` fields: `effect`, `target`, `after`, and `duration`.
+- `network_lag_commit` field: `for`.
+- Initial effects: `delayed_visibility`, `delayed_rename`, and `held_handle`.
+- The start event must share the referenced event's `at:` value and immediately
+  follow that event in resolved order, so the wall-clock runner can preflight
+  and intercept the referenced disk effect before it becomes visible.
+
+The lag profile is a wall-clock watcher profile. `run` is the only mode with
+live watcher-facing guarantees; `materialize` rejects lag events as unsupported
+because a batch materialization cannot expose timing windows to an external
+watcher. `plan`, `step`, and run replay may model the logical events and replay
+evidence, but they do not guarantee live visibility.
+
+Watcher guarantees are path-state windows, not low-level OS notification
+ordering. Delayed visibility keeps new paths absent or existing paths at stale
+bytes until commit. Delayed rename keeps the old path visible and the new path
+absent until commit. Held-handle tests may assert blocking behavior only when
+the provider reports that the host enforced the handle.
+
 ## Mutation Model
 
 Mutations are explicit timeline actions.
@@ -1049,7 +1085,7 @@ Deliverables (may split into multiple PRs):
   capability reporting, and replay evidence are implemented; actual downloads
   and TTS providers remain deferred until source-specific issues.
 - Larger performance profiles that satisfy the Performance Profile Policy
-- Network filesystem lag profile
+- Network filesystem lag profile that satisfies the Network Filesystem Lag Profile Policy
 - Duplicate/variant expansion pack
 
 Exit criteria:

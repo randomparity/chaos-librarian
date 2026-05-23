@@ -37,6 +37,14 @@ This mode still checks final state, then verifies durable identity through
 path-affecting lifecycles such as moves, renames, slow copies, and delete/add
 restores.
 
+## Network Filesystem Lag
+
+The future `network-fs-lag` profile is for `chaos-librarian run`, not
+`materialize`. Lag fixtures describe explicit lag events and produce path-state windows.
+Those windows include delayed visibility, delayed rename, and held-handle
+evidence. Consumers should compare watcher observations to those recorded
+windows, not to guessed sleeps or low-level OS notification ordering.
+
 ## Daemon Churn
 
 For daemon-style churn tests, use `chaos-librarian run` fixtures when the daemon

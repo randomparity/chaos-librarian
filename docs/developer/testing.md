@@ -45,3 +45,14 @@ Performance profile tests must leave missing capabilities visible as pytest
 skips. Disk capacity is not a skip reason after a CI tier opts into a profile;
 the job should fail during setup with a clear message when the runner cannot
 meet the profile's free-disk precondition.
+
+## Network Filesystem Lag Profile Testing
+
+`docs/specs/chaos-librarian-design.md` is the source of truth for the network
+filesystem lag profile policy. Future tests for this profile should assert
+path-state windows, not low-level OS watcher notification ordering.
+
+Lag profile tests should prove that `materialize` rejects lag events as
+unsupported and that `run` records the delayed visibility, delayed rename, or
+held-handle evidence needed by consumers. Held-handle tests may assert blocking
+behavior only when provider evidence says the behavior is enforced on the host.
