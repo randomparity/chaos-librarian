@@ -18,7 +18,7 @@ current models.
 | `journal.schema.json`           | One JSONL line per timeline event           |
 | `replay-bundle.schema.json`     | `replay.json` for reproducing a run         |
 | `validation.schema.json`        | Output of `chaos-librarian validate`        |
-| `materialization.schema.json`   | Output of `chaos-librarian materialize`     |
+| `materialization.schema.json`   | Output of `materialize` and `run`           |
 | `run-sentinel.schema.json`      | `.chaos-librarian-run` sentinel file        |
 | `asset-report.schema.json`      | Per-asset report under `reports/assets/`    |
 | `work-report.schema.json`       | Per-work report under `reports/works/`      |
@@ -29,7 +29,10 @@ current models.
 | `divergence.schema.json`        | Output of `chaos-librarian compare`         |
 
 Every artifact has a top-level `schema_version` integer. Version bumps are
-always breaking; readers MUST reject unknown versions with exit code `3`.
+always breaking; readers must reject unknown versions through the
+command-specific error path. Scenario validation reports unknown scenario schema
+versions with exit code `3`; adapter, replay, and sentinel inputs use their own
+documented command exit codes.
 See [chaos-librarian-design.md "Versioning"](../specs/chaos-librarian-design.md).
 
 Current checked-in contract versions:
@@ -38,10 +41,18 @@ Current checked-in contract versions:
 |----------|----------------|
 | scenario | 7 |
 | manifest | 5 |
+| journal | 1 |
 | replay bundle | 6 |
+| validation | 1 |
 | materialization | 7 |
-| capabilities | 2 |
+| run sentinel | 2 |
 | asset report | 5 |
+| work report | 1 |
+| variant report | 1 |
+| bundle report | 1 |
+| capabilities | 2 |
+| observed state | 1 |
+| divergence | 1 |
 
 Scenario v7 adds explicit `profiles`, starting with `malformed-media`, and the
 `corrupt_container_header` timeline action. Manifest v5 and asset-report v5
