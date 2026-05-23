@@ -43,7 +43,6 @@ uv run chaos-librarian capabilities --json
 
 ```bash
 uv sync
-uv run chaos-librarian capabilities --json
 
 RUN_DIR="$(mktemp -d)/chaos-static-library"
 

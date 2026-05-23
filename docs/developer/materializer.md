@@ -3,9 +3,11 @@
 `detect_capabilities` checks ffmpeg, ffprobe, and mkvmerge and derives readiness
 flags for static media generation, filesystem mutations, and media mutations.
 
-Static materialization requires ffmpeg and ffprobe. Full media mutation
-readiness also requires mkvmerge because some timeline effects need container
-tooling beyond ffmpeg synthesis.
+Static materialization and the CLI startup gate for `materialize` and `run`
+require ffmpeg and ffprobe. The `ready_for.materialize_media_mutations` signal is
+stricter and also requires mkvmerge; use it to select CI jobs, not as an extra
+startup gate. Current phase-B handlers use ffmpeg, ffprobe, and Python
+filesystem operations.
 
 `content_sources.py` maps scenario source names to deterministic content-source
 providers. ffmpeg recipe helpers turn `mandelbrot`, `color_bars`,

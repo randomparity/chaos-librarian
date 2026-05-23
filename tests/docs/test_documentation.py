@@ -2,6 +2,25 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chaos_librarian.cli.app import app
+from chaos_librarian.contract import (
+    ASSET_REPORT_SCHEMA_VERSION,
+    BUNDLE_REPORT_SCHEMA_VERSION,
+    CAPABILITIES_SCHEMA_VERSION,
+    DIVERGENCE_SCHEMA_VERSION,
+    JOURNAL_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION,
+    MATERIALIZATION_SCHEMA_VERSION,
+    OBSERVED_STATE_SCHEMA_VERSION,
+    REPLAY_BUNDLE_SCHEMA_VERSION,
+    RUN_SENTINEL_SCHEMA_VERSION,
+    SCENARIO_SCHEMA_VERSION,
+    VALIDATION_SCHEMA_VERSION,
+    VARIANT_REPORT_SCHEMA_VERSION,
+    WORK_REPORT_SCHEMA_VERSION,
+)
+from chaos_librarian.contract.scenario import TimelineActionName
+
 ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
 DOCS = ROOT / "docs"
@@ -40,54 +59,57 @@ CONTRACT_DOCS = [
     "contract/integration-recipes.md",
 ]
 
-CLI_COMMANDS = [
-    "validate",
-    "plan",
-    "materialize",
-    "run",
-    "step",
-    "replay",
-    "inspect",
-    "capabilities",
-    "clean",
-    "compare",
-]
-
-TIMELINE_ACTIONS = [
-    "move_asset",
-    "rename_file",
-    "delete_file",
-    "add_file",
-    "reencode_video",
-    "reencode_audio",
-    "create_sidecar",
-    "slow_copy_start",
-    "slow_copy_commit",
-    "archive_file",
-    "move_between_roots",
-    "remux_container",
-    "edit_metadata",
-    "embed_subtitle",
-    "extract_subtitle",
-    "remove_sidecar",
-    "update_sidecar",
-    "corrupt_container_header",
-]
+SCHEMA_VERSIONS = {
+    "scenario": SCENARIO_SCHEMA_VERSION,
+    "manifest": MANIFEST_SCHEMA_VERSION,
+    "journal": JOURNAL_SCHEMA_VERSION,
+    "replay bundle": REPLAY_BUNDLE_SCHEMA_VERSION,
+    "validation": VALIDATION_SCHEMA_VERSION,
+    "materialization": MATERIALIZATION_SCHEMA_VERSION,
+    "run sentinel": RUN_SENTINEL_SCHEMA_VERSION,
+    "asset report": ASSET_REPORT_SCHEMA_VERSION,
+    "work report": WORK_REPORT_SCHEMA_VERSION,
+    "variant report": VARIANT_REPORT_SCHEMA_VERSION,
+    "bundle report": BUNDLE_REPORT_SCHEMA_VERSION,
+    "capabilities": CAPABILITIES_SCHEMA_VERSION,
+    "observed state": OBSERVED_STATE_SCHEMA_VERSION,
+    "divergence": DIVERGENCE_SCHEMA_VERSION,
+}
 
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def _markdown_section(text: str, heading: str) -> str:
+    start = text.index(f"## {heading}")
+    next_section = text.find("\n## ", start + 1)
+    if next_section == -1:
+        return text[start:]
+    return text[start:next_section]
+
+
+def _cli_command_names() -> list[str]:
+    names: list[str] = []
+    for command in app.registered_commands:
+        if command.callback is None:
+            continue
+        callback_name = getattr(command.callback, "__name__", None)
+        assert isinstance(callback_name, str)
+        name = command.name or callback_name.replace("_", "-")
+        names.append(name)
+    return names
+
+
 def test_readme_contains_mvp_quickstart_and_feature_map() -> None:
     text = _read(README)
+    quick_start = _markdown_section(text, "Quick Start")
 
     required_snippets = [
         "Scenario-driven synthetic media library simulator",
         "## Features",
         "## Quick Start",
         "uv sync",
-        "uv run chaos-librarian capabilities --json",
         "uv run chaos-librarian validate tests/fixtures/scenarios/static-library.yaml --json",
         "uv run chaos-librarian plan tests/fixtures/scenarios/static-library.yaml",
         'uv run chaos-librarian inspect "$RUN_DIR" --json',
@@ -96,6 +118,7 @@ def test_readme_contains_mvp_quickstart_and_feature_map() -> None:
     ]
     for snippet in required_snippets:
         assert snippet in text
+    assert "uv run chaos-librarian capabilities --json" not in quick_start
 
 
 def test_docs_index_links_to_user_developer_and_contract_guides() -> None:
@@ -117,7 +140,7 @@ def test_docs_index_links_to_user_developer_and_contract_guides() -> None:
 def test_contract_cli_reference_matches_current_cli_surface() -> None:
     text = _read(DOCS / "contract" / "cli-reference.md")
 
-    for command in CLI_COMMANDS:
+    for command in _cli_command_names():
         assert f"chaos-librarian {command}" in text
     assert "`run` remains a stub" not in text
     assert "stub" not in text.lower()
@@ -140,6 +163,30 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_schema_reference_lists_current_contract_versions() -> None:
+    text = _read(DOCS / "contract" / "schema-reference.md")
+
+    for artifact, version in SCHEMA_VERSIONS.items():
+        assert f"| {artifact} | {version} |" in text
+
+
+def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
+    adapter_compare = _read(DOCS / "developer" / "adapter-compare.md")
+    materializer = _read(DOCS / "developer" / "materializer.md")
+    testing = _read(DOCS / "developer" / "testing.md")
+
+    assert "If `reports/` is present" in adapter_compare
+    assert "if `reports/` is absent, the loader derives reports" in adapter_compare
+    assert "CLI startup gate for `materialize` and `run`" in materializer
+    assert "not as an extra" in materializer
+    assert "startup gate" in materializer
+    assert "uv run pytest tests/cli/test_plan.py -q --no-cov" in testing
+    assert "uv run pytest tests/validation/rules/test_timeline_lifecycle.py -q --no-cov" in testing
+    assert "Use `--no-cov`" in testing
+    assert "for subset checks" in testing
+    assert "full\n`uv run pytest` suite" in testing
+
+
 def test_user_docs_describe_current_replay_support() -> None:
     commands = _read(DOCS / "user" / "commands.md")
     run_artifacts = _read(DOCS / "user" / "run-artifacts.md")
@@ -160,7 +207,7 @@ def test_user_docs_cover_commands_and_timeline_actions() -> None:
     commands = _read(commands_path)
     scenario = _read(scenario_path)
 
-    for command in CLI_COMMANDS:
+    for command in _cli_command_names():
         assert command in commands
-    for action in TIMELINE_ACTIONS:
-        assert action in scenario
+    for action in TimelineActionName:
+        assert action.value in scenario

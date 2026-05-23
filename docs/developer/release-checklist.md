@@ -3,7 +3,7 @@
 Before merging a documentation or contract-facing change:
 
 - Re-read documentation and code changes for stale sprint-era language.
-- Run targeted tests for touched areas.
+- Run targeted tests for touched areas with `--no-cov` when running a subset.
 - Run `uv run pytest tests/docs -q` when also running package tests, or
   `uv run pytest tests/docs -q --no-cov` for a docs-only local check.
 - Run `uv run ruff check .`.

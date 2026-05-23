@@ -4,8 +4,10 @@ The adapter layer compares a neutral Chaos Librarian oracle with a consumer's
 exported observed state. It does not know the consumer database schema.
 
 `load_fixture` reads oracle artifacts from a run directory. It validates the
-sentinel, replay bundle, stored scenario bytes, manifests, journal identity and
-digest, and report presence.
+sentinel, replay bundle, stored scenario bytes, manifests, and journal identity
+and digest. If `reports/` is present, all four report directories and report IDs
+must match the manifest; if `reports/` is absent, the loader derives reports from
+the manifests and journal for comparison.
 
 `load_observed_state` reads consumer JSON and validates it against the
 `ObservedState` contract.
