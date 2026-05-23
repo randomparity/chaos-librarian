@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
@@ -40,7 +41,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sidecars=[],
     )
     bundle = PlanOnlyReplayBundle(
-        schema_version=5,
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
         scenario="schema_version: 1\n",
         run_id=_RUN_ID,
