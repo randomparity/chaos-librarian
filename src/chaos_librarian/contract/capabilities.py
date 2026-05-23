@@ -10,6 +10,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+
 
 class ToolStatus(BaseModel):
     """Detection outcome for one external tool."""
@@ -42,9 +44,10 @@ class Capabilities(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     ffmpeg: ToolStatus
     ffprobe: ToolStatus
     mkvtoolnix: ToolStatus
     platform: str
+    content_sources: ContentSourceCapabilities
     ready_for: ReadyFor

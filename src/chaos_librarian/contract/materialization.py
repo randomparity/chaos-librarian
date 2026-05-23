@@ -1,9 +1,10 @@
-"""Materialization report schema (v6).
+"""Materialization report schema (v7).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
-records, per-phase-B FilesystemAction and MediaAction audit records, and
-an Outcome enum that includes an explicit ``success`` signal.
+records, per-source ContentSourceEvidence records, per-phase-B
+FilesystemAction and MediaAction audit records, and an Outcome enum that
+includes an explicit ``success`` signal.
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 
@@ -184,13 +186,14 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[6]
+    schema_version: Literal[7]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
     started_at: datetime
     finished_at: datetime
     toolchain: ToolchainInfo
+    content_sources: list[ContentSourceEvidence]
     invocations: list[ToolInvocation] = Field(default_factory=list)
     materialized: list[MaterializedAsset] = Field(default_factory=list)
     failures: list[MaterializationFailure] = Field(default_factory=list)
