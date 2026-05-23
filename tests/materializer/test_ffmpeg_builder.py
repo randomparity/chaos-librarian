@@ -14,11 +14,11 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.ffmpeg import (
+from chaos_librarian.materializer.tooling.ffmpeg import (
     BITEXACT_FLAGS,
     build_command,
 )
-from chaos_librarian.materializer.recipes import (
+from chaos_librarian.materializer.tooling.recipes import (
     recipe_color_bars,
     recipe_sine,
 )

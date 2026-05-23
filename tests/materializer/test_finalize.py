@@ -1,0 +1,144 @@
+from __future__ import annotations
+
+import uuid
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.materialization import (
+    FailureStage,
+    FilesystemAction,
+    MaterializedAsset,
+    Outcome,
+    ToolInvocation,
+)
+from chaos_librarian.contract.run_sentinel import RunSentinelState
+from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.engine import run_plan
+from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.persistence import finalize as finalize_mod
+from chaos_librarian.materializer.persistence._context import RunContext
+from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
+from chaos_librarian.validation import prepare_run_input, run_validation
+
+FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
+RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
+
+
+def _caps() -> Capabilities:
+    return Capabilities(
+        schema_version=1,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+        ),
+    )
+
+
+def _run_context(tmp_path: Path) -> RunContext:
+    run_input = prepare_run_input(FIXTURE_DIR / "static-library.yaml")
+    validation_report = run_validation(run_input)
+    assert validation_report.ok
+    return RunContext(
+        run_input=run_input,
+        out_dir=tmp_path / "run",
+        run_id=RUN_ID,
+        started_at=datetime(2026, 5, 22, 12, 0, 0, tzinfo=UTC),
+        caps=_caps(),
+        plan_artifacts=run_plan(run_input=run_input, validation_report=validation_report),
+    )
+
+
+def test_finalize_success_writes_complete_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[Path, MaterializeMetadata, MaterializeReports]] = []
+
+    def fake_finalize(
+        out_dir: Path,
+        metadata: MaterializeMetadata,
+        reports: MaterializeReports,
+    ) -> None:
+        captured.append((out_dir, metadata, reports))
+
+    monkeypatch.setattr(finalize_mod, "finalize_materialize_run", fake_finalize)
+    ctx = _run_context(tmp_path)
+    invocation = ToolInvocation(
+        tool="ffmpeg",
+        version="7.1.1",
+        command=["ffmpeg", "-i", "input", "output"],
+        exit_code=0,
+        duration_ns=10,
+    )
+    materialized = [
+        MaterializedAsset(
+            asset_id="asset_main",
+            location_path="library/movies-hd/asset_main.mkv",
+            content_hash="sha256:" + "a" * 64,
+            size_bytes=10,
+            duration_seconds=1.0,
+            invocation_index=0,
+        )
+    ]
+
+    artifacts = finalize_mod.finalize_success(ctx, [invocation], materialized, [], [], [])
+
+    assert len(captured) == 1
+    out_dir, metadata, reports = captured[0]
+    assert out_dir == ctx.out_dir
+    assert metadata.sentinel.state is RunSentinelState.COMPLETE
+    assert metadata.materialization_report.outcome is Outcome.SUCCESS
+    assert metadata.materialization_report.invocations == [invocation]
+    assert metadata.materialization_report.materialized == materialized
+    assert artifacts.materialization_report == metadata.materialization_report
+    assert artifacts.current_manifest == ctx.plan_artifacts.current_manifest
+    assert reports.assets
+
+
+def test_finalize_failure_phase_b_records_failure_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[Path, MaterializeMetadata]] = []
+
+    def fake_cleanup(out_dir: Path, metadata: MaterializeMetadata) -> None:
+        captured.append((out_dir, metadata))
+
+    monkeypatch.setattr(finalize_mod, "cleanup_failed_phase_b_run", fake_cleanup)
+    ctx = _run_context(tmp_path)
+    action = FilesystemAction(
+        event_id="move-1",
+        action=TimelineActionName.MOVE_ASSET,
+        target_asset_id="asset_main",
+        from_path="library/old.mkv",
+        to_path="library/new.mkv",
+        duration_ns=12,
+    )
+    exc = FilesystemActionError(
+        "move failed",
+        event_id="move-1",
+        action=TimelineActionName.MOVE_ASSET,
+        cause=OSError(2, "missing"),
+        asset_id="asset_main",
+    )
+
+    finalize_mod.finalize_failure_phase_b(ctx, exc, Outcome.FS_FAILED, [], [], [action], [], [])
+
+    assert len(captured) == 1
+    out_dir, metadata = captured[0]
+    report = metadata.materialization_report
+    assert out_dir == ctx.out_dir
+    assert metadata.sentinel.state is RunSentinelState.COMPLETE
+    assert report.outcome is Outcome.FS_FAILED
+    assert report.filesystem_actions == [action]
+    assert report.failures[0].stage is FailureStage.FILESYSTEM
+    assert report.failures[0].asset_id == "asset_main"
+    assert report.failures[0].stderr_tail == "[Errno 2] missing"

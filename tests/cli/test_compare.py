@@ -56,6 +56,22 @@ def test_compare_divergent_exits_six_and_writes_json_report(tmp_path: Path) -> N
     assert payload["findings"]
 
 
+def test_compare_divergent_human_output_lists_findings(tmp_path: Path) -> None:
+    run_dir = _write_plan_fixture(tmp_path, "static-library.yaml")
+    fixture = load_fixture(run_dir)
+    observed_path = tmp_path / "observed.json"
+    _write_observed(
+        observed_path,
+        _observed_from_fixture(fixture, path_override="library/Different.mkv"),
+    )
+
+    result = runner.invoke(app, ["compare", str(run_dir), str(observed_path)])
+
+    assert result.exit_code == 6
+    assert "compare: divergence" in result.stdout
+    assert "- " in result.stdout
+
+
 def test_compare_identity_history_missing_evidence_exits_six(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path, "identity-move-rename.yaml")
     fixture = load_fixture(run_dir)

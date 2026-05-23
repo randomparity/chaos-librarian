@@ -21,6 +21,7 @@ from chaos_librarian.contract.manifest import (
     ManifestWork,
     ProbedMedia,
 )
+from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.manifest_build import (
     augment_timeline_sidecars,
     augment_updated_sidecars,
@@ -62,7 +63,7 @@ def _build_manifest_with_sidecar(
             ManifestSidecar(
                 id=sidecar_id,
                 asset_id=asset_id,
-                kind="srt",
+                kind=SidecarKind.SUBTITLE,
                 path=path,
                 language=language,
                 content_hash=content_hash,
@@ -187,7 +188,7 @@ def _minimal_manifest_with_one_sidecar(
             ManifestSidecar(
                 id=sidecar_id,
                 asset_id="a",
-                kind="subtitle",
+                kind=SidecarKind.SUBTITLE,
                 path=path,
                 language=language,
             )
@@ -217,7 +218,7 @@ def _minimal_manifest_with_poster(sidecar_id: str, asset_id: str, path: str) -> 
             ManifestSidecar(
                 id=sidecar_id,
                 asset_id=asset_id,
-                kind="poster",
+                kind=SidecarKind.POSTER,
                 path=path,
                 language=None,
             )
@@ -286,9 +287,9 @@ def test_find_sidecar_for_poster_uses_asset_id_and_kind() -> None:
     locate the row to mutate.
     """
     manifest = _minimal_manifest_with_poster("sidecar_0001", "a0", "a0.poster.png")
-    found = find_sidecar_for(manifest, "a0", language=None, kind="poster")
+    found = find_sidecar_for(manifest, "a0", language=None, kind=SidecarKind.POSTER)
     assert found is not None
-    assert found.kind == "poster"
+    assert found.kind == SidecarKind.POSTER.value
 
 
 def test_find_sidecar_for_subtitle_keeps_language_keyed_lookup() -> None:
@@ -299,5 +300,5 @@ def test_find_sidecar_for_subtitle_keeps_language_keyed_lookup() -> None:
     the pre-Sprint-7 (asset_id, language) lookup unchanged.
     """
     manifest = _minimal_manifest_with_one_sidecar("sidecar_0001", "a.eng.srt", language="eng")
-    found = find_sidecar_for(manifest, "a", language="eng", kind="subtitle")
+    found = find_sidecar_for(manifest, "a", language="eng", kind=SidecarKind.SUBTITLE)
     assert found is not None

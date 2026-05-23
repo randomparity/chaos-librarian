@@ -17,16 +17,16 @@ from chaos_librarian.contract.materialization import (
     Outcome,
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.materializer import phase_b
-from chaos_librarian.materializer.corruption import _CorruptionContext
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
 )
-from chaos_librarian.materializer.filesystem import _PhaseBContext
-from chaos_librarian.materializer.media import _MediaContext
+from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b.filesystem import FilesystemPhaseBContext
+from chaos_librarian.materializer.phase_b.media import MediaPhaseBContext
 
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 HASH_A = "sha256:" + "a" * 64
@@ -50,7 +50,7 @@ def test_dispatch_phase_b_entry_routes_filesystem_actions(
         duration_ns=7,
     )
 
-    monkeypatch.setattr(phase_b, "_dispatch_one", lambda _ctx, _entry: expected)
+    monkeypatch.setattr(phase_b, "apply_filesystem_action", lambda _ctx, _entry: expected)
 
     phase_b.dispatch_phase_b_entry(state, entry)
 
@@ -123,9 +123,9 @@ def test_dispatch_phase_b_entry_rejects_actions_outside_current_dispatch_sets(
 ) -> None:
     state = _state(tmp_path)
     entry = _entry(TimelineActionName.MOVE_ASSET)
-    monkeypatch.setattr(phase_b, "_STDLIB_ACTIONS", frozenset())
-    monkeypatch.setattr(phase_b, "_MEDIA_ACTIONS", frozenset())
-    monkeypatch.setattr(phase_b, "_CORRUPTION_ACTIONS", frozenset())
+    monkeypatch.setattr(phase_b, "supports_filesystem_action", lambda _action: False)
+    monkeypatch.setattr(phase_b, "supports_media_action", lambda _action: False)
+    monkeypatch.setattr(phase_b, "supports_corruption_action", lambda _action: False)
 
     with pytest.raises(MediaActionError, match="unsupported phase-B action"):
         phase_b.dispatch_phase_b_entry(state, entry)
@@ -152,14 +152,14 @@ def test_augment_phase_b_outputs_stamps_all_phase_b_evidence(tmp_path: Path) -> 
             ManifestSidecar(
                 id="sidecar_timeline",
                 asset_id="asset_main",
-                kind="subtitle",
+                kind=SidecarKind.SUBTITLE,
                 path="timeline.srt",
                 language="eng",
             ),
             ManifestSidecar(
                 id="sidecar_updated",
                 asset_id="asset_main",
-                kind="subtitle",
+                kind=SidecarKind.SUBTITLE,
                 path="old.srt",
                 language="spa",
             ),
@@ -211,12 +211,12 @@ def test_phase_b_failure_helpers_map_error_classes() -> None:
 
 def _state(tmp_path: Path) -> phase_b.PhaseBState:
     return phase_b.PhaseBState(
-        fs_ctx=_PhaseBContext(
+        fs_ctx=FilesystemPhaseBContext(
             library_root=tmp_path,
             scenario_assets={},
             resolved_seed=7,
         ),
-        media_ctx=_MediaContext(
+        media_ctx=MediaPhaseBContext(
             library_root=tmp_path,
             scenario_assets={},
             resolved_seed=7,
@@ -224,7 +224,7 @@ def _state(tmp_path: Path) -> phase_b.PhaseBState:
             ffprobe_version="ffprobe-test",
             invocations=[],
         ),
-        corruption_ctx=_CorruptionContext(
+        corruption_ctx=CorruptionPhaseBContext(
             library_root=tmp_path,
             resolved_seed=7,
         ),

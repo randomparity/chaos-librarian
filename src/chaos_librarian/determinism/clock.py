@@ -84,8 +84,8 @@ def format_duration_human(ns: int) -> str:
         ``format_duration_human(90_250_000_000) == "1m30s250ms"``
         ``format_duration_human(90_250_500_123) == "1m30s250ms500us123ns"``
 
-    The output is parseable by ``chaos_librarian.clock.parse_duration``
-    when the input has no sub-millisecond residue.
+    For every non-negative integer nanosecond input:
+    ``parse_duration(format_duration_human(ns)) == ns``.
 
     Raises:
         ValueError: If ``ns < 0``.

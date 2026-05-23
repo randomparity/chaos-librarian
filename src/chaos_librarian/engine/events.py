@@ -133,6 +133,15 @@ def apply_event(
     return handler(state, resolved, ids, ctx)
 
 
+def _checked_event[EventT](resolved: ResolvedEvent, event_type: type[EventT]) -> EventT:
+    event = resolved.event
+    if not isinstance(event, event_type):
+        raise ChaosLibrarianValueError(
+            f"{event.action}: expected {event_type.__name__}, got {type(event).__name__}"
+        )
+    return event
+
+
 _Handler = Callable[
     [WorldState, ResolvedEvent, IdAllocator, EngineEventContext],
     tuple[JournalEntry, ...],
@@ -172,8 +181,7 @@ def _handle_move_asset(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, MoveAssetEvent)
+    event = _checked_event(resolved, MoveAssetEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"path": event.to})
@@ -194,8 +202,7 @@ def _handle_rename_file(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, RenameFileEvent)
+    event = _checked_event(resolved, RenameFileEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"path": event.to})
@@ -216,8 +223,7 @@ def _handle_delete_file(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, DeleteFileEvent)
+    event = _checked_event(resolved, DeleteFileEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     state.unbind_location(event.target)
@@ -238,11 +244,10 @@ def _handle_add_file(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, AddFileEvent)
+    event = _checked_event(resolved, AddFileEvent)
     # The Sprint 3 lifecycle rule (_rule_timeline_lifecycle) pre-empts this
-    # case for CLI-driven runs, but the assertion stays as defense in depth
-    # for library-level callers that bypass validation.
+    # case for CLI-driven runs, but the explicit check stays as defense in
+    # depth for library-level callers that bypass validation.
     if state.has_location(event.target):
         raise ChaosLibrarianValueError(
             f"add_file: asset {event.target!r} already has a location; "
@@ -268,8 +273,7 @@ def _handle_reencode_video(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, ReencodeVideoEvent)
+    event = _checked_event(resolved, ReencodeVideoEvent)
     prior_version_id = state.version_id_for_asset(event.target)
     prior_version = state.versions[prior_version_id]
     new_version_id = ids.next_version_id()
@@ -303,8 +307,7 @@ def _handle_reencode_audio(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, ReencodeAudioEvent)
+    event = _checked_event(resolved, ReencodeAudioEvent)
     prior_version_id = state.version_id_for_asset(event.target)
     prior_version = state.versions[prior_version_id]
     new_version_id = ids.next_version_id()
@@ -347,20 +350,19 @@ def _handle_create_sidecar(
     sidecars carry no language and never collide; they are inserted
     verbatim. No kind bumps the asset's version.
     """
-    event = resolved.event
-    assert isinstance(event, CreateSidecarEvent)
+    event = _checked_event(resolved, CreateSidecarEvent)
     if event.kind == SidecarKind.SUBTITLE:
         # Drop any declared subtitle row seeded by ``build_initial_state``
         # that collides on ``(asset_id, language)``. Validation's
         # projection overwrites declared entries with the timeline value;
         # mirror that here. The phase-A writer also skips the declared
-        # file on disk via ``_timeline_sidecar_languages``, so the
+        # file on disk via ``timeline_sidecar_languages``, so the
         # manifest must not carry a row for the orphaned declared write.
         collisions = [
             sid
             for sid, sidecar in state.sidecars.items()
             if sidecar.asset_id == event.target
-            and sidecar.kind == "subtitle"
+            and sidecar.kind == SidecarKind.SUBTITLE.value
             and sidecar.language == event.language
         ]
         for sid in collisions:
@@ -396,8 +398,7 @@ def _handle_slow_copy_start(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, SlowCopyStartEvent)
+    event = _checked_event(resolved, SlowCopyStartEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"temp_path": event.temp_path})
@@ -428,8 +429,7 @@ def _handle_slow_copy_commit(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, SlowCopyCommitEvent)
+    event = _checked_event(resolved, SlowCopyCommitEvent)
     loc_id, final_path = state.pending_slow_copies.pop(event.for_)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"path": final_path, "temp_path": None})
@@ -461,8 +461,7 @@ def _handle_archive_file(
     already proven the archive root exists. ``location.path`` updates;
     the asset stays placed.
     """
-    event = resolved.event
-    assert isinstance(event, ArchiveFileEvent)
+    event = _checked_event(resolved, ArchiveFileEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     archive_path = state.archive_path_for(event.target)
@@ -489,8 +488,7 @@ def _handle_move_between_roots(
     The destination is ``<to_root.path>/<asset_id>.<container>``. Validation
     has already proven both root ids exist.
     """
-    event = resolved.event
-    assert isinstance(event, MoveBetweenRootsEvent)
+    event = _checked_event(resolved, MoveBetweenRootsEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     asset = state.assets[event.target]
@@ -546,8 +544,7 @@ def _handle_remux_container(
     voom-v2 that the file moved to a new container, which is a
     reconciliation-relevant event.
     """
-    event = resolved.event
-    assert isinstance(event, RemuxContainerEvent)
+    event = _checked_event(resolved, RemuxContainerEvent)
     prior_version_id = state.version_id_for_asset(event.target)
     prior_version = state.versions[prior_version_id]
     new_version_id = ids.next_version_id()
@@ -591,8 +588,7 @@ def _handle_edit_metadata(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Allocate a new version; record the fields delta. Path unchanged."""
-    event = resolved.event
-    assert isinstance(event, EditMetadataEvent)
+    event = _checked_event(resolved, EditMetadataEvent)
     prior_version_id = state.version_id_for_asset(event.target)
     prior_version = state.versions[prior_version_id]
     new_version_id = ids.next_version_id()
@@ -635,8 +631,7 @@ def _handle_embed_subtitle(
     that with state.sidecars.pop. Validation guarantees the sidecar
     exists at scenario-construction time (rule_sidecar_target).
     """
-    event = resolved.event
-    assert isinstance(event, EmbedSubtitleEvent)
+    event = _checked_event(resolved, EmbedSubtitleEvent)
     sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
     sidecar = state.sidecars[sidecar_id]
     prior_version_id = state.version_id_for_asset(event.target)
@@ -684,13 +679,12 @@ def _handle_extract_subtitle(
     Asymmetric with embed_subtitle (which DOES bump version) because
     extraction is a read-only operation on the asset bytes.
     """
-    event = resolved.event
-    assert isinstance(event, ExtractSubtitleEvent)
+    event = _checked_event(resolved, ExtractSubtitleEvent)
     sidecar_id = ids.next_sidecar_id()
     state.sidecars[sidecar_id] = ManifestSidecar(
         id=sidecar_id,
         asset_id=event.target,
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE.value,
         path=event.to,
         language=event.language,
     )
@@ -719,8 +713,7 @@ def _handle_remove_sidecar(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Drop the named sidecar from state. No version change."""
-    event = resolved.event
-    assert isinstance(event, RemoveSidecarEvent)
+    event = _checked_event(resolved, RemoveSidecarEvent)
     sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
     sidecar = state.sidecars[sidecar_id]
     del state.sidecars[sidecar_id]
@@ -745,8 +738,7 @@ def _handle_update_sidecar(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     """Emit a journal entry; no state mutation. Phase B regenerates bytes."""
-    event = resolved.event
-    assert isinstance(event, UpdateSidecarEvent)
+    event = _checked_event(resolved, UpdateSidecarEvent)
     sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
     entry = _new_atomic_entry(
         resolved=resolved,
@@ -768,8 +760,7 @@ def _handle_corrupt_container_header(
     ids: IdAllocator,
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
-    event = resolved.event
-    assert isinstance(event, CorruptContainerHeaderEvent)
+    event = _checked_event(resolved, CorruptContainerHeaderEvent)
     prior_version_id = state.version_id_for_asset(event.target)
     prior_version = state.versions[prior_version_id]
     new_version_id = ids.next_version_id()

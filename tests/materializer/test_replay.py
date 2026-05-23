@@ -26,7 +26,7 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import run_plan
+from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
@@ -141,7 +141,7 @@ def _run_bundle() -> MaterializeReplayBundle:
         source_label="run-replay-corruption",
     )
     report = run_validation(run_input)
-    artifacts = run_plan(
+    artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=report,
         run_id_override=_RUN_ID,

@@ -103,17 +103,14 @@ def replace_atomic_bytes(target: Path, content: bytes) -> None:
 
 
 def _emit_sentinel(out_dir: Path, sentinel: RunSentinel) -> None:
-    """Write the sentinel into the staging directory last."""
     (out_dir / ".chaos-librarian-run").write_text(canonical_json(sentinel))
 
 
 def _emit_json(model: BaseModel, target: Path) -> None:
-    """Write one Pydantic model as canonical JSON with trailing newline."""
     target.write_text(canonical_json(model))
 
 
 def _emit_jsonl(entries: Iterable[JournalEntry], target: Path) -> None:
-    """Write each entry as one canonical-JSON line; empty iter writes an empty file."""
     target.write_bytes(serialize_journal_bytes(entries))
 
 
@@ -165,7 +162,6 @@ def append_step(
 
 
 def _replace_atomic_reports(reports_root: Path, reports: ReportSet) -> None:
-    """Per-file atomic rewrite of every report under ``reports_root``."""
     for asset_report in reports.assets:
         replace_atomic_text(
             reports_root / "assets" / f"{asset_report.asset_id}.json",

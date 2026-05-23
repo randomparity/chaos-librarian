@@ -10,14 +10,14 @@ import pytest
 from packaging.version import Version
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
-from chaos_librarian.materializer import capabilities as cap_mod
-from chaos_librarian.materializer.capabilities import (
+from chaos_librarian.materializer.errors import CapabilityGateError
+from chaos_librarian.materializer.tooling import capabilities as cap_mod
+from chaos_librarian.materializer.tooling.capabilities import (
     MIN_VERSIONS,
     _canonical_version_from_tool_output,
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
-from chaos_librarian.materializer.errors import CapabilityGateError
 
 OK_FFMPEG: Final = "ffmpeg version 7.1.1 Copyright (c) 2000-2024 the FFmpeg developers"
 OK_FFPROBE: Final = "ffprobe version 7.1.1 Copyright (c) 2000-2024 the FFmpeg developers"

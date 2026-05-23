@@ -23,16 +23,16 @@ import pytest
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import FailureStage, FilesystemAction, Outcome
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import filesystem as filesystem_mod
 from chaos_librarian.materializer import phase_b
-from chaos_librarian.materializer.capabilities import (
-    MIN_VERSIONS,
-    detect_capabilities,
-)
 from chaos_librarian.materializer.errors import (
     FilesystemActionError,
 )
+from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
+from chaos_librarian.materializer.tooling.capabilities import (
+    MIN_VERSIONS,
+    detect_capabilities,
+)
 from tests.integration.conftest import (
     _initial_sha256_for,
     _load_asset_report,
@@ -287,17 +287,17 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
     subprocess invocation).
 
     The trigger: pre-delete the asset's source file just before the
-    first ``_dispatch_one`` call walks the journal; the first
+    first ``apply_filesystem_action`` call walks the journal; the first
     ``move_asset`` helper raises ``OSError`` from ``src.replace(dst)``.
     Sprint 7 replaced the single ``apply_phase_b`` orchestrator entry
     point with a per-entry dispatcher, so the trigger now hooks the
     first dispatch call instead of the outer walk.
     """
-    original_dispatch = filesystem_mod._dispatch_one
+    original_dispatch = filesystem_mod.apply_filesystem_action
     call_count = {"n": 0}
 
-    def tampered_dispatch_one(
-        ctx: filesystem_mod._PhaseBContext, entry: JournalEntry
+    def tampered_apply_filesystem_action(
+        ctx: filesystem_mod.FilesystemPhaseBContext, entry: JournalEntry
     ) -> FilesystemAction | None:
         call_count["n"] += 1
         if call_count["n"] == 1:
@@ -308,8 +308,8 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
             (ctx.library_root / "movies-hd" / "asset_hd_main.mkv").unlink()
         return original_dispatch(ctx, entry)
 
-    monkeypatch.setattr(filesystem_mod, "_dispatch_one", tampered_dispatch_one)
-    monkeypatch.setattr(phase_b, "_dispatch_one", tampered_dispatch_one)
+    monkeypatch.setattr(filesystem_mod, "apply_filesystem_action", tampered_apply_filesystem_action)
+    monkeypatch.setattr(phase_b, "apply_filesystem_action", tampered_apply_filesystem_action)
 
     out_dir = tmp_path / "run-001"
     with pytest.raises(FilesystemActionError):

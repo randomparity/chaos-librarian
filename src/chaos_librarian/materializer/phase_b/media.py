@@ -34,19 +34,17 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.materializer.actions import (
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
     SUPPORTED_S7_ACTIONS,
 )
 from chaos_librarian.materializer.errors import MediaActionError
-from chaos_librarian.materializer.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
-from chaos_librarian.materializer.probe import probe_file
-from chaos_librarian.materializer.recipes import srt_payload
-from chaos_librarian.materializer.sidecar_bytes import (
+from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     poster_ffmpeg_argv,
     regenerate_sidecar,
     render_nfo,
 )
+from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
+from chaos_librarian.materializer.tooling.probe import probe_file
+from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 
 def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
@@ -66,11 +64,11 @@ if TYPE_CHECKING:
 
 __all__ = [
     "SUPPORTED_S7_ACTIONS",
-    "_MEDIA_ACTIONS",
-    "_STDLIB_ACTIONS",
-    "_MediaContext",
+    "MediaPhaseBContext",
     "_subtitle_codec_for_container",
     "apply_media_action",
+    "make_media_phase_b_context",
+    "supports_media_action",
 ]
 
 
@@ -120,10 +118,10 @@ def _subtitle_codec_for_container(container_ext: str) -> str:
 
 
 @dataclass(slots=True)
-class _MediaContext:
+class MediaPhaseBContext:
     """Per-run state threaded through every media handler.
 
-    Mirrors ``filesystem._PhaseBContext`` but carries extra fields the
+    Mirrors ``filesystem.FilesystemPhaseBContext`` but carries extra fields the
     media dispatcher needs (ffmpeg/ffprobe version strings, post-phase-B
     version + sidecar hash dicts that ``manifest_build.augment_versions``
     / ``augment_updated_sidecars`` will drain).
@@ -146,6 +144,31 @@ class _MediaContext:
     # ManifestSidecar; the orchestrator passes a lookup callable so this
     # module doesn't import from manifest_build.
     sidecar_lookup: Callable[[str], ManifestSidecar | None] | None = None
+
+
+def make_media_phase_b_context(
+    *,
+    library_root: Path,
+    scenario_assets: Mapping[str, Asset],
+    resolved_seed: int,
+    ffmpeg_version: str,
+    ffprobe_version: str,
+    invocations: list[ToolInvocation],
+    sidecar_lookup: Callable[[str], ManifestSidecar | None] | None,
+) -> MediaPhaseBContext:
+    return MediaPhaseBContext(
+        library_root=library_root,
+        scenario_assets=scenario_assets,
+        resolved_seed=resolved_seed,
+        ffmpeg_version=ffmpeg_version,
+        ffprobe_version=ffprobe_version,
+        invocations=invocations,
+        sidecar_lookup=sidecar_lookup,
+    )
+
+
+def supports_media_action(action: TimelineActionName) -> bool:
+    return action in _HANDLERS
 
 
 _RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
@@ -175,7 +198,56 @@ def _hash_file(path: Path) -> str:
     return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _apply_reencode_video(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+@dataclass(frozen=True, slots=True)
+class _VersionOutput:
+    version_id: str
+    content_hash: str
+
+
+def _target_asset_id(entry: JournalEntry) -> str | None:
+    return entry.target_ids[0] if entry.target_ids else None
+
+
+def _run_ffmpeg_checked(
+    ctx: MediaPhaseBContext,
+    *,
+    argv: list[str],
+    entry: JournalEntry,
+    action: TimelineActionName,
+    failure_label: str,
+    asset_id: str | None,
+) -> int:
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        raise MediaActionError(
+            f"{failure_label} failed for event {entry.event_id}: "
+            f"ffmpeg exit {invocation.exit_code}",
+            event_id=entry.event_id,
+            action=action,
+            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
+            asset_id=asset_id,
+            tool_invocation_index=invocation_index,
+        )
+    return invocation_index
+
+
+def _finalize_version_output(
+    ctx: MediaPhaseBContext,
+    *,
+    temp_output: Path,
+    output_path: Path,
+    output_version_id: str,
+) -> _VersionOutput:
+    temp_output.replace(output_path)
+    new_hash = _hash_file(output_path)
+    probed = probe_file(output_path)
+    ctx.post_phase_b_versions[output_version_id] = (new_hash, probed)
+    return _VersionOutput(version_id=output_version_id, content_hash=new_hash)
+
+
+def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Re-encode video in place; produce a new ManifestVersion's content_hash.
 
     Writes ffmpeg's output to a ``<output>.tmp.<resolved_seed>`` sibling
@@ -209,23 +281,20 @@ def _apply_reencode_video(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"reencode_video failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.REENCODE_VIDEO,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
-    temp_output.replace(output_path)
-    new_hash = _hash_file(output_path)
-    probed = probe_file(output_path)
-    new_version_id = entry.output_version_ids[0]
-    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.REENCODE_VIDEO,
+        failure_label="reencode_video",
+        asset_id=_target_asset_id(entry),
+    )
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.REENCODE_VIDEO,
@@ -233,16 +302,16 @@ def _apply_reencode_video(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         input_path=str(delta["input_path"]),
         output_path=str(delta["output_path"]),
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=new_version_id,
+        output_version_id=version.version_id,
         output_sidecar_id=None,
         input_content_hash=None,
-        output_content_hash=new_hash,
+        output_content_hash=version.content_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
     )
 
 
-def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Re-encode audio in place. from_channels is descriptive; -ac uses to_channels."""
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
@@ -277,23 +346,20 @@ def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"reencode_audio failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.REENCODE_AUDIO,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
-    temp_output.replace(output_path)
-    new_hash = _hash_file(output_path)
-    probed = probe_file(output_path)
-    new_version_id = entry.output_version_ids[0]
-    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.REENCODE_AUDIO,
+        failure_label="reencode_audio",
+        asset_id=_target_asset_id(entry),
+    )
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.REENCODE_AUDIO,
@@ -301,16 +367,16 @@ def _apply_reencode_audio(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         input_path=str(delta["input_path"]),
         output_path=str(delta["output_path"]),
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=new_version_id,
+        output_version_id=version.version_id,
         output_sidecar_id=None,
         input_content_hash=None,
-        output_content_hash=new_hash,
+        output_content_hash=version.content_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
     )
 
 
-def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_remux_container(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Container swap via ffmpeg ``-c copy``. Path extension differs.
 
     Writes ffmpeg's output to a ``<output>.tmp.<resolved_seed>`` sibling
@@ -344,27 +410,23 @@ def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaActi
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"remux_container failed for event {entry.event_id}: "
-            f"ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.REMUX_CONTAINER,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.REMUX_CONTAINER,
+        failure_label="remux_container",
+        asset_id=_target_asset_id(entry),
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    temp_output.replace(output_path)
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
     if input_path.resolve() != output_path.resolve():
         input_path.unlink(missing_ok=False)
-    new_hash = _hash_file(output_path)
-    probed = probe_file(output_path)
-    new_version_id = entry.output_version_ids[0]
-    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.REMUX_CONTAINER,
@@ -372,16 +434,16 @@ def _apply_remux_container(ctx: _MediaContext, entry: JournalEntry) -> MediaActi
         input_path=str(delta["input_path"]),
         output_path=str(delta["output_path"]),
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=new_version_id,
+        output_version_id=version.version_id,
         output_sidecar_id=None,
         input_content_hash=None,
-        output_content_hash=new_hash,
+        output_content_hash=version.content_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
     )
 
 
-def _apply_edit_metadata(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_edit_metadata(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """ffmpeg ``-c copy -map_metadata 0 -metadata k=v ...``.
 
     In-place edit (``input_path == output_path``). The ``fields`` dict
@@ -420,23 +482,20 @@ def _apply_edit_metadata(ctx: _MediaContext, entry: JournalEntry) -> MediaAction
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"edit_metadata failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.EDIT_METADATA,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
-    temp_output.replace(output_path)
-    new_hash = _hash_file(output_path)
-    probed = probe_file(output_path)
-    new_version_id = entry.output_version_ids[0]
-    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.EDIT_METADATA,
+        failure_label="edit_metadata",
+        asset_id=_target_asset_id(entry),
+    )
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.EDIT_METADATA,
@@ -444,16 +503,16 @@ def _apply_edit_metadata(ctx: _MediaContext, entry: JournalEntry) -> MediaAction
         input_path=str(delta["input_path"]),
         output_path=str(delta["output_path"]),
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=new_version_id,
+        output_version_id=version.version_id,
         output_sidecar_id=None,
         input_content_hash=None,
-        output_content_hash=new_hash,
+        output_content_hash=version.content_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
     )
 
 
-def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_embed_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """ffmpeg muxes the sidecar into the asset; unlinks the sidecar after success.
 
     The output container's extension selects the in-container subtitle
@@ -502,24 +561,21 @@ def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"embed_subtitle failed for event {entry.event_id}: ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.EMBED_SUBTITLE,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
-    temp_output.replace(output_path)
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.EMBED_SUBTITLE,
+        failure_label="embed_subtitle",
+        asset_id=_target_asset_id(entry),
+    )
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
     sidecar_disk_path.unlink()
-    new_hash = _hash_file(output_path)
-    probed = probe_file(output_path)
-    new_version_id = entry.output_version_ids[0]
-    ctx.post_phase_b_versions[new_version_id] = (new_hash, probed)
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.EMBED_SUBTITLE,
@@ -527,16 +583,18 @@ def _apply_embed_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
         input_path=str(delta["input_path"]),
         output_path=str(delta["output_path"]),
         input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=new_version_id,
+        output_version_id=version.version_id,
         output_sidecar_id=None,
         input_content_hash=None,
-        output_content_hash=new_hash,
+        output_content_hash=version.content_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
     )
 
 
-def _probe_subtitle_index_for_language(ctx: _MediaContext, input_path: Path, language: str) -> int:
+def _probe_subtitle_index_for_language(
+    ctx: MediaPhaseBContext, input_path: Path, language: str
+) -> int:
     """Return the subtitle-stream index whose tags.language matches.
 
     Indexing is relative to subtitle streams only (matching ffmpeg's
@@ -616,7 +674,7 @@ def _probe_subtitle_index_for_language(ctx: _MediaContext, input_path: Path, lan
     return 0
 
 
-def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """ffmpeg -map 0:s:<idx> -c:s srt sidecar.srt.
 
     Output is always .srt regardless of asset container. No re-probe
@@ -658,19 +716,14 @@ def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAct
         str(temp_output),
     ]
     started = time.monotonic_ns()
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-    invocation_index = len(ctx.invocations)
-    ctx.invocations.append(invocation)
-    if invocation.exit_code != 0:
-        raise MediaActionError(
-            f"extract_subtitle failed for event {entry.event_id}: "
-            f"ffmpeg exit {invocation.exit_code}",
-            event_id=entry.event_id,
-            action=TimelineActionName.EXTRACT_SUBTITLE,
-            cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-            asset_id=entry.target_ids[0] if entry.target_ids else None,
-            tool_invocation_index=invocation_index,
-        )
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.EXTRACT_SUBTITLE,
+        failure_label="extract_subtitle",
+        asset_id=_target_asset_id(entry),
+    )
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     temp_output.replace(sidecar_path)
     new_hash = _hash_file(sidecar_path)
@@ -692,7 +745,7 @@ def _apply_extract_subtitle(ctx: _MediaContext, entry: JournalEntry) -> MediaAct
     )
 
 
-def _apply_update_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Regenerate the sidecar's bytes with a perturbed sub-seed.
 
     Per spec design decision #7, the perturbed seed includes event_id
@@ -753,19 +806,14 @@ def _apply_update_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
                 cause=RuntimeError("missing argv"),
                 asset_id=sidecar.asset_id,
             )
-        invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-        invocation_index = len(ctx.invocations)
-        ctx.invocations.append(invocation)
-        if invocation.exit_code != 0:
-            raise MediaActionError(
-                f"update_sidecar (poster) failed for event {entry.event_id}: "
-                f"ffmpeg exit {invocation.exit_code}",
-                event_id=entry.event_id,
-                action=TimelineActionName.UPDATE_SIDECAR,
-                cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-                asset_id=sidecar.asset_id,
-                tool_invocation_index=invocation_index,
-            )
+        invocation_index = _run_ffmpeg_checked(
+            ctx,
+            argv=argv,
+            entry=entry,
+            action=TimelineActionName.UPDATE_SIDECAR,
+            failure_label="update_sidecar (poster)",
+            asset_id=sidecar.asset_id,
+        )
     temp_output.replace(sidecar_path)
     new_hash = _hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
@@ -785,7 +833,7 @@ def _apply_update_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
     )
 
 
-def _apply_create_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Create a sidecar file with bytes appropriate to ``state_delta['kind']``.
 
     Subtitle → ``srt_payload`` (pure Python). NFO → ``render_nfo`` (pure
@@ -835,19 +883,14 @@ def _apply_create_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
             resolved_seed=ctx.resolved_seed,
             sidecar_id=sidecar_id,
         )
-        invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
-        invocation_index = len(ctx.invocations)
-        ctx.invocations.append(invocation)
-        if invocation.exit_code != 0:
-            raise MediaActionError(
-                f"create_sidecar (poster) failed for event {entry.event_id}: "
-                f"ffmpeg exit {invocation.exit_code}",
-                event_id=entry.event_id,
-                action=TimelineActionName.CREATE_SIDECAR,
-                cause=RuntimeError(stderr_tail or "ffmpeg failed"),
-                asset_id=asset_id,
-                tool_invocation_index=invocation_index,
-            )
+        invocation_index = _run_ffmpeg_checked(
+            ctx,
+            argv=argv,
+            entry=entry,
+            action=TimelineActionName.CREATE_SIDECAR,
+            failure_label="create_sidecar (poster)",
+            asset_id=asset_id,
+        )
     else:  # pragma: no cover — SidecarKind is exhaustive
         raise MediaActionError(
             f"create_sidecar: unknown kind {kind!r} for event {entry.event_id}",
@@ -876,7 +919,9 @@ def _apply_create_sidecar(ctx: _MediaContext, entry: JournalEntry) -> MediaActio
 
 
 # Dispatcher table. Other handlers added in subsequent Sprint 7 tasks.
-_HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry], MediaAction]]] = {
+_HANDLERS: Final[
+    dict[TimelineActionName, Callable[[MediaPhaseBContext, JournalEntry], MediaAction]]
+] = {
     TimelineActionName.REENCODE_VIDEO: _apply_reencode_video,
     TimelineActionName.REENCODE_AUDIO: _apply_reencode_audio,
     TimelineActionName.REMUX_CONTAINER: _apply_remux_container,
@@ -888,20 +933,19 @@ _HANDLERS: Final[dict[TimelineActionName, Callable[[_MediaContext, JournalEntry]
 }
 
 
-def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
+def apply_media_action(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Dispatch one journal entry to its media handler.
 
     Raises:
-        MediaActionError: ffmpeg non-zero exit, ffprobe parse failure,
-            OSError during the rename, or no handler registered for the
-            entry's action.
+        MediaActionError: ffmpeg non-zero exit, ffprobe parse failure, no
+            handler registered for the entry's action, or the first exception
+            raised by a media handler.
 
-    Any ``OSError`` raised inside a handler (e.g. ``Path.replace``,
-    ``Path.unlink``, ``Path.write_bytes`` on a full disk) is wrapped here
-    rather than propagating bare. Without this wrapper the orchestrator's
-    phase-B failure path — keyed on ``MediaActionError`` — never runs and
-    ``library/`` is left half-mutated with the sentinel stuck at
-    ``IN_PROGRESS`` (PR #63 adversarial review, finding #3).
+    Handler exceptions are wrapped here rather than propagating bare. Without
+    this wrapper the orchestrator's phase-B failure path — keyed on
+    ``MediaActionError`` — never runs and ``library/`` is left half-mutated
+    with the sentinel stuck at ``IN_PROGRESS`` (PR #63 adversarial review,
+    finding #3).
     """
     action = TimelineActionName(entry.action)
     handler = _HANDLERS.get(action)
@@ -914,7 +958,9 @@ def apply_media_action(ctx: _MediaContext, entry: JournalEntry) -> MediaAction:
         )
     try:
         return handler(ctx, entry)
-    except OSError as exc:
+    except MediaActionError:
+        raise
+    except Exception as exc:
         raise MediaActionError(
             f"{action.value} failed for event {entry.event_id}: {exc}",
             event_id=entry.event_id,

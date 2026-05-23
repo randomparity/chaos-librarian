@@ -6,7 +6,7 @@ import pytest
 
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import Scenario, SidecarKind
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.state import WorldState, build_initial_state
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -265,7 +265,7 @@ def test_sidecar_id_for_path_returns_id_when_match() -> None:
     state.sidecars["sidecar_0001"] = ManifestSidecar(
         id="sidecar_0001",
         asset_id="asset_main",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="asset_main.eng.srt",
         language="eng",
     )
@@ -283,14 +283,14 @@ def test_sidecar_id_for_path_scoped_by_asset_id() -> None:
     state.sidecars["sidecar_0001"] = ManifestSidecar(
         id="sidecar_0001",
         asset_id="asset_a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="a.eng.srt",
         language="eng",
     )
     state.sidecars["sidecar_0002"] = ManifestSidecar(
         id="sidecar_0002",
         asset_id="asset_b",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="a.eng.srt",
         language="eng",
     )
@@ -358,7 +358,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
         (sidecar,) = state.sidecars.values()
         assert sidecar.id == "sidecar_a0_eng"
         assert sidecar.asset_id == "a0"
-        assert sidecar.kind == "subtitle"
+        assert sidecar.kind == SidecarKind.SUBTITLE.value
         assert sidecar.path == "a0.eng.srt"
         assert sidecar.language == "eng"
 

@@ -13,8 +13,14 @@ from chaos_librarian.contract.replay_bundle import (
     PlanOnlyReplayBundle,
 )
 from chaos_librarian.contract.validation import ValidationReport
-from chaos_librarian.engine import PlanArtifacts, replay_plan_bundle, run_plan
-from chaos_librarian.engine.plan import ReplayIntegrityError
+from chaos_librarian.engine import (
+    PlanArtifacts,
+    ReplayIntegrityError,
+    replay_plan_bundle,
+    run_materializer_plan,
+    run_plan,
+)
+from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import (
     RunInput,
     prepare_run_input,
@@ -113,8 +119,8 @@ class TestRunPlanDeterminism:
         assert a.replay_bundle.run_id.version == 5
 
 
-class TestRunPlanRawPrefix:
-    """run_plan can serve materializer-owned raw journal prefixes.
+class TestRunMaterializerPlan:
+    """run_materializer_plan can serve materializer-owned raw journal prefixes.
 
     WHY: wall-clock finalization needs exact executed event counts and a
     materialized UUID4 run_id, while plan-only replay must keep its existing
@@ -124,7 +130,7 @@ class TestRunPlanRawPrefix:
     def test_accepts_run_id_override(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         run_id = uuid.UUID("11111111-1111-4111-8111-111111111111")
-        artifacts = run_plan(
+        artifacts = run_materializer_plan(
             run_input=run_input,
             validation_report=report,
             run_id_override=run_id,
@@ -134,7 +140,7 @@ class TestRunPlanRawPrefix:
 
     def test_raw_prefix_applies_one_event(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
-        artifacts = run_plan(
+        artifacts = run_materializer_plan(
             run_input=run_input,
             validation_report=report,
             applied_events_override=1,
@@ -142,10 +148,20 @@ class TestRunPlanRawPrefix:
         assert artifacts.replay_bundle.applied_events == 1
         assert [entry.event_id for entry in artifacts.journal] == ["move_001"]
 
+    def test_rejects_steps_and_raw_prefix_together(self) -> None:
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        with pytest.raises(ChaosLibrarianError, match="mutually exclusive"):
+            run_materializer_plan(
+                run_input=run_input,
+                validation_report=report,
+                steps_limit=1,
+                applied_events_override=1,
+            )
+
     def test_rejects_negative_raw_prefix(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
-        with pytest.raises(ValueError, match="applied_events_override must be >= 0"):
-            run_plan(
+        with pytest.raises(ChaosLibrarianError, match="applied_events_override must be >= 0"):
+            run_materializer_plan(
                 run_input=run_input,
                 validation_report=report,
                 applied_events_override=-1,
@@ -153,8 +169,8 @@ class TestRunPlanRawPrefix:
 
     def test_rejects_raw_prefix_past_timeline(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
-        with pytest.raises(ValueError, match="applied_events_override exceeds timeline"):
-            run_plan(
+        with pytest.raises(ChaosLibrarianError, match="applied_events_override exceeds timeline"):
+            run_materializer_plan(
                 run_input=run_input,
                 validation_report=report,
                 applied_events_override=999,

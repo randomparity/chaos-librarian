@@ -64,6 +64,26 @@ class TestPlanJSONSummary:
         assert payload["ok"] is True
         assert "run_id" in payload
 
+    def test_json_summary_reflects_step_limit(self, tmp_path: Path) -> None:
+        out = tmp_path / "run-001"
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(FIXTURE_DIR / "identity-move-rename.yaml"),
+                "--out",
+                str(out),
+                "--steps",
+                "0",
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout + result.stderr
+        payload = json.loads(result.stdout)
+        assert payload["journal_entries"] == 0
+        assert payload["ok"] is True
+
 
 class TestPlanWritesEveryFile:
     """plan writes the contracted plan-only artifacts.

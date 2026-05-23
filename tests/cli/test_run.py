@@ -179,37 +179,47 @@ def test_run_capability_error_exit_four(monkeypatch, tmp_path: Path) -> None:
 def test_run_unsupported_timeline_exit_five(monkeypatch, tmp_path: Path) -> None:
     exc = TimelineUnsupportedError("unsupported timeline")
     monkeypatch.setattr(app_mod, "run_wall_clock_scenario", _raise(exc))
+    out = tmp_path / "run"
     result = runner.invoke(
         app,
         [
             "run",
             str(FIXTURE_DIR / "identity-move-rename.yaml"),
             "--out",
-            str(tmp_path / "run"),
+            str(out),
             "--duration",
             "1s",
             "--json",
         ],
     )
     assert result.exit_code == 5
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
+    assert "materialization_report_path" not in payload
+    assert not out.exists()
 
 
 def test_run_materialization_error_exit_five(monkeypatch, tmp_path: Path) -> None:
     exc = UnsupportedMaterializationError("unsupported codec")
     monkeypatch.setattr(app_mod, "run_wall_clock_scenario", _raise(exc))
+    out = tmp_path / "run"
     result = runner.invoke(
         app,
         [
             "run",
             str(FIXTURE_DIR / "identity-move-rename.yaml"),
             "--out",
-            str(tmp_path / "run"),
+            str(out),
             "--duration",
             "1s",
             "--json",
         ],
     )
     assert result.exit_code == 5
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
+    assert "materialization_report_path" not in payload
+    assert not out.exists()
 
 
 def test_cli_run_corruption_failure_exits_5_with_materialization_report_path(

@@ -26,10 +26,8 @@ from chaos_librarian.validation.codes import (
 )
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_list,
-    _as_mapping,
     _iter_timeline_events,
-    _list_at_path,
+    iter_declared_sidecars,
 )
 
 if TYPE_CHECKING:
@@ -250,44 +248,6 @@ def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
     (per scenario v5 §"Declared-sidecar path convention").
     """
     projection: _Projection = {}
-    for work_obj in _list_at_path(raw, ("works",)) or []:
-        work = _as_mapping(work_obj)
-        if work is None:
-            continue
-        for variant_obj in _as_list(work.get("variants")) or []:
-            variant = _as_mapping(variant_obj)
-            if variant is None:
-                continue
-            bundle = _as_mapping(variant.get("bundle"))
-            if bundle is None:
-                continue
-            for asset_obj in _as_list(bundle.get("assets")) or []:
-                _seed_from_asset(asset_obj, projection=projection)
+    for sidecar in iter_declared_sidecars(raw):
+        projection[(sidecar.asset_id, sidecar.path)] = (sidecar.kind, sidecar.language)
     return projection
-
-
-def _seed_from_asset(
-    asset_obj: object,
-    *,
-    projection: _Projection,
-) -> None:
-    """Insert one entry per declared sidecar-mode subtitle on one asset."""
-    asset = _as_mapping(asset_obj)
-    if asset is None:
-        return
-    asset_id = asset.get("id")
-    if not isinstance(asset_id, str):
-        return
-    for sub_obj in _as_list(asset.get("subtitles")) or []:
-        sub = _as_mapping(sub_obj)
-        if sub is None:
-            continue
-        if sub.get("mode") != "sidecar":
-            continue
-        language = sub.get("language")
-        if not isinstance(language, str):
-            continue
-        projection[(asset_id, f"{asset_id}.{language}.srt")] = (
-            SidecarKind.SUBTITLE.value,
-            language,
-        )

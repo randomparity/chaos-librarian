@@ -24,20 +24,13 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.replay_bundle import ExecutionMode
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
-    CreateSidecarEvent,
     Scenario,
-    SidecarKind,
     TimelineActionName,
 )
-from chaos_librarian.engine import PlanArtifacts, run_plan
+from chaos_librarian.engine import PlanArtifacts, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
-from chaos_librarian.materializer.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
@@ -45,9 +38,22 @@ from chaos_librarian.materializer.errors import (
     ScenarioValidationError,
     TimelineUnsupportedError,
 )
-from chaos_librarian.materializer.finalize import build_sentinel
 from chaos_librarian.materializer.manifest_build import (
     augment_manifest,
+)
+from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence.finalize import build_sentinel
+from chaos_librarian.materializer.persistence.reports import (
+    build_metadata,
+    build_replay_bundle,
+    build_report,
+    build_reports,
+)
+from chaos_librarian.materializer.persistence.writer import (
+    WallClockBaselineMetadata,
+    cleanup_failed_phase_b_run,
+    finalize_materialize_run,
+    publish_wall_clock_baseline,
 )
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
@@ -57,16 +63,11 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
+from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import (
     iter_assets,
     preflight_asset,
     preflight_timeline,
-)
-from chaos_librarian.materializer.reports import (
-    build_metadata,
-    build_replay_bundle,
-    build_report,
-    build_reports,
 )
 from chaos_librarian.materializer.scheduler import (
     SpeedMultiplier,
@@ -75,11 +76,9 @@ from chaos_librarian.materializer.scheduler import (
     parse_speed,
 )
 from chaos_librarian.materializer.synthesis import materialize_one_asset
-from chaos_librarian.materializer.writer import (
-    WallClockBaselineMetadata,
-    cleanup_failed_phase_b_run,
-    finalize_materialize_run,
-    publish_wall_clock_baseline,
+from chaos_librarian.materializer.tooling.capabilities import (
+    assert_capable_for_static_materialize,
+    detect_capabilities,
 )
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input
@@ -163,7 +162,7 @@ def run_wall_clock_scenario(
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
     run_id = uuid.uuid4()
-    full_artifacts = run_plan(
+    full_artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=validation_report,
         run_id_override=run_id,
@@ -172,7 +171,7 @@ def run_wall_clock_scenario(
         preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
 
     staging_dir = _create_staging_dir(out_dir)
-    baseline_artifacts = run_plan(
+    baseline_artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=validation_report,
         run_id_override=run_id,
@@ -258,7 +257,7 @@ def _synthesize_phase_a(
 ) -> _PhaseAResult:
     result = _PhaseAResult()
     primary_root_path = scenario.library.roots[0].path
-    skip_by_asset = _timeline_sidecar_languages(scenario)
+    skip_by_asset = timeline_sidecar_languages(scenario)
     for invocation_index, asset in enumerate(iter_assets(scenario)):
         skip_languages = skip_by_asset.get(asset.id, frozenset())
         invocation, materialized, probed, sidecar_hashes = materialize_one_asset(
@@ -284,7 +283,7 @@ def _stamp_phase_a_metadata(
     phase_a: _PhaseAResult,
 ) -> None:
     by_asset = {record.asset_id: record for record in phase_a.materialized}
-    skip_by_asset = _timeline_sidecar_languages(scenario)
+    skip_by_asset = timeline_sidecar_languages(scenario)
     for asset in iter_assets(scenario):
         materialized = by_asset.get(asset.id)
         probed = phase_a.probed_by_asset.get(asset.id)
@@ -761,7 +760,7 @@ def _final_artifacts_for_executed_prefix(
     state: _DispatchState,
     executed_journal: list[JournalEntry],
 ) -> PlanArtifacts:
-    prefix_artifacts = run_plan(
+    prefix_artifacts = run_materializer_plan(
         run_input=run_context.run_input,
         validation_report=run_context.plan_artifacts.validation_report,
         resolved_seed_override=run_context.plan_artifacts.replay_bundle.resolved_seed,
@@ -798,15 +797,3 @@ def _build_final_replay_bundle(
             "journal_digest": journal_digest,
         }
     )
-
-
-def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
-    per_asset: dict[str, set[str]] = {}
-    for event in scenario.timeline:
-        if not isinstance(event, CreateSidecarEvent):
-            continue
-        if event.kind is not SidecarKind.SUBTITLE:
-            continue
-        assert event.language is not None
-        per_asset.setdefault(event.target, set()).add(event.language)
-    return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}

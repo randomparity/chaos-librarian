@@ -64,9 +64,10 @@ def run(
     except ScenarioValidationError as exc:
         emit_materialize_error(exc, json_output=json_output, run_dir=None)
         raise typer.Exit(code=3) from exc
+    except (TimelineUnsupportedError, UnsupportedMaterializationError) as exc:
+        emit_materialize_error(exc, json_output=json_output, run_dir=None)
+        raise typer.Exit(code=5) from exc
     except (
-        TimelineUnsupportedError,
-        UnsupportedMaterializationError,
         ToolFailedError,
         ProbeParseError,
         FilesystemActionError,

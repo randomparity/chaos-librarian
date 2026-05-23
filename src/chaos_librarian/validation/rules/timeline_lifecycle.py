@@ -17,11 +17,10 @@ from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_list,
-    _as_mapping,
     _iter_timeline_events,
     _Loc,
     iter_asset_ids,
+    iter_declared_sidecars,
 )
 
 if TYPE_CHECKING:
@@ -131,31 +130,54 @@ def rule_timeline_lifecycle(
             continue  # Pydantic owns shape on missing/non-string action
         target = event.get("target")
         loc: _Loc = ("timeline", idx, "action")
-        kwargs = {"state": state, "emit": emit, "loc": loc}
 
         if action == TimelineActionName.ADD_FILE and isinstance(target, str):
-            _lifecycle_check_add_file(target=target, **kwargs)
+            _lifecycle_check_add_file(target=target, state=state, emit=emit, loc=loc)
         elif action in _MUTATION_ACTIONS and isinstance(target, str):
-            _lifecycle_check_mutation(action=action, target=target, **kwargs)
+            _lifecycle_check_mutation(
+                action=action,
+                target=target,
+                state=state,
+                emit=emit,
+                loc=loc,
+            )
         elif action == TimelineActionName.CREATE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
             _apply_create_sidecar(event=event, target=target, state=state)
         elif action == TimelineActionName.EXTRACT_SUBTITLE and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
             _apply_extract_subtitle(event=event, target=target, state=state)
         elif action == TimelineActionName.EMBED_SUBTITLE and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
-            _apply_embed_subtitle(event=event, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
+            _apply_embed_subtitle(event=event, target=target, state=state, emit=emit, loc=loc)
         elif action == TimelineActionName.REMOVE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
-            _apply_remove_sidecar(event=event, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
+            _apply_remove_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
         elif action == TimelineActionName.UPDATE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
-            _apply_update_sidecar(event=event, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
+            _apply_update_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
         elif action in _LOCATION_DEPENDENT_PASSTHROUGH and isinstance(target, str):
-            _lifecycle_check_passthrough(action=action, target=target, **kwargs)
+            _lifecycle_check_passthrough(
+                action=action, target=target, state=state, emit=emit, loc=loc
+            )
         elif action == TimelineActionName.SLOW_COPY_START and isinstance(target, str):
-            _lifecycle_check_slow_copy_start(target=target, ev_id=event.get("id"), **kwargs)
+            _lifecycle_check_slow_copy_start(
+                target=target,
+                ev_id=event.get("id"),
+                state=state,
+                emit=emit,
+                loc=loc,
+            )
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
             _lifecycle_apply_commit(ref=event.get("for"), state=state)
 
@@ -330,51 +352,6 @@ def _seed_sidecars_by_path(raw: Mapping[str, object]) -> dict[tuple[str, str], s
     Declared subtitles use the path convention <asset_id>.<language>.srt
     (per scenario v5 §"Declared-sidecar path convention").
     """
-    out: dict[tuple[str, str], str] = {}
-    for work_obj in _as_list(raw.get("works")) or []:
-        work = _as_mapping(work_obj)
-        if work is None:
-            continue
-        for variant_obj in _as_list(work.get("variants")) or []:
-            _seed_from_variant(variant_obj, out=out)
-    return out
-
-
-def _seed_from_variant(
-    variant_obj: object,
-    *,
-    out: dict[tuple[str, str], str],
-) -> None:
-    """Walk one variant's bundle.assets and add declared sidecar subtitles to ``out``."""
-    variant = _as_mapping(variant_obj)
-    if variant is None:
-        return
-    bundle = _as_mapping(variant.get("bundle"))
-    if bundle is None:
-        return
-    for asset_obj in _as_list(bundle.get("assets")) or []:
-        _seed_from_asset(asset_obj, out=out)
-
-
-def _seed_from_asset(
-    asset_obj: object,
-    *,
-    out: dict[tuple[str, str], str],
-) -> None:
-    """Add one entry per declared sidecar-mode subtitle on one asset."""
-    asset = _as_mapping(asset_obj)
-    if asset is None:
-        return
-    asset_id = asset.get("id")
-    if not isinstance(asset_id, str):
-        return
-    for sub_obj in _as_list(asset.get("subtitles")) or []:
-        sub = _as_mapping(sub_obj)
-        if sub is None:
-            continue
-        if sub.get("mode") != "sidecar":
-            continue
-        language = sub.get("language")
-        if not isinstance(language, str):
-            continue
-        out[(asset_id, f"{asset_id}.{language}.srt")] = SidecarKind.SUBTITLE.value
+    return {
+        (sidecar.asset_id, sidecar.path): sidecar.kind for sidecar in iter_declared_sidecars(raw)
+    }

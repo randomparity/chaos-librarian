@@ -20,17 +20,8 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinelState
-from chaos_librarian.contract.scenario import (
-    CreateSidecarEvent,
-    Scenario,
-    SidecarKind,
-)
-from chaos_librarian.engine import run_plan
-from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
-from chaos_librarian.materializer.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
+from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
@@ -39,15 +30,17 @@ from chaos_librarian.materializer.errors import (
     ScenarioValidationError,
     ToolFailedError,
 )
-from chaos_librarian.materializer.finalize import (
+from chaos_librarian.materializer.manifest_build import (
+    augment_manifest,
+)
+from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence.finalize import (
     build_sentinel,
     finalize_failure,
     finalize_failure_phase_b,
     finalize_success,
 )
-from chaos_librarian.materializer.manifest_build import (
-    augment_manifest,
-)
+from chaos_librarian.materializer.persistence.writer import begin_materialize_run
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
     augment_phase_b_outputs,
@@ -55,13 +48,17 @@ from chaos_librarian.materializer.phase_b import (
     make_phase_b_state,
     phase_b_failure_outcome,
 )
+from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import (
     iter_assets,
     preflight_asset,
     preflight_timeline,
 )
 from chaos_librarian.materializer.synthesis import materialize_one_asset
-from chaos_librarian.materializer.writer import begin_materialize_run
+from chaos_librarian.materializer.tooling.capabilities import (
+    assert_capable_for_static_materialize,
+    detect_capabilities,
+)
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input
 
@@ -116,10 +113,10 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     assert_capable_for_static_materialize(caps)
     run_id = uuid.uuid4()
     # materialize executes the whole timeline; pass ``steps_limit=None`` so
-    # ``run_plan`` applies every resolved event. Sprint 5 capped this at 0
+    # ``run_materializer_plan`` applies every resolved event. Sprint 5 capped this at 0
     # because phase B did not yet exist and the materializer reused the
     # plan-only manifest as-is.
-    plan_artifacts = run_plan(
+    plan_artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=validation_report,
         run_id_override=run_id,
@@ -149,7 +146,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     # so the on-disk file lives where phase B's ``state_delta['from_path']``
     # expects to find it.
     primary_root_path = scenario.library.roots[0].path
-    timeline_sidecar_languages = _timeline_sidecar_languages(scenario)
+    sidecar_languages = timeline_sidecar_languages(scenario)
     try:
         # Phase A — per-asset synthesis. ``skip_languages`` defers the
         # write to phase B for any (asset, language) the timeline will
@@ -157,7 +154,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         # manifest cannot reference (manifest v3 uniqueness collapses
         # the row onto the timeline-allocated id).
         for invocation_index, asset in enumerate(iter_assets(scenario)):
-            skip_languages = timeline_sidecar_languages.get(asset.id, frozenset())
+            skip_languages = sidecar_languages.get(asset.id, frozenset())
             invocation, materialized_asset, probed, sidecar_hashes = materialize_one_asset(
                 asset,
                 ctx.plan_artifacts.replay_bundle.resolved_seed,
@@ -216,26 +213,3 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         phase_b_state.media_actions,
         phase_b_state.corruption_actions,
     )
-
-
-def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
-    """Map each asset_id to the set of languages a timeline ``create_sidecar`` will write.
-
-    Phase A consults this set to skip declared subtitles whose language
-    the timeline overrides; otherwise both phases would emit a file for
-    the same ``(asset_id, language)`` and the manifest v3 uniqueness
-    collapse would orphan the phase-A file (#39).
-    """
-    per_asset: dict[str, set[str]] = {}
-    for event in scenario.timeline:
-        if not isinstance(event, CreateSidecarEvent):
-            continue
-        # Sprint 7 widens CreateSidecarEvent.language to ``str | None`` for
-        # poster/NFO kinds; only subtitle kinds participate in declared-
-        # subtitle override tracking, and the model_validator guarantees
-        # subtitle => language is not None.
-        if event.kind is not SidecarKind.SUBTITLE:
-            continue
-        assert event.language is not None
-        per_asset.setdefault(event.target, set()).add(event.language)
-    return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}

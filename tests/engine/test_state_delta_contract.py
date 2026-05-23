@@ -13,9 +13,11 @@ import inspect
 import pytest
 
 from chaos_librarian.contract.journal import JournalPhase
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import RenameFileEvent, TimelineActionName
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _STATE_DELTA_KEYS, apply_event
+from chaos_librarian.engine.resolution import ResolvedEvent
+from chaos_librarian.errors import ChaosLibrarianValueError
 from tests.engine.conftest import _engine_event_context, _minimal_scenario_for_action
 
 
@@ -26,6 +28,24 @@ def test_apply_event_uses_engine_event_context_signature() -> None:
         "ids",
         "ctx",
     ]
+
+
+def test_apply_event_rejects_mismatched_event_model() -> None:
+    _scenario, state, _resolved_event = _minimal_scenario_for_action(TimelineActionName.MOVE_ASSET)
+    event = RenameFileEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        to="movies-hd/renamed.mkv",
+    ).model_copy(update={"action": TimelineActionName.MOVE_ASSET})
+
+    with pytest.raises(ChaosLibrarianValueError, match="move_asset"):
+        apply_event(
+            state=state,
+            resolved=ResolvedEvent(at_ns=1, declared_index=0, event=event),
+            ids=IdAllocator(TraceRecorder()),
+            ctx=_engine_event_context(),
+        )
 
 
 def test_corruption_state_delta_contract_keys() -> None:

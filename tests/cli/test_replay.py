@@ -25,7 +25,7 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel, RunSentinelState
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import compare_run_replay, run_plan
+from chaos_librarian.engine import compare_run_replay, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
@@ -56,7 +56,7 @@ def _make_wall_clock_fixture(
     safe_count = applied_events
     if applied_events > len(resolve_timeline(run_input.scenario)):
         safe_count = 0
-    artifacts = run_plan(
+    artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=report,
         run_id_override=RUN_ID,

@@ -43,10 +43,13 @@ class DivergenceSeverity(enum.StrEnum):
     WARNING = "warning"
 
 
+MatchEvidenceKind = Literal["current_path", "historical_path", "content_hash", "topology"]
+
+
 class MatchEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["current_path", "historical_path", "content_hash", "topology"]
+    kind: MatchEvidenceKind
     value: str
     oracle_asset_id: str | None = None
     observed_ref: str | None = None

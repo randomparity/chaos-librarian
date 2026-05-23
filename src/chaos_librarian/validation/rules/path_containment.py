@@ -20,7 +20,7 @@ from chaos_librarian.validation.rules._common import (
     _list_at_path,
     _Loc,
     _RawMapping,
-    iter_assets_with_loc,
+    asset_containers,
     iter_declared_roots,
     primary_root_path,
 )
@@ -105,7 +105,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
     archive_base = _archive_base_path(raw, declared_roots)
-    asset_containers = _asset_containers(raw)
+    containers_by_asset = asset_containers(raw)
 
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -114,7 +114,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 archive_base=archive_base,
-                asset_containers=asset_containers,
+                asset_containers=containers_by_asset,
                 reporter=reporter,
             )
         elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
@@ -122,7 +122,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 declared_roots=declared_roots,
-                asset_containers=asset_containers,
+                asset_containers=containers_by_asset,
                 reporter=reporter,
             )
 
@@ -193,17 +193,6 @@ def _archive_base_path(
     if isinstance(archive_root, str):
         return declared_roots.get(archive_root)
     return None
-
-
-def _asset_containers(raw: _RawMapping) -> dict[str, str]:
-    """Return ``{asset_id: container}`` for every well-shaped declared asset."""
-    containers: dict[str, str] = {}
-    for asset, _ in iter_assets_with_loc(raw):
-        asset_id = asset.get("id")
-        container = asset.get("container")
-        if isinstance(asset_id, str) and isinstance(container, str):
-            containers[asset_id] = container
-    return containers
 
 
 def _check_containment(raw_path: str, *, loc: _Loc, reporter: Reporter) -> None:

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Literal
 
 from chaos_librarian.adapter.index import ObservedIndex, OracleIndex
 from chaos_librarian.contract.divergence import (
@@ -12,9 +11,8 @@ from chaos_librarian.contract.divergence import (
     DivergenceFinding,
     DivergenceSeverity,
     MatchEvidence,
+    MatchEvidenceKind,
 )
-
-EvidenceKind = Literal["current_path", "historical_path", "content_hash", "topology"]
 
 
 @dataclass(frozen=True)
@@ -100,7 +98,7 @@ def _apply_level(
     oracle_lookup: Mapping[str, tuple[str, ...]],
     observed_lookup: Mapping[str, tuple[str, ...]],
     *,
-    evidence_kind: EvidenceKind,
+    evidence_kind: MatchEvidenceKind,
 ) -> None:
     for key in sorted(set(oracle_lookup) & set(observed_lookup)):
         oracle_ids = _eligible(oracle_lookup[key], state.matched_oracle, state.ambiguous_oracle)
@@ -125,7 +123,7 @@ def _record_match(
     state: _MatchState,
     oracle_asset_id: str,
     observed_ref: str,
-    evidence_kind: EvidenceKind,
+    evidence_kind: MatchEvidenceKind,
     value: str,
 ) -> None:
     state.matches.append(
@@ -150,7 +148,7 @@ def _record_ambiguity(
     state: _MatchState,
     oracle_ids: tuple[str, ...],
     observed_refs: tuple[str, ...],
-    evidence_kind: EvidenceKind,
+    evidence_kind: MatchEvidenceKind,
     value: str,
 ) -> None:
     state.ambiguous_oracle.update(oracle_ids)

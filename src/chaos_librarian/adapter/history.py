@@ -20,6 +20,7 @@ from chaos_librarian.contract.observed_state import (
 )
 from chaos_librarian.contract.reports import PathHistoryEntry
 from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.errors import ChaosLibrarianValueError
 
 IDENTITY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
@@ -255,7 +256,7 @@ def _observed_global_single(event: ObservedEvent) -> ObservedLifecycleEvidence:
     before = event.observed_ref or event.before_observed_ref
     after = event.observed_ref or event.after_observed_ref
     if before is None or after is None:
-        raise ValueError("validated global event is missing identity refs")
+        raise ChaosLibrarianValueError("validated global event is missing identity refs")
     return ObservedLifecycleEvidence(
         action=event.action,
         observed_ref_before=before,

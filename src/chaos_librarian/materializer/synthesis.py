@@ -18,15 +18,15 @@ from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvo
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Asset
 from chaos_librarian.materializer.errors import ToolFailedError, UnsupportedMaterializationError
-from chaos_librarian.materializer.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.preflight import (
     AUDIO_RECIPES,
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
     VIDEO_RECIPES,
 )
-from chaos_librarian.materializer.probe import probe_file
-from chaos_librarian.materializer.recipes import FFmpegInput, srt_payload
+from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
+from chaos_librarian.materializer.tooling.probe import probe_file
+from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
 
 __all__ = ["materialize_one_asset", "write_sidecars"]
 

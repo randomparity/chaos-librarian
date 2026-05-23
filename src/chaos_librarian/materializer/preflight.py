@@ -34,8 +34,8 @@ from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
 )
-from chaos_librarian.materializer.ffmpeg import build_command
-from chaos_librarian.materializer.recipes import (
+from chaos_librarian.materializer.tooling.ffmpeg import build_command
+from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
     recipe_channel_tones,
     recipe_color_bars,

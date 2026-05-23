@@ -8,9 +8,9 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.materializer import probe as probe_mod
 from chaos_librarian.materializer.errors import ProbeParseError
-from chaos_librarian.materializer.probe import probe_file
+from chaos_librarian.materializer.tooling import probe as probe_mod
+from chaos_librarian.materializer.tooling.probe import probe_file
 
 _GOOD_PROBE = json.dumps(
     {

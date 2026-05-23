@@ -13,12 +13,13 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.materialization import Outcome
-from chaos_librarian.materializer.capabilities import (
+from chaos_librarian.contract.scenario import SidecarKind
+from chaos_librarian.materializer.errors import MediaActionError, ScenarioValidationError
+from chaos_librarian.materializer.run import materialize_scenario
+from chaos_librarian.materializer.tooling.capabilities import (
     MIN_VERSIONS,
     detect_capabilities,
 )
-from chaos_librarian.materializer.errors import MediaActionError, ScenarioValidationError
-from chaos_librarian.materializer.run import materialize_scenario
 from tests.integration.conftest import (
     _load_asset_report,
     _load_current_manifest,
@@ -81,10 +82,10 @@ def test_bundle_sidecars_end_to_end(tmp_path: Path) -> None:
     assert nfo_text.lstrip().startswith("<?xml")
     manifest = _load_current_manifest(out)
     sidecar_kinds = {s.kind for s in manifest.sidecars}
-    assert "poster" in sidecar_kinds
-    assert "nfo" in sidecar_kinds
+    assert SidecarKind.POSTER in sidecar_kinds
+    assert SidecarKind.NFO in sidecar_kinds
     # And the manifest's lone subtitle sidecar is GONE (embed consumed it).
-    assert not any(s.kind == "subtitle" for s in manifest.sidecars)
+    assert not any(s.kind is SidecarKind.SUBTITLE for s in manifest.sidecars)
 
 
 def test_remux_container_real(tmp_path: Path) -> None:

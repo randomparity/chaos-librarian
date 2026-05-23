@@ -39,7 +39,7 @@ from chaos_librarian.engine.resolution import (
     step_boundaries,
 )
 from chaos_librarian.engine.state import WorldState, build_initial_state
-from chaos_librarian.errors import ChaosLibrarianError
+from chaos_librarian.errors import ChaosLibrarianError, ChaosLibrarianValueError
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
@@ -102,19 +102,22 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
             ``.chaos-librarian-run`` sentinel).
         n_steps: Maximum step units to apply this call. A ``slow_copy_start``
             + ``slow_copy_commit`` adjacent pair is one step unit covering
-            two raw journal entries. The CLI layer rejects 0 / negative
-            values via Typer's ``min=1``.
+            two raw journal entries. Must be at least 1.
 
     Returns:
         ``StepResult`` describing what was applied. The function never
         writes; the caller persists via ``append_step``.
 
     Raises:
+        ChaosLibrarianValueError: ``n_steps`` is less than 1.
         SentinelInvalidError: sentinel missing or unparseable.
         ScenarioTamperedError: scenario.yaml mutated since fixture creation.
         JournalCorruptError: on-disk journal disagrees with the
             regenerated prefix or sits at an off-step-unit-boundary length.
     """
+    if n_steps < 1:
+        raise ChaosLibrarianValueError("n_steps must be >= 1")
+
     verify_sentinel(run_dir)
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())

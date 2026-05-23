@@ -24,7 +24,7 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _iter_timeline_events,
     _RawMapping,
-    iter_assets_with_loc,
+    asset_containers,
     primary_root_path,
     try_parse_duration,
 )
@@ -196,9 +196,10 @@ def rule_slow_copy_path_collision(
     source of truth.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    primary_path, asset_containers = _index_asset_paths(raw)
+    primary_path = primary_root_path(raw)
     if primary_path is None:
         return  # Pydantic owns shape on missing roots[0]
+    containers_by_asset = asset_containers(raw)
     for idx, event in _iter_timeline_events(raw):
         if event.get("action") != TimelineActionName.SLOW_COPY_START:
             continue
@@ -218,7 +219,7 @@ def rule_slow_copy_path_collision(
                 loc=("timeline", idx, "temp_path"),
             )
             continue  # one error per event
-        container = asset_containers.get(target)
+        container = containers_by_asset.get(target)
         if container is None:
             continue  # asset undeclared; rule_target_unknown owns that
         initial_path = INITIAL_PATH_TEMPLATE.format(
@@ -236,25 +237,3 @@ def rule_slow_copy_path_collision(
                 ),
                 loc=("timeline", idx, "temp_path"),
             )
-
-
-def _index_asset_paths(
-    raw: Mapping[str, object],
-) -> tuple[str | None, dict[str, str]]:
-    """Return ``(primary_root_path, asset_id -> container)``.
-
-    Shape-defensive: returns ``(None, {})`` if the library subtree is missing
-    or malformed (Pydantic flags that case). Reuses ``iter_assets_with_loc``
-    so the works -> variants -> bundle -> assets walk stays single-sourced
-    in ``_common.py``.
-    """
-    primary_path = primary_root_path(raw)
-    if primary_path is None:
-        return (None, {})
-    containers: dict[str, str] = {}
-    for asset, _ in iter_assets_with_loc(raw):
-        asset_id = asset.get("id")
-        container = asset.get("container")
-        if isinstance(asset_id, str) and isinstance(container, str):
-            containers[asset_id] = container
-    return (primary_path, containers)

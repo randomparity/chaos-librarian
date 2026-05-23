@@ -318,7 +318,9 @@ Every artifact carries a top-level `schema_version` field (positive integer).
 - A given chaos-librarian release supports exactly one schema version per
   artifact. Multi-version compatibility shims are explicit non-goals.
 
-### Schemas Defined In Sprint 0
+### Exported Schema Artifacts
+
+`src/chaos_librarian/schema_export.py` exports the authoritative schema set:
 
 - `scenario.schema.json` — input scenario format
 - `manifest.schema.json` — initial and current library state
@@ -326,9 +328,14 @@ Every artifact carries a top-level `schema_version` field (positive integer).
 - `replay-bundle.schema.json` — see "Replay Bundle"
 - `validation.schema.json` — output of `validate`
 - `materialization.schema.json` — materialization diagnostics
-
-Later sprints add `divergence.schema.json` (Sprint 9) and any schemas required
-by extended profiles (Sprint 10).
+- `run-sentinel.schema.json` — `.chaos-librarian-run` sentinel file
+- `asset-report.schema.json` — per-asset report under `reports/assets/`
+- `work-report.schema.json` — per-work report under `reports/works/`
+- `variant-report.schema.json` — per-variant report under `reports/variants/`
+- `bundle-report.schema.json` — per-bundle report under `reports/bundles/`
+- `capabilities.schema.json` — output of `capabilities`
+- `observed-state.schema.json` — consumer input to `compare`
+- `divergence.schema.json` — output of `compare`
 
 ## Scenario Format
 
