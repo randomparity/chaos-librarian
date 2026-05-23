@@ -263,11 +263,23 @@ def observed_from_fixture(
     *,
     run_id: uuid.UUID | None = None,
     path_override: str | None = None,
+    include_current_paths: bool = True,
+    include_topology: bool = False,
 ) -> ObservedState:
     locations = {
         location.asset_id: location for location in oracle_fixture.current_manifest.locations
     }
     versions = {version.asset_id: version for version in oracle_fixture.current_manifest.versions}
+    work_refs = {work.id: f"observed-{work.id}" for work in oracle_fixture.current_manifest.works}
+    variant_refs = {
+        variant.id: f"observed-{variant.id}" for variant in oracle_fixture.current_manifest.variants
+    }
+    bundle_refs = {
+        bundle.id: f"observed-{bundle.id}" for bundle in oracle_fixture.current_manifest.bundles
+    }
+    bundles_by_id = {bundle.id: bundle for bundle in oracle_fixture.current_manifest.bundles}
+    variants_by_id = {variant.id: variant for variant in oracle_fixture.current_manifest.variants}
+    asset_refs_by_bundle: dict[str, list[str]] = {}
     sidecars_by_asset: dict[str, list[ObservedSidecar]] = {}
     for sidecar in oracle_fixture.current_manifest.sidecars:
         sidecars_by_asset.setdefault(sidecar.asset_id, []).append(
@@ -282,22 +294,52 @@ def observed_from_fixture(
     for asset in oracle_fixture.current_manifest.assets:
         location = locations.get(asset.id)
         version = versions.get(asset.id)
-        current_path = location.path if location is not None else None
-        if path_override is not None and not assets:
+        bundle = bundles_by_id[asset.bundle_id]
+        variant = variants_by_id[bundle.variant_id]
+        observed_ref = f"observed-{asset.id}"
+        asset_refs_by_bundle.setdefault(asset.bundle_id, []).append(observed_ref)
+        current_path = location.path if location is not None and include_current_paths else None
+        if include_current_paths and path_override is not None and not assets:
             current_path = path_override
         assets.append(
             ObservedAsset(
-                observed_ref=f"observed-{asset.id}",
+                observed_ref=observed_ref,
                 current_path=current_path,
                 content_hash=version.content_hash if version is not None else None,
                 probed=version.probed if version is not None else None,
+                work_ref=work_refs[variant.work_id] if include_topology else None,
+                variant_ref=variant_refs[bundle.variant_id] if include_topology else None,
+                bundle_ref=bundle_refs[asset.bundle_id] if include_topology else None,
                 sidecars=sidecars_by_asset.get(asset.id, []),
             )
         )
+    works = [
+        ObservedWork(observed_ref=work_refs[work.id], title=work.title)
+        for work in oracle_fixture.current_manifest.works
+    ]
+    variants = [
+        ObservedVariant(
+            observed_ref=variant_refs[variant.id],
+            work_ref=work_refs[variant.work_id],
+            label=variant.label,
+        )
+        for variant in oracle_fixture.current_manifest.variants
+    ]
+    bundles = [
+        ObservedBundle(
+            observed_ref=bundle_refs[bundle.id],
+            variant_ref=variant_refs[bundle.variant_id],
+            asset_refs=asset_refs_by_bundle.get(bundle.id, []),
+        )
+        for bundle in oracle_fixture.current_manifest.bundles
+    ]
     return ObservedState(
         schema_version=1,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id or oracle_fixture.run_id,
         observed_at=oracle_fixture.sentinel.created_at or datetime(2026, 5, 22, tzinfo=UTC),
         assets=assets,
+        works=works if include_topology else [],
+        variants=variants if include_topology else [],
+        bundles=bundles if include_topology else [],
     )
