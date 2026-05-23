@@ -94,15 +94,15 @@ Modify:
 
 ## Task 3: Network Lag Contract And Validation
 
-- [ ] Add failing contract tests for `network_lag_start` and
+- [x] Add failing contract tests for `network_lag_start` and
   `network_lag_commit`.
-- [ ] Add `NetworkLagEffect`, `NetworkLagStartEvent`, and
+- [x] Add `NetworkLagEffect`, `NetworkLagStartEvent`, and
   `NetworkLagCommitEvent` to the timeline union.
-- [ ] Add profile opt-in tests: lag events require `network-fs-lag`.
-- [ ] Add lag semantic tests for unknown starts, bad timing, non-adjacent start,
+- [x] Add profile opt-in tests: lag events require `network-fs-lag`.
+- [x] Add lag semantic tests for unknown starts, bad timing, non-adjacent start,
   target mismatch, and same-target mutation inside a pending lag window.
-- [ ] Implement lag validation with existing reporter patterns.
-- [ ] Run:
+- [x] Implement lag validation with existing reporter patterns.
+- [x] Run:
   `uv run pytest tests/contract/test_scenario.py tests/validation/rules/test_profile_opt_in.py tests/validation/rules/test_network_lag.py -q --no-cov`.
 
 ## Task 4: Planning And Audit Contract

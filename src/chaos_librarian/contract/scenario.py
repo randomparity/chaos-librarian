@@ -41,6 +41,8 @@ class TimelineActionName(enum.StrEnum):
     REMOVE_SIDECAR = "remove_sidecar"
     UPDATE_SIDECAR = "update_sidecar"
     CORRUPT_CONTAINER_HEADER = "corrupt_container_header"
+    NETWORK_LAG_START = "network_lag_start"
+    NETWORK_LAG_COMMIT = "network_lag_commit"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -112,6 +114,14 @@ class SidecarKind(enum.StrEnum):
     SUBTITLE = "subtitle"
     POSTER = "poster"
     NFO = "nfo"
+
+
+class NetworkLagEffect(enum.StrEnum):
+    """Watcher-visible filesystem lag artifact requested by a lag window."""
+
+    DELAYED_VISIBILITY = "delayed_visibility"
+    DELAYED_RENAME = "delayed_rename"
+    HELD_HANDLE = "held_handle"
 
 
 # ---- Library ----------------------------------------------------------------
@@ -356,6 +366,23 @@ class CorruptContainerHeaderEvent(_TimelineEventBase):
     bytes: int = Field(default=64, ge=1, le=4096)
 
 
+class NetworkLagStartEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.NETWORK_LAG_START] = TimelineActionName.NETWORK_LAG_START
+    effect: NetworkLagEffect
+    target: str
+    after: str
+    duration: str
+
+
+class NetworkLagCommitEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.NETWORK_LAG_COMMIT] = TimelineActionName.NETWORK_LAG_COMMIT
+    # `for` is a Python keyword; keep the same Python/YAML split as slow copy.
+    for_: str = Field(
+        validation_alias=AliasChoices("for_", "for"),
+        serialization_alias="for",
+    )
+
+
 TimelineEvent = Annotated[
     MoveAssetEvent
     | RenameFileEvent
@@ -374,7 +401,9 @@ TimelineEvent = Annotated[
     | ExtractSubtitleEvent
     | RemoveSidecarEvent
     | UpdateSidecarEvent
-    | CorruptContainerHeaderEvent,
+    | CorruptContainerHeaderEvent
+    | NetworkLagStartEvent
+    | NetworkLagCommitEvent,
     Field(discriminator="action"),
 ]
 

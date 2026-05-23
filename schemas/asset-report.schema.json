@@ -384,7 +384,9 @@
         "extract_subtitle",
         "remove_sidecar",
         "update_sidecar",
-        "corrupt_container_header"
+        "corrupt_container_header",
+        "network_lag_start",
+        "network_lag_commit"
       ],
       "title": "TimelineActionName",
       "type": "string"

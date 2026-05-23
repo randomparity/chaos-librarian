@@ -19,6 +19,7 @@ from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )
 from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
+from chaos_librarian.validation.rules.network_lag import rule_network_lag
 from chaos_librarian.validation.rules.path_containment import rule_path_containment
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
 from chaos_librarian.validation.rules.profile_budgets import rule_profile_budgets
@@ -53,6 +54,7 @@ _RULES: list[Rule] = [
     rule_slow_copy_unpaired,
     rule_slow_copy_timing,
     rule_slow_copy_path_collision,
+    rule_network_lag,
     rule_path_containment,
     rule_timeline_order,
     rule_timeline_lifecycle,

@@ -46,6 +46,35 @@ class TestRule3DurationSyntax:
             for i in collector.issues
         )
 
+    def test_bad_network_lag_duration(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(
+            profiles=["network-fs-lag"],
+            timeline=[
+                {
+                    "id": "rename_001",
+                    "at": "1s",
+                    "action": "rename_file",
+                    "target": "a",
+                    "to": "r/a-renamed.mkv",
+                },
+                {
+                    "id": "lag_start_001",
+                    "at": "1s",
+                    "action": "network_lag_start",
+                    "effect": "delayed_rename",
+                    "target": "a",
+                    "after": "rename_001",
+                    "duration": "bogus",  # parse failure
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_DURATION_SYNTAX and "duration" in (i.path or "")
+            for i in collector.issues
+        )
+
     def test_valid_durations_no_issues(self, minimal_scenario, empty_index) -> None:
         raw = minimal_scenario(
             timeline=[

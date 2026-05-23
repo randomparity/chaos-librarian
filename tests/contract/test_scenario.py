@@ -24,6 +24,8 @@ from chaos_librarian.contract.scenario import (
     LibraryRoot,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    NetworkLagCommitEvent,
+    NetworkLagStartEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RemoveSidecarEvent,
@@ -235,6 +237,50 @@ def test_scenario_rejects_unknown_profile_value() -> None:
 
     with pytest.raises(ValidationError):
         Scenario.model_validate(payload)
+
+
+def test_network_lag_events_round_trip() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["profiles"] = ["network-fs-lag"]
+    payload["timeline"] = [
+        {
+            "id": "rename_001",
+            "at": "10s",
+            "action": "rename_file",
+            "target": "a1",
+            "to": "movies-hd/a1-renamed.mkv",
+        },
+        {
+            "id": "lag_rename_start",
+            "at": "10s",
+            "action": "network_lag_start",
+            "effect": "delayed_rename",
+            "target": "a1",
+            "after": "rename_001",
+            "duration": "2s",
+        },
+        {
+            "id": "lag_rename_commit",
+            "at": "12s",
+            "action": "network_lag_commit",
+            "for": "lag_rename_start",
+        },
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert [event.action for event in scenario.timeline] == [
+        TimelineActionName.RENAME_FILE,
+        TimelineActionName.NETWORK_LAG_START,
+        TimelineActionName.NETWORK_LAG_COMMIT,
+    ]
+    assert isinstance(scenario.timeline[1], NetworkLagStartEvent)
+    assert scenario.timeline[1].effect.value == "delayed_rename"
+    assert scenario.timeline[1].after == "rename_001"
+    assert isinstance(scenario.timeline[2], NetworkLagCommitEvent)
+    assert scenario.timeline[2].for_ == "lag_rename_start"
+    dumped = scenario.model_dump(mode="json", by_alias=True)
+    assert dumped["timeline"][2]["for"] == "lag_rename_start"
 
 
 def test_corrupt_container_header_defaults_to_64_bytes() -> None:
