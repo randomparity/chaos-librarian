@@ -69,6 +69,8 @@ def probe_content_cache(root: Path | None = None) -> CacheProbe:
         return CacheProbe(root=cache_root, writable=False, reason="parent_missing")
     if cache_root.exists() and not cache_root.is_dir():
         return CacheProbe(root=cache_root, writable=False, reason="not_directory")
+    if not probe_target.is_dir():
+        return CacheProbe(root=cache_root, writable=False, reason="not_directory")
     if not os.access(probe_target, os.W_OK):
         return CacheProbe(root=cache_root, writable=False, reason="not_writable")
     return CacheProbe(root=cache_root, writable=True, reason=None)

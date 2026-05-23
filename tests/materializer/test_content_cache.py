@@ -158,6 +158,18 @@ def test_probe_content_cache_rejects_existing_regular_file(tmp_path: Path) -> No
     assert probe.reason == "not_directory"
 
 
+def test_probe_content_cache_rejects_regular_file_parent(tmp_path: Path) -> None:
+    cache_parent = tmp_path / "cache-parent"
+    cache_parent.write_text("not a directory")
+    cache_root = cache_parent / "content"
+
+    probe = probe_content_cache(cache_root)
+
+    assert probe.root == cache_root
+    assert probe.writable is False
+    assert probe.reason == "not_directory"
+
+
 def test_default_cache_root_honors_env_override(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
