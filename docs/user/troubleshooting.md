@@ -24,11 +24,14 @@ an asset after delete, or committing a slow copy without a matching start.
 
 ## Exit `4`
 
-Install or upgrade ffmpeg, ffprobe, or mkvmerge. Run:
+Install or upgrade ffmpeg or ffprobe. Run:
 
 ```bash
 uv run chaos-librarian capabilities --json
 ```
+
+If `ready_for.materialize_media_mutations` is false, install or upgrade
+mkvmerge before enabling media-mutation jobs.
 
 ## Exit `5`
 

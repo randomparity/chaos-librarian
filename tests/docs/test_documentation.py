@@ -190,11 +190,14 @@ def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
 def test_user_docs_describe_current_replay_support() -> None:
     commands = _read(DOCS / "user" / "commands.md")
     run_artifacts = _read(DOCS / "user" / "run-artifacts.md")
+    troubleshooting = _read(DOCS / "user" / "troubleshooting.md")
 
     assert "Replay a recorded plan-only or wall-clock run bundle" in commands
     assert "Materialize-mode replay is not implemented" in commands
     assert "plan-only and wall-clock run bundles" in run_artifacts
     assert "materialize-mode replay is not implemented" in run_artifacts
+    assert "Install or upgrade ffmpeg or ffprobe" in troubleshooting
+    assert "ready_for.materialize_media_mutations" in troubleshooting
 
 
 def test_user_docs_cover_commands_and_timeline_actions() -> None:
