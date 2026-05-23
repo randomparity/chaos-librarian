@@ -1,4 +1,4 @@
-schema_version: 7
+schema_version: 8
 scenario_id: malformed-container-header
 seed: 110
 duration_scale: short

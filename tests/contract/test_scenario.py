@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
-from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     ArchiveFileEvent,
@@ -25,6 +24,8 @@ from chaos_librarian.contract.scenario import (
     LibraryRoot,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    NetworkLagCommitEvent,
+    NetworkLagStartEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RemoveSidecarEvent,
@@ -209,27 +210,77 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_seven() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 7
+def test_scenario_schema_version_is_eight() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 8
 
 
-def test_scenario_accepts_malformed_media_profile() -> None:
+def test_scenario_accepts_profile_labels() -> None:
     payload = _minimal_scenario().model_dump(mode="json")
-    payload["schema_version"] = 7
-    payload["profiles"] = ["malformed-media"]
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
+    payload["profiles"] = [
+        "malformed-media",
+        "performance-smoke",
+        "performance-scale",
+        "performance-stress",
+        "network-fs-lag",
+    ]
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.profiles == (ProfileName.MALFORMED_MEDIA,)
+    assert tuple(profile.value for profile in scenario.profiles) == tuple(payload["profiles"])
 
 
 def test_scenario_rejects_unknown_profile_value() -> None:
     payload = _minimal_scenario().model_dump(mode="json")
-    payload["schema_version"] = 7
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
     payload["profiles"] = ["not-a-profile"]
 
     with pytest.raises(ValidationError):
         Scenario.model_validate(payload)
+
+
+def test_network_lag_events_round_trip() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["profiles"] = ["network-fs-lag"]
+    payload["timeline"] = [
+        {
+            "id": "rename_001",
+            "at": "10s",
+            "action": "rename_file",
+            "target": "a1",
+            "to": "movies-hd/a1-renamed.mkv",
+        },
+        {
+            "id": "lag_rename_start",
+            "at": "10s",
+            "action": "network_lag_start",
+            "effect": "delayed_rename",
+            "target": "a1",
+            "after": "rename_001",
+            "duration": "2s",
+        },
+        {
+            "id": "lag_rename_commit",
+            "at": "12s",
+            "action": "network_lag_commit",
+            "for": "lag_rename_start",
+        },
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert [event.action for event in scenario.timeline] == [
+        TimelineActionName.RENAME_FILE,
+        TimelineActionName.NETWORK_LAG_START,
+        TimelineActionName.NETWORK_LAG_COMMIT,
+    ]
+    assert isinstance(scenario.timeline[1], NetworkLagStartEvent)
+    assert scenario.timeline[1].effect.value == "delayed_rename"
+    assert scenario.timeline[1].after == "rename_001"
+    assert isinstance(scenario.timeline[2], NetworkLagCommitEvent)
+    assert scenario.timeline[2].for_ == "lag_rename_start"
+    dumped = scenario.model_dump(mode="json", by_alias=True)
+    assert dumped["timeline"][2]["for"] == "lag_rename_start"
 
 
 def test_corrupt_container_header_defaults_to_64_bytes() -> None:
@@ -352,9 +403,9 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v7():
+def test_scenario_v4_actions_round_trip_at_v8():
     payload = {
-        "schema_version": 7,
+        "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_arch_001",
         "seed": 42,
         "duration_scale": "short",
@@ -373,7 +424,7 @@ def test_scenario_v4_actions_round_trip_at_v7():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 7
+    assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE
 
 
@@ -540,9 +591,9 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v7_round_trip_with_sprint_7_events():
+def test_scenario_v8_round_trip_with_sprint_7_events():
     payload = {
-        "schema_version": 7,
+        "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_s7_001",
         "seed": 42,
         "duration_scale": "short",
@@ -559,5 +610,5 @@ def test_scenario_v7_round_trip_with_sprint_7_events():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 7
+    assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER

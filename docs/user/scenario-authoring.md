@@ -2,13 +2,13 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 7`.
+`schema_version: 8`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 7`
+- `schema_version: 8`
 - `scenario_id`
 - `seed`
 - `duration_scale`
@@ -68,7 +68,7 @@ for plan-only fixtures until materializer support exists.
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 7
+schema_version: 8
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -149,6 +149,14 @@ copy.
 
 ## Profiles
 
+Supported profile labels are:
+
+- `malformed-media`
+- `performance-smoke`
+- `performance-scale`
+- `performance-stress`
+- `network-fs-lag`
+
 `corrupt_container_header` requires explicit opt-in:
 
 ```yaml
@@ -158,3 +166,14 @@ profiles:
 
 Without the `malformed-media` profile, malformed-media corruption scenarios fail
 validation.
+
+Network filesystem lag events also require explicit opt-in:
+
+```yaml
+profiles:
+  - network-fs-lag
+```
+
+`network_lag_start` uses `effect`, `target`, `after`, and `duration`.
+`network_lag_commit` uses `for`. The start event must share the referenced
+event's `at:` value and immediately follow it in declaration order.

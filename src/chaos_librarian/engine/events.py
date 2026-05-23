@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Final
 
+from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import (
     AtomicJournalEntry,
     CommittedJournalEntry,
@@ -39,6 +40,8 @@ from chaos_librarian.contract.scenario import (
     ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    NetworkLagCommitEvent,
+    NetworkLagStartEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RemoveSidecarEvent,
@@ -108,6 +111,30 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "seed_material",
         }
     ),
+    TimelineActionName.NETWORK_LAG_START: frozenset(
+        {
+            "effect",
+            "target_ref",
+            "after_event_id",
+            "logical_start_ns",
+            "logical_commit_ns",
+            "requested_duration_ns",
+            "from_path",
+            "to_path",
+        }
+    ),
+    TimelineActionName.NETWORK_LAG_COMMIT: frozenset(
+        {
+            "effect",
+            "target_ref",
+            "after_event_id",
+            "logical_start_ns",
+            "logical_commit_ns",
+            "requested_duration_ns",
+            "from_path",
+            "to_path",
+        }
+    ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
 
@@ -130,7 +157,10 @@ def apply_event(
 ) -> tuple[JournalEntry, ...]:
     """Dispatch one resolved event to its handler and return its journal entries."""
     handler = _HANDLERS[resolved.event.action]
-    return handler(state, resolved, ids, ctx)
+    entries = handler(state, resolved, ids, ctx)
+    for entry in entries:
+        state.previous_event_delta = (entry.event_id, dict(entry.state_delta))
+    return entries
 
 
 def _checked_event[EventT](resolved: ResolvedEvent, event_type: type[EventT]) -> EventT:
@@ -807,6 +837,113 @@ def _handle_corrupt_container_header(
     )
 
 
+def _handle_network_lag_start(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, NetworkLagStartEvent)
+    if state.previous_event_delta is None or state.previous_event_delta[0] != event.after:
+        raise ChaosLibrarianValueError(
+            f"network_lag_start must immediately follow after event {event.after!r}"
+        )
+    source_delta = state.previous_event_delta[1]
+    duration_ns = parse_duration(event.duration)
+    state_delta = _network_lag_delta(
+        event=event,
+        source_delta=source_delta,
+        logical_start_ns=resolved.at_ns,
+        requested_duration_ns=duration_ns,
+    )
+    state.pending_network_lags[event.id] = state_delta
+    entry = StartedJournalEntry(
+        schema_version=1,
+        event_id=event.id,
+        scenario_id=ctx.scenario_id,
+        run_id=ctx.run_id,
+        logical_time_ns=resolved.at_ns,
+        action=TimelineActionName.NETWORK_LAG_START,
+        target_ids=[event.target],
+        location_ids=_location_ids_for_target(state, event.target),
+        state_delta=state_delta,
+        phase=JournalPhase.STARTED,
+        temp_path=_network_lag_temp_path(event.id),
+    )
+    return (entry,)
+
+
+def _handle_network_lag_commit(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, NetworkLagCommitEvent)
+    state_delta = state.pending_network_lags.pop(event.for_)
+    target_ref = state_delta.get("target_ref")
+    target_ids = [target_ref] if isinstance(target_ref, str) else []
+    entry = CommittedJournalEntry(
+        schema_version=1,
+        event_id=event.id,
+        scenario_id=ctx.scenario_id,
+        run_id=ctx.run_id,
+        logical_time_ns=resolved.at_ns,
+        action=TimelineActionName.NETWORK_LAG_COMMIT,
+        target_ids=target_ids,
+        location_ids=_location_ids_for_target(state, target_ref),
+        state_delta=dict(state_delta),
+        phase=JournalPhase.COMMITTED,
+        related_event_id=event.for_,
+    )
+    return (entry,)
+
+
+def _network_lag_delta(
+    *,
+    event: NetworkLagStartEvent,
+    source_delta: dict[str, object],
+    logical_start_ns: int,
+    requested_duration_ns: int,
+) -> dict[str, object]:
+    return {
+        "effect": event.effect.value,
+        "target_ref": event.target,
+        "after_event_id": event.after,
+        "logical_start_ns": logical_start_ns,
+        "logical_commit_ns": logical_start_ns + requested_duration_ns,
+        "requested_duration_ns": requested_duration_ns,
+        "from_path": _first_string(
+            source_delta,
+            ("from_path", "input_path", "removed_path", "sidecar_path"),
+        ),
+        "to_path": _first_string(
+            source_delta,
+            ("to_path", "output_path", "added_path", "final_path", "sidecar_path"),
+        ),
+    }
+
+
+def _first_string(source: dict[str, object], keys: tuple[str, ...]) -> str | None:
+    for key in keys:
+        value = source.get(key)
+        if isinstance(value, str):
+            return value
+    return None
+
+
+def _location_ids_for_target(state: WorldState, target: object) -> list[str]:
+    if not isinstance(target, str) or not state.has_location(target):
+        return []
+    return [state.location_id_for_asset(target)]
+
+
+def _network_lag_temp_path(event_id: str) -> str:
+    return f".chaos-librarian/network-lag/{event_id}"
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -826,4 +963,6 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
     TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
     TimelineActionName.CORRUPT_CONTAINER_HEADER: _handle_corrupt_container_header,
+    TimelineActionName.NETWORK_LAG_START: _handle_network_lag_start,
+    TimelineActionName.NETWORK_LAG_COMMIT: _handle_network_lag_commit,
 }

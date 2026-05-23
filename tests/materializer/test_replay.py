@@ -47,7 +47,7 @@ _INPUT_HASH = "sha256:" + "1" * 64
 _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _SCENARIO = b"""\
-schema_version: 7
+schema_version: 8
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short

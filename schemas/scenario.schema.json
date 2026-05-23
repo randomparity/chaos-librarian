@@ -554,9 +554,97 @@
       "title": "MoveBetweenRootsEvent",
       "type": "object"
     },
+    "NetworkLagCommitEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "network_lag_commit",
+          "default": "network_lag_commit",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "for": {
+          "title": "For",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "for"
+      ],
+      "title": "NetworkLagCommitEvent",
+      "type": "object"
+    },
+    "NetworkLagEffect": {
+      "description": "Watcher-visible filesystem lag artifact requested by a lag window.",
+      "enum": [
+        "delayed_visibility",
+        "delayed_rename",
+        "held_handle"
+      ],
+      "title": "NetworkLagEffect",
+      "type": "string"
+    },
+    "NetworkLagStartEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "network_lag_start",
+          "default": "network_lag_start",
+          "title": "Action",
+          "type": "string"
+        },
+        "after": {
+          "title": "After",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "duration": {
+          "title": "Duration",
+          "type": "string"
+        },
+        "effect": {
+          "$ref": "#/$defs/NetworkLagEffect"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "effect",
+        "target",
+        "after",
+        "duration"
+      ],
+      "title": "NetworkLagStartEvent",
+      "type": "object"
+    },
     "ProfileName": {
       "enum": [
-        "malformed-media"
+        "malformed-media",
+        "performance-smoke",
+        "performance-scale",
+        "performance-stress",
+        "network-fs-lag"
       ],
       "title": "ProfileName",
       "type": "string"
@@ -1013,7 +1101,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 7,
+      "const": 8,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -1043,6 +1131,8 @@
             "extract_subtitle": "#/$defs/ExtractSubtitleEvent",
             "move_asset": "#/$defs/MoveAssetEvent",
             "move_between_roots": "#/$defs/MoveBetweenRootsEvent",
+            "network_lag_commit": "#/$defs/NetworkLagCommitEvent",
+            "network_lag_start": "#/$defs/NetworkLagStartEvent",
             "reencode_audio": "#/$defs/ReencodeAudioEvent",
             "reencode_video": "#/$defs/ReencodeVideoEvent",
             "remove_sidecar": "#/$defs/RemoveSidecarEvent",
@@ -1108,6 +1198,12 @@
           },
           {
             "$ref": "#/$defs/CorruptContainerHeaderEvent"
+          },
+          {
+            "$ref": "#/$defs/NetworkLagStartEvent"
+          },
+          {
+            "$ref": "#/$defs/NetworkLagCommitEvent"
           }
         ]
       },

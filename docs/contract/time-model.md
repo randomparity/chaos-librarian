@@ -25,8 +25,8 @@ See [`chaos-librarian-design.md` "Time Model"](../specs/chaos-librarian-design.m
 
 ## Profile Timing
 
-Future lag profiles use the existing duration grammar.
-Lag windows use the same logical clock as timeline events.
+Network lag profiles use the existing duration grammar. Lag windows use the
+same logical clock as timeline events.
 
 Lag windows are scaled by the `run --speed` multiplier in wall-clock mode. If
 `run --duration` expires inside a lag window, the runner continues through the

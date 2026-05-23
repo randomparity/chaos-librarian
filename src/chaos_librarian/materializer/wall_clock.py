@@ -17,12 +17,14 @@ from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import (
     FilesystemAction,
     MaterializationExecutionMode,
+    NetworkLagAction,
     Outcome,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
+    NetworkLagEffect,
     Scenario,
     TimelineActionName,
 )
@@ -59,6 +61,7 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
+from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
 from chaos_librarian.materializer.preflight import (
     iter_assets,
     preflight_asset,
@@ -109,9 +112,29 @@ class WallClockSlowCopySession:
 
 
 @dataclass(slots=True)
+class WallClockNetworkLagSession:
+    """Active wall-clock network-lag state."""
+
+    start_event_id: str
+    effect: NetworkLagEffect
+    target_ref: str
+    after_event_id: str
+    logical_start_ns: int
+    logical_commit_ns: int
+    requested_duration_ns: int
+    started_wall_ns: int
+    from_path: str | None
+    to_path: str | None
+
+
+@dataclass(slots=True)
 class _DispatchState(PhaseBState):
     slow_copies: dict[str, WallClockSlowCopySession] = field(default_factory=dict)
     slow_copy_initial_paths: dict[str, str] = field(default_factory=dict)
+    network_lag_starts_by_after: dict[str, JournalEntry] = field(default_factory=dict)
+    network_lags: dict[str, WallClockNetworkLagSession] = field(default_factory=dict)
+    deferred_network_lag_entries: dict[str, JournalEntry] = field(default_factory=dict)
+    network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
 
 
 def _monotonic_ns() -> int:
@@ -148,7 +171,7 @@ def run_wall_clock_scenario(
             validation_report=validation_report,
         )
     scenario = run_input.scenario
-    preflight_timeline(scenario)
+    preflight_timeline(scenario, allow_network_lag=True)
     resolved_timeline = resolve_timeline(scenario)
     _preflight_wall_clock_slow_copies(resolved_timeline)
     caps = detect_capabilities()
@@ -314,6 +337,7 @@ def _run_timed_phase(
     executed_journal: list[JournalEntry] = []
     cursor = 0
     journal = run_context.plan_artifacts.journal
+    _configure_network_lag_schedule(state, journal)
     logical_times_ns = [entry.logical_time_ns for entry in journal]
     commit_times = _slow_copy_commit_times(journal)
     overran_duration = False
@@ -346,6 +370,17 @@ def _run_timed_phase(
                 )
         if state.slow_copies:
             cursor = _finish_active_slow_copies(
+                cursor=cursor,
+                journal=journal,
+                state=state,
+                start_wall_ns=start_wall_ns,
+                speed=speed,
+                executed_journal=executed_journal,
+                out_dir=run_context.out_dir,
+            )
+            overran_duration = True
+        if state.network_lags:
+            cursor = _finish_active_network_lags(
                 cursor=cursor,
                 journal=journal,
                 state=state,
@@ -451,6 +486,10 @@ def _execute_entry(
     entry: JournalEntry,
     commit_times: Mapping[str, int],
 ) -> None:
+    lag_start = state.network_lag_starts_by_after.get(entry.event_id)
+    if lag_start is not None:
+        state.deferred_network_lag_entries[lag_start.event_id] = entry
+        return
     action = TimelineActionName(entry.action)
     if action is TimelineActionName.SLOW_COPY_START:
         state.filesystem_actions.append(_wall_clock_slow_copy_start(state, entry, commit_times))
@@ -458,7 +497,27 @@ def _execute_entry(
     if action is TimelineActionName.SLOW_COPY_COMMIT:
         state.filesystem_actions.append(_wall_clock_slow_copy_commit(state, entry))
         return
+    if action is TimelineActionName.NETWORK_LAG_START:
+        _wall_clock_network_lag_start(state, entry)
+        return
+    if action is TimelineActionName.NETWORK_LAG_COMMIT:
+        state.network_lag_actions.append(_wall_clock_network_lag_commit(state, entry))
+        return
     dispatch_phase_b_entry(state, entry)
+
+
+def _configure_network_lag_schedule(
+    state: _DispatchState,
+    journal: tuple[JournalEntry, ...],
+) -> None:
+    for entry in journal:
+        if TimelineActionName(entry.action) is not TimelineActionName.NETWORK_LAG_START:
+            continue
+        effect = _network_lag_effect(entry)
+        if effect is NetworkLagEffect.HELD_HANDLE:
+            continue
+        after_event_id = _network_lag_str(entry, "after_event_id")
+        state.network_lag_starts_by_after[after_event_id] = entry
 
 
 def _wall_clock_slow_copy_start(
@@ -507,11 +566,12 @@ def _wall_clock_slow_copy_commit(
     temp = state.fs_ctx.library_root / session.temp_path
     temp.parent.mkdir(parents=True, exist_ok=True)
     temp.write_bytes(session.source_bytes)
-    if initial_path != session.final_path:
-        (state.fs_ctx.library_root / initial_path).unlink(missing_ok=True)
-    final = state.fs_ctx.library_root / session.final_path
-    final.parent.mkdir(parents=True, exist_ok=True)
-    temp.replace(final)
+    promote_slow_copy(
+        library_root=state.fs_ctx.library_root,
+        initial_path=initial_path,
+        temp_path=session.temp_path,
+        final_path=session.final_path,
+    )
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName.SLOW_COPY_COMMIT,
@@ -521,6 +581,73 @@ def _wall_clock_slow_copy_commit(
         temp_path=None,
         duration_ns=0,
     )
+
+
+def _wall_clock_network_lag_start(state: _DispatchState, entry: JournalEntry) -> None:
+    effect = _network_lag_effect(entry)
+    state.network_lags[entry.event_id] = WallClockNetworkLagSession(
+        start_event_id=entry.event_id,
+        effect=effect,
+        target_ref=_network_lag_str(entry, "target_ref"),
+        after_event_id=_network_lag_str(entry, "after_event_id"),
+        logical_start_ns=_network_lag_int(entry, "logical_start_ns"),
+        logical_commit_ns=_network_lag_int(entry, "logical_commit_ns"),
+        requested_duration_ns=_network_lag_int(entry, "requested_duration_ns"),
+        started_wall_ns=_monotonic_ns(),
+        from_path=_network_lag_optional_str(entry, "from_path"),
+        to_path=_network_lag_optional_str(entry, "to_path"),
+    )
+
+
+def _wall_clock_network_lag_commit(
+    state: _DispatchState,
+    entry: JournalEntry,
+) -> NetworkLagAction:
+    assert isinstance(entry, CommittedJournalEntry)
+    session = state.network_lags.pop(entry.related_event_id)
+    deferred = state.deferred_network_lag_entries.pop(entry.related_event_id, None)
+    if deferred is not None:
+        dispatch_phase_b_entry(state, deferred)
+    return NetworkLagAction(
+        event_id=session.start_event_id,
+        commit_event_id=entry.event_id,
+        effect=session.effect,
+        target_ref=session.target_ref,
+        after_event_id=session.after_event_id,
+        logical_start_ns=session.logical_start_ns,
+        logical_commit_ns=session.logical_commit_ns,
+        requested_duration_ns=session.requested_duration_ns,
+        actual_duration_ns=max(0, _monotonic_ns() - session.started_wall_ns),
+        from_path=session.from_path,
+        to_path=session.to_path,
+        provider="stdlib-local",
+        enforced=session.effect is not NetworkLagEffect.HELD_HANDLE,
+    )
+
+
+def _network_lag_effect(entry: JournalEntry) -> NetworkLagEffect:
+    return NetworkLagEffect(_network_lag_str(entry, "effect"))
+
+
+def _network_lag_str(entry: JournalEntry, key: str) -> str:
+    value = entry.state_delta.get(key)
+    if not isinstance(value, str):
+        raise ChaosLibrarianValueError(f"{entry.event_id}: missing network-lag {key}")
+    return value
+
+
+def _network_lag_optional_str(entry: JournalEntry, key: str) -> str | None:
+    value = entry.state_delta.get(key)
+    if value is None or isinstance(value, str):
+        return value
+    raise ChaosLibrarianValueError(f"{entry.event_id}: invalid network-lag {key}")
+
+
+def _network_lag_int(entry: JournalEntry, key: str) -> int:
+    value = entry.state_delta.get(key)
+    if isinstance(value, int):
+        return value
+    raise ChaosLibrarianValueError(f"{entry.event_id}: missing network-lag {key}")
 
 
 def _finish_active_slow_copies(
@@ -544,6 +671,30 @@ def _finish_active_slow_copies(
         _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
         logical_ns = logical_now_ns(_monotonic_ns() - start_wall_ns, speed)
         _grow_active_slow_copies(out_dir / "library", state.slow_copies, logical_ns=logical_ns)
+        cursor = _execute_and_record(
+            cursor=cursor,
+            journal=journal,
+            state=state,
+            commit_times={},
+            executed_journal=executed_journal,
+            out_dir=out_dir,
+        )
+    return cursor
+
+
+def _finish_active_network_lags(
+    *,
+    cursor: int,
+    journal: tuple[JournalEntry, ...],
+    state: _DispatchState,
+    start_wall_ns: int,
+    speed: SpeedMultiplier,
+    executed_journal: list[JournalEntry],
+    out_dir: Path,
+) -> int:
+    while cursor < len(journal) and state.network_lags:
+        entry = journal[cursor]
+        _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
         cursor = _execute_and_record(
             cursor=cursor,
             journal=journal,
@@ -625,6 +776,7 @@ def _finalize_wall_clock_run(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        network_lag_actions=state.network_lag_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
@@ -691,6 +843,7 @@ def _finalize_wall_clock_phase_b_failure(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        network_lag_actions=state.network_lag_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,

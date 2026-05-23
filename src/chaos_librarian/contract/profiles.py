@@ -9,6 +9,10 @@ from pydantic import BaseModel, ConfigDict
 
 class ProfileName(enum.StrEnum):
     MALFORMED_MEDIA = "malformed-media"
+    PERFORMANCE_SMOKE = "performance-smoke"
+    PERFORMANCE_SCALE = "performance-scale"
+    PERFORMANCE_STRESS = "performance-stress"
+    NETWORK_FS_LAG = "network-fs-lag"
 
 
 class CorruptionProbeOutcome(enum.StrEnum):

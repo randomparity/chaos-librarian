@@ -25,6 +25,9 @@ from chaos_librarian.contract.scenario import (
     ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    NetworkLagCommitEvent,
+    NetworkLagEffect,
+    NetworkLagStartEvent,
     ReencodeAudioEvent,
     ReencodeVideoEvent,
     RemoveSidecarEvent,
@@ -61,6 +64,8 @@ type _TerminalEvent = (
     | RemoveSidecarEvent
     | UpdateSidecarEvent
     | CorruptContainerHeaderEvent
+    | NetworkLagStartEvent
+    | NetworkLagCommitEvent
 )
 
 # Shared id linking the pre-applied slow_copy_start event to the commit
@@ -69,6 +74,8 @@ type _TerminalEvent = (
 # (as `for_=`); the engine resolves the commit by matching this string,
 # so the two must stay in sync.
 _PENDING_COPY_ID: Final = "start"
+_PENDING_LAG_AFTER_ID: Final = "lag_after"
+_PENDING_LAG_ID: Final = "lag_start"
 
 # Shared path linking the pre-applied create_sidecar event to the
 # embed/remove/update terminal events. The sidecar handlers look the
@@ -128,7 +135,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=7``.
+        A fully-validated Scenario at ``schema_version=8``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -178,7 +185,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 7,
+            "schema_version": 8,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -319,6 +326,19 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         target="asset_hd_main",
         bytes=64,
     ),
+    TimelineActionName.NETWORK_LAG_START: lambda: NetworkLagStartEvent(
+        id="ev",
+        at="0ns",
+        effect=NetworkLagEffect.DELAYED_RENAME,
+        target="asset_hd_main",
+        after=_PENDING_LAG_AFTER_ID,
+        duration="1ns",
+    ),
+    TimelineActionName.NETWORK_LAG_COMMIT: lambda: NetworkLagCommitEvent(
+        id="ev",
+        at="1ns",
+        for_=_PENDING_LAG_ID,
+    ),
 }
 
 # Sprint 7 actions whose handlers probe asset video/audio fields; the
@@ -418,6 +438,41 @@ def _prepare_pending_sidecar(state: WorldState) -> None:
     )
 
 
+def _prepare_network_lag_source(state: WorldState) -> None:
+    """Pre-apply a rename whose delta a network_lag_start can reference."""
+    rename_event = RenameFileEvent(
+        id=_PENDING_LAG_AFTER_ID,
+        at="0ns",
+        target="asset_hd_main",
+        to="movies-hd/lagged.mkv",
+    )
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(at_ns=0, declared_index=0, event=rename_event),
+        ids=IdAllocator(TraceRecorder()),
+        ctx=_engine_event_context(),
+    )
+
+
+def _prepare_pending_network_lag(state: WorldState) -> None:
+    """Pre-apply network_lag_start so commit can drain the pending lag."""
+    _prepare_network_lag_source(state)
+    start_event = NetworkLagStartEvent(
+        id=_PENDING_LAG_ID,
+        at="0ns",
+        effect=NetworkLagEffect.DELAYED_RENAME,
+        target="asset_hd_main",
+        after=_PENDING_LAG_AFTER_ID,
+        duration="1ns",
+    )
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(at_ns=0, declared_index=1, event=start_event),
+        ids=IdAllocator(TraceRecorder()),
+        ctx=_engine_event_context(),
+    )
+
+
 def _minimal_scenario_for_action(
     action: TimelineActionName,
 ) -> tuple[Scenario, WorldState, ResolvedEvent]:
@@ -447,6 +502,10 @@ def _minimal_scenario_for_action(
         _prepare_deleted_asset(state)
     if action in _NEEDS_PENDING_SIDECAR:
         _prepare_pending_sidecar(state)
+    if action is TimelineActionName.NETWORK_LAG_START:
+        _prepare_network_lag_source(state)
+    if action is TimelineActionName.NETWORK_LAG_COMMIT:
+        _prepare_pending_network_lag(state)
 
     builder = _TERMINAL_EVENT_BUILDERS.get(action)
     if builder is None:

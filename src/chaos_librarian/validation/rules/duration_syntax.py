@@ -29,8 +29,8 @@ def rule_duration_syntax(
 ) -> None:
     """Reject unparseable duration strings on timeline events.
 
-    Fields checked: ``timeline[*].at`` (every event) and
-    ``slow_copy_start.duration`` (only when ``action == "slow_copy_start"``).
+    Fields checked: ``timeline[*].at`` (every event) plus duration-bearing
+    multi-phase starts.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
     for idx, event in _iter_timeline_events(raw):
@@ -42,7 +42,10 @@ def rule_duration_syntax(
                 field_label="at duration",
                 reporter=reporter,
             )
-        if event.get("action") == TimelineActionName.SLOW_COPY_START:
+        if event.get("action") in {
+            TimelineActionName.SLOW_COPY_START,
+            TimelineActionName.NETWORK_LAG_START,
+        }:
             duration = event.get("duration")
             if isinstance(duration, str):
                 _check_duration(

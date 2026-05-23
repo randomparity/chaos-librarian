@@ -178,7 +178,7 @@ def _report(
     probe_outcome: CorruptionProbeOutcome,
 ) -> MaterializationReport:
     return MaterializationReport(
-        schema_version=7,
+        schema_version=8,
         run_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
         outcome=Outcome.SUCCESS,
         platform="test",

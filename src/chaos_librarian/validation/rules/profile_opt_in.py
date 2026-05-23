@@ -1,4 +1,4 @@
-"""Rule: corruption actions require the malformed-media profile."""
+"""Rule: profile-specific actions require their matching profile labels."""
 
 from __future__ import annotations
 
@@ -23,18 +23,48 @@ def rule_profile_opt_in(
     reporter = Reporter(collector=collector, line_index=line_index)
     profiles_raw = raw.get("profiles", [])
     profiles = set(profiles_raw) if isinstance(profiles_raw, list) else set()
-    if ProfileName.MALFORMED_MEDIA.value in profiles:
-        return
     for idx, event in _iter_timeline_events(raw):
-        if event.get("action") != TimelineActionName.CORRUPT_CONTAINER_HEADER.value:
-            continue
-        event_id = event.get("id")
-        suffix = f" for event {event_id!r}" if isinstance(event_id, str) else ""
-        reporter.error(
-            code=E_PROFILE_REQUIRED,
-            message=(
-                "corrupt_container_header requires profile "
-                f"{ProfileName.MALFORMED_MEDIA.value!r}{suffix}"
-            ),
-            loc=("timeline", idx, "action"),
-        )
+        action = event.get("action")
+        if (
+            action == TimelineActionName.CORRUPT_CONTAINER_HEADER.value
+            and ProfileName.MALFORMED_MEDIA.value not in profiles
+        ):
+            _emit_required_profile(
+                action=TimelineActionName.CORRUPT_CONTAINER_HEADER.value,
+                profile=ProfileName.MALFORMED_MEDIA.value,
+                event=event,
+                idx=idx,
+                reporter=reporter,
+            )
+        elif (
+            action
+            in {
+                TimelineActionName.NETWORK_LAG_START.value,
+                TimelineActionName.NETWORK_LAG_COMMIT.value,
+            }
+            and ProfileName.NETWORK_FS_LAG.value not in profiles
+        ):
+            _emit_required_profile(
+                action=str(action),
+                profile=ProfileName.NETWORK_FS_LAG.value,
+                event=event,
+                idx=idx,
+                reporter=reporter,
+            )
+
+
+def _emit_required_profile(
+    *,
+    action: str,
+    profile: str,
+    event: Mapping[str, object],
+    idx: int,
+    reporter: Reporter,
+) -> None:
+    event_id = event.get("id")
+    suffix = f" for event {event_id!r}" if isinstance(event_id, str) else ""
+    reporter.error(
+        code=E_PROFILE_REQUIRED,
+        message=f"{action} requires profile {profile!r}{suffix}",
+        loc=("timeline", idx, "action"),
+    )

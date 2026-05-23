@@ -49,8 +49,8 @@ meet the profile's free-disk precondition.
 ## Network Filesystem Lag Profile Testing
 
 `docs/specs/chaos-librarian-design.md` is the source of truth for the network
-filesystem lag profile policy. Future tests for this profile should assert
-path-state windows, not low-level OS watcher notification ordering.
+filesystem lag profile policy. Tests for this profile should assert path-state
+windows, not low-level OS watcher notification ordering.
 
 Lag profile tests should prove that `materialize` rejects lag events as
 unsupported and that `run` records the delayed visibility, delayed rename, or
