@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
@@ -20,6 +20,34 @@ if TYPE_CHECKING:
     from chaos_librarian.validation.pipeline import IssueCollector
 
 __all__ = ["rule_network_lag"]
+
+
+_DELAYED_VISIBILITY_AFTER_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        TimelineActionName.ADD_FILE.value,
+        TimelineActionName.CREATE_SIDECAR.value,
+        TimelineActionName.SLOW_COPY_COMMIT.value,
+        TimelineActionName.REENCODE_VIDEO.value,
+        TimelineActionName.REENCODE_AUDIO.value,
+        TimelineActionName.REMUX_CONTAINER.value,
+        TimelineActionName.EDIT_METADATA.value,
+        TimelineActionName.EMBED_SUBTITLE.value,
+        TimelineActionName.EXTRACT_SUBTITLE.value,
+        TimelineActionName.UPDATE_SIDECAR.value,
+    }
+)
+_DELAYED_RENAME_AFTER_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        TimelineActionName.MOVE_ASSET.value,
+        TimelineActionName.RENAME_FILE.value,
+        TimelineActionName.ARCHIVE_FILE.value,
+        TimelineActionName.MOVE_BETWEEN_ROOTS.value,
+    }
+)
+_AFTER_ACTIONS_BY_EFFECT: Final[dict[str, frozenset[str]]] = {
+    NetworkLagEffect.DELAYED_VISIBILITY.value: _DELAYED_VISIBILITY_AFTER_ACTIONS,
+    NetworkLagEffect.DELAYED_RENAME.value: _DELAYED_RENAME_AFTER_ACTIONS,
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +85,7 @@ def rule_network_lag(
             start=start,
             commits=commits_by_start.get(start.event_id, []),
             timeline=timeline,
+            events_by_id=events_by_id,
             reporter=reporter,
         )
 
@@ -150,7 +179,15 @@ def _check_start_reference(
         return
     after_idx, after_event = after
     _check_after_order(start=start, after_id=after_id, after_idx=after_idx, reporter=reporter)
-    _check_after_target(start=start, after_id=after_id, after_event=after_event, reporter=reporter)
+    _check_after_timing(start=start, after_id=after_id, after_event=after_event, reporter=reporter)
+    _check_after_target(
+        start=start,
+        after_id=after_id,
+        after_event=after_event,
+        events_by_id=events_by_id,
+        reporter=reporter,
+    )
+    _check_after_effect(start=start, after_id=after_id, after_event=after_event, reporter=reporter)
 
 
 def _check_after_order(
@@ -179,10 +216,11 @@ def _check_after_target(
     start: _LagStart,
     after_id: str,
     after_event: _RawMapping,
+    events_by_id: dict[str, tuple[int, _RawMapping]],
     reporter: Reporter,
 ) -> None:
     target = start.event.get("target")
-    after_target = after_event.get("target")
+    after_target = _event_target(after_event, events_by_id)
     if not isinstance(target, str) or not isinstance(after_target, str):
         return
     if target != after_target:
@@ -194,6 +232,50 @@ def _check_after_target(
             ),
             loc=("timeline", start.idx, "target"),
         )
+
+
+def _check_after_timing(
+    *,
+    start: _LagStart,
+    after_id: str,
+    after_event: _RawMapping,
+    reporter: Reporter,
+) -> None:
+    start_at_ns = _parse_event_duration(start.event, "at")
+    after_at_ns = _parse_event_duration(after_event, "at")
+    if start_at_ns is None or after_at_ns is None:
+        return
+    if start_at_ns == after_at_ns:
+        return
+    reporter.error(
+        code=E_LIFECYCLE_INVALID,
+        message=f"network_lag_start must use the same at value as after event {after_id!r}",
+        loc=("timeline", start.idx, "at"),
+    )
+
+
+def _check_after_effect(
+    *,
+    start: _LagStart,
+    after_id: str,
+    after_event: _RawMapping,
+    reporter: Reporter,
+) -> None:
+    effect = start.event.get("effect")
+    after_action = after_event.get("action")
+    if not isinstance(effect, str) or not isinstance(after_action, str):
+        return
+    allowed_actions = _AFTER_ACTIONS_BY_EFFECT.get(effect)
+    if allowed_actions is None or after_action in allowed_actions:
+        return
+    reporter.error(
+        code=E_LIFECYCLE_INVALID,
+        message=(
+            f"network_lag_start effect {effect!r} cannot wrap "
+            f"{after_action!r} after event {after_id!r}"
+        ),
+        loc=("timeline", start.idx, "effect"),
+    )
 
 
 def _check_commit_timing(
@@ -238,6 +320,7 @@ def _check_same_target_window(
     start: _LagStart,
     commits: list[_LagCommit],
     timeline: list[tuple[int, _RawMapping]],
+    events_by_id: dict[str, tuple[int, _RawMapping]],
     reporter: Reporter,
 ) -> None:
     if len(commits) != 1:
@@ -254,10 +337,39 @@ def _check_same_target_window(
     if not isinstance(target, str):
         return
     for idx, event in timeline[start.idx + 1 : commit.idx]:
-        if event.get("target") != target:
+        if _event_target(event, events_by_id) != target:
             continue
+        event_id = event.get("id")
+        event_label = f" {event_id!r}" if isinstance(event_id, str) else ""
         reporter.error(
             code=E_LIFECYCLE_INVALID,
-            message=f"event mutates target {target!r} during a pending network lag window",
-            loc=("timeline", idx, "target"),
+            message=(
+                f"event{event_label} mutates target {target!r} during a pending network lag window"
+            ),
+            loc=("timeline", idx, _target_loc_field(event)),
         )
+
+
+def _event_target(
+    event: _RawMapping,
+    events_by_id: dict[str, tuple[int, _RawMapping]],
+) -> str | None:
+    target = event.get("target")
+    if isinstance(target, str):
+        return target
+    if event.get("action") != TimelineActionName.SLOW_COPY_COMMIT:
+        return None
+    start_id = event.get("for")
+    if not isinstance(start_id, str):
+        return None
+    start = events_by_id.get(start_id)
+    if start is None:
+        return None
+    start_target = start[1].get("target")
+    return start_target if isinstance(start_target, str) else None
+
+
+def _target_loc_field(event: _RawMapping) -> str:
+    if event.get("action") == TimelineActionName.SLOW_COPY_COMMIT:
+        return "for"
+    return "target"
