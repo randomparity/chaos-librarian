@@ -1,9 +1,22 @@
 # MVP Documentation Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use
-> superpowers:subagent-driven-development (recommended) or
-> superpowers:executing-plans to implement this plan task-by-task. Steps use
-> checkbox (`- [ ]`) syntax for tracking.
+> **Status:** Executed on `docs/mvp-documentation-plan`.
+>
+> This file is retained as implementation history. Do not execute it as a live
+> checklist: adversarial review changed the final docs and guardrails after this
+> plan was written. The current files under `README.md`, `docs/`, and
+> `tests/docs/` are authoritative.
+>
+> Review changes after execution:
+>
+> - The README plan-only quick start no longer runs `capabilities`; plan-only
+>   workflows do not require media tools.
+> - Docs tests now derive CLI command names, timeline actions, and schema
+>   versions from the code instead of duplicating fixed lists.
+> - Targeted pytest subset examples use `--no-cov`; the full suite remains the
+>   coverage gate.
+> - Capability docs distinguish ffmpeg/ffprobe startup requirements from the
+>   stricter mkvmerge-backed media-mutation readiness signal.
 
 **Goal:** Build complete MVP user and developer documentation for Chaos Librarian.
 
