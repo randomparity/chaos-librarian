@@ -10,6 +10,7 @@ import pytest
 from packaging.version import Version
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.materializer.errors import CapabilityGateError
 from chaos_librarian.materializer.tooling import capabilities as cap_mod
 from chaos_librarian.materializer.tooling.capabilities import (
@@ -157,11 +158,12 @@ def test_detect_capabilities_subprocess_timeout(monkeypatch: pytest.MonkeyPatch)
 
 def test_assert_capable_raises_on_regression() -> None:
     caps = Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=False, meets_minimum=False),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="darwin-arm64",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=False,
             materialize_filesystem_mutations=False,

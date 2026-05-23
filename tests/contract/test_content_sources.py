@@ -54,6 +54,10 @@ def test_content_source_evidence_round_trips_cached_audio() -> None:
 
     assert loaded.track_kind is ContentTrackKind.AUDIO
     assert loaded.cache_disposition is CacheDisposition.MISS_STORED
+    assert loaded.cache_key == "sha256:" + "2" * 64
+    assert loaded.content_hash == "sha256:" + "3" * 64
+    assert loaded.origin_uri == "tts:example:voice-a"
+    assert loaded.license == "generated-test-fixture"
 
 
 def test_content_source_evidence_rejects_bad_recipe_digest() -> None:

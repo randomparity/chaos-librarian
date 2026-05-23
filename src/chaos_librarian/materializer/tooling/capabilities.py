@@ -20,6 +20,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.materializer.errors import CapabilityGateError
 
 MIN_VERSIONS: Final[dict[str, Version]] = {
@@ -108,6 +109,7 @@ def detect_capabilities() -> Capabilities:
         ffprobe=ffprobe,
         mkvtoolnix=mkv,
         platform=f"{platform.system().lower()}-{platform.machine().lower()}",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=ffmpeg_ok and ffprobe_ok,
             materialize_filesystem_mutations=ffmpeg_ok and ffprobe_ok,

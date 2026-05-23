@@ -178,6 +178,12 @@ def test_plan_only_rejects_toolchain() -> None:
         TypeAdapter(ReplayBundle).validate_python(bundle_json)
 
 
+def test_plan_only_rejects_content_sources() -> None:
+    bundle_json = {**_plan_only_base(), "content_sources": []}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
 def test_materialize_requires_created_at() -> None:
     bundle_json = {**_materialize_base(), "toolchain": {"ffmpeg": "7.1"}}
     with pytest.raises(ValidationError):

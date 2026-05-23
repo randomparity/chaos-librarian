@@ -13,6 +13,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 
 # Patch detect_capabilities at the call site (cli.commands.capabilities)
 # after the cli/app.py split (#23).
@@ -35,11 +36,12 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
         meets_minimum=all_ok,
     )
     return Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ffmpeg,
         ffprobe=ffprobe,
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test-arch",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=all_ok,
             materialize_filesystem_mutations=all_ok,
