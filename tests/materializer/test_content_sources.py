@@ -6,49 +6,60 @@ import pytest
 
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
-    ContentSourceProviderCapability,
     ContentTrackKind,
 )
-from chaos_librarian.contract.scenario import AudioSource, VideoSource
+from chaos_librarian.contract.scenario import (
+    AudioChannelLayout,
+    AudioSource,
+    AudioTrack,
+    VideoSource,
+    VideoTrack,
+)
 from chaos_librarian.materializer import content_sources
 from chaos_librarian.materializer.content_sources import (
-    SourceRequest,
-    SourceResolution,
+    AudioSourceRequest,
+    VideoSourceRequest,
     collect_content_source_capabilities,
     resolve_audio_source,
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 
-def _video_request(source: str = "color_bars") -> SourceRequest:
-    return SourceRequest(
+def _video_request() -> VideoSourceRequest:
+    return VideoSourceRequest(
         asset_id="asset_main",
-        track_kind=ContentTrackKind.VIDEO,
         track_index=None,
-        source=source,
         seed=42,
         duration_s=2.0,
         width=640,
         height=480,
         fps=24,
-        channels=None,
     )
 
 
-def _audio_request(source: str = "sine") -> SourceRequest:
-    return SourceRequest(
+def _audio_request() -> AudioSourceRequest:
+    return AudioSourceRequest(
         asset_id="asset_main",
-        track_kind=ContentTrackKind.AUDIO,
         track_index=0,
-        source=source,
         seed=42,
         duration_s=2.0,
-        width=None,
-        height=None,
-        fps=None,
         channels="stereo",
+    )
+
+
+def _video() -> VideoTrack:
+    return VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd")
+
+
+def _audio() -> AudioTrack:
+    return AudioTrack(
+        source=AudioSource.SINE,
+        codec="aac",
+        channels=AudioChannelLayout.STEREO,
+        language="eng",
     )
 
 
@@ -103,31 +114,22 @@ def test_resolve_audio_source_records_track_index() -> None:
     assert resolution.evidence.track_index == 0
 
 
-def test_resolve_video_source_rejects_request_source_mismatch() -> None:
-    with pytest.raises(UnsupportedMaterializationError) as exc:
-        resolve_video_source(
-            source=VideoSource.MANDELBROT,
-            request=_video_request(source="color_bars"),
-        )
-
-    assert exc.value.field == "video.source"
-
-
-def test_resolve_audio_source_rejects_request_source_mismatch() -> None:
-    with pytest.raises(UnsupportedMaterializationError) as exc:
-        resolve_audio_source(
-            source=AudioSource.SINE,
-            request=_audio_request(source="silence"),
-        )
-
-    assert exc.value.field == "audio.source"
-
-
 def test_unregistered_video_source_is_rejected() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc:
-        resolve_video_source(source=VideoSource.NOISE, request=_video_request(source="noise"))
+        resolve_video_source(source=VideoSource.NOISE, request=_video_request())
 
     assert exc.value.field == "video.source"
+
+
+def test_preflight_asset_does_not_build_content_source_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_recipe_digest(**_kwargs):
+        raise AssertionError("preflight should not compute replay evidence")
+
+    monkeypatch.setattr(content_sources, "_recipe_digest", fail_recipe_digest)
+
+    preflight_asset(_video(), [_audio()], [], "mkv")
 
 
 def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
@@ -162,48 +164,3 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "video:mandelbrot",
         "video:solid_color",
     )
-
-
-class _FakeProvider:
-    provider_name = "fake-provider"
-
-    def __init__(self, source: str) -> None:
-        self.source = source
-
-    def resolve(
-        self,
-        *,
-        source: VideoSource | AudioSource,
-        request: SourceRequest,
-    ) -> SourceResolution:
-        raise AssertionError("capability collection should not resolve sources")
-
-    def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
-        return ContentSourceProviderCapability(
-            name=self.provider_name,
-            available=ffmpeg_available,
-            requires_network=False,
-            requires_cache=False,
-            required_tool="ffmpeg",
-            reason=None,
-            sources=(self.source,),
-        )
-
-
-def test_collect_content_source_capabilities_asks_registered_providers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    video_provider = _FakeProvider("video:fake")
-    audio_provider = _FakeProvider("audio:fake")
-    monkeypatch.setattr(
-        content_sources,
-        "_VIDEO_PROVIDERS",
-        {VideoSource.COLOR_BARS: video_provider},
-    )
-    monkeypatch.setattr(content_sources, "_AUDIO_PROVIDERS", {AudioSource.SINE: audio_provider})
-
-    capabilities = collect_content_source_capabilities(ffmpeg_available=True)
-
-    assert [(provider.name, provider.sources) for provider in capabilities.providers] == [
-        ("fake-provider", ("audio:fake", "video:fake")),
-    ]

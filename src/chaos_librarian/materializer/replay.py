@@ -3,22 +3,18 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
-from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
-    MaterializedAsset,
     Outcome,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
-    Asset,
     Scenario,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
@@ -29,9 +25,6 @@ from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
-)
-from chaos_librarian.materializer.manifest_build import (
-    augment_manifest,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import build_sentinel
@@ -53,9 +46,12 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
-from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
-from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.materializer.synthesis import (
+    PhaseAResult,
+    materialize_assets_phase_a,
+    materialize_one_asset,
+)
 from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
@@ -63,13 +59,6 @@ from chaos_librarian.materializer.tooling.capabilities import (
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
 
 __all__ = ["replay_run_bundle"]
-
-
-@dataclass(frozen=True, slots=True)
-class _PhaseAResult:
-    invocations: list[ToolInvocation]
-    materialized_assets: list[MaterializedAsset]
-    content_sources: list[ContentSourceEvidence]
 
 
 def replay_run_bundle(bundle: MaterializeReplayBundle, out_dir: Path) -> MaterializeArtifacts:
@@ -251,7 +240,7 @@ def _finalize_run_replay_phase_b_failure(
     out_dir: Path,
     caps,
     started_at: datetime,
-    phase_a: _PhaseAResult,
+    phase_a: PhaseAResult,
     state: PhaseBState,
     exc: FilesystemActionError | MediaActionError | CorruptionActionError,
 ) -> None:
@@ -306,47 +295,15 @@ def _synthesize_phase_a(
     out_dir: Path,
     artifacts: PlanArtifacts,
     caps,
-) -> _PhaseAResult:
-    invocations: list[ToolInvocation] = []
-    materialized_assets: list[MaterializedAsset] = []
-    content_sources: list[ContentSourceEvidence] = []
-    primary_root_path = scenario.library.roots[0].path
-    skip_by_asset = timeline_sidecar_languages(scenario)
-    for invocation_index, asset in enumerate(iter_assets(scenario)):
-        result = materialize_one_asset(
-            asset,
-            artifacts.replay_bundle.resolved_seed,
-            out_dir,
-            caps,
-            invocation_index,
-            root_path=primary_root_path,
-            skip_languages=skip_by_asset.get(asset.id, frozenset()),
-        )
-        invocations.append(result.invocation)
-        materialized_assets.append(result.materialized_asset)
-        content_sources.extend(result.content_sources)
-        _stamp_phase_a_asset(
-            artifacts.current_manifest,
-            asset,
-            result.materialized_asset,
-            result.probed,
-            result.sidecar_hashes,
-        )
-    return _PhaseAResult(
-        invocations=invocations,
-        materialized_assets=materialized_assets,
-        content_sources=content_sources,
+) -> PhaseAResult:
+    return materialize_assets_phase_a(
+        scenario=scenario,
+        out_dir=out_dir,
+        artifacts=artifacts,
+        caps=caps,
+        stamp_manifest=True,
+        materialize_asset=materialize_one_asset,
     )
-
-
-def _stamp_phase_a_asset(
-    manifest: Manifest,
-    asset: Asset,
-    materialized: MaterializedAsset,
-    probed: ProbedMedia,
-    sidecar_hashes: dict[tuple[str, str], str],
-) -> None:
-    augment_manifest(manifest, asset, materialized, probed, sidecar_hashes)
 
 
 def _make_run_replay_phase_b_state(

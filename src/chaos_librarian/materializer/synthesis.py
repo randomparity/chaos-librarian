@@ -10,19 +10,22 @@ subclasses on failure; the orchestrator in ``run.py`` converts them to
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+from collections.abc import Callable
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from chaos_librarian.contract.capabilities import Capabilities
-from chaos_librarian.contract.content_sources import ContentSourceEvidence, ContentTrackKind
-from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
+from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Asset
+from chaos_librarian.contract.scenario import Asset, Scenario
+from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.materializer.content_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
-    SourceRequest,
+    AudioSourceRequest,
+    VideoSourceRequest,
     resolve_audio_source,
     resolve_video_source,
 )
@@ -31,11 +34,21 @@ from chaos_librarian.materializer.errors import (
     ToolFailedError,
     UnsupportedMaterializationError,
 )
+from chaos_librarian.materializer.manifest_build import augment_manifest
+from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
+from chaos_librarian.materializer.preflight import iter_assets
 from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
 
-__all__ = ["MaterializeAssetResult", "materialize_one_asset", "write_sidecars"]
+__all__ = [
+    "MaterializeAssetResult",
+    "PhaseAResult",
+    "materialize_assets_phase_a",
+    "materialize_one_asset",
+    "stamp_phase_a_manifest",
+    "write_sidecars",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,6 +60,88 @@ class MaterializeAssetResult:
     probed: ProbedMedia
     sidecar_hashes: dict[tuple[str, str], str]
     content_sources: tuple[ContentSourceEvidence, ...]
+
+
+@dataclass(slots=True)
+class PhaseAResult:
+    """Accumulated Phase-A synthesis output shared across materialize modes."""
+
+    invocations: list[ToolInvocation] = field(default_factory=list)
+    materialized_assets: list[MaterializedAsset] = field(default_factory=list)
+    content_sources: list[ContentSourceEvidence] = field(default_factory=list)
+    probed_by_asset: dict[str, ProbedMedia] = field(default_factory=dict)
+    sidecar_hashes_by_asset: dict[str, dict[tuple[str, str], str]] = field(default_factory=dict)
+
+
+MaterializeAsset = Callable[..., MaterializeAssetResult]
+
+
+def materialize_assets_phase_a(
+    *,
+    scenario: Scenario,
+    out_dir: Path,
+    artifacts: PlanArtifacts,
+    caps: Capabilities,
+    result: PhaseAResult | None = None,
+    stamp_manifest: bool,
+    materialize_asset: MaterializeAsset | None = None,
+) -> PhaseAResult:
+    """Synthesize every declared asset and collect Phase-A metadata."""
+    phase_a = PhaseAResult() if result is None else result
+    materialize = materialize_one_asset if materialize_asset is None else materialize_asset
+    primary_root_path = scenario.library.roots[0].path
+    skip_by_asset = timeline_sidecar_languages(scenario)
+    start_index = len(phase_a.invocations)
+    for invocation_index, asset in enumerate(iter_assets(scenario), start=start_index):
+        skip_languages = skip_by_asset.get(asset.id, frozenset())
+        asset_result = materialize(
+            asset,
+            artifacts.replay_bundle.resolved_seed,
+            out_dir,
+            caps,
+            invocation_index,
+            root_path=primary_root_path,
+            skip_languages=skip_languages,
+        )
+        phase_a.invocations.append(asset_result.invocation)
+        phase_a.materialized_assets.append(asset_result.materialized_asset)
+        phase_a.content_sources.extend(asset_result.content_sources)
+        phase_a.probed_by_asset[asset.id] = asset_result.probed
+        phase_a.sidecar_hashes_by_asset[asset.id] = asset_result.sidecar_hashes
+        if stamp_manifest:
+            augment_manifest(
+                artifacts.current_manifest,
+                asset,
+                asset_result.materialized_asset,
+                asset_result.probed,
+                asset_result.sidecar_hashes,
+                skip_languages=skip_languages,
+            )
+    return phase_a
+
+
+def stamp_phase_a_manifest(
+    *,
+    manifest: Manifest,
+    scenario: Scenario,
+    phase_a: PhaseAResult,
+) -> None:
+    """Stamp stored Phase-A metadata onto a fresh manifest copy."""
+    by_asset = {record.asset_id: record for record in phase_a.materialized_assets}
+    skip_by_asset = timeline_sidecar_languages(scenario)
+    for asset in iter_assets(scenario):
+        materialized = by_asset.get(asset.id)
+        probed = phase_a.probed_by_asset.get(asset.id)
+        if materialized is None or probed is None:
+            continue
+        augment_manifest(
+            manifest,
+            asset,
+            materialized,
+            probed,
+            phase_a.sidecar_hashes_by_asset.get(asset.id, {}),
+            skip_languages=skip_by_asset.get(asset.id, frozenset()),
+        )
 
 
 def materialize_one_asset(
@@ -90,17 +185,13 @@ def materialize_one_asset(
     width, height = RESOLUTION_PIXELS[asset.video.resolution]
     video_resolution = resolve_video_source(
         source=asset.video.source,
-        request=SourceRequest(
+        request=VideoSourceRequest(
             asset_id=asset.id,
-            track_kind=ContentTrackKind.VIDEO,
-            track_index=None,
-            source=asset.video.source.value,
             seed=seed,
             duration_s=asset.duration_seconds,
             width=width,
             height=height,
             fps=FPS_DEFAULT,
-            channels=None,
         ),
     )
     video_input = video_resolution.ffmpeg_input
@@ -109,16 +200,11 @@ def materialize_one_asset(
     for index, audio in enumerate(asset.audio):
         audio_resolution = resolve_audio_source(
             source=audio.source,
-            request=SourceRequest(
+            request=AudioSourceRequest(
                 asset_id=asset.id,
-                track_kind=ContentTrackKind.AUDIO,
                 track_index=index,
-                source=audio.source.value,
                 seed=seed,
                 duration_s=asset.duration_seconds,
-                width=None,
-                height=None,
-                fps=None,
                 channels=audio.channels.value,
             ),
         )

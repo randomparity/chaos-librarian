@@ -55,20 +55,28 @@ def test_store_file_writes_content_addressed_path(tmp_path: Path) -> None:
     assert record.path.read_bytes() == b"payload"
 
 
-def test_store_file_rejects_source_mutation_between_digest_and_copy(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_store_file_hashes_while_copying(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cache = ContentCache(tmp_path / "cache")
     source = tmp_path / "source.bin"
-    source.write_bytes(b"original")
-    key = cache_key_for_path(source)
+    source.write_bytes(b"payload")
+    key = cache_key_for_bytes(b"payload")
 
-    def mutate_after_digest(path: Path) -> str:
-        digest = cache_key_for_path(path)
-        path.write_bytes(b"mutated")
-        return digest
+    def fail_cache_key_for_path(_path: Path) -> str:
+        raise AssertionError("store_file should not pre-hash the source path")
 
-    monkeypatch.setattr(content_cache, "cache_key_for_path", mutate_after_digest)
+    monkeypatch.setattr(content_cache, "cache_key_for_path", fail_cache_key_for_path)
+
+    record = cache.store_file(cache_key=key, source_path=source)
+
+    assert record.content_hash == key
+    assert record.path.read_bytes() == b"payload"
+
+
+def test_store_file_rejects_digest_mismatch_and_removes_temp(tmp_path: Path) -> None:
+    cache = ContentCache(tmp_path / "cache")
+    source = tmp_path / "source.bin"
+    source.write_bytes(b"actual")
+    key = cache_key_for_bytes(b"expected")
 
     with pytest.raises(ValueError, match="content hash mismatch"):
         cache.store_file(cache_key=key, source_path=source)

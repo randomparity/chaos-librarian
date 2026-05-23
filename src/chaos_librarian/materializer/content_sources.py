@@ -51,17 +51,23 @@ AUDIO_RECIPES: Final[dict[AudioSource, AudioRecipe]] = {
 
 
 @dataclass(frozen=True, slots=True)
-class SourceRequest:
+class VideoSourceRequest:
     asset_id: str
-    track_kind: ContentTrackKind
-    track_index: int | None
-    source: str
     seed: int
     duration_s: float
-    width: int | None
-    height: int | None
-    fps: int | None
-    channels: str | None
+    width: int
+    height: int
+    fps: int
+    track_index: None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AudioSourceRequest:
+    asset_id: str
+    track_index: int
+    seed: int
+    duration_s: float
+    channels: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,144 +77,189 @@ class SourceResolution:
 
 
 class ContentSourceProvider(Protocol):
-    provider_name: str
-
-    def resolve(
+    def resolve_video(
         self,
         *,
-        source: VideoSource | AudioSource,
-        request: SourceRequest,
+        source: VideoSource,
+        request: VideoSourceRequest,
     ) -> SourceResolution:
-        """Resolve a scenario source to an FFmpeg input plus replay evidence."""
+        """Resolve a video source to an FFmpeg input plus replay evidence."""
+
+    def resolve_audio(
+        self,
+        *,
+        source: AudioSource,
+        request: AudioSourceRequest,
+    ) -> SourceResolution:
+        """Resolve an audio source to an FFmpeg input plus replay evidence."""
+
+    def resolve_video_input(
+        self,
+        *,
+        source: VideoSource,
+        request: VideoSourceRequest,
+    ) -> FFmpegInput:
+        """Resolve a video source to an FFmpeg input without replay evidence."""
+
+    def resolve_audio_input(
+        self,
+        *,
+        source: AudioSource,
+        request: AudioSourceRequest,
+    ) -> FFmpegInput:
+        """Resolve an audio source to an FFmpeg input without replay evidence."""
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
         """Report provider capability for the current host."""
 
 
 @dataclass(frozen=True, slots=True)
-class _BuiltinLavfiVideoProvider:
-    provider_name: str = PROVIDER_NAME
-    source_keys: tuple[VideoSource, ...] = tuple(VIDEO_RECIPES)
+class _BuiltinLavfiProvider:
+    video_source_keys: tuple[VideoSource, ...] = tuple(VIDEO_RECIPES)
+    audio_source_keys: tuple[AudioSource, ...] = tuple(AUDIO_RECIPES)
 
-    def resolve(
+    def resolve_video(
         self,
         *,
-        source: VideoSource | AudioSource,
-        request: SourceRequest,
+        source: VideoSource,
+        request: VideoSourceRequest,
     ) -> SourceResolution:
-        if not isinstance(source, VideoSource) or source not in VIDEO_RECIPES:
+        ffmpeg_input = self.resolve_video_input(source=source, request=request)
+        return SourceResolution(
+            ffmpeg_input=ffmpeg_input,
+            evidence=_builtin_evidence(
+                source=source,
+                track_kind=ContentTrackKind.VIDEO,
+                request=request,
+                ffmpeg_input=ffmpeg_input,
+            ),
+        )
+
+    def resolve_audio(
+        self,
+        *,
+        source: AudioSource,
+        request: AudioSourceRequest,
+    ) -> SourceResolution:
+        ffmpeg_input = self.resolve_audio_input(source=source, request=request)
+        return SourceResolution(
+            ffmpeg_input=ffmpeg_input,
+            evidence=_builtin_evidence(
+                source=source,
+                track_kind=ContentTrackKind.AUDIO,
+                request=request,
+                ffmpeg_input=ffmpeg_input,
+            ),
+        )
+
+    def resolve_video_input(
+        self,
+        *,
+        source: VideoSource,
+        request: VideoSourceRequest,
+    ) -> FFmpegInput:
+        if source not in VIDEO_RECIPES:
             raise _unsupported_source("video.source", VIDEO_RECIPES)
-        _validate_request_source(field="video.source", expected=source.value, actual=request.source)
-        if request.width is None or request.height is None or request.fps is None:
-            raise UnsupportedMaterializationError(
-                "video source request requires width, height, and fps",
-                field="video.source",
-                payload={},
-            )
         recipe = VIDEO_RECIPES[source]
-        ffmpeg_input = recipe(
+        return recipe(
             width=request.width,
             height=request.height,
             fps=request.fps,
             duration_s=request.duration_s,
             seed=request.seed,
         )
-        return SourceResolution(
-            ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(request, ffmpeg_input),
-        )
 
-    def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
-        return _builtin_capability(
-            ffmpeg_available=ffmpeg_available,
-            sources=[f"video:{source.value}" for source in self.source_keys],
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class _BuiltinLavfiAudioProvider:
-    provider_name: str = PROVIDER_NAME
-    source_keys: tuple[AudioSource, ...] = tuple(AUDIO_RECIPES)
-
-    def resolve(
+    def resolve_audio_input(
         self,
         *,
-        source: VideoSource | AudioSource,
-        request: SourceRequest,
-    ) -> SourceResolution:
-        if not isinstance(source, AudioSource) or source not in AUDIO_RECIPES:
+        source: AudioSource,
+        request: AudioSourceRequest,
+    ) -> FFmpegInput:
+        if source not in AUDIO_RECIPES:
             raise _unsupported_source("audio.source", AUDIO_RECIPES)
-        _validate_request_source(field="audio.source", expected=source.value, actual=request.source)
-        if request.channels is None:
-            raise UnsupportedMaterializationError(
-                "audio source request requires channels",
-                field="audio.source",
-                payload={},
-            )
         recipe = AUDIO_RECIPES[source]
-        ffmpeg_input = recipe(
+        return recipe(
             channels=request.channels,
             duration_s=request.duration_s,
             seed=request.seed,
         )
-        return SourceResolution(
-            ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(request, ffmpeg_input),
-        )
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
         return _builtin_capability(
             ffmpeg_available=ffmpeg_available,
-            sources=[f"audio:{source.value}" for source in self.source_keys],
+            sources=[
+                *(f"audio:{source.value}" for source in self.audio_source_keys),
+                *(f"video:{source.value}" for source in self.video_source_keys),
+            ],
         )
 
 
-_VIDEO_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiVideoProvider()
-_AUDIO_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiAudioProvider()
+_BUILTIN_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiProvider()
 _VIDEO_PROVIDERS: Final[dict[VideoSource, ContentSourceProvider]] = {
-    source: _VIDEO_PROVIDER for source in VIDEO_RECIPES
+    source: _BUILTIN_PROVIDER for source in VIDEO_RECIPES
 }
 _AUDIO_PROVIDERS: Final[dict[AudioSource, ContentSourceProvider]] = {
-    source: _AUDIO_PROVIDER for source in AUDIO_RECIPES
+    source: _BUILTIN_PROVIDER for source in AUDIO_RECIPES
 }
 
 
-def resolve_video_source(source: VideoSource, request: SourceRequest) -> SourceResolution:
+def resolve_video_source(source: VideoSource, request: VideoSourceRequest) -> SourceResolution:
     """Resolve a video source through the registered provider."""
     provider = _VIDEO_PROVIDERS.get(source)
     if provider is None:
         raise _unsupported_source("video.source", _VIDEO_PROVIDERS)
-    return provider.resolve(source=source, request=request)
+    return provider.resolve_video(source=source, request=request)
 
 
-def resolve_audio_source(source: AudioSource, request: SourceRequest) -> SourceResolution:
+def resolve_audio_source(source: AudioSource, request: AudioSourceRequest) -> SourceResolution:
     """Resolve an audio source through the registered provider."""
     provider = _AUDIO_PROVIDERS.get(source)
     if provider is None:
         raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
-    return provider.resolve(source=source, request=request)
+    return provider.resolve_audio(source=source, request=request)
+
+
+def resolve_video_input(source: VideoSource, request: VideoSourceRequest) -> FFmpegInput:
+    """Resolve a video source through the registered provider without evidence."""
+    provider = _VIDEO_PROVIDERS.get(source)
+    if provider is None:
+        raise _unsupported_source("video.source", _VIDEO_PROVIDERS)
+    return provider.resolve_video_input(source=source, request=request)
+
+
+def resolve_audio_input(source: AudioSource, request: AudioSourceRequest) -> FFmpegInput:
+    """Resolve an audio source through the registered provider without evidence."""
+    provider = _AUDIO_PROVIDERS.get(source)
+    if provider is None:
+        raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
+    return provider.resolve_audio_input(source=source, request=request)
 
 
 def collect_content_source_capabilities(ffmpeg_available: bool) -> ContentSourceCapabilities:
     """Collect content-source capabilities for all registered providers."""
     return ContentSourceCapabilities(
-        providers=_merge_provider_capabilities(
-            provider.capability(ffmpeg_available=ffmpeg_available)
-            for provider in _registered_providers()
-        ),
+        providers=[_BUILTIN_PROVIDER.capability(ffmpeg_available=ffmpeg_available)],
     )
 
 
 def _builtin_evidence(
-    request: SourceRequest,
+    *,
+    source: VideoSource | AudioSource,
+    track_kind: ContentTrackKind,
+    request: VideoSourceRequest | AudioSourceRequest,
     ffmpeg_input: FFmpegInput,
 ) -> ContentSourceEvidence:
     return ContentSourceEvidence(
         asset_id=request.asset_id,
-        track_kind=request.track_kind,
-        source=request.source,
+        track_kind=track_kind,
+        source=source.value,
         provider=PROVIDER_NAME,
-        recipe_digest=_recipe_digest(request, ffmpeg_input),
+        recipe_digest=_recipe_digest(
+            source=source,
+            track_kind=track_kind,
+            request=request,
+            ffmpeg_input=ffmpeg_input,
+        ),
         track_index=request.track_index,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
@@ -230,40 +281,6 @@ def _builtin_capability(
     )
 
 
-def _registered_providers() -> tuple[ContentSourceProvider, ...]:
-    providers: list[ContentSourceProvider] = []
-    seen: set[int] = set()
-    for provider in (*_VIDEO_PROVIDERS.values(), *_AUDIO_PROVIDERS.values()):
-        provider_id = id(provider)
-        if provider_id in seen:
-            continue
-        providers.append(provider)
-        seen.add(provider_id)
-    return tuple(providers)
-
-
-def _merge_provider_capabilities(
-    capabilities: Iterable[ContentSourceProviderCapability],
-) -> list[ContentSourceProviderCapability]:
-    merged: dict[str, ContentSourceProviderCapability] = {}
-    sources_by_provider: dict[str, set[str]] = {}
-    for capability in capabilities:
-        existing = merged.get(capability.name)
-        if existing is None:
-            merged[capability.name] = capability
-            sources_by_provider[capability.name] = set(capability.sources)
-            continue
-        sources_by_provider[capability.name].update(capability.sources)
-        merged[capability.name] = existing.model_copy(
-            update={
-                "available": existing.available and capability.available,
-                "reason": existing.reason or capability.reason,
-                "sources": tuple(sorted(sources_by_provider[capability.name])),
-            }
-        )
-    return [merged[name] for name in sorted(merged)]
-
-
 def _unsupported_source(
     field: str,
     supported: Iterable[VideoSource | AudioSource],
@@ -275,35 +292,55 @@ def _unsupported_source(
     )
 
 
-def _validate_request_source(*, field: str, expected: str, actual: str) -> None:
-    if actual == expected:
-        return
-    raise UnsupportedMaterializationError(
-        f"{field} request source does not match resolver source",
-        field=field,
-        payload={"expected": expected, "actual": actual},
-    )
-
-
-def _recipe_digest(request: SourceRequest, ffmpeg_input: FFmpegInput) -> str:
+def _recipe_digest(
+    *,
+    source: VideoSource | AudioSource,
+    track_kind: ContentTrackKind,
+    request: VideoSourceRequest | AudioSourceRequest,
+    ffmpeg_input: FFmpegInput,
+) -> str:
     payload = {
         "ffmpeg_input": _ffmpeg_input_payload(ffmpeg_input),
         "provider": PROVIDER_NAME,
-        "request": {
-            "asset_id": request.asset_id,
-            "track_kind": request.track_kind.value,
-            "track_index": request.track_index,
-            "source": request.source,
-            "seed": request.seed,
-            "duration_s": request.duration_s,
-            "width": request.width,
-            "height": request.height,
-            "fps": request.fps,
-            "channels": request.channels,
-        },
+        "request": _request_payload(source=source, track_kind=track_kind, request=request),
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return f"sha256:{hashlib.sha256(serialized).hexdigest()}"
+
+
+def _request_payload(
+    *,
+    source: VideoSource | AudioSource,
+    track_kind: ContentTrackKind,
+    request: VideoSourceRequest | AudioSourceRequest,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "asset_id": request.asset_id,
+        "track_kind": track_kind.value,
+        "track_index": request.track_index,
+        "source": source.value,
+        "seed": request.seed,
+        "duration_s": request.duration_s,
+    }
+    if isinstance(request, VideoSourceRequest):
+        payload.update(
+            {
+                "width": request.width,
+                "height": request.height,
+                "fps": request.fps,
+                "channels": None,
+            }
+        )
+    else:
+        payload.update(
+            {
+                "width": None,
+                "height": None,
+                "fps": None,
+                "channels": request.channels,
+            }
+        )
+    return payload
 
 
 def _ffmpeg_input_payload(ffmpeg_input: FFmpegInput) -> dict[str, object]:

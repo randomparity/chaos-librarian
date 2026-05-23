@@ -111,10 +111,6 @@ class ContentCache:
         return CacheRecord(cache_key=cache_key, content_hash=content_hash, path=path)
 
     def store_file(self, *, cache_key: str, source_path: Path) -> CacheRecord:
-        content_hash = cache_key_for_path(source_path)
-        if content_hash != cache_key:
-            raise ValueError(f"content hash mismatch for {cache_key}: computed {content_hash}")
-
         path = self.path_for(cache_key=cache_key)
         path.parent.mkdir(parents=True, exist_ok=True)
         temp_path = _sibling_temp_path(path)
@@ -131,7 +127,7 @@ class ContentCache:
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise
-        return CacheRecord(cache_key=cache_key, content_hash=content_hash, path=path)
+        return CacheRecord(cache_key=cache_key, content_hash=copied_hash, path=path)
 
 
 def _digest_from_cache_key(cache_key: str) -> str:

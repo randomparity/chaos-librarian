@@ -17,7 +17,6 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
-from chaos_librarian.contract.content_sources import ContentTrackKind
 from chaos_librarian.contract.scenario import (
     Asset,
     AudioTrack,
@@ -33,9 +32,10 @@ from chaos_librarian.materializer.content_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
     VIDEO_RECIPES,
-    SourceRequest,
-    resolve_audio_source,
-    resolve_video_source,
+    AudioSourceRequest,
+    VideoSourceRequest,
+    resolve_audio_input,
+    resolve_video_input,
 )
 from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
@@ -86,24 +86,20 @@ def preflight_asset(
     audio_inputs = _preflight_audio_inputs(audios)
     _preflight_subtitles(subtitles)
     width, height = RESOLUTION_PIXELS.get(video.resolution, (1, 1))
-    resolution = resolve_video_source(
+    video_input = resolve_video_input(
         source=video.source,
-        request=SourceRequest(
+        request=VideoSourceRequest(
             asset_id="preflight",
-            track_kind=ContentTrackKind.VIDEO,
-            track_index=None,
-            source=video.source.value,
             seed=0,
             duration_s=1.0,
             width=width,
             height=height,
             fps=FPS_DEFAULT,
-            channels=None,
         ),
     )
     build_command(
         video=video,
-        video_input=resolution.ffmpeg_input,
+        video_input=video_input,
         audios=audios,
         audio_inputs=audio_inputs,
         output_path=Path(f"preflight.{container}"),
@@ -114,23 +110,17 @@ def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
     """Build the audio FFmpegInput list at preflight time, raising on unknown sources."""
     inputs: list[FFmpegInput] = []
     for index, audio in enumerate(audios):
-        channels = audio.channels.value if hasattr(audio.channels, "value") else str(audio.channels)
-        resolution = resolve_audio_source(
+        audio_input = resolve_audio_input(
             source=audio.source,
-            request=SourceRequest(
+            request=AudioSourceRequest(
                 asset_id="preflight",
-                track_kind=ContentTrackKind.AUDIO,
                 track_index=index,
-                source=audio.source.value,
                 seed=0,
                 duration_s=1.0,
-                width=None,
-                height=None,
-                fps=None,
-                channels=channels,
+                channels=audio.channels.value,
             ),
         )
-        inputs.append(resolution.ffmpeg_input)
+        inputs.append(audio_input)
     return inputs
 
 
