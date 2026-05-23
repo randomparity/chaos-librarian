@@ -121,15 +121,15 @@ Modify:
 
 ## Task 5: Runtime Behavior
 
-- [ ] Add preflight tests proving `materialize` rejects lag events as
+- [x] Add preflight tests proving `materialize` rejects lag events as
   unsupported while `run` accepts them.
-- [ ] Implement delayed rename in wall-clock run by intercepting the referenced
+- [x] Implement delayed rename in wall-clock run by intercepting the referenced
   filesystem action and applying the real rename at lag commit.
-- [ ] Implement held-handle audit rows with `enforced=false` for the stdlib-local
+- [x] Implement held-handle audit rows with `enforced=false` for the stdlib-local
   provider.
-- [ ] Add wall-clock tests for delayed rename path windows, timeout overrun
+- [x] Add wall-clock tests for delayed rename path windows, timeout overrun
   through lag commit, and held-handle audit evidence.
-- [ ] Run:
+- [x] Run:
   `uv run pytest tests/materializer/test_wall_clock.py tests/materializer/test_preflight.py -q --no-cov`.
 
 ## Task 6: Docs, Schemas, And Gates

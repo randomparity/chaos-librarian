@@ -26,7 +26,11 @@ from chaos_librarian.contract.scenario import (
     SubtitleTrack,
     VideoTrack,
 )
-from chaos_librarian.materializer.actions import SUPPORTED_S6_ACTIONS, SUPPORTED_S10_ACTIONS
+from chaos_librarian.materializer.actions import (
+    NETWORK_LAG_ACTIONS,
+    SUPPORTED_S6_ACTIONS,
+    SUPPORTED_S10_ACTIONS,
+)
 from chaos_librarian.materializer.content_sources import (
     AUDIO_RECIPES,
     FPS_DEFAULT,
@@ -47,6 +51,7 @@ from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 __all__ = [
     "AUDIO_RECIPES",
     "FPS_DEFAULT",
+    "NETWORK_LAG_ACTIONS",
     "RESOLUTION_PIXELS",
     "SUPPORTED_S6_ACTIONS",
     "SUPPORTED_S10_ACTIONS",
@@ -147,20 +152,23 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
             )
 
 
-def preflight_timeline(scenario: Scenario) -> None:
+def preflight_timeline(scenario: Scenario, *, allow_network_lag: bool = False) -> None:
     """Reject any timeline event outside current materialize support.
 
     Raised before phase A so the matrix-rejection contract (no run-dir
     allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
     """
+    supported_actions = SUPPORTED_S10_ACTIONS
+    if allow_network_lag:
+        supported_actions = supported_actions | NETWORK_LAG_ACTIONS
     for index, event in enumerate(scenario.timeline):
-        if event.action not in SUPPORTED_S10_ACTIONS:
+        if event.action not in supported_actions:
             raise TimelineUnsupportedError(
                 f"timeline action {event.action.value!r} not supported",
                 field=f"timeline[{index}].action",
                 payload={
                     "event_id": event.id,
                     "action": event.action.value,
-                    "supported": sorted(a.value for a in SUPPORTED_S10_ACTIONS),
+                    "supported": sorted(a.value for a in supported_actions),
                 },
             )

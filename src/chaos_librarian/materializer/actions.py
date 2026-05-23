@@ -46,6 +46,13 @@ _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {TimelineActionName.CORRUPT_CONTAINER_HEADER}
 )
 
+NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.NETWORK_LAG_START,
+        TimelineActionName.NETWORK_LAG_COMMIT,
+    }
+)
+
 SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
     _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
 )

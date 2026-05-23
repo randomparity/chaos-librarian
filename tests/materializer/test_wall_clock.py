@@ -163,11 +163,15 @@ def _assert_fake_content_source_payload(payload: list[dict[str, object]]) -> Non
     ]
 
 
-def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-clock-test") -> Path:
+def _write_scenario(
+    tmp_path: Path,
+    timeline: str,
+    scenario_id: str = "wall-clock-test",
+    profiles: str = "",
+) -> Path:
     path = tmp_path / f"{scenario_id}.yaml"
-    path.write_text(
-        dedent(
-            f"""
+    payload = dedent(
+        f"""
             schema_version: 8
             scenario_id: {scenario_id}
             seed: 7
@@ -200,9 +204,14 @@ def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-cloc
             timeline:
             {timeline}
             """
-        ).lstrip(),
-        encoding="utf-8",
     )
+    if profiles:
+        payload = payload.replace(
+            "duration_scale: short\n",
+            f"duration_scale: short\nprofiles:\n{profiles}\n",
+            1,
+        )
+    path.write_text(payload.lstrip(), encoding="utf-8")
     return path
 
 
@@ -392,6 +401,143 @@ def test_mid_slow_copy_timeout_executes_commit_and_marks_overrun(
     assert artifacts.materialization_report.actual_duration_ns == 10
     assert (out_dir / "library" / "movies-hd" / "final.mkv").read_bytes() == b"asset_main-bytes"
     assert not (out_dir / "library" / "movies-hd" / "final.mkv.part").exists()
+
+
+def test_delayed_rename_keeps_old_path_visible_until_lag_commit(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: rename_001
+                at: 0ns
+                action: rename_file
+                target: asset_main
+                to: movies-hd/renamed.mkv
+              - id: lag_start_001
+                at: 0ns
+                action: network_lag_start
+                effect: delayed_rename
+                target: asset_main
+                after: rename_001
+                duration: 10ns
+              - id: lag_commit_001
+                at: 10ns
+                action: network_lag_commit
+                for: lag_start_001
+        """,
+        scenario_id="delayed-rename",
+        profiles="  - network-fs-lag",
+    )
+    out_dir = tmp_path / "run"
+    old_path = out_dir / "library" / "movies-hd" / "asset_main.mkv"
+    new_path = out_dir / "library" / "movies-hd" / "renamed.mkv"
+    observations: list[tuple[bool, bool]] = []
+
+    def observe_sleep(deadline_ns: int) -> None:
+        if deadline_ns == 10:
+            observations.append((old_path.exists(), new_path.exists()))
+        fake_clock.sleep_until(deadline_ns)
+
+    monkeypatch.setattr(wall_clock, "_sleep_until", observe_sleep)
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="20ns",
+        speed="1x",
+    )
+
+    assert observations == [(True, False)]
+    assert not old_path.exists()
+    assert new_path.read_bytes() == b"asset_main-bytes"
+    assert artifacts.materialization_report.network_lag_actions[0].effect.value == (
+        "delayed_rename"
+    )
+    assert artifacts.materialization_report.network_lag_actions[0].enforced is True
+
+
+def test_mid_network_lag_timeout_executes_commit_and_marks_overrun(
+    fake_clock: FakeClock, tmp_path: Path
+) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: rename_001
+                at: 0ns
+                action: rename_file
+                target: asset_main
+                to: movies-hd/renamed.mkv
+              - id: lag_start_001
+                at: 0ns
+                action: network_lag_start
+                effect: delayed_rename
+                target: asset_main
+                after: rename_001
+                duration: 10ns
+              - id: lag_commit_001
+                at: 10ns
+                action: network_lag_commit
+                for: lag_start_001
+        """,
+        scenario_id="delayed-rename-timeout",
+        profiles="  - network-fs-lag",
+    )
+    out_dir = tmp_path / "run"
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        out_dir,
+        duration="5ns",
+        speed="1x",
+    )
+
+    assert fake_clock.now_ns == 10
+    assert artifacts.replay_bundle.applied_events == 3
+    assert artifacts.materialization_report.overran_duration is True
+    assert (out_dir / "library" / "movies-hd" / "renamed.mkv").read_bytes() == (b"asset_main-bytes")
+
+
+def test_held_handle_records_unenforced_local_audit(fake_clock: FakeClock, tmp_path: Path) -> None:
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: rename_001
+                at: 0ns
+                action: rename_file
+                target: asset_main
+                to: movies-hd/renamed.mkv
+              - id: lag_start_001
+                at: 0ns
+                action: network_lag_start
+                effect: held_handle
+                target: asset_main
+                after: rename_001
+                duration: 1ns
+              - id: lag_commit_001
+                at: 1ns
+                action: network_lag_commit
+                for: lag_start_001
+        """,
+        scenario_id="held-handle",
+        profiles="  - network-fs-lag",
+    )
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        tmp_path / "run",
+        duration="2ns",
+        speed="1x",
+    )
+
+    assert fake_clock.now_ns == 2
+    assert len(artifacts.materialization_report.network_lag_actions) == 1
+    action = artifacts.materialization_report.network_lag_actions[0]
+    assert action.effect.value == "held_handle"
+    assert action.provider == "stdlib-local"
+    assert action.enforced is False
 
 
 def test_filesystem_failure_writes_run_failure_metadata(

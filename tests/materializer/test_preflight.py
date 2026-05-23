@@ -10,6 +10,7 @@ from __future__ import annotations
 import pytest
 
 from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.materializer.errors import TimelineUnsupportedError
 from chaos_librarian.materializer.preflight import (
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S10_ACTIONS,
@@ -154,3 +155,40 @@ def test_preflight_accepts_corrupt_container_header() -> None:
 
 def test_supported_s10_actions_exported_from_preflight() -> None:
     assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
+
+
+def test_preflight_timeline_rejects_network_lag_for_materialize() -> None:
+    scenario = _scenario_with_timeline(
+        [
+            (
+                "network_lag_start",
+                "asset_hd_main",
+                {
+                    "effect": "delayed_rename",
+                    "after": "rename_001",
+                    "duration": "1ns",
+                },
+            )
+        ]
+    )
+
+    with pytest.raises(TimelineUnsupportedError):
+        preflight_timeline(scenario)
+
+
+def test_preflight_timeline_accepts_network_lag_for_run() -> None:
+    scenario = _scenario_with_timeline(
+        [
+            (
+                "network_lag_start",
+                "asset_hd_main",
+                {
+                    "effect": "delayed_rename",
+                    "after": "rename_001",
+                    "duration": "1ns",
+                },
+            )
+        ]
+    )
+
+    preflight_timeline(scenario, allow_network_lag=True)
