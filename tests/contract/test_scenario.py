@@ -6,7 +6,6 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
-from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     ArchiveFileEvent,
@@ -209,23 +208,29 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_seven() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 7
+def test_scenario_schema_version_is_eight() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 8
 
 
-def test_scenario_accepts_malformed_media_profile() -> None:
+def test_scenario_accepts_profile_labels() -> None:
     payload = _minimal_scenario().model_dump(mode="json")
-    payload["schema_version"] = 7
-    payload["profiles"] = ["malformed-media"]
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
+    payload["profiles"] = [
+        "malformed-media",
+        "performance-smoke",
+        "performance-scale",
+        "performance-stress",
+        "network-fs-lag",
+    ]
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.profiles == (ProfileName.MALFORMED_MEDIA,)
+    assert tuple(profile.value for profile in scenario.profiles) == tuple(payload["profiles"])
 
 
 def test_scenario_rejects_unknown_profile_value() -> None:
     payload = _minimal_scenario().model_dump(mode="json")
-    payload["schema_version"] = 7
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
     payload["profiles"] = ["not-a-profile"]
 
     with pytest.raises(ValidationError):
@@ -352,9 +357,9 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v7():
+def test_scenario_v4_actions_round_trip_at_v8():
     payload = {
-        "schema_version": 7,
+        "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_arch_001",
         "seed": 42,
         "duration_scale": "short",
@@ -373,7 +378,7 @@ def test_scenario_v4_actions_round_trip_at_v7():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 7
+    assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].action == TimelineActionName.ARCHIVE_FILE
 
 
@@ -540,9 +545,9 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v7_round_trip_with_sprint_7_events():
+def test_scenario_v8_round_trip_with_sprint_7_events():
     payload = {
-        "schema_version": 7,
+        "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_s7_001",
         "seed": 42,
         "duration_scale": "short",
@@ -559,5 +564,5 @@ def test_scenario_v7_round_trip_with_sprint_7_events():
         ],
     }
     scenario = Scenario.model_validate(payload)
-    assert scenario.schema_version == 7
+    assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER

@@ -28,7 +28,7 @@ from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.run import materialize_scenario
 
 _REENCODE_SCENARIO_BODY = """\
-schema_version: 7
+schema_version: 8
 scenario_id: sc_test
 seed: 42
 duration_scale: short

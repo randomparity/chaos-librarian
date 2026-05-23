@@ -345,7 +345,11 @@
     },
     "ProfileName": {
       "enum": [
-        "malformed-media"
+        "malformed-media",
+        "performance-smoke",
+        "performance-scale",
+        "performance-stress",
+        "network-fs-lag"
       ],
       "title": "ProfileName",
       "type": "string"

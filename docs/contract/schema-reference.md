@@ -54,7 +54,8 @@ Current checked-in contract versions:
 | observed state | 1 |
 | divergence | 1 |
 
-Scenario v7 adds explicit `profiles`, starting with `malformed-media`, and the
+Scenario v8 adds the performance and network filesystem lag profile labels.
+Scenario v7 added explicit `profiles`, starting with `malformed-media`, and the
 `corrupt_container_header` timeline action. Manifest v5 and asset-report v5
 carry labeled corruption metadata on current versions/snapshots.
 Replay-bundle v6, materialization v7, and capabilities v2 add content-source

@@ -556,7 +556,11 @@
     },
     "ProfileName": {
       "enum": [
-        "malformed-media"
+        "malformed-media",
+        "performance-smoke",
+        "performance-scale",
+        "performance-stress",
+        "network-fs-lag"
       ],
       "title": "ProfileName",
       "type": "string"
@@ -1013,7 +1017,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 7,
+      "const": 8,
       "title": "Schema Version",
       "type": "integer"
     },

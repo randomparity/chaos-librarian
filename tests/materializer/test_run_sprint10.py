@@ -54,7 +54,7 @@ _INPUT_HASH = "sha256:" + "1" * 64
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 7
+schema_version: 8
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -150,7 +150,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 7\n",
+            scenario="schema_version: 8\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,
