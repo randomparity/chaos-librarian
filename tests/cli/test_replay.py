@@ -626,6 +626,20 @@ def test_compare_run_replay_compares_materialization_content_sources(tmp_path: P
     assert [item.path for item in diff.files] == ["materialization.json"]
 
 
+def test_compare_run_replay_catches_missing_materialization_content_sources(
+    tmp_path: Path,
+) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(left, "content_sources", [])
+    _update_materialization(right, "content_sources", [])
+    _delete_materialization_field(right, "content_sources")
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
 def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
     left = _write_run_compare_fixture(
         tmp_path / "left",
@@ -867,6 +881,13 @@ def _update_materialization(root: Path, field: str, value: object) -> None:
     path = root / "materialization.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _delete_materialization_field(root: Path, field: str) -> None:
+    path = root / "materialization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload[field]
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 

@@ -244,7 +244,7 @@ def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]
     return {
         "outcome": data_obj.get("outcome"),
         "execution_mode": data_obj.get("execution_mode"),
-        "content_sources": _list_or_empty(data_obj.get("content_sources")),
+        "content_sources": _required_list_or_missing(data_obj, "content_sources"),
         "materialized": _list_or_empty(data_obj.get("materialized")),
         "failures": _list_or_empty(data_obj.get("failures")),
         "filesystem_actions": _normalize_action_list(data_obj.get("filesystem_actions")),
@@ -264,6 +264,15 @@ def _list_or_empty(value: object) -> list[object]:
     if not isinstance(value, list):
         return []
     return cast("list[object]", value)
+
+
+def _required_list_or_missing(data: dict[str, object], field: str) -> object:
+    if field not in data:
+        return {"missing_required_field": field}
+    value = data[field]
+    if isinstance(value, list):
+        return cast("list[object]", value)
+    return value
 
 
 def _normalize_action_list(value: object) -> list[object]:
