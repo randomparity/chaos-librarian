@@ -33,3 +33,15 @@ you are not also executing the full package test suite:
 ```bash
 uv run pytest tests/docs -q --no-cov
 ```
+
+## Performance Profile Testing
+
+`docs/specs/chaos-librarian-design.md` is the source of truth for the
+Performance Profile Policy: reserved labels, fixture budgets, capability skip
+rules, and CI tiers. Changes that add or alter performance profiles must update
+that policy and keep the docs tests green.
+
+Performance profile tests must leave missing capabilities visible as pytest
+skips. Disk capacity is not a skip reason after a CI tier opts into a profile;
+the job should fail during setup with a clear message when the runner cannot
+meet the profile's free-disk precondition.

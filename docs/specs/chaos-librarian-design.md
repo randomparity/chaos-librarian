@@ -653,6 +653,62 @@ Short clips should dominate to keep tests fast. The default first scenario pack
 must stay under a 50 MB total materialized size. Longer clips are opt-in for
 performance and progress tests.
 
+## Performance Profile Policy
+
+Future larger performance profiles are reserved for opt-in scenarios. The
+current contract still rejects unknown `profiles` values until a profile
+implementation explicitly adds them.
+
+Reserved labels:
+
+- `performance-smoke`
+- `performance-scale`
+- `performance-stress`
+
+Budgets are hard ceilings for checked-in profile scenarios and generated run
+artifacts:
+
+| Budget | `performance-smoke` | `performance-scale` | `performance-stress` |
+| --- | ---: | ---: | ---: |
+| Media assets | 40 | 250 | 1,000 |
+| Works | 40 | 250 | 1,000 |
+| Variants | 60 | 400 | 1,800 |
+| Bundles | 8 | 50 | 200 |
+| Sidecars | 120 | 750 | 3,000 |
+| Timeline events | 160 | 1,200 | 6,000 |
+| Materialized bytes under `library/` | 250 MB | 2 GB | 10 GB |
+| Wall-clock run duration | 5 minutes | 30 minutes | 2 hours |
+| Minimum free disk before run | 1 GB | 8 GB | 40 GB |
+
+Byte budgets use decimal units: 1 MB is 1,000,000 bytes and 1 GB is
+1,000,000,000 bytes.
+
+Performance scenarios remain source fixtures, not checked-in materialized
+libraries. Generated outputs stay under the caller's run directory and are
+deleted by the normal cleanup workflow. Future implementations should validate
+budgets from generated artifacts rather than trusting YAML comments.
+
+Performance profile tests may skip only when an explicit required capability is
+missing or below the project minimum version, when a future profile-specific
+provider is unavailable and reported by `chaos-librarian capabilities --json`,
+or when the current CI tier has not opted into the requested profile label. A
+skip must name the missing tool, provider, or profile selection. Disk capacity is
+an infrastructure precondition, not a capability skip; CI jobs that opt into a
+performance profile must provision the profile's minimum free disk and fail
+during setup if the runner cannot satisfy it.
+
+CI tiers:
+
+| Tier | Trigger | Allowed profiles | Required gates |
+| --- | --- | --- | --- |
+| Fast | Pull request and `main` push | No performance profiles by default. | Unit tests, docs tests, schema drift, lint, type check. |
+| Extended | Scheduled nightly or maintainer dispatch | `performance-smoke`, `performance-scale` | Fast gates plus materialize/run/compare recipes. |
+| Stress | Manual release-candidate dispatch | `performance-stress` | Extended gates plus long wall-clock and cleanup validation. |
+
+Fast CI may add a `performance-smoke` job only if that job is independently
+selectable. `performance-scale` and `performance-stress` must never run on every
+pull request.
+
 ## Mutation Model
 
 Mutations are explicit timeline actions.
@@ -992,7 +1048,7 @@ Deliverables (may split into multiple PRs):
 - Public-domain / TTS content source hooks: provider registry, cache policy,
   capability reporting, and replay evidence are implemented; actual downloads
   and TTS providers remain deferred until source-specific issues.
-- Larger performance profiles
+- Larger performance profiles that satisfy the Performance Profile Policy
 - Network filesystem lag profile
 - Duplicate/variant expansion pack
 

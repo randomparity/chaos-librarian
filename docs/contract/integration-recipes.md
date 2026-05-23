@@ -64,7 +64,17 @@ expected or still parsed the output.
 ## CI Guidance
 
 Fast CI should run small final-state fixtures with scanner/prober exports and
-fail on compare exit `1`, `6`, or `7`.
+fail on compare exit `1`, `6`, or `7`. No performance profiles by default run
+in this tier.
 
-Extended CI should add identity-history watcher fixtures, slow-copy cases,
-delete/add restore cases, and run-mode churn fixtures.
+| Tier | Trigger | Profile coverage | Recommended coverage |
+| --- | --- | --- | --- |
+| Fast | Pull request and `main` push | No performance profiles by default. | Small scanner/prober final-state fixtures. |
+| Extended | Scheduled nightly or maintainer dispatch | `performance-smoke`, `performance-scale` | Identity-history watcher fixtures, slow-copy cases, delete/add restore cases, and run-mode churn fixtures. |
+| Stress | Manual release-candidate dispatch | `performance-stress` | Long wall-clock runs, cleanup validation, and large-library compare recipes. |
+
+Performance profile labels are reserved by the design policy but are not
+available in the current scenario contract until an implementation adds them.
+Extended and stress jobs must keep capability skips visible in test output and
+must fail during setup when the runner lacks the selected profile's required
+free disk.
