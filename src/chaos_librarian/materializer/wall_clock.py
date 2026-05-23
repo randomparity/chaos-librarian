@@ -61,6 +61,7 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
+from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
 from chaos_librarian.materializer.preflight import (
     iter_assets,
     preflight_asset,
@@ -115,7 +116,6 @@ class WallClockNetworkLagSession:
     """Active wall-clock network-lag state."""
 
     start_event_id: str
-    commit_event_id: str
     effect: NetworkLagEffect
     target_ref: str
     after_event_id: str
@@ -132,7 +132,6 @@ class _DispatchState(PhaseBState):
     slow_copies: dict[str, WallClockSlowCopySession] = field(default_factory=dict)
     slow_copy_initial_paths: dict[str, str] = field(default_factory=dict)
     network_lag_starts_by_after: dict[str, JournalEntry] = field(default_factory=dict)
-    network_lag_commit_ids: dict[str, str] = field(default_factory=dict)
     network_lags: dict[str, WallClockNetworkLagSession] = field(default_factory=dict)
     deferred_network_lag_entries: dict[str, JournalEntry] = field(default_factory=dict)
     network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
@@ -512,11 +511,6 @@ def _configure_network_lag_schedule(
     journal: tuple[JournalEntry, ...],
 ) -> None:
     for entry in journal:
-        if TimelineActionName(entry.action) is not TimelineActionName.NETWORK_LAG_COMMIT:
-            continue
-        assert isinstance(entry, CommittedJournalEntry)
-        state.network_lag_commit_ids[entry.related_event_id] = entry.event_id
-    for entry in journal:
         if TimelineActionName(entry.action) is not TimelineActionName.NETWORK_LAG_START:
             continue
         effect = _network_lag_effect(entry)
@@ -572,11 +566,12 @@ def _wall_clock_slow_copy_commit(
     temp = state.fs_ctx.library_root / session.temp_path
     temp.parent.mkdir(parents=True, exist_ok=True)
     temp.write_bytes(session.source_bytes)
-    if initial_path != session.final_path:
-        (state.fs_ctx.library_root / initial_path).unlink(missing_ok=True)
-    final = state.fs_ctx.library_root / session.final_path
-    final.parent.mkdir(parents=True, exist_ok=True)
-    temp.replace(final)
+    promote_slow_copy(
+        library_root=state.fs_ctx.library_root,
+        initial_path=initial_path,
+        temp_path=session.temp_path,
+        final_path=session.final_path,
+    )
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName.SLOW_COPY_COMMIT,
@@ -592,7 +587,6 @@ def _wall_clock_network_lag_start(state: _DispatchState, entry: JournalEntry) ->
     effect = _network_lag_effect(entry)
     state.network_lags[entry.event_id] = WallClockNetworkLagSession(
         start_event_id=entry.event_id,
-        commit_event_id=state.network_lag_commit_ids[entry.event_id],
         effect=effect,
         target_ref=_network_lag_str(entry, "target_ref"),
         after_event_id=_network_lag_str(entry, "after_event_id"),

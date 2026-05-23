@@ -159,7 +159,7 @@ def apply_event(
     handler = _HANDLERS[resolved.event.action]
     entries = handler(state, resolved, ids, ctx)
     for entry in entries:
-        state.event_state_deltas[entry.event_id] = dict(entry.state_delta)
+        state.previous_event_delta = (entry.event_id, dict(entry.state_delta))
     return entries
 
 
@@ -845,11 +845,11 @@ def _handle_network_lag_start(
 ) -> tuple[JournalEntry, ...]:
     del ids
     event = _checked_event(resolved, NetworkLagStartEvent)
-    source_delta = state.event_state_deltas.get(event.after)
-    if source_delta is None:
+    if state.previous_event_delta is None or state.previous_event_delta[0] != event.after:
         raise ChaosLibrarianValueError(
-            f"network_lag_start references unapplied event {event.after!r}"
+            f"network_lag_start must immediately follow after event {event.after!r}"
         )
+    source_delta = state.previous_event_delta[1]
     duration_ns = parse_duration(event.duration)
     state_delta = _network_lag_delta(
         event=event,

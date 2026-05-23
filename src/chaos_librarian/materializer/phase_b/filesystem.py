@@ -35,6 +35,7 @@ __all__ = [
     "FilesystemPhaseBContext",
     "apply_filesystem_action",
     "make_filesystem_phase_b_context",
+    "promote_slow_copy",
     "supports_filesystem_action",
 ]
 
@@ -226,11 +227,12 @@ def _slow_copy_commit(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> File
     assert isinstance(entry, CommittedJournalEntry)
     pending = ctx.pending_slow_copy.pop(entry.related_event_id)
     final_path = str(entry.state_delta["final_path"])
-    if pending.initial_path != final_path:
-        (ctx.library_root / pending.initial_path).unlink(missing_ok=True)
-    dst = ctx.library_root / final_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    (ctx.library_root / pending.temp_path).replace(dst)
+    promote_slow_copy(
+        library_root=ctx.library_root,
+        initial_path=pending.initial_path,
+        temp_path=pending.temp_path,
+        final_path=final_path,
+    )
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName.SLOW_COPY_COMMIT,
@@ -240,6 +242,21 @@ def _slow_copy_commit(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> File
         temp_path=None,
         duration_ns=0,
     )
+
+
+def promote_slow_copy(
+    *,
+    library_root: Path,
+    initial_path: str,
+    temp_path: str,
+    final_path: str,
+) -> None:
+    """Promote a staged slow-copy temp file to its final path."""
+    if initial_path != final_path:
+        (library_root / initial_path).unlink(missing_ok=True)
+    dst = library_root / final_path
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    (library_root / temp_path).replace(dst)
 
 
 _DISPATCH: Final[

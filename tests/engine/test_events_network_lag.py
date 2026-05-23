@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from chaos_librarian.contract.journal import (
     CommittedJournalEntry,
     JournalPhase,
@@ -18,6 +20,7 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.errors import ChaosLibrarianValueError
 from tests.engine.conftest import _build_minimal_scenario, _engine_event_context
 
 
@@ -117,3 +120,31 @@ def test_network_lag_commit_emits_committed_entry_with_matching_evidence() -> No
     assert entry.state_delta["after_event_id"] == "rename_001"
     assert entry.state_delta["from_path"] == "library/movies-hd/asset_hd_main.mkv"
     assert entry.state_delta["to_path"] == "movies-hd/renamed.mkv"
+
+
+def test_network_lag_start_requires_after_event_to_be_previous_event() -> None:
+    _scenario, state = _scenario_state()
+    _apply_rename_source(state)
+    apply_event(
+        state=state,
+        resolved=ResolvedEvent(
+            at_ns=11_000_000_000,
+            declared_index=1,
+            event=RenameFileEvent(
+                id="rename_002",
+                at="11s",
+                target="asset_hd_main",
+                to="movies-hd/second.mkv",
+            ),
+        ),
+        ids=IdAllocator(TraceRecorder()),
+        ctx=_engine_event_context(),
+    )
+
+    with pytest.raises(ChaosLibrarianValueError, match="must immediately follow"):
+        apply_event(
+            state=state,
+            resolved=ResolvedEvent(at_ns=12_000_000_000, declared_index=2, event=_lag_start()),
+            ids=IdAllocator(TraceRecorder()),
+            ctx=_engine_event_context(),
+        )
