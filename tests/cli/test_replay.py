@@ -16,7 +16,12 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
-from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     MaterializedAsset,
@@ -32,11 +37,14 @@ from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
+FAKE_PROVIDER = "fake-content-source"
+FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:
@@ -141,15 +149,15 @@ def _fake_materialize_one_asset(
     path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
-    return (
-        ToolInvocation(
+    return MaterializeAssetResult(
+        invocation=ToolInvocation(
             tool="ffmpeg",
             version="7.1.1",
             command=["ffmpeg", str(path)],
             exit_code=0,
             duration_ns=1,
         ),
-        MaterializedAsset(
+        materialized_asset=MaterializedAsset(
             asset_id=asset.id,
             location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
             content_hash="sha256:" + hashlib.sha256(data).hexdigest(),
@@ -157,14 +165,44 @@ def _fake_materialize_one_asset(
             duration_seconds=asset.duration_seconds,
             invocation_index=invocation_index,
         ),
-        ProbedMedia(
+        probed=ProbedMedia(
             container=asset.container,
             duration_seconds=asset.duration_seconds,
             size_bytes=len(data),
             streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
         ),
-        {},
+        sidecar_hashes={},
+        content_sources=(_fake_content_source(asset.id),),
     )
+
+
+def _fake_content_source(asset_id: str) -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id=asset_id,
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="fake-video",
+        provider=FAKE_PROVIDER,
+        recipe_digest=FAKE_RECIPE_DIGEST,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+
+def _assert_fake_content_source_payload(
+    payload: list[dict[str, object]],
+    *,
+    asset_id: str,
+) -> None:
+    assert payload == [
+        {
+            "asset_id": asset_id,
+            "track_kind": "video",
+            "source": "fake-video",
+            "provider": FAKE_PROVIDER,
+            "recipe_digest": FAKE_RECIPE_DIGEST,
+            "cache_disposition": "not_cacheable",
+        }
+    ]
 
 
 def _make_materialized_run_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -422,6 +460,15 @@ class TestReplayRunBundles:
         assert (out / "manifest.current.json").exists()
         replay_payload = json.loads((out / "replay.json").read_text())
         assert replay_payload["execution_mode"] == "run"
+        report_payload = json.loads((out / "materialization.json").read_text())
+        _assert_fake_content_source_payload(
+            report_payload["content_sources"],
+            asset_id="asset_hd_main",
+        )
+        _assert_fake_content_source_payload(
+            replay_payload["content_sources"],
+            asset_id="asset_hd_main",
+        )
 
     def test_replay_run_bundle_compares_against_normalized_output(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path

@@ -13,7 +13,12 @@ import pytest
 from pydantic import TypeAdapter
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
-from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
@@ -33,10 +38,13 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
     TimelineUnsupportedError,
 )
+from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
 _CORRUPTED_HASH = "sha256:" + "2" * 64
 _INPUT_HASH = "sha256:" + "1" * 64
+_FAKE_PROVIDER = "fake-content-source"
+_FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 
 class FakeClock:
@@ -108,15 +116,15 @@ def _fake_materialize_one_asset(
         size_bytes=len(data),
         streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
     )
-    return (
-        wall_clock.ToolInvocation(
+    return MaterializeAssetResult(
+        invocation=wall_clock.ToolInvocation(
             tool="ffmpeg",
             version="7.1.1",
             command=["ffmpeg", str(path)],
             exit_code=0,
             duration_ns=1,
         ),
-        MaterializedAsset(
+        materialized_asset=MaterializedAsset(
             asset_id=asset.id,
             location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
             content_hash=content_hash,
@@ -124,9 +132,35 @@ def _fake_materialize_one_asset(
             duration_seconds=asset.duration_seconds,
             invocation_index=invocation_index,
         ),
-        probed,
-        {},
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(_fake_content_source(asset.id),),
     )
+
+
+def _fake_content_source(asset_id: str) -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id=asset_id,
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="fake-video",
+        provider=_FAKE_PROVIDER,
+        recipe_digest=_FAKE_RECIPE_DIGEST,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+
+def _assert_fake_content_source_payload(payload: list[dict[str, object]]) -> None:
+    assert payload == [
+        {
+            "asset_id": "asset_main",
+            "track_kind": "video",
+            "source": "fake-video",
+            "provider": _FAKE_PROVIDER,
+            "recipe_digest": _FAKE_RECIPE_DIGEST,
+            "cache_disposition": "not_cacheable",
+        }
+    ]
 
 
 def _write_scenario(tmp_path: Path, timeline: str, scenario_id: str = "wall-clock-test") -> Path:
@@ -566,6 +600,9 @@ def test_final_journal_keeps_timestamps_and_digest_normalizes(
     assert artifacts.replay_bundle.journal_digest == digest
     replay_payload = json.loads((out_dir / "replay.json").read_text(encoding="utf-8"))
     assert replay_payload["run_id"] == str(artifacts.materialization_report.run_id)
+    report_payload = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    _assert_fake_content_source_payload(report_payload["content_sources"])
+    _assert_fake_content_source_payload(replay_payload["content_sources"])
 
 
 def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:

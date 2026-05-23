@@ -7,6 +7,7 @@ from typing import Final
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import RUN_SENTINEL_SCHEMA_VERSION
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
@@ -70,6 +71,8 @@ def finalize_success(
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
+    *,
+    content_sources: list[ContentSourceEvidence] | None = None,
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
     finished_at = datetime.now(UTC)
@@ -85,6 +88,7 @@ def finalize_success(
         filesystem_actions=filesystem_actions,
         media_actions=media_actions,
         corruption_actions=corruption_actions,
+        content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
         run_id=ctx.run_id,
@@ -92,6 +96,7 @@ def finalize_success(
         plan_artifacts=ctx.plan_artifacts,
         caps=ctx.caps,
         created_at=finished_at,
+        content_sources=content_sources,
     )
     finalize_materialize_run(
         ctx.out_dir,
@@ -120,6 +125,8 @@ def finalize_failure(
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
     corruption_actions: list[CorruptionAction] | None = None,
+    *,
+    content_sources: list[ContentSourceEvidence] | None = None,
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
@@ -151,6 +158,7 @@ def finalize_failure(
         filesystem_actions=filesystem_actions or [],
         media_actions=media_actions or [],
         corruption_actions=corruption_actions or [],
+        content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
         run_id=ctx.run_id,
@@ -158,6 +166,7 @@ def finalize_failure(
         plan_artifacts=ctx.plan_artifacts,
         caps=ctx.caps,
         created_at=finished_at,
+        content_sources=content_sources,
     )
     cleanup_failed_run(
         ctx.out_dir,
@@ -180,6 +189,8 @@ def finalize_failure_phase_b(
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
+    *,
+    content_sources: list[ContentSourceEvidence] | None = None,
 ) -> None:
     """Caught phase-B failure path: phase-B outcome set by caller; library/ wiped.
 
@@ -203,6 +214,7 @@ def finalize_failure_phase_b(
         filesystem_actions=filesystem_actions,
         media_actions=media_actions,
         corruption_actions=corruption_actions,
+        content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
         run_id=ctx.run_id,
@@ -210,6 +222,7 @@ def finalize_failure_phase_b(
         plan_artifacts=ctx.plan_artifacts,
         caps=ctx.caps,
         created_at=finished_at,
+        content_sources=content_sources,
     )
     cleanup_failed_phase_b_run(
         ctx.out_dir,

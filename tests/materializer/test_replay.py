@@ -13,7 +13,12 @@ import pytest
 
 from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
-from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
@@ -33,11 +38,14 @@ from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
+from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 _RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 _CORRUPTED_HASH = "sha256:" + "2" * 64
 _INPUT_HASH = "sha256:" + "1" * 64
+_FAKE_PROVIDER = "fake-content-source"
+_FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _SCENARIO = b"""\
 schema_version: 7
 scenario_id: run-replay-corruption-test
@@ -98,6 +106,12 @@ def test_run_replay_reproduces_corruption_action_evidence(
     assert corrupted["content_hash"] == _CORRUPTED_HASH
     corruption = cast("dict[str, object]", corrupted["corruption"])
     assert corruption["event_id"] == "corrupt_header_001"
+    report_payload = json.loads(
+        (tmp_path / "replay" / "materialization.json").read_text(encoding="utf-8")
+    )
+    replay_payload = json.loads((tmp_path / "replay" / "replay.json").read_text(encoding="utf-8"))
+    _assert_fake_content_source_payload(report_payload["content_sources"])
+    _assert_fake_content_source_payload(replay_payload["content_sources"])
 
 
 def test_run_replay_persists_regenerated_asset_reports(
@@ -133,6 +147,9 @@ def test_run_replay_corruption_failure_writes_corruption_failed_report(
     assert report["execution_mode"] == "run"
     assert report["failures"][0]["stage"] == FailureStage.CORRUPTION.value
     assert report["failures"][0]["stderr_tail"] == "short file"
+    _assert_fake_content_source_payload(report["content_sources"])
+    replay_payload = json.loads((out / "replay.json").read_text(encoding="utf-8"))
+    _assert_fake_content_source_payload(replay_payload["content_sources"])
     assert not (out / "library").exists()
 
 
@@ -208,15 +225,15 @@ def _fake_materialize_one_asset(
         size_bytes=len(data),
         streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
     )
-    return (
-        ToolInvocation(
+    return MaterializeAssetResult(
+        invocation=ToolInvocation(
             tool="ffmpeg",
             version="7.1.1",
             command=["ffmpeg", str(path)],
             exit_code=0,
             duration_ns=1,
         ),
-        MaterializedAsset(
+        materialized_asset=MaterializedAsset(
             asset_id=asset.id,
             location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
             content_hash="sha256:" + hashlib.sha256(data).hexdigest(),
@@ -224,9 +241,35 @@ def _fake_materialize_one_asset(
             duration_seconds=asset.duration_seconds,
             invocation_index=invocation_index,
         ),
-        probed,
-        {},
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(_fake_content_source(asset.id),),
     )
+
+
+def _fake_content_source(asset_id: str) -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id=asset_id,
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="fake-video",
+        provider=_FAKE_PROVIDER,
+        recipe_digest=_FAKE_RECIPE_DIGEST,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+
+def _assert_fake_content_source_payload(payload: list[dict[str, object]]) -> None:
+    assert payload == [
+        {
+            "asset_id": "asset_main",
+            "track_kind": "video",
+            "source": "fake-video",
+            "provider": _FAKE_PROVIDER,
+            "recipe_digest": _FAKE_RECIPE_DIGEST,
+            "cache_disposition": "not_cacheable",
+        }
+    ]
 
 
 def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:

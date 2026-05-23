@@ -14,6 +14,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import (
     MaterializedAsset,
     Outcome,
@@ -140,6 +141,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     """Steps 7-8: per-asset synthesis loop, unified phase-B walk, finalize/cleanup."""
     invocations: list[ToolInvocation] = []
     materialized: list[MaterializedAsset] = []
+    content_sources: list[ContentSourceEvidence] = []
     phase_b_state: PhaseBState | None = None
     # Engine's ``build_initial_state`` lays every asset under the primary
     # root (scenario.library.roots[0]); synthesis must mirror that layout
@@ -155,7 +157,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         # the row onto the timeline-allocated id).
         for invocation_index, asset in enumerate(iter_assets(scenario)):
             skip_languages = sidecar_languages.get(asset.id, frozenset())
-            invocation, materialized_asset, probed, sidecar_hashes = materialize_one_asset(
+            result = materialize_one_asset(
                 asset,
                 ctx.plan_artifacts.replay_bundle.resolved_seed,
                 ctx.out_dir,
@@ -164,14 +166,15 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                 root_path=primary_root_path,
                 skip_languages=skip_languages,
             )
-            invocations.append(invocation)
-            materialized.append(materialized_asset)
+            invocations.append(result.invocation)
+            materialized.append(result.materialized_asset)
+            content_sources.extend(result.content_sources)
             augment_manifest(
                 ctx.plan_artifacts.current_manifest,
                 asset,
-                materialized_asset,
-                probed,
-                sidecar_hashes,
+                result.materialized_asset,
+                result.probed,
+                result.sidecar_hashes,
                 skip_languages=skip_languages,
             )
         phase_b_state = make_phase_b_state(
@@ -189,7 +192,14 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     except (ToolFailedError, ProbeParseError) as exc:
         if isinstance(exc, ToolFailedError):
             invocations.append(exc.invocation)
-        finalize_failure(ctx, exc, Outcome.TOOL_FAILED, invocations, materialized)
+        finalize_failure(
+            ctx,
+            exc,
+            Outcome.TOOL_FAILED,
+            invocations,
+            materialized,
+            content_sources=content_sources,
+        )
         raise
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         assert phase_b_state is not None
@@ -202,6 +212,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             phase_b_state.filesystem_actions,
             phase_b_state.media_actions,
             phase_b_state.corruption_actions,
+            content_sources=content_sources,
         )
         raise
     assert phase_b_state is not None
@@ -212,4 +223,5 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         phase_b_state.filesystem_actions,
         phase_b_state.media_actions,
         phase_b_state.corruption_actions,
+        content_sources=content_sources,
     )

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
@@ -61,6 +63,13 @@ from chaos_librarian.materializer.tooling.capabilities import (
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
 
 __all__ = ["replay_run_bundle"]
+
+
+@dataclass(frozen=True, slots=True)
+class _PhaseAResult:
+    invocations: list[ToolInvocation]
+    materialized_assets: list[MaterializedAsset]
+    content_sources: list[ContentSourceEvidence]
 
 
 def replay_run_bundle(bundle: MaterializeReplayBundle, out_dir: Path) -> MaterializeArtifacts:
@@ -132,7 +141,7 @@ def _materialize_verified_run_prefix(
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
-    invocations, materialized = _synthesize_phase_a(
+    phase_a = _synthesize_phase_a(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
@@ -142,7 +151,7 @@ def _materialize_verified_run_prefix(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
-        invocations=invocations,
+        invocations=phase_a.invocations,
     )
     try:
         _apply_prefix_phase_b(state, prefix_artifacts)
@@ -154,8 +163,7 @@ def _materialize_verified_run_prefix(
             out_dir=out_dir,
             caps=caps,
             started_at=started_at,
-            invocations=invocations,
-            materialized=materialized,
+            phase_a=phase_a,
             state=state,
             exc=exc,
         )
@@ -167,12 +175,13 @@ def _materialize_verified_run_prefix(
         caps=caps,
         started_at=started_at,
         finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
+        invocations=phase_a.invocations,
+        materialized=phase_a.materialized_assets,
         failures=[],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
@@ -181,6 +190,7 @@ def _materialize_verified_run_prefix(
         source_bundle=source_bundle,
         caps=caps,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     ctx = RunContext(
         run_input=run_input,
@@ -215,6 +225,7 @@ def _build_run_replay_bundle(
     source_bundle: MaterializeReplayBundle,
     caps,
     created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
 ) -> MaterializeReplayBundle:
     return build_replay_bundle(
         run_id=source_bundle.run_id,
@@ -222,6 +233,7 @@ def _build_run_replay_bundle(
         plan_artifacts=prefix_artifacts,
         caps=caps,
         created_at=created_at,
+        content_sources=content_sources,
         execution_mode=ExecutionMode.RUN,
     ).model_copy(
         update={
@@ -239,8 +251,7 @@ def _finalize_run_replay_phase_b_failure(
     out_dir: Path,
     caps,
     started_at: datetime,
-    invocations: list[ToolInvocation],
-    materialized: list[MaterializedAsset],
+    phase_a: _PhaseAResult,
     state: PhaseBState,
     exc: FilesystemActionError | MediaActionError | CorruptionActionError,
 ) -> None:
@@ -252,12 +263,13 @@ def _finalize_run_replay_phase_b_failure(
         caps=caps,
         started_at=started_at,
         finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
+        invocations=phase_a.invocations,
+        materialized=phase_a.materialized_assets,
         failures=[phase_b_failure_record(exc)],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
@@ -266,6 +278,7 @@ def _finalize_run_replay_phase_b_failure(
         source_bundle=source_bundle,
         caps=caps,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     ctx = RunContext(
         run_input=run_input,
@@ -293,13 +306,14 @@ def _synthesize_phase_a(
     out_dir: Path,
     artifacts: PlanArtifacts,
     caps,
-) -> tuple[list[ToolInvocation], list[MaterializedAsset]]:
+) -> _PhaseAResult:
     invocations: list[ToolInvocation] = []
     materialized_assets: list[MaterializedAsset] = []
+    content_sources: list[ContentSourceEvidence] = []
     primary_root_path = scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(scenario)
     for invocation_index, asset in enumerate(iter_assets(scenario)):
-        invocation, materialized, probed, sidecar_hashes = materialize_one_asset(
+        result = materialize_one_asset(
             asset,
             artifacts.replay_bundle.resolved_seed,
             out_dir,
@@ -308,16 +322,21 @@ def _synthesize_phase_a(
             root_path=primary_root_path,
             skip_languages=skip_by_asset.get(asset.id, frozenset()),
         )
-        invocations.append(invocation)
-        materialized_assets.append(materialized)
+        invocations.append(result.invocation)
+        materialized_assets.append(result.materialized_asset)
+        content_sources.extend(result.content_sources)
         _stamp_phase_a_asset(
             artifacts.current_manifest,
             asset,
-            materialized,
-            probed,
-            sidecar_hashes,
+            result.materialized_asset,
+            result.probed,
+            result.sidecar_hashes,
         )
-    return invocations, materialized_assets
+    return _PhaseAResult(
+        invocations=invocations,
+        materialized_assets=materialized_assets,
+        content_sources=content_sources,
+    )
 
 
 def _stamp_phase_a_asset(

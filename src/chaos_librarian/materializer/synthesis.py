@@ -10,25 +10,39 @@ subclasses on failure; the orchestrator in ``run.py`` converts them to
 from __future__ import annotations
 
 import hashlib
+from dataclasses import dataclass
 from pathlib import Path
 
 from chaos_librarian.contract.capabilities import Capabilities
+from chaos_librarian.contract.content_sources import ContentSourceEvidence, ContentTrackKind
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import Asset
-from chaos_librarian.materializer.errors import ToolFailedError, UnsupportedMaterializationError
-from chaos_librarian.materializer.preflight import (
-    AUDIO_RECIPES,
+from chaos_librarian.materializer.content_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
-    VIDEO_RECIPES,
+    SourceRequest,
+    resolve_audio_source,
+    resolve_video_source,
 )
+from chaos_librarian.materializer.errors import ToolFailedError, UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
 
-__all__ = ["materialize_one_asset", "write_sidecars"]
+__all__ = ["MaterializeAssetResult", "materialize_one_asset", "write_sidecars"]
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializeAssetResult:
+    """Phase-A result for one synthesized asset."""
+
+    invocation: ToolInvocation
+    materialized_asset: MaterializedAsset
+    probed: ProbedMedia
+    sidecar_hashes: dict[tuple[str, str], str]
+    content_sources: tuple[ContentSourceEvidence, ...]
 
 
 def materialize_one_asset(
@@ -40,12 +54,7 @@ def materialize_one_asset(
     *,
     root_path: str,
     skip_languages: frozenset[str] = frozenset(),
-) -> tuple[
-    ToolInvocation,
-    MaterializedAsset,
-    ProbedMedia,
-    dict[tuple[str, str], str],
-]:
+) -> MaterializeAssetResult:
     """Synthesize one asset, returning everything ``augment_manifest`` needs.
 
     ``root_path`` is the primary library root's relative path (from
@@ -54,11 +63,10 @@ def materialize_one_asset(
     on-disk layout matches the engine-emitted ``INITIAL_PATH_TEMPLATE``
     that phase B walks.
 
-    Returns a 4-tuple of (ffmpeg invocation, materialized asset record,
-    probed-media result for the produced file, sidecar hashes keyed by
-    ``(asset_id, language)``). Returning probed lets the orchestrator
-    avoid re-probing; returning sidecar_hashes lets ``augment_manifest``
-    populate ``ManifestSidecar.content_hash``.
+    Returning probed lets the orchestrator avoid re-probing; returning
+    sidecar_hashes lets ``augment_manifest`` populate
+    ``ManifestSidecar.content_hash``. Returning content-source evidence
+    lets materialize/run/replay persist the Phase-A source-resolution audit.
     """
     if asset.video is None:
         raise UnsupportedMaterializationError(
@@ -76,20 +84,42 @@ def materialize_one_asset(
     output_path = library_dir / relative_initial
     output_path.parent.mkdir(parents=True, exist_ok=True)
     width, height = RESOLUTION_PIXELS[asset.video.resolution]
-    video_recipe = VIDEO_RECIPES[asset.video.source]
-    video_input = video_recipe(
-        width=width,
-        height=height,
-        fps=FPS_DEFAULT,
-        duration_s=asset.duration_seconds,
-        seed=seed,
+    video_resolution = resolve_video_source(
+        source=asset.video.source,
+        request=SourceRequest(
+            asset_id=asset.id,
+            track_kind=ContentTrackKind.VIDEO,
+            track_index=None,
+            source=asset.video.source.value,
+            seed=seed,
+            duration_s=asset.duration_seconds,
+            width=width,
+            height=height,
+            fps=FPS_DEFAULT,
+            channels=None,
+        ),
     )
+    video_input = video_resolution.ffmpeg_input
+    content_sources: list[ContentSourceEvidence] = [video_resolution.evidence]
     audio_inputs: list[FFmpegInput] = []
-    for audio in asset.audio:
-        recipe = AUDIO_RECIPES[audio.source]
-        audio_inputs.append(
-            recipe(channels=audio.channels, duration_s=asset.duration_seconds, seed=seed)
+    for index, audio in enumerate(asset.audio):
+        audio_resolution = resolve_audio_source(
+            source=audio.source,
+            request=SourceRequest(
+                asset_id=asset.id,
+                track_kind=ContentTrackKind.AUDIO,
+                track_index=index,
+                source=audio.source.value,
+                seed=seed,
+                duration_s=asset.duration_seconds,
+                width=None,
+                height=None,
+                fps=None,
+                channels=audio.channels.value,
+            ),
         )
+        audio_inputs.append(audio_resolution.ffmpeg_input)
+        content_sources.append(audio_resolution.evidence)
     argv = build_command(
         video=asset.video,
         video_input=video_input,
@@ -121,7 +151,13 @@ def materialize_one_asset(
         duration_seconds=probed.duration_seconds,
         invocation_index=invocation_index,
     )
-    return invocation, materialized_asset, probed, sidecar_hashes
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes=sidecar_hashes,
+        content_sources=tuple(content_sources),
+    )
 
 
 def write_sidecars(

@@ -11,7 +11,12 @@ import pytest
 from pydantic import TypeAdapter
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
-from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import MaterializedAsset, MediaAction
@@ -19,12 +24,15 @@ from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.materializer import phase_b, wall_clock
+from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE = (
     Path(__file__).resolve().parents[1] / "fixtures" / "scenarios" / ("active-library-churn.yaml")
 )
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
+_FAKE_PROVIDER = "fake-content-source"
+_FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 
 class FakeClock:
@@ -94,15 +102,15 @@ def _fake_materialize_one_asset(
         size_bytes=len(data),
         streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
     )
-    return (
-        wall_clock.ToolInvocation(
+    return MaterializeAssetResult(
+        invocation=wall_clock.ToolInvocation(
             tool="ffmpeg",
             version="7.1.1",
             command=["ffmpeg", str(path)],
             exit_code=0,
             duration_ns=1,
         ),
-        MaterializedAsset(
+        materialized_asset=MaterializedAsset(
             asset_id=asset.id,
             location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
             content_hash=content_hash,
@@ -110,8 +118,21 @@ def _fake_materialize_one_asset(
             duration_seconds=asset.duration_seconds,
             invocation_index=invocation_index,
         ),
-        probed,
-        {},
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(_fake_content_source(asset.id),),
+    )
+
+
+def _fake_content_source(asset_id: str) -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id=asset_id,
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="fake-video",
+        provider=_FAKE_PROVIDER,
+        recipe_digest=_FAKE_RECIPE_DIGEST,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
 
 
@@ -166,6 +187,11 @@ def test_active_library_churn_completes_with_run_mode(
     assert artifacts.materialization_report.execution_mode.value == "run"
     assert artifacts.replay_bundle.execution_mode.value == "run"
     assert artifacts.replay_bundle.applied_events == 8
+    report_payload = json.loads((tmp_path / "run" / "materialization.json").read_text())
+    replay_payload = json.loads((tmp_path / "run" / "replay.json").read_text())
+    assert report_payload["content_sources"] == replay_payload["content_sources"]
+    assert report_payload["content_sources"][0]["asset_id"] == "asset_main"
+    assert report_payload["content_sources"][0]["provider"] == _FAKE_PROVIDER
 
 
 def test_partial_duration_journal_matches_planned_prefix(

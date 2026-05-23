@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.clock import parse_duration
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
@@ -112,6 +113,7 @@ class WallClockSlowCopySession:
 class _PhaseAResult:
     invocations: list[ToolInvocation] = field(default_factory=list)
     materialized: list[MaterializedAsset] = field(default_factory=list)
+    content_sources: list[ContentSourceEvidence] = field(default_factory=list)
     probed_by_asset: dict[str, ProbedMedia] = field(default_factory=dict)
     sidecar_hashes_by_asset: dict[str, dict[tuple[str, str], str]] = field(default_factory=dict)
 
@@ -191,6 +193,7 @@ def run_wall_clock_scenario(
         caps=caps,
         run_id=run_id,
         started_at=started_at,
+        content_sources=phase_a.content_sources,
     )
     return _run_timed_phase(
         run_context=RunContext(
@@ -260,7 +263,7 @@ def _synthesize_phase_a(
     skip_by_asset = timeline_sidecar_languages(scenario)
     for invocation_index, asset in enumerate(iter_assets(scenario)):
         skip_languages = skip_by_asset.get(asset.id, frozenset())
-        invocation, materialized, probed, sidecar_hashes = materialize_one_asset(
+        asset_result = materialize_one_asset(
             asset,
             artifacts.replay_bundle.resolved_seed,
             out_dir,
@@ -269,10 +272,11 @@ def _synthesize_phase_a(
             root_path=primary_root_path,
             skip_languages=skip_languages,
         )
-        result.invocations.append(invocation)
-        result.materialized.append(materialized)
-        result.probed_by_asset[asset.id] = probed
-        result.sidecar_hashes_by_asset[asset.id] = sidecar_hashes
+        result.invocations.append(asset_result.invocation)
+        result.materialized.append(asset_result.materialized_asset)
+        result.content_sources.extend(asset_result.content_sources)
+        result.probed_by_asset[asset.id] = asset_result.probed
+        result.sidecar_hashes_by_asset[asset.id] = asset_result.sidecar_hashes
     _stamp_phase_a_metadata(artifacts.current_manifest, scenario, result)
     return result
 
@@ -308,6 +312,7 @@ def _publish_baseline(
     caps,
     run_id: uuid.UUID,
     started_at: datetime,
+    content_sources: list[ContentSourceEvidence],
 ) -> None:
     replay_bundle = build_replay_bundle(
         run_id=run_id,
@@ -315,6 +320,7 @@ def _publish_baseline(
         plan_artifacts=artifacts,
         caps=caps,
         created_at=started_at,
+        content_sources=content_sources,
         execution_mode=ExecutionMode.RUN,
     )
     ctx = RunContext(
@@ -668,6 +674,7 @@ def _finalize_wall_clock_run(
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
         overran_duration=overran_duration,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_final_replay_bundle(
@@ -675,6 +682,7 @@ def _finalize_wall_clock_run(
         artifacts=final_artifacts,
         executed_journal=executed_journal,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     finalize_materialize_run(
         run_context.out_dir,
@@ -732,6 +740,7 @@ def _finalize_wall_clock_phase_b_failure(
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
         overran_duration=overran_duration,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_final_replay_bundle(
@@ -739,6 +748,7 @@ def _finalize_wall_clock_phase_b_failure(
         artifacts=final_artifacts,
         executed_journal=executed_journal,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     cleanup_failed_phase_b_run(
         run_context.out_dir,
@@ -778,6 +788,7 @@ def _build_final_replay_bundle(
     artifacts: PlanArtifacts,
     executed_journal: list[JournalEntry],
     created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
 ):
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in executed_journal
@@ -789,6 +800,7 @@ def _build_final_replay_bundle(
         plan_artifacts=artifacts,
         caps=run_context.caps,
         created_at=created_at,
+        content_sources=content_sources,
         execution_mode=ExecutionMode.RUN,
     )
     return bundle.model_copy(
