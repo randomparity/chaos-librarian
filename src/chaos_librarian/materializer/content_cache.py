@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -68,6 +67,8 @@ def probe_content_cache(root: Path | None = None) -> CacheProbe:
 
     if not probe_target.exists():
         return CacheProbe(root=cache_root, writable=False, reason="parent_missing")
+    if cache_root.exists() and not cache_root.is_dir():
+        return CacheProbe(root=cache_root, writable=False, reason="not_directory")
     if not os.access(probe_target, os.W_OK):
         return CacheProbe(root=cache_root, writable=False, reason="not_writable")
     return CacheProbe(root=cache_root, writable=True, reason=None)
@@ -117,7 +118,13 @@ class ContentCache:
         temp_path = _sibling_temp_path(path)
         try:
             with source_path.open("rb") as source, temp_path.open("wb") as target:
-                shutil.copyfileobj(source, target)
+                copied_digest = hashlib.sha256()
+                for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                    copied_digest.update(chunk)
+                    target.write(chunk)
+            copied_hash = f"{_SHA256_PREFIX}{copied_digest.hexdigest()}"
+            if copied_hash != cache_key:
+                raise ValueError(f"content hash mismatch for {cache_key}: copied {copied_hash}")
             temp_path.replace(path)
         except Exception:
             temp_path.unlink(missing_ok=True)
