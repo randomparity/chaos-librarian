@@ -115,7 +115,7 @@ class _BuiltinLavfiVideoProvider:
         )
         return SourceResolution(
             ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(request),
+            evidence=_builtin_evidence(request, ffmpeg_input),
         )
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
@@ -153,7 +153,7 @@ class _BuiltinLavfiAudioProvider:
         )
         return SourceResolution(
             ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(request),
+            evidence=_builtin_evidence(request, ffmpeg_input),
         )
 
     def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
@@ -199,13 +199,16 @@ def collect_content_source_capabilities(ffmpeg_available: bool) -> ContentSource
     )
 
 
-def _builtin_evidence(request: SourceRequest) -> ContentSourceEvidence:
+def _builtin_evidence(
+    request: SourceRequest,
+    ffmpeg_input: FFmpegInput,
+) -> ContentSourceEvidence:
     return ContentSourceEvidence(
         asset_id=request.asset_id,
         track_kind=request.track_kind,
         source=request.source,
         provider=PROVIDER_NAME,
-        recipe_digest=_recipe_digest(request),
+        recipe_digest=_recipe_digest(request, ffmpeg_input),
         track_index=request.track_index,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
@@ -282,18 +285,35 @@ def _validate_request_source(*, field: str, expected: str, actual: str) -> None:
     )
 
 
-def _recipe_digest(request: SourceRequest) -> str:
+def _recipe_digest(request: SourceRequest, ffmpeg_input: FFmpegInput) -> str:
     payload = {
-        "asset_id": request.asset_id,
-        "track_kind": request.track_kind.value,
-        "track_index": request.track_index,
-        "source": request.source,
-        "seed": request.seed,
-        "duration_s": request.duration_s,
-        "width": request.width,
-        "height": request.height,
-        "fps": request.fps,
-        "channels": request.channels,
+        "ffmpeg_input": _ffmpeg_input_payload(ffmpeg_input),
+        "provider": PROVIDER_NAME,
+        "request": {
+            "asset_id": request.asset_id,
+            "track_kind": request.track_kind.value,
+            "track_index": request.track_index,
+            "source": request.source,
+            "seed": request.seed,
+            "duration_s": request.duration_s,
+            "width": request.width,
+            "height": request.height,
+            "fps": request.fps,
+            "channels": request.channels,
+        },
     }
     serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return f"sha256:{hashlib.sha256(serialized).hexdigest()}"
+
+
+def _ffmpeg_input_payload(ffmpeg_input: FFmpegInput) -> dict[str, object]:
+    payload: dict[str, object] = {"extra_flags": list(ffmpeg_input.extra_flags)}
+    if ffmpeg_input.lavfi is not None:
+        payload["kind"] = "lavfi"
+        payload["lavfi"] = ffmpeg_input.lavfi
+        return payload
+    if ffmpeg_input.file_path is not None:
+        payload["kind"] = "file_path"
+        payload["file_name"] = ffmpeg_input.file_path.name
+        return payload
+    raise ValueError("FFmpegInput requires lavfi or file_path")

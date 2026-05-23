@@ -19,6 +19,7 @@ from chaos_librarian.materializer.content_sources import (
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 
 def _video_request(source: str = "color_bars") -> SourceRequest:
@@ -61,6 +62,34 @@ def test_resolve_video_source_returns_input_and_evidence() -> None:
     assert resolution.evidence.asset_id == "asset_main"
     assert resolution.evidence.provider == "builtin-lavfi"
     assert resolution.evidence.cache_disposition == CacheDisposition.NOT_CACHEABLE
+
+
+def test_resolve_video_source_digest_changes_with_recipe_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = _video_request()
+    original = resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
+
+    def alternate_color_bars(
+        *,
+        width: int,
+        height: int,
+        fps: int,
+        duration_s: float,
+        seed: int,
+    ) -> FFmpegInput:
+        del width, height, fps, duration_s, seed
+        return FFmpegInput(lavfi="testsrc=size=640x480:rate=24")
+
+    monkeypatch.setitem(
+        content_sources.VIDEO_RECIPES,
+        VideoSource.COLOR_BARS,
+        alternate_color_bars,
+    )
+
+    changed = resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
+
+    assert changed.evidence.recipe_digest != original.evidence.recipe_digest
 
 
 def test_resolve_audio_source_records_track_index() -> None:
