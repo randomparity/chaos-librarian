@@ -7,6 +7,11 @@ import uuid
 from datetime import UTC, datetime
 
 from chaos_librarian.contract.canonicalize import canonicalize, corruption_evidence
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
@@ -173,13 +178,28 @@ def _report(
     probe_outcome: CorruptionProbeOutcome,
 ) -> MaterializationReport:
     return MaterializationReport(
-        schema_version=6,
+        schema_version=7,
         run_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
         outcome=Outcome.SUCCESS,
         platform="test",
         started_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
         finished_at=datetime(2026, 5, 21, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[
+            ContentSourceEvidence(
+                asset_id="a0",
+                track_kind=ContentTrackKind.VIDEO,
+                track_index=None,
+                source="color_bars",
+                provider="builtin-lavfi",
+                recipe_digest="sha256:" + "0" * 64,
+                cache_disposition=CacheDisposition.NOT_CACHEABLE,
+                cache_key=None,
+                content_hash=None,
+                origin_uri=None,
+                license=None,
+            )
+        ],
         corruption_actions=[
             CorruptionAction(
                 event_id="corrupt_header_001",

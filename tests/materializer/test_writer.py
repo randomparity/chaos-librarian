@@ -118,6 +118,7 @@ def test_publish_wall_clock_baseline_renames_staging(tmp_path: Path) -> None:
             execution_mode=ExecutionMode.RUN,
             created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
             toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+            content_sources=[],
         ),
         scenario_yaml_bytes=b"schema_version: 7\nscenario_id: x\n",
         sentinel=_sentinel(RunSentinelState.IN_PROGRESS),
@@ -170,6 +171,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         started_at=datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
         finished_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
         invocations=[],
         materialized=[],
         failures=[],
@@ -185,6 +187,7 @@ def test_cleanup_failed_run_writes_full_metadata(tmp_path: Path) -> None:
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     cleanup_failed_run(
         out_dir,
@@ -268,6 +271,7 @@ def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
         started_at=datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
         finished_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
@@ -280,6 +284,7 @@ def test_cleanup_failed_phase_b_run_propagates_rmtree_errors(
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     metadata = MaterializeMetadata(
         initial_manifest=manifest,
@@ -340,6 +345,7 @@ def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> N
         started_at=datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
         finished_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     replay_bundle = MaterializeReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
@@ -352,6 +358,7 @@ def test_cleanup_failed_phase_b_run_handles_missing_library(tmp_path: Path) -> N
         execution_mode=ExecutionMode.MATERIALIZE,
         created_at=datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     metadata = MaterializeMetadata(
         initial_manifest=manifest,

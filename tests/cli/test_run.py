@@ -52,6 +52,7 @@ def _success(out: Path) -> MaterializeArtifacts:
         actual_duration_ns=1_000_000_000,
         speed_multiplier="10",
         overran_duration=False,
+        content_sources=[],
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay = MaterializeReplayBundle(
@@ -65,6 +66,7 @@ def _success(out: Path) -> MaterializeArtifacts:
         execution_mode=ExecutionMode.RUN,
         created_at=datetime(2026, 5, 21, 0, 0, 1, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     out.mkdir()
     (out / "materialization.json").write_text("{}", encoding="utf-8")

@@ -7,7 +7,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.adapter.fixture import OracleFixture, OracleReports
-from chaos_librarian.contract import ASSET_REPORT_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract import (
+    ASSET_REPORT_SCHEMA_VERSION,
+    MANIFEST_SCHEMA_VERSION,
+    REPLAY_BUNDLE_SCHEMA_VERSION,
+)
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
@@ -195,7 +199,7 @@ def fixture(
             created_at=datetime(2026, 5, 22, tzinfo=UTC),
         ),
         replay_bundle=PlanOnlyReplayBundle(
-            schema_version=5,
+            schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version="0.0.0",
             scenario="scenario: bytes",
             run_id=RUN_ID,

@@ -16,6 +16,12 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     MaterializedAsset,
@@ -31,11 +37,14 @@ from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
+FAKE_PROVIDER = "fake-content-source"
+FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:
@@ -77,6 +86,7 @@ def _make_wall_clock_fixture(
         execution_mode=ExecutionMode.RUN,
         created_at=datetime(2026, 5, 21, 0, 0, 0, tzinfo=UTC),
         toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        content_sources=[],
     )
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -107,11 +117,12 @@ def _make_wall_clock_fixture(
 
 def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,
@@ -138,15 +149,15 @@ def _fake_materialize_one_asset(
     path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
-    return (
-        ToolInvocation(
+    return MaterializeAssetResult(
+        invocation=ToolInvocation(
             tool="ffmpeg",
             version="7.1.1",
             command=["ffmpeg", str(path)],
             exit_code=0,
             duration_ns=1,
         ),
-        MaterializedAsset(
+        materialized_asset=MaterializedAsset(
             asset_id=asset.id,
             location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
             content_hash="sha256:" + hashlib.sha256(data).hexdigest(),
@@ -154,14 +165,44 @@ def _fake_materialize_one_asset(
             duration_seconds=asset.duration_seconds,
             invocation_index=invocation_index,
         ),
-        ProbedMedia(
+        probed=ProbedMedia(
             container=asset.container,
             duration_seconds=asset.duration_seconds,
             size_bytes=len(data),
             streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
         ),
-        {},
+        sidecar_hashes={},
+        content_sources=(_fake_content_source(asset.id),),
     )
+
+
+def _fake_content_source(asset_id: str) -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id=asset_id,
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="fake-video",
+        provider=FAKE_PROVIDER,
+        recipe_digest=FAKE_RECIPE_DIGEST,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+
+def _assert_fake_content_source_payload(
+    payload: list[dict[str, object]],
+    *,
+    asset_id: str,
+) -> None:
+    assert payload == [
+        {
+            "asset_id": asset_id,
+            "track_kind": "video",
+            "source": "fake-video",
+            "provider": FAKE_PROVIDER,
+            "recipe_digest": FAKE_RECIPE_DIGEST,
+            "cache_disposition": "not_cacheable",
+        }
+    ]
 
 
 def _make_materialized_run_fixture(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
@@ -419,6 +460,15 @@ class TestReplayRunBundles:
         assert (out / "manifest.current.json").exists()
         replay_payload = json.loads((out / "replay.json").read_text())
         assert replay_payload["execution_mode"] == "run"
+        report_payload = json.loads((out / "materialization.json").read_text())
+        _assert_fake_content_source_payload(
+            report_payload["content_sources"],
+            asset_id="asset_hd_main",
+        )
+        _assert_fake_content_source_payload(
+            replay_payload["content_sources"],
+            asset_id="asset_hd_main",
+        )
 
     def test_replay_run_bundle_compares_against_normalized_output(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -556,6 +606,40 @@ def test_compare_run_replay_ignores_corruption_duration_ns(tmp_path: Path) -> No
     assert diff.is_clean()
 
 
+def test_compare_run_replay_compares_replay_content_sources(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_replay(right, "content_sources", [_run_compare_source_evidence("1")])
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["replay.json"]
+
+
+def test_compare_run_replay_compares_materialization_content_sources(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(right, "content_sources", [_run_compare_source_evidence("2")])
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
+def test_compare_run_replay_catches_missing_materialization_content_sources(
+    tmp_path: Path,
+) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(left, "content_sources", [])
+    _update_materialization(right, "content_sources", [])
+    _delete_materialization_field(right, "content_sources")
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
 def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
     left = _write_run_compare_fixture(
         tmp_path / "left",
@@ -684,7 +768,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     bundle_path.write_text(
         json.dumps(
             {
-                "schema_version": 5,
+                "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
                 "chaos_librarian_version": "0.1.0",
                 "scenario": "schema_version: 7\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",
@@ -695,6 +779,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
                 "execution_mode": "materialize",
                 "created_at": "2026-05-18T00:00:00Z",
                 "toolchain": {"ffmpeg": "7.1.1"},
+                "content_sources": [],
             }
         )
     )
@@ -728,6 +813,7 @@ def _write_run_compare_fixture(
                 "applied_events": 1,
                 "journal_digest": "0" * 64,
                 "execution_mode": "run",
+                "content_sources": [_run_compare_source_evidence()],
             }
         ),
         encoding="utf-8",
@@ -741,6 +827,7 @@ def _write_run_compare_fixture(
                 "platform": platform,
                 "toolchain": toolchain or {"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
                 "invocations": invocations or [],
+                "content_sources": [_run_compare_source_evidence()],
                 "started_at": "2026-05-21T00:00:00Z",
                 "finished_at": "2026-05-21T00:00:01Z",
                 "corruption_actions": [
@@ -770,6 +857,17 @@ def _write_run_compare_fixture(
     return root
 
 
+def _run_compare_source_evidence(recipe_digit: str = "0") -> dict[str, object]:
+    return {
+        "asset_id": "asset_main",
+        "track_kind": "video",
+        "source": "color_bars",
+        "provider": "builtin-lavfi",
+        "recipe_digest": "sha256:" + recipe_digit * 64,
+        "cache_disposition": "not_cacheable",
+    }
+
+
 def _write_asset_report(root: Path, *, content_hash: str) -> None:
     reports_dir = root / "reports" / "assets"
     reports_dir.mkdir(parents=True)
@@ -781,6 +879,20 @@ def _write_asset_report(root: Path, *, content_hash: str) -> None:
 
 def _update_materialization(root: Path, field: str, value: object) -> None:
     path = root / "materialization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload[field] = value
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _delete_materialization_field(root: Path, field: str) -> None:
+    path = root / "materialization.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload[field]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _update_replay(root: Path, field: str, value: object) -> None:
+    path = root / "replay.json"
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload[field] = value
     path.write_text(json.dumps(payload), encoding="utf-8")

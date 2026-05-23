@@ -1,4 +1,4 @@
-"""Contract round-trip tests for MaterializationReport v3."""
+"""Contract round-trip tests for MaterializationReport."""
 
 from __future__ import annotations
 
@@ -10,6 +10,11 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract import materialization as materialization_contract
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
@@ -26,6 +31,22 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 
 
+def _source_evidence() -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id="asset_main",
+        track_kind=ContentTrackKind.VIDEO,
+        track_index=None,
+        source="color_bars",
+        provider="builtin-lavfi",
+        recipe_digest="sha256:" + "0" * 64,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+        cache_key=None,
+        content_hash=None,
+        origin_uri=None,
+        license=None,
+    )
+
+
 def _minimal_report(**overrides: object) -> MaterializationReport:
     defaults: dict[str, object] = {
         "schema_version": MATERIALIZATION_SCHEMA_VERSION,
@@ -35,6 +56,7 @@ def _minimal_report(**overrides: object) -> MaterializationReport:
         "started_at": datetime(2026, 5, 18, 0, 0, 0, tzinfo=UTC),
         "finished_at": datetime(2026, 5, 18, 0, 0, 1, tzinfo=UTC),
         "toolchain": ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+        "content_sources": [_source_evidence()],
     }
     defaults.update(overrides)
     return MaterializationReport.model_validate(defaults)
@@ -115,8 +137,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_six() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 6
+def test_materialization_schema_version_is_seven() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 7
 
 
 def test_materialization_report_run_timing_defaults() -> None:
@@ -132,7 +154,7 @@ def test_materialization_report_run_timing_defaults() -> None:
 
 def test_materialization_report_accepts_run_timing() -> None:
     report = _minimal_report(
-        schema_version=6,
+        schema_version=7,
         requested_duration_ns=90_000_000_000,
         actual_duration_ns=90_123_456_789,
         speed_multiplier="10",
@@ -191,6 +213,21 @@ def test_materialization_report_filesystem_actions_defaults_to_empty() -> None:
         "started_at": "2026-05-19T00:00:00Z",
         "finished_at": "2026-05-19T00:00:01Z",
         "toolchain": {},
+        "content_sources": [
+            {
+                "asset_id": "asset_main",
+                "track_kind": "video",
+                "track_index": None,
+                "source": "color_bars",
+                "provider": "builtin-lavfi",
+                "recipe_digest": "sha256:" + "0" * 64,
+                "cache_disposition": "not_cacheable",
+                "cache_key": None,
+                "content_hash": None,
+                "origin_uri": None,
+                "license": None,
+            }
+        ],
         "invocations": [],
         "materialized": [],
         "failures": [],
@@ -259,9 +296,16 @@ def test_materialization_report_carries_media_actions():
         started_at=datetime.now(UTC),
         finished_at=datetime.now(UTC),
         toolchain=ToolchainInfo(),
+        content_sources=[],
     )
     assert report.media_actions == []
     assert report.schema_version == MATERIALIZATION_SCHEMA_VERSION
+
+
+def test_materialization_report_carries_content_source_evidence() -> None:
+    report = _minimal_report()
+
+    assert report.content_sources[0].provider == "builtin-lavfi"
 
 
 def test_corruption_probe_outcome_accepts_declared_values_only() -> None:

@@ -59,6 +59,21 @@ def _materialize_base() -> dict[str, object]:
         "applied_events": 0,
         "journal_digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         "execution_trace": [],
+        "content_sources": [
+            {
+                "asset_id": "asset_main",
+                "track_kind": "video",
+                "track_index": None,
+                "source": "color_bars",
+                "provider": "builtin-lavfi",
+                "recipe_digest": "sha256:" + "0" * 64,
+                "cache_disposition": "not_cacheable",
+                "cache_key": None,
+                "content_hash": None,
+                "origin_uri": None,
+                "license": None,
+            }
+        ],
     }
 
 
@@ -136,6 +151,7 @@ def test_materialize_bundle_has_created_at_and_toolchain() -> None:
         journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[],
         toolchain=ToolchainInfo(ffmpeg="7.1", ffprobe="7.1"),
+        content_sources=[],
     )
     loaded = TypeAdapter(ReplayBundle).validate_json(b.model_dump_json())
     assert loaded.created_at == b.created_at
@@ -158,6 +174,12 @@ def test_plan_only_rejects_created_at() -> None:
 
 def test_plan_only_rejects_toolchain() -> None:
     bundle_json = {**_plan_only_base(), "toolchain": {"ffmpeg": "7.1"}}
+    with pytest.raises(ValidationError):
+        TypeAdapter(ReplayBundle).validate_python(bundle_json)
+
+
+def test_plan_only_rejects_content_sources() -> None:
+    bundle_json = {**_plan_only_base(), "content_sources": []}
     with pytest.raises(ValidationError):
         TypeAdapter(ReplayBundle).validate_python(bundle_json)
 
@@ -298,6 +320,21 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
         "execution_mode": "materialize",
         "created_at": "2026-05-18T00:00:00Z",
         "toolchain": {"ffmpeg": "7.1.1"},
+        "content_sources": [
+            {
+                "asset_id": "asset_main",
+                "track_kind": "video",
+                "track_index": None,
+                "source": "color_bars",
+                "provider": "builtin-lavfi",
+                "recipe_digest": "sha256:" + "0" * 64,
+                "cache_disposition": "not_cacheable",
+                "cache_key": None,
+                "content_hash": None,
+                "origin_uri": None,
+                "license": None,
+            }
+        ],
     }
     base.update(overrides)
     return base
@@ -343,5 +380,11 @@ def test_materialize_bundle_toolchain_rejects_unknown_tool():
         MaterializeReplayBundle.model_validate(payload)
 
 
-def test_replay_bundle_schema_version_is_five():
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 5
+def test_replay_bundle_schema_version_is_six():
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 6
+
+
+def test_materialize_bundle_carries_content_source_evidence() -> None:
+    bundle = MaterializeReplayBundle.model_validate(_materialize_payload())
+
+    assert bundle.content_sources[0].source == "color_bars"

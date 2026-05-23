@@ -38,11 +38,14 @@ Current checked-in contract versions:
 |----------|----------------|
 | scenario | 7 |
 | manifest | 5 |
-| materialization | 6 |
+| replay bundle | 6 |
+| materialization | 7 |
+| capabilities | 2 |
 | asset report | 5 |
 
 Scenario v7 adds explicit `profiles`, starting with `malformed-media`, and the
 `corrupt_container_header` timeline action. Manifest v5 and asset-report v5
 carry labeled corruption metadata on current versions/snapshots.
-Materialization v6 carries `corruption_actions` audit records and the
-`corruption_failed` outcome.
+Replay-bundle v6, materialization v7, and capabilities v2 add content-source
+provider capability and replay-evidence surfaces for future file-backed and
+TTS-backed providers.

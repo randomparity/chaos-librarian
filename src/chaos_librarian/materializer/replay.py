@@ -6,17 +6,15 @@ import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.manifest import Manifest, ProbedMedia
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
-    MaterializedAsset,
     Outcome,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
-    Asset,
     Scenario,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
@@ -27,9 +25,6 @@ from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
-)
-from chaos_librarian.materializer.manifest_build import (
-    augment_manifest,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import build_sentinel
@@ -51,9 +46,12 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
-from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
-from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.materializer.synthesis import (
+    PhaseAResult,
+    materialize_assets_phase_a,
+    materialize_one_asset,
+)
 from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
@@ -132,7 +130,7 @@ def _materialize_verified_run_prefix(
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
-    invocations, materialized = _synthesize_phase_a(
+    phase_a = _synthesize_phase_a(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
@@ -142,7 +140,7 @@ def _materialize_verified_run_prefix(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
-        invocations=invocations,
+        invocations=phase_a.invocations,
     )
     try:
         _apply_prefix_phase_b(state, prefix_artifacts)
@@ -154,8 +152,7 @@ def _materialize_verified_run_prefix(
             out_dir=out_dir,
             caps=caps,
             started_at=started_at,
-            invocations=invocations,
-            materialized=materialized,
+            phase_a=phase_a,
             state=state,
             exc=exc,
         )
@@ -167,12 +164,13 @@ def _materialize_verified_run_prefix(
         caps=caps,
         started_at=started_at,
         finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
+        invocations=phase_a.invocations,
+        materialized=phase_a.materialized_assets,
         failures=[],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
@@ -181,6 +179,7 @@ def _materialize_verified_run_prefix(
         source_bundle=source_bundle,
         caps=caps,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     ctx = RunContext(
         run_input=run_input,
@@ -215,6 +214,7 @@ def _build_run_replay_bundle(
     source_bundle: MaterializeReplayBundle,
     caps,
     created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
 ) -> MaterializeReplayBundle:
     return build_replay_bundle(
         run_id=source_bundle.run_id,
@@ -222,6 +222,7 @@ def _build_run_replay_bundle(
         plan_artifacts=prefix_artifacts,
         caps=caps,
         created_at=created_at,
+        content_sources=content_sources,
         execution_mode=ExecutionMode.RUN,
     ).model_copy(
         update={
@@ -239,8 +240,7 @@ def _finalize_run_replay_phase_b_failure(
     out_dir: Path,
     caps,
     started_at: datetime,
-    invocations: list[ToolInvocation],
-    materialized: list[MaterializedAsset],
+    phase_a: PhaseAResult,
     state: PhaseBState,
     exc: FilesystemActionError | MediaActionError | CorruptionActionError,
 ) -> None:
@@ -252,12 +252,13 @@ def _finalize_run_replay_phase_b_failure(
         caps=caps,
         started_at=started_at,
         finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
+        invocations=phase_a.invocations,
+        materialized=phase_a.materialized_assets,
         failures=[phase_b_failure_record(exc)],
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
@@ -266,6 +267,7 @@ def _finalize_run_replay_phase_b_failure(
         source_bundle=source_bundle,
         caps=caps,
         created_at=finished_at,
+        content_sources=phase_a.content_sources,
     )
     ctx = RunContext(
         run_input=run_input,
@@ -293,41 +295,15 @@ def _synthesize_phase_a(
     out_dir: Path,
     artifacts: PlanArtifacts,
     caps,
-) -> tuple[list[ToolInvocation], list[MaterializedAsset]]:
-    invocations: list[ToolInvocation] = []
-    materialized_assets: list[MaterializedAsset] = []
-    primary_root_path = scenario.library.roots[0].path
-    skip_by_asset = timeline_sidecar_languages(scenario)
-    for invocation_index, asset in enumerate(iter_assets(scenario)):
-        invocation, materialized, probed, sidecar_hashes = materialize_one_asset(
-            asset,
-            artifacts.replay_bundle.resolved_seed,
-            out_dir,
-            caps,
-            invocation_index,
-            root_path=primary_root_path,
-            skip_languages=skip_by_asset.get(asset.id, frozenset()),
-        )
-        invocations.append(invocation)
-        materialized_assets.append(materialized)
-        _stamp_phase_a_asset(
-            artifacts.current_manifest,
-            asset,
-            materialized,
-            probed,
-            sidecar_hashes,
-        )
-    return invocations, materialized_assets
-
-
-def _stamp_phase_a_asset(
-    manifest: Manifest,
-    asset: Asset,
-    materialized: MaterializedAsset,
-    probed: ProbedMedia,
-    sidecar_hashes: dict[tuple[str, str], str],
-) -> None:
-    augment_manifest(manifest, asset, materialized, probed, sidecar_hashes)
+) -> PhaseAResult:
+    return materialize_assets_phase_a(
+        scenario=scenario,
+        out_dir=out_dir,
+        artifacts=artifacts,
+        caps=caps,
+        stamp_manifest=True,
+        materialize_asset=materialize_one_asset,
+    )
 
 
 def _make_run_replay_phase_b_state(

@@ -12,6 +12,7 @@ from chaos_librarian.contract import (
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
 from chaos_librarian.contract.capabilities import Capabilities
+from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FilesystemAction,
@@ -50,6 +51,7 @@ def build_report(
     actual_duration_ns: int | None = None,
     speed_multiplier: str | None = None,
     overran_duration: bool = False,
+    content_sources: list[ContentSourceEvidence],
     execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE,
 ) -> MaterializationReport:
     return MaterializationReport(
@@ -64,6 +66,7 @@ def build_report(
             ffprobe=caps.ffprobe.version,
             mkvtoolnix=caps.mkvtoolnix.version,
         ),
+        content_sources=content_sources,
         invocations=invocations,
         materialized=materialized,
         failures=failures,
@@ -85,6 +88,7 @@ def build_replay_bundle(
     plan_artifacts: PlanArtifacts,
     caps: Capabilities,
     created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
     execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN] = (
         ExecutionMode.MATERIALIZE
     ),
@@ -104,6 +108,7 @@ def build_replay_bundle(
             ffprobe=caps.ffprobe.version,
             mkvtoolnix=caps.mkvtoolnix.version,
         ),
+        content_sources=content_sources,
     )
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -7,6 +8,12 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceCapabilities,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.materialization import (
     FailureStage,
     FilesystemAction,
@@ -19,6 +26,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.persistence import finalize as finalize_mod
+from chaos_librarian.materializer.persistence import reports as reports_mod
 from chaos_librarian.materializer.persistence._context import RunContext
 from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 from chaos_librarian.validation import prepare_run_input, run_validation
@@ -27,13 +35,37 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 
 
+def _source_evidence() -> ContentSourceEvidence:
+    return ContentSourceEvidence(
+        asset_id="asset_main",
+        track_kind=ContentTrackKind.VIDEO,
+        source="color_bars",
+        provider="builtin-lavfi",
+        recipe_digest="sha256:" + "0" * 64,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+
+def test_report_and_finalize_builders_require_explicit_content_sources() -> None:
+    for func in (
+        reports_mod.build_report,
+        reports_mod.build_replay_bundle,
+        finalize_mod.finalize_success,
+        finalize_mod.finalize_failure,
+        finalize_mod.finalize_failure_phase_b,
+    ):
+        parameter = inspect.signature(func).parameters["content_sources"]
+        assert parameter.default is inspect.Signature.empty
+
+
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,
@@ -88,8 +120,17 @@ def test_finalize_success_writes_complete_metadata(
             invocation_index=0,
         )
     ]
+    content_sources = [_source_evidence()]
 
-    artifacts = finalize_mod.finalize_success(ctx, [invocation], materialized, [], [], [])
+    artifacts = finalize_mod.finalize_success(
+        ctx,
+        [invocation],
+        materialized,
+        [],
+        [],
+        [],
+        content_sources=content_sources,
+    )
 
     assert len(captured) == 1
     out_dir, metadata, reports = captured[0]
@@ -98,6 +139,9 @@ def test_finalize_success_writes_complete_metadata(
     assert metadata.materialization_report.outcome is Outcome.SUCCESS
     assert metadata.materialization_report.invocations == [invocation]
     assert metadata.materialization_report.materialized == materialized
+    assert metadata.materialization_report.content_sources == content_sources
+    assert metadata.replay_bundle.content_sources == content_sources
+    assert artifacts.replay_bundle.content_sources == content_sources
     assert artifacts.materialization_report == metadata.materialization_report
     assert artifacts.current_manifest == ctx.plan_artifacts.current_manifest
     assert reports.assets
@@ -130,7 +174,17 @@ def test_finalize_failure_phase_b_records_failure_metadata(
         asset_id="asset_main",
     )
 
-    finalize_mod.finalize_failure_phase_b(ctx, exc, Outcome.FS_FAILED, [], [], [action], [], [])
+    finalize_mod.finalize_failure_phase_b(
+        ctx,
+        exc,
+        Outcome.FS_FAILED,
+        [],
+        [],
+        [action],
+        [],
+        [],
+        content_sources=[],
+    )
 
     assert len(captured) == 1
     out_dir, metadata = captured[0]

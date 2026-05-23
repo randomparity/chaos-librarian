@@ -179,6 +179,7 @@ def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path:
             "journal_digest": digest,
             "created_at": "2026-05-22T00:00:00Z",
             "toolchain": {"ffmpeg": "6.1", "ffprobe": "6.1", "mkvtoolnix": None},
+            "content_sources": [],
         }
     )
     _write_replay(run_dir, _REPLAY_ADAPTER.validate_python(replay_payload))

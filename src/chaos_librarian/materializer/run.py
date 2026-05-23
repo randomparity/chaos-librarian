@@ -14,11 +14,7 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.materialization import (
-    MaterializedAsset,
-    Outcome,
-    ToolInvocation,
-)
+from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.engine import run_materializer_plan
@@ -29,9 +25,6 @@ from chaos_librarian.materializer.errors import (
     ProbeParseError,
     ScenarioValidationError,
     ToolFailedError,
-)
-from chaos_librarian.materializer.manifest_build import (
-    augment_manifest,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import (
@@ -48,13 +41,12 @@ from chaos_librarian.materializer.phase_b import (
     make_phase_b_state,
     phase_b_failure_outcome,
 )
-from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import (
     iter_assets,
     preflight_asset,
     preflight_timeline,
 )
-from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.materializer.synthesis import PhaseAResult, materialize_assets_phase_a
 from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
@@ -138,49 +130,24 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
 
 def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     """Steps 7-8: per-asset synthesis loop, unified phase-B walk, finalize/cleanup."""
-    invocations: list[ToolInvocation] = []
-    materialized: list[MaterializedAsset] = []
+    phase_a = PhaseAResult()
     phase_b_state: PhaseBState | None = None
-    # Engine's ``build_initial_state`` lays every asset under the primary
-    # root (scenario.library.roots[0]); synthesis must mirror that layout
-    # so the on-disk file lives where phase B's ``state_delta['from_path']``
-    # expects to find it.
-    primary_root_path = scenario.library.roots[0].path
-    sidecar_languages = timeline_sidecar_languages(scenario)
     try:
-        # Phase A — per-asset synthesis. ``skip_languages`` defers the
-        # write to phase B for any (asset, language) the timeline will
-        # produce; otherwise phase A would write an orphan SRT that the
-        # manifest cannot reference (manifest v3 uniqueness collapses
-        # the row onto the timeline-allocated id).
-        for invocation_index, asset in enumerate(iter_assets(scenario)):
-            skip_languages = sidecar_languages.get(asset.id, frozenset())
-            invocation, materialized_asset, probed, sidecar_hashes = materialize_one_asset(
-                asset,
-                ctx.plan_artifacts.replay_bundle.resolved_seed,
-                ctx.out_dir,
-                ctx.caps,
-                invocation_index,
-                root_path=primary_root_path,
-                skip_languages=skip_languages,
-            )
-            invocations.append(invocation)
-            materialized.append(materialized_asset)
-            augment_manifest(
-                ctx.plan_artifacts.current_manifest,
-                asset,
-                materialized_asset,
-                probed,
-                sidecar_hashes,
-                skip_languages=skip_languages,
-            )
+        materialize_assets_phase_a(
+            scenario=scenario,
+            out_dir=ctx.out_dir,
+            artifacts=ctx.plan_artifacts,
+            caps=ctx.caps,
+            result=phase_a,
+            stamp_manifest=True,
+        )
         phase_b_state = make_phase_b_state(
             library_root=ctx.out_dir / "library",
             scenario=scenario,
             resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
             ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
             ffprobe_version=ctx.caps.ffprobe.version or "unknown",
-            invocations=invocations,
+            invocations=phase_a.invocations,
             manifest=ctx.plan_artifacts.current_manifest,
         )
         for entry in ctx.plan_artifacts.journal:
@@ -188,8 +155,16 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         augment_phase_b_outputs(ctx.plan_artifacts.current_manifest, phase_b_state)
     except (ToolFailedError, ProbeParseError) as exc:
         if isinstance(exc, ToolFailedError):
-            invocations.append(exc.invocation)
-        finalize_failure(ctx, exc, Outcome.TOOL_FAILED, invocations, materialized)
+            phase_a.invocations.append(exc.invocation)
+        phase_a.content_sources.extend(exc.content_sources)
+        finalize_failure(
+            ctx,
+            exc,
+            Outcome.TOOL_FAILED,
+            phase_a.invocations,
+            phase_a.materialized_assets,
+            content_sources=phase_a.content_sources,
+        )
         raise
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         assert phase_b_state is not None
@@ -197,19 +172,21 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             ctx,
             exc,
             phase_b_failure_outcome(exc),
-            invocations,
-            materialized,
+            phase_a.invocations,
+            phase_a.materialized_assets,
             phase_b_state.filesystem_actions,
             phase_b_state.media_actions,
             phase_b_state.corruption_actions,
+            content_sources=phase_a.content_sources,
         )
         raise
     assert phase_b_state is not None
     return finalize_success(
         ctx,
-        invocations,
-        materialized,
+        phase_a.invocations,
+        phase_a.materialized_assets,
         phase_b_state.filesystem_actions,
         phase_b_state.media_actions,
         phase_b_state.corruption_actions,
+        content_sources=phase_a.content_sources,
     )

@@ -12,6 +12,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
+from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
@@ -42,11 +43,12 @@ def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """All Layer 3 tests assume capabilities pass; only behavior we care
     about is the orchestrator's own logic."""
     caps = Capabilities(
-        schema_version=1,
+        schema_version=2,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
         platform="test",
+        content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
             materialize_static=True,
             materialize_filesystem_mutations=True,
@@ -277,6 +279,12 @@ def test_orchestrator_records_ffmpeg_failure_and_wipes_library(
     assert list((out / "library").iterdir()) == []
     materialization = (out / "materialization.json").read_text()
     assert '"outcome": "tool_failed"' in materialization
+    report_payload = json.loads(materialization)
+    replay_payload = json.loads((out / "replay.json").read_text())
+    expected_sources = ["color_bars", "sine"]
+    assert [item["source"] for item in report_payload["content_sources"]] == expected_sources
+    assert [item["source"] for item in replay_payload["content_sources"]] == expected_sources
+    assert {item["provider"] for item in report_payload["content_sources"]} == {"builtin-lavfi"}
 
 
 def test_orchestrator_success_path_populates_manifest(

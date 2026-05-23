@@ -989,7 +989,9 @@ Exit criteria:
 Deliverables (may split into multiple PRs):
 
 - Explicit malformed-media opt-in and `corrupt_container_header`
-- Public-domain / TTS content source hooks
+- Public-domain / TTS content source hooks: provider registry, cache policy,
+  capability reporting, and replay evidence are implemented; actual downloads
+  and TTS providers remain deferred until source-specific issues.
 - Larger performance profiles
 - Network filesystem lag profile
 - Duplicate/variant expansion pack

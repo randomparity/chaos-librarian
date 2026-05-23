@@ -68,6 +68,7 @@ def _success() -> MaterializeArtifacts:
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
             toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+            content_sources=[],
         ),
         replay_bundle=MaterializeReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
@@ -80,6 +81,7 @@ def _success() -> MaterializeArtifacts:
             execution_mode=ExecutionMode.MATERIALIZE,
             created_at=datetime.now(UTC),
             toolchain=ToolchainInfo(ffmpeg="7.1.1", ffprobe="7.1.1"),
+            content_sources=[],
         ),
     )
 
