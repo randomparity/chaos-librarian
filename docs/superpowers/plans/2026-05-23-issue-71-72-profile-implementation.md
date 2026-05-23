@@ -134,13 +134,13 @@ Modify:
 
 ## Task 6: Docs, Schemas, And Gates
 
-- [ ] Update docs from "future/rejects" language to implemented contract
+- [x] Update docs from "future/rejects" language to implemented contract
   language where the branch changes behavior.
-- [ ] Regenerate schemas with
+- [x] Regenerate schemas with
   `uv run python -m chaos_librarian.schema_export --write`.
-- [ ] Run focused gates:
+- [x] Run focused gates:
   `uv run pytest tests/contract tests/validation/rules tests/materializer/test_wall_clock.py -q --no-cov`.
-- [ ] Run full merge gates:
+- [x] Run full merge gates:
   `uv run ruff check .`,
   `uv run ruff format --check .`,
   `uv run ty check src tests`,

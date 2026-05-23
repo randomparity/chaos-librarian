@@ -194,7 +194,8 @@ def test_network_filesystem_lag_profile_policy_docs_are_discoverable() -> None:
     )
     assert "Network Filesystem Lag" in integration_recipes
     assert "path-state windows" in integration_recipes
-    assert "Lag windows use the same logical clock" in time_model
+    assert "Network lag profiles use the existing duration grammar" in time_model
+    assert "same logical clock as timeline events" in time_model
     assert "Network Filesystem Lag Profile Testing" in testing
 
 

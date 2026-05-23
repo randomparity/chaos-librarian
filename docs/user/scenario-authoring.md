@@ -149,6 +149,14 @@ copy.
 
 ## Profiles
 
+Supported profile labels are:
+
+- `malformed-media`
+- `performance-smoke`
+- `performance-scale`
+- `performance-stress`
+- `network-fs-lag`
+
 `corrupt_container_header` requires explicit opt-in:
 
 ```yaml
@@ -158,3 +166,14 @@ profiles:
 
 Without the `malformed-media` profile, malformed-media corruption scenarios fail
 validation.
+
+Network filesystem lag events also require explicit opt-in:
+
+```yaml
+profiles:
+  - network-fs-lag
+```
+
+`network_lag_start` uses `effect`, `target`, `after`, and `duration`.
+`network_lag_commit` uses `for`. The start event must share the referenced
+event's `at:` value and immediately follow it in declaration order.

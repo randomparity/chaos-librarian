@@ -39,11 +39,12 @@ restores.
 
 ## Network Filesystem Lag
 
-The future `network-fs-lag` profile is for `chaos-librarian run`, not
-`materialize`. Lag fixtures describe explicit lag events and produce path-state windows.
+The `network-fs-lag` profile is for `chaos-librarian run`, not `materialize`.
+Lag fixtures describe explicit lag events and produce path-state windows.
 Those windows include delayed visibility, delayed rename, and held-handle
-evidence. Consumers should compare watcher observations to those recorded
-windows, not to guessed sleeps or low-level OS notification ordering.
+evidence in `materialization.json.network_lag_actions[]`. Consumers should
+compare watcher observations to those recorded windows, not to guessed sleeps
+or low-level OS notification ordering.
 
 ## Daemon Churn
 
@@ -81,8 +82,6 @@ in this tier.
 | Extended | Scheduled nightly or maintainer dispatch | `performance-smoke`, `performance-scale` | Identity-history watcher fixtures, slow-copy cases, delete/add restore cases, and run-mode churn fixtures. |
 | Stress | Manual release-candidate dispatch | `performance-stress` | Long wall-clock runs, cleanup validation, and large-library compare recipes. |
 
-Performance profile labels are reserved by the design policy but are not
-available in the current scenario contract until an implementation adds them.
-Extended and stress jobs must keep capability skips visible in test output and
-must fail during setup when the runner lacks the selected profile's required
-free disk.
+Performance profile labels are accepted by the scenario contract. Extended and
+stress jobs must keep capability skips visible in test output and must fail
+during setup when the runner lacks the selected profile's required free disk.

@@ -655,9 +655,10 @@ performance and progress tests.
 
 ## Performance Profile Policy
 
-Future larger performance profiles are reserved for opt-in scenarios. The
-current contract still rejects unknown `profiles` values until a profile
-implementation explicitly adds them.
+Larger performance profiles are reserved for opt-in scenarios. The scenario
+contract accepts the labels below, and validation enforces static source-fixture
+ceilings for declared assets, works, variants, bundles, sidecars, and timeline
+events.
 
 Reserved labels:
 
@@ -685,8 +686,9 @@ Byte budgets use decimal units: 1 MB is 1,000,000 bytes and 1 GB is
 
 Performance scenarios remain source fixtures, not checked-in materialized
 libraries. Generated outputs stay under the caller's run directory and are
-deleted by the normal cleanup workflow. Future implementations should validate
-budgets from generated artifacts rather than trusting YAML comments.
+deleted by the normal cleanup workflow. Static YAML budgets are validated at
+scenario-validation time; materialized-byte, wall-clock-duration, and free-disk
+budgets are CI/run preconditions until profile fixtures provide run artifacts.
 
 Performance profile tests may skip only when an explicit required capability is
 missing or below the project minimum version, when a future profile-specific
@@ -711,11 +713,11 @@ pull request.
 
 ## Network Filesystem Lag Profile Policy
 
-Future network filesystem lag scenarios are reserved for opt-in watcher
-fixtures. The current contract still rejects `network-fs-lag` until a profile
-implementation explicitly adds it.
+Network filesystem lag scenarios are reserved for opt-in watcher fixtures. The
+scenario contract accepts the profile label and validates explicit lag events
+only when the label is present.
 
-Reserved label:
+Implemented label:
 
 - `network-fs-lag`
 
