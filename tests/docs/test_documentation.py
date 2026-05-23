@@ -163,6 +163,23 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_performance_profile_policy_docs_are_discoverable() -> None:
+    source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+    testing = _read(DOCS / "developer" / "testing.md")
+
+    assert "## Performance Profile Policy" in source_design
+    assert "Minimum free disk before run" in source_design
+    assert (
+        "Larger performance profiles that satisfy the Performance Profile Policy" in source_design
+    )
+    assert "performance-smoke" in integration_recipes
+    assert "performance-scale" in integration_recipes
+    assert "performance-stress" in integration_recipes
+    assert "No performance profiles by default" in integration_recipes
+    assert "Performance Profile Policy" in testing
+
+
 def test_schema_reference_lists_current_contract_versions() -> None:
     text = _read(DOCS / "contract" / "schema-reference.md")
 
