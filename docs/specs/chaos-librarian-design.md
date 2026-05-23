@@ -895,6 +895,25 @@ Create one work with HD and 4K variants plus a duplicate HD encode. This
 targets variant modeling and duplicate-candidate evidence without expecting
 app policy outcomes.
 
+The first-pack fixture remains `tests/fixtures/scenarios/duplicate-variant.yaml`
+so the baseline scenario set stays stable. The expansion fixture
+`tests/fixtures/scenarios/duplicate-variant-expanded.yaml` broadens the same
+surface with three explicit cases:
+
+- `Synthetic Echo` has two same-label `hd` variants with identical recipes,
+  plus an `sd` variant. This gives adapters duplicate-candidate evidence across
+  sibling variants without prescribing merge policy.
+- `Synthetic Pair` has one `hd` bundle with two identical primary-video assets.
+  This gives adapters duplicate-candidate evidence inside a bundle.
+- `Synthetic Ladder` has distinct `1080p` and `sd` variants with supported
+  materializer recipes, giving a clean non-duplicate control.
+
+Expected adapter behavior stays neutral: current paths disambiguate the
+duplicates, materialized hashes may identify duplicate candidates, and topology
+alone can surface the same-label duplicate ambiguity. A topology export without
+current paths is not a clean final-state check because `current_path: null`
+means the consumer observed the asset as absent.
+
 ### Active Library Churn
 
 Run timed adds, slow copy, modify, delete, move, and sidecar creation over

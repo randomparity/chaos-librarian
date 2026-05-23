@@ -1,0 +1,145 @@
+schema_version: 8
+scenario_id: duplicate-variant-expanded
+seed: 73
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_main
+      path: movies-main
+
+works:
+  - id: work_echo
+    title: Synthetic Echo
+    variants:
+      - id: variant_echo_hd_a
+        label: hd
+        bundle:
+          id: bundle_echo_hd_a
+          assets:
+            - id: asset_echo_hd_a
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: silence
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_echo_hd_b
+        label: hd
+        bundle:
+          id: bundle_echo_hd_b
+          assets:
+            - id: asset_echo_hd_b
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: silence
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_echo_sd
+        label: sd
+        bundle:
+          id: bundle_echo_sd
+          assets:
+            - id: asset_echo_sd
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: solid_color
+                codec: h264
+                resolution: sd
+              audio:
+                - source: silence
+                  codec: aac
+                  channels: stereo
+                  language: eng
+
+  - id: work_pair
+    title: Synthetic Pair
+    variants:
+      - id: variant_pair_hd
+        label: hd
+        bundle:
+          id: bundle_pair_hd
+          assets:
+            - id: asset_pair_disc_a
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: silence
+                  codec: aac
+                  channels: stereo
+                  language: eng
+            - id: asset_pair_disc_b
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: silence
+                  codec: aac
+                  channels: stereo
+                  language: eng
+
+  - id: work_ladder
+    title: Synthetic Ladder
+    variants:
+      - id: variant_ladder_1080p
+        label: 1080p
+        bundle:
+          id: bundle_ladder_1080p
+          assets:
+            - id: asset_ladder_1080p
+              role: primary_video
+              container: mp4
+              duration_seconds: 2
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_ladder_sd
+        label: sd
+        bundle:
+          id: bundle_ladder_sd
+          assets:
+            - id: asset_ladder_sd
+              role: primary_video
+              container: mp4
+              duration_seconds: 2
+              video:
+                source: solid_color
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+
+timeline: []
