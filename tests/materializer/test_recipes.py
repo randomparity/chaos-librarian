@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from chaos_librarian.contract.scenario import AudioChannelLayout
-from chaos_librarian.materializer.recipes import (
+from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
     recipe_channel_tones,
     recipe_color_bars,

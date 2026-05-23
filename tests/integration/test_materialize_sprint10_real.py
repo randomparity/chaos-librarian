@@ -9,7 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
-from chaos_librarian.materializer.capabilities import MIN_VERSIONS, detect_capabilities
+from chaos_librarian.materializer.tooling.capabilities import MIN_VERSIONS, detect_capabilities
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"

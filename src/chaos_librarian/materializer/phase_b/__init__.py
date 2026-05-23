@@ -18,24 +18,34 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import Asset, Scenario, TimelineActionName
-from chaos_librarian.materializer.actions import (
-    _CORRUPTION_ACTIONS,
-    _MEDIA_ACTIONS,
-    _STDLIB_ACTIONS,
-)
-from chaos_librarian.materializer.corruption import _CorruptionContext, apply_corruption_action
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
 )
-from chaos_librarian.materializer.filesystem import _dispatch_one, _PhaseBContext
 from chaos_librarian.materializer.manifest_build import (
     augment_timeline_sidecars,
     augment_updated_sidecars,
     augment_versions,
 )
-from chaos_librarian.materializer.media import _MediaContext, apply_media_action
+from chaos_librarian.materializer.phase_b.corruption import (
+    CorruptionPhaseBContext,
+    apply_corruption_action,
+    make_corruption_phase_b_context,
+    supports_corruption_action,
+)
+from chaos_librarian.materializer.phase_b.filesystem import (
+    FilesystemPhaseBContext,
+    apply_filesystem_action,
+    make_filesystem_phase_b_context,
+    supports_filesystem_action,
+)
+from chaos_librarian.materializer.phase_b.media import (
+    MediaPhaseBContext,
+    apply_media_action,
+    make_media_phase_b_context,
+    supports_media_action,
+)
 
 PhaseBError = FilesystemActionError | MediaActionError | CorruptionActionError
 
@@ -44,9 +54,9 @@ PhaseBError = FilesystemActionError | MediaActionError | CorruptionActionError
 class PhaseBState:
     """Mutable state accumulated while applying phase-B journal entries."""
 
-    fs_ctx: _PhaseBContext
-    media_ctx: _MediaContext
-    corruption_ctx: _CorruptionContext
+    fs_ctx: FilesystemPhaseBContext
+    media_ctx: MediaPhaseBContext
+    corruption_ctx: CorruptionPhaseBContext
     filesystem_actions: list[FilesystemAction] = field(default_factory=list)
     media_actions: list[MediaAction] = field(default_factory=list)
     corruption_actions: list[CorruptionAction] = field(default_factory=list)
@@ -65,12 +75,12 @@ def make_phase_b_state(
     """Build shared phase-B dispatch state for materialize, run, and replay."""
     scenario_assets = _index_assets(scenario)
     return PhaseBState(
-        fs_ctx=_PhaseBContext(
+        fs_ctx=make_filesystem_phase_b_context(
             library_root=library_root,
             scenario_assets=scenario_assets,
             resolved_seed=resolved_seed,
         ),
-        media_ctx=_MediaContext(
+        media_ctx=make_media_phase_b_context(
             library_root=library_root,
             scenario_assets=scenario_assets,
             resolved_seed=resolved_seed,
@@ -79,7 +89,7 @@ def make_phase_b_state(
             invocations=invocations,
             sidecar_lookup=_sidecar_lookup_from(manifest),
         ),
-        corruption_ctx=_CorruptionContext(
+        corruption_ctx=make_corruption_phase_b_context(
             library_root=library_root,
             resolved_seed=resolved_seed,
         ),
@@ -89,15 +99,15 @@ def make_phase_b_state(
 def dispatch_phase_b_entry(state: PhaseBState, entry: JournalEntry) -> None:
     """Apply one ordinary phase-B journal entry and append its audit action."""
     action = TimelineActionName(entry.action)
-    if action in _STDLIB_ACTIONS:
-        fs_action = _dispatch_one(state.fs_ctx, entry)
+    if supports_filesystem_action(action):
+        fs_action = apply_filesystem_action(state.fs_ctx, entry)
         if fs_action is not None:
             state.filesystem_actions.append(fs_action)
         return
-    if action in _MEDIA_ACTIONS:
+    if supports_media_action(action):
         state.media_actions.append(apply_media_action(state.media_ctx, entry))
         return
-    if action in _CORRUPTION_ACTIONS:
+    if supports_corruption_action(action):
         state.corruption_actions.append(apply_corruption_action(state.corruption_ctx, entry))
         return
     raise MediaActionError(

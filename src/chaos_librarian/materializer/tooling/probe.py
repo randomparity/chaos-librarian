@@ -69,7 +69,6 @@ def _opt_int(blob: dict[str, object], key: str) -> int | None:
 
 
 def _opt_str(blob: dict[str, object], key: str) -> str | None:
-    """Return ``str(blob[key])`` if present, else ``None``."""
     value = blob.get(key)
     if value is None:
         return None
@@ -77,7 +76,6 @@ def _opt_str(blob: dict[str, object], key: str) -> str | None:
 
 
 def _language_tag(blob: dict[str, object]) -> str | None:
-    """Pull ``tags.language`` out of an ffprobe stream blob if present."""
     tags = _coerce_blob(blob.get("tags"))
     if tags is None:
         return None
@@ -117,7 +115,6 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
 
 
 def _parse_streams(streams_raw: object) -> list[ProbedStream]:
-    """Iterate the ffprobe ``streams`` array and collect mapped entries."""
     if not isinstance(streams_raw, list):
         return []
     parsed: list[ProbedStream] = []
@@ -134,7 +131,6 @@ def _parse_streams(streams_raw: object) -> list[ProbedStream]:
 def _build_probed_media(
     fmt: dict[str, object], streams: list[ProbedStream], path: Path
 ) -> ProbedMedia:
-    """Construct ``ProbedMedia`` from the parsed ``format`` blob."""
     try:
         return ProbedMedia(
             container=str(fmt.get("format_name") or ""),

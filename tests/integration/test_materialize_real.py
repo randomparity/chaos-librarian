@@ -15,7 +15,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.contract.canonicalize import canonicalize
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest
-from chaos_librarian.materializer.capabilities import (
+from chaos_librarian.materializer.tooling.capabilities import (
     MIN_VERSIONS,
     detect_capabilities,
 )

@@ -29,7 +29,7 @@ from chaos_librarian.contract.replay_bundle import (
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.materializer.writer import (
+from chaos_librarian.materializer.persistence.writer import (
     SENTINEL_FILENAME,
     MaterializeMetadata,
     WallClockBaselineMetadata,

@@ -314,7 +314,7 @@ def test_handler_overrun_does_not_start_second_due_event(
             duration_ns=10,
         )
 
-    monkeypatch.setattr(phase_b, "_dispatch_one", slow_dispatch)
+    monkeypatch.setattr(phase_b, "apply_filesystem_action", slow_dispatch)
     artifacts = wall_clock.run_wall_clock_scenario(
         scenario,
         tmp_path / "run",
@@ -385,7 +385,7 @@ def test_filesystem_failure_writes_run_failure_metadata(
             cause=OSError("disk full"),
         )
 
-    monkeypatch.setattr(phase_b, "_dispatch_one", fail_dispatch)
+    monkeypatch.setattr(phase_b, "apply_filesystem_action", fail_dispatch)
     with pytest.raises(FilesystemActionError, match="move failed"):
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 

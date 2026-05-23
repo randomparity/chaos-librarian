@@ -18,6 +18,7 @@ from chaos_librarian.contract.manifest import (
     ManifestVariant,
     ManifestWork,
 )
+from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.manifest_build import find_sidecar_for
 
 
@@ -51,14 +52,14 @@ def test_lookup_distinguishes_substring_colliding_languages() -> None:
     en = ManifestSidecar(
         id="sidecar_a0_en",
         asset_id="a0",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/a0.en.srt",
         language="en",
     )
     eng = ManifestSidecar(
         id="sidecar_a0_eng",
         asset_id="a0",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/a0.eng.srt",
         language="eng",
     )
@@ -73,14 +74,14 @@ def test_lookup_filters_by_asset_id() -> None:
     a0_en = ManifestSidecar(
         id="sidecar_a0_en",
         asset_id="a0",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/a0.en.srt",
         language="en",
     )
     a1_en = ManifestSidecar(
         id="sidecar_a1_en",
         asset_id="a1",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/a1.en.srt",
         language="en",
     )

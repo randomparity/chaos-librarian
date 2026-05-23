@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
+from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.contract.validation import ValidationSeverity
 
 if TYPE_CHECKING:
@@ -30,6 +31,7 @@ __all__ = [
     "NS_ASSET_ID",
     "NS_BUNDLE_ID",
     "NS_VARIANT_ID",
+    "DeclaredSidecar",
     "Reporter",
     "Rule",
     "_Loc",
@@ -38,9 +40,11 @@ __all__ = [
     "_as_mapping",
     "_iter_timeline_events",
     "_list_at_path",
+    "asset_containers",
     "iter_asset_ids",
     "iter_assets_with_loc",
     "iter_declared_roots",
+    "iter_declared_sidecars",
     "iter_global_namespaces",
     "primary_root_path",
     "try_parse_duration",
@@ -83,6 +87,16 @@ class Reporter:
             loc=loc,
             line_index=self.line_index,
         )
+
+
+@dataclass(frozen=True, slots=True)
+class DeclaredSidecar:
+    """One declared sidecar-mode subtitle projected from the raw scenario tree."""
+
+    asset_id: str
+    path: str
+    kind: str
+    language: str | None
 
 
 # Typo-safe namespace keys for ``iter_global_namespaces`` callers — string
@@ -271,6 +285,38 @@ def iter_assets_with_loc(
                     a_idx,
                 )
                 yield asset, loc
+
+
+def asset_containers(raw: _RawMapping) -> dict[str, str]:
+    """Return ``asset_id -> container`` for every well-shaped declared asset."""
+    containers: dict[str, str] = {}
+    for asset, _ in iter_assets_with_loc(raw):
+        asset_id = asset.get("id")
+        container = asset.get("container")
+        if isinstance(asset_id, str) and isinstance(container, str):
+            containers[asset_id] = container
+    return containers
+
+
+def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
+    """Yield declared sidecar-mode subtitles using the scenario path convention."""
+    for asset, _ in iter_assets_with_loc(raw):
+        asset_id = asset.get("id")
+        if not isinstance(asset_id, str):
+            continue
+        for sub_obj in _as_list(asset.get("subtitles")) or []:
+            sub = _as_mapping(sub_obj)
+            if sub is None or sub.get("mode") != "sidecar":
+                continue
+            language = sub.get("language")
+            if not isinstance(language, str):
+                continue
+            yield DeclaredSidecar(
+                asset_id=asset_id,
+                path=f"{asset_id}.{language}.srt",
+                kind=SidecarKind.SUBTITLE.value,
+                language=language,
+            )
 
 
 def _iter_variant(

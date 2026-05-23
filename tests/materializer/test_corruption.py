@@ -11,12 +11,13 @@ from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer.corruption import (
-    _CorruptionContext,
+from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
+from chaos_librarian.materializer.phase_b import corruption as corruption_module
+from chaos_librarian.materializer.phase_b.corruption import (
+    CorruptionPhaseBContext,
     _replacement_bytes,
     apply_corruption_action,
 )
-from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
 
 
 def _entry(*, byte_count: int = 8) -> AtomicJournalEntry:
@@ -64,8 +65,8 @@ def test_header_corruptor_changes_bytes_without_changing_length(tmp_path, monkey
     asset.parent.mkdir()
     original = b"0123456789abcdef"
     asset.write_bytes(original)
-    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", lambda _p: _probed())
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     apply_corruption_action(ctx, _entry(byte_count=8))
 
@@ -80,8 +81,8 @@ def test_corruption_action_records_input_and_output_hashes(tmp_path, monkeypatch
     asset.parent.mkdir()
     original = b"0123456789abcdef"
     asset.write_bytes(original)
-    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", lambda _p: _probed())
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
@@ -101,8 +102,8 @@ def test_probe_failure_records_failed_expected(tmp_path, monkeypatch) -> None:
     def fail_probe(_path):
         raise ProbeParseError("ffprobe exit 1", payload={"stderr": "invalid data"})
 
-    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", fail_probe)
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    monkeypatch.setattr(corruption_module, "probe_file", fail_probe)
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
@@ -128,8 +129,8 @@ def test_probe_failure_tail_replaces_absolute_output_path(tmp_path, monkeypatch)
             },
         )
 
-    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", fail_probe)
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    monkeypatch.setattr(corruption_module, "probe_file", fail_probe)
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
@@ -146,8 +147,8 @@ def test_probe_success_records_still_probeable(tmp_path, monkeypatch) -> None:
     asset = tmp_path / "movies-hd" / "asset.mkv"
     asset.parent.mkdir()
     asset.write_bytes(b"0123456789abcdef")
-    monkeypatch.setattr("chaos_librarian.materializer.corruption.probe_file", lambda _p: _probed())
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     action = apply_corruption_action(ctx, _entry(byte_count=8))
 
@@ -156,7 +157,7 @@ def test_probe_success_records_still_probeable(tmp_path, monkeypatch) -> None:
 
 
 def test_missing_input_raises_corruption_action_error(tmp_path) -> None:
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     with pytest.raises(CorruptionActionError) as exc_info:
         apply_corruption_action(ctx, _entry(byte_count=8))
@@ -170,7 +171,7 @@ def test_short_file_raises_corruption_action_error(tmp_path) -> None:
     asset = tmp_path / "movies-hd" / "asset.mkv"
     asset.parent.mkdir()
     asset.write_bytes(b"short")
-    ctx = _CorruptionContext(library_root=tmp_path, resolved_seed=42)
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
 
     with pytest.raises(CorruptionActionError, match="shorter than requested corruption range"):
         apply_corruption_action(ctx, _entry(byte_count=8))

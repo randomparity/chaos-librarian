@@ -25,7 +25,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.recipes import FFmpegInput
+from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
     # ``-fflags +bitexact`` MUST appear on the output side: that's the only

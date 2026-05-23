@@ -1,7 +1,7 @@
 """Layer-3 materializer orchestrator tests for Sprint 7 — mocked ffmpeg.
 
 WHY: Sprint 7 replaces Sprint 6's single ``apply_phase_b`` call with a
-unified per-journal-entry walk that dispatches to ``filesystem._dispatch_one``
+unified per-journal-entry walk that dispatches to ``filesystem.apply_filesystem_action``
 (stdlib ops) or ``media.apply_media_action`` (ffmpeg-backed). These tests
 exercise both the success path (one media action recorded) and the
 media-failure path (``MediaActionError`` raised, ``library/`` wiped, and
@@ -115,8 +115,8 @@ def mocked_ffmpeg_and_probe(monkeypatch: pytest.MonkeyPatch) -> None:
             streams=[],
         )
 
-    monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", fake_run)
-    monkeypatch.setattr("chaos_librarian.materializer.media.probe_file", fake_probe)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
     monkeypatch.setattr("chaos_librarian.materializer.synthesis.run_ffmpeg", fake_run)
     monkeypatch.setattr("chaos_librarian.materializer.synthesis.probe_file", fake_probe)
     monkeypatch.setattr(
@@ -195,8 +195,8 @@ def test_materialize_media_failure_wipes_library_and_writes_report(
     monkeypatch.setattr("chaos_librarian.materializer.synthesis.run_ffmpeg", fake_run_success)
     monkeypatch.setattr("chaos_librarian.materializer.synthesis.probe_file", fake_probe)
     # Media handlers (phase B) fail with non-zero exit.
-    monkeypatch.setattr("chaos_librarian.materializer.media.run_ffmpeg", failing_run)
-    monkeypatch.setattr("chaos_librarian.materializer.media.probe_file", fake_probe)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", failing_run)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
     monkeypatch.setattr(
         "chaos_librarian.materializer.run.detect_capabilities",
         _fake_capabilities,

@@ -19,7 +19,7 @@ from chaos_librarian.contract.manifest import (
     StreamKind,
 )
 from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.engine.reports import ReportSet, build_report_set
 
 _RUN_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -191,7 +191,7 @@ class TestBuildReportSet:
             ManifestSidecar(
                 id="sidecar_0001",
                 asset_id="asset_hd_main",
-                kind="subtitles",
+                kind=SidecarKind.SUBTITLE,
                 path="movies-hd/a.eng.srt",
                 language="eng",
             )

@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import uuid
 
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import Scenario, SidecarKind
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
@@ -245,7 +245,7 @@ class TestExtractSubtitleHandler:
         )
         assert len(state.sidecars) == baseline + 1
         sidecar = next(s for s in state.sidecars.values() if s.language == "fra")
-        assert sidecar.kind == "subtitle"
+        assert sidecar.kind == SidecarKind.SUBTITLE.value
         assert sidecar.path == "a0.fra.srt"
         assert sidecar.asset_id == "a0"
 
@@ -599,7 +599,7 @@ class TestCreateSidecarKindRouting:
         # One new sidecar row, labeled poster, with no language.
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))
-        assert sidecar.kind == "poster"
+        assert sidecar.kind == SidecarKind.POSTER.value
         assert sidecar.path == "library/r0/a0.poster.png"
         assert sidecar.language is None
         assert sidecar.asset_id == "a0"
@@ -638,7 +638,7 @@ class TestCreateSidecarKindRouting:
         )
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))
-        assert sidecar.kind == "nfo"
+        assert sidecar.kind == SidecarKind.NFO.value
         assert sidecar.path == "library/r0/a0.nfo"
         assert sidecar.language is None
         # No version bump.
@@ -678,5 +678,5 @@ class TestCreateSidecarKindRouting:
         # Still one row — the declared row was replaced, not duplicated.
         assert len(state.sidecars) == 1
         sidecar = next(iter(state.sidecars.values()))
-        assert sidecar.kind == "subtitle"
+        assert sidecar.kind == SidecarKind.SUBTITLE.value
         assert sidecar.language == "eng"

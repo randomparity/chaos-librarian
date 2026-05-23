@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chaos_librarian.contract.scenario import SidecarKind
-from chaos_librarian.materializer.sidecar_bytes import (
+from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     perturbed_seed_for_update,
     poster_ffmpeg_argv,
     regenerate_sidecar,

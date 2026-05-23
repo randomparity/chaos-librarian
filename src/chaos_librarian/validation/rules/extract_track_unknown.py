@@ -18,9 +18,8 @@ from chaos_librarian.validation.codes import E_EXTRACT_TRACK_UNKNOWN
 from chaos_librarian.validation.rules._common import (
     Reporter,
     _as_list,
-    _as_mapping,
     _iter_timeline_events,
-    _list_at_path,
+    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:
@@ -62,24 +61,10 @@ def rule_extract_track_unknown(
 def _assets_with_subtitle_tracks(raw: Mapping[str, object]) -> dict[str, bool]:
     """asset_id -> True iff the asset declares at least one subtitle track."""
     out: dict[str, bool] = {}
-    for work_obj in _list_at_path(raw, ("works",)) or []:
-        work = _as_mapping(work_obj)
-        if work is None:
+    for asset, _ in iter_assets_with_loc(raw):
+        asset_id = asset.get("id")
+        if not isinstance(asset_id, str):
             continue
-        for variant_obj in _as_list(work.get("variants")) or []:
-            variant = _as_mapping(variant_obj)
-            if variant is None:
-                continue
-            bundle = _as_mapping(variant.get("bundle"))
-            if bundle is None:
-                continue
-            for asset_obj in _as_list(bundle.get("assets")) or []:
-                asset = _as_mapping(asset_obj)
-                if asset is None:
-                    continue
-                asset_id = asset.get("id")
-                if not isinstance(asset_id, str):
-                    continue
-                subs = _as_list(asset.get("subtitles")) or []
-                out[asset_id] = bool(subs)
+        subs = _as_list(asset.get("subtitles")) or []
+        out[asset_id] = bool(subs)
     return out

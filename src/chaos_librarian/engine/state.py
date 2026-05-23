@@ -27,7 +27,7 @@ from chaos_librarian.contract.manifest import (
     ManifestWork,
 )
 from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Scenario, SubtitleMode
+from chaos_librarian.contract.scenario import Scenario, SidecarKind, SubtitleMode
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.errors import ChaosLibrarianValueError
 
@@ -224,7 +224,7 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
                     state.sidecars[sidecar_id] = ManifestSidecar(
                         id=sidecar_id,
                         asset_id=asset.id,
-                        kind="subtitle",
+                        kind=SidecarKind.SUBTITLE.value,
                         path=f"{asset.id}.{sub.language}.srt",
                         language=sub.language,
                     )

@@ -11,6 +11,7 @@ from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInp
 from chaos_librarian.contract.divergence import CompareMode
 from chaos_librarian.contract.manifest import ManifestSidecar
 from chaos_librarian.contract.observed_state import ObservedSidecar
+from chaos_librarian.contract.scenario import SidecarKind
 from tests.support.adapter import (
     HASH_A,
     HASH_B,
@@ -100,7 +101,7 @@ def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None:
     sidecar = ManifestSidecar(
         id="sidecar-a",
         asset_id="asset-a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/Synthetic.eng.srt",
         content_hash=HASH_A,
     )
@@ -113,7 +114,7 @@ def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None:
 def test_unexpected_observed_sidecar_emits_d_sidecar_unexpected() -> None:
     observed_sidecar = ObservedSidecar(
         observed_ref="observed-sidecar-a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/Synthetic.eng.srt",
         content_hash=HASH_A,
     )
@@ -127,7 +128,7 @@ def test_sidecar_kind_mismatch_emits_missing_and_unexpected() -> None:
     oracle_sidecar = ManifestSidecar(
         id="sidecar-a",
         asset_id="asset-a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/Synthetic.sidecar",
     )
     observed_sidecar = ObservedSidecar(
@@ -149,7 +150,7 @@ def test_sidecar_hash_mismatch_emits_d_hash_mismatch() -> None:
     oracle_sidecar = ManifestSidecar(
         id="sidecar-a",
         asset_id="asset-a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/Synthetic.eng.srt",
         content_hash=HASH_A,
     )
@@ -172,7 +173,7 @@ def test_missing_observed_sidecar_hash_is_not_divergence() -> None:
     oracle_sidecar = ManifestSidecar(
         id="sidecar-a",
         asset_id="asset-a",
-        kind="subtitle",
+        kind=SidecarKind.SUBTITLE,
         path="library/Synthetic.eng.srt",
         content_hash=HASH_A,
     )

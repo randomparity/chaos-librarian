@@ -5,7 +5,7 @@ filesystem effects against ``<run-dir>/library/``. Composition is
 strictly one-directional: this module imports engine + contract but
 no engine module imports back.
 
-``_PhaseBContext`` carries three pieces of incremental state alongside
+``FilesystemPhaseBContext`` carries three pieces of incremental state alongside
 the walk: ``pending_slow_copy`` (start->commit bookkeeping),
 ``phase_b_sidecar_hashes`` (drained after the walk by
 ``manifest_build.augment_timeline_sidecars``), and a read-only
@@ -21,21 +21,22 @@ through ``cleanup_failed_run``.
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import FilesystemAction
-from chaos_librarian.contract.scenario import (
-    Asset,
-    Scenario,
-    TimelineActionName,
-)
+from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer.errors import FilesystemActionError
 
-__all__ = ["apply_phase_b"]
+__all__ = [
+    "FilesystemPhaseBContext",
+    "apply_filesystem_action",
+    "make_filesystem_phase_b_context",
+    "supports_filesystem_action",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,7 +47,7 @@ class _PendingSlowCopy:
 
 
 @dataclass(slots=True)
-class _PhaseBContext:
+class FilesystemPhaseBContext:
     library_root: Path
     scenario_assets: Mapping[str, Asset]
     resolved_seed: int
@@ -55,66 +56,29 @@ class _PhaseBContext:
     restoration_cache: dict[str, bytes] = field(default_factory=dict)
 
 
-def apply_phase_b(
+def make_filesystem_phase_b_context(
     *,
     library_root: Path,
-    journal: Sequence[JournalEntry],
-    scenario: Scenario,
+    scenario_assets: Mapping[str, Asset],
     resolved_seed: int,
-) -> tuple[list[FilesystemAction], dict[str, str]]:
-    """Walk the journal and apply real filesystem effects.
-
-    Args:
-        library_root: absolute path to ``<run-dir>/library/``; every
-            ``state_delta`` path is interpreted relative to this root.
-        journal: engine-produced journal entries in declared order.
-        scenario: the validated Scenario; used for asset metadata
-            lookups (e.g. ``duration_seconds`` for SRT bodies).
-        resolved_seed: the seed the engine resolved for this run;
-            forwarded to ``srt_payload`` so sidecar bytes are
-            deterministic.
-
-    Returns:
-        Two-tuple ``(filesystem_actions, phase_b_sidecar_hashes)``. The
-        hash dict is consumed by
-        ``manifest_build.augment_timeline_sidecars`` to stamp
-        ``content_hash`` on timeline-created ``ManifestSidecar`` rows.
-
-    Raises:
-        FilesystemActionError: on the first ``OSError`` from a phase-B
-            helper. The orchestrator catches it, routes through
-            ``cleanup_failed_run``, and exits 5.
-    """
-    ctx = _PhaseBContext(
+) -> FilesystemPhaseBContext:
+    return FilesystemPhaseBContext(
         library_root=library_root,
-        scenario_assets=_index_assets(scenario),
+        scenario_assets=scenario_assets,
         resolved_seed=resolved_seed,
     )
-    actions: list[FilesystemAction] = []
-    for entry in journal:
-        action = _dispatch_one(ctx, entry)
-        if action is not None:
-            actions.append(action)
-    return actions, dict(ctx.phase_b_sidecar_hashes)
 
 
-def _index_assets(scenario: Scenario) -> dict[str, Asset]:
-    """Build an ``asset_id -> Asset`` map from a scenario's work tree."""
-    out: dict[str, Asset] = {}
-    for work in scenario.works:
-        for variant in work.variants:
-            for asset in variant.bundle.assets:
-                out[asset.id] = asset
-    return out
+def supports_filesystem_action(action: TimelineActionName) -> bool:
+    return action in _DISPATCH
 
 
-def _dispatch_one(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction | None:
+def apply_filesystem_action(
+    ctx: FilesystemPhaseBContext, entry: JournalEntry
+) -> FilesystemAction | None:
     """Dispatch one journal entry to its helper; fill ``duration_ns``.
 
-    Returns ``None`` if the action is not a filesystem effect (i.e. it
-    is in the engine's journal but the materializer does not act on it
-    -- e.g. a media mutation; though Sprint 6 preflight prevents this
-    case from reaching ``apply_phase_b``).
+    Returns ``None`` if the action is not a filesystem effect.
     """
     action = TimelineActionName(entry.action)
     handler = _DISPATCH.get(action)
@@ -139,7 +103,7 @@ def _dispatch_one(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction 
     return result.model_copy(update={"duration_ns": time.monotonic_ns() - started})
 
 
-def _move_asset(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _move_asset(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Move a file in-place.
 
     Shared body for ``move_asset`` / ``rename_file`` / ``archive_file`` /
@@ -166,7 +130,7 @@ def _move_asset(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     )
 
 
-def _delete_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _delete_file(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Unlink the file at ``state_delta['removed_path']``."""
     asset_id = entry.target_ids[0]
     removed_path = str(entry.state_delta["removed_path"])
@@ -184,7 +148,7 @@ def _delete_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     )
 
 
-def _add_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _add_file(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Restore bytes removed by an earlier ``delete_file`` event."""
     asset_id = entry.target_ids[0]
     added_path = str(entry.state_delta["added_path"])
@@ -203,7 +167,7 @@ def _add_file(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
     )
 
 
-def _remove_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _remove_sidecar(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Unlink the sidecar at ``state_delta['removed_sidecar_path']``.
 
     Routed through phase B (not media.py) because there is no ffmpeg
@@ -226,7 +190,7 @@ def _remove_sidecar(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemActio
     )
 
 
-def _slow_copy_start(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _slow_copy_start(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Stage a slow-copy at ``temp_path``; defer rename until commit."""
     asset_id = entry.target_ids[0]
     initial_path = str(entry.state_delta["initial_path_at_start"])
@@ -252,7 +216,7 @@ def _slow_copy_start(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemActi
     )
 
 
-def _slow_copy_commit(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+def _slow_copy_commit(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Promote a staged slow-copy to its final path.
 
     When ``initial_path`` differs from ``final_path``, the initial file
@@ -279,7 +243,7 @@ def _slow_copy_commit(ctx: _PhaseBContext, entry: JournalEntry) -> FilesystemAct
 
 
 _DISPATCH: Final[
-    dict[TimelineActionName, Callable[[_PhaseBContext, JournalEntry], FilesystemAction]]
+    dict[TimelineActionName, Callable[[FilesystemPhaseBContext, JournalEntry], FilesystemAction]]
 ] = {
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,

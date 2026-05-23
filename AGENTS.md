@@ -76,7 +76,7 @@ sprint/PR that surfaced it.
 
 ## Project state
 
-Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it freezes seven JSON Schema artifacts and a Typer CLI surface. `validate` ships in Sprint 1 (`feat/sprint-1`); `plan` ships in Sprint 3 (`feat/sprint-3`). Sprint 3 also extends Sprint 1's validation pipeline with `E_LIFECYCLE_INVALID`, which rejects shape-valid timelines that the engine cannot execute (add-on-placed, move-after-delete, double slow-copy). Sprint 4 (`feat/sprint-4`) extends `plan` with `--steps N`, ships the remaining four plan-mode commands (`step`, `inspect`, `clean`, `replay`), and adds four per-entity report schemas (`asset-report`, `work-report`, `variant-report`, `bundle-report`). `PlanOnlyReplayBundle` gains `applied_events` (raw event count, constrained to land on a step boundary) and `journal_digest` (sha256 of the serialized journal) as bundle metadata. A new `step_boundaries(resolved_timeline)` helper makes `--steps N` and `--next N` count user-visible step units (a `slow_copy_start` + `slow_copy_commit` adjacent pair = one step). Each sprint that adds required fields to `PlanOnlyReplayBundle`, `Manifest`, `Scenario`, or `RunSentinel` bumps the matching `*_SCHEMA_VERSION` constant in `contract/__init__.py`; see those constants for the current values. Sprint 5 also wired up `materialize` and `capabilities`; `run` remains a stub that exits 1.
+Sprint 0 (`feat/sprint-0`, PR #5) is **contract-only**: it froze the initial JSON Schema artifacts and a Typer CLI surface. `validate` ships in Sprint 1 (`feat/sprint-1`); `plan` ships in Sprint 3 (`feat/sprint-3`). Sprint 3 also extends Sprint 1's validation pipeline with `E_LIFECYCLE_INVALID`, which rejects shape-valid timelines that the engine cannot execute (add-on-placed, move-after-delete, double slow-copy). Sprint 4 (`feat/sprint-4`) extends `plan` with `--steps N`, ships the remaining four plan-mode commands (`step`, `inspect`, `clean`, `replay`), and adds four per-entity report schemas (`asset-report`, `work-report`, `variant-report`, `bundle-report`). `PlanOnlyReplayBundle` gains `applied_events` (raw event count, constrained to land on a step boundary) and `journal_digest` (sha256 of the serialized journal) as bundle metadata. A new `step_boundaries(resolved_timeline)` helper makes `--steps N` and `--next N` count user-visible step units (a `slow_copy_start` + `slow_copy_commit` adjacent pair = one step). Each sprint that adds required fields to `PlanOnlyReplayBundle`, `Manifest`, `Scenario`, or `RunSentinel` bumps the matching `*_SCHEMA_VERSION` constant in `contract/__init__.py`; see those constants for the current values. Sprint 5 also wired up `materialize` and `capabilities`; later sprints added consumer comparison contracts.
 
 Active per-sprint implementation plans live at `docs/superpowers/plans/`. Sprint 5 `/simplify` review issues #12-#15 are closed (merged into main). Cycle-2 desloppify review surfaced #22 (validation/semantic.py + test_semantic.py structural split), #23 (cli/app.py + materializer/run.py structural split), and #24 (sidecar non-atomic-write tracking) — all open.
 
@@ -86,13 +86,26 @@ Active per-sprint implementation plans live at `docs/superpowers/plans/`. Sprint
 
 Pydantic v2 models in `src/chaos_librarian/contract/` are the schema source of truth. `src/chaos_librarian/schema_export.py` exports them to `schemas/*.schema.json` (JSON Schema draft 2020-12). CI runs `python -m chaos_librarian.schema_export --check` and fails on drift; engineers regenerate locally with `--write`.
 
-Seven contract modules, one model file each:
+Current exported schema artifacts:
+
+- Core author/oracle contracts: `scenario.schema.json`, `manifest.schema.json`,
+  `journal.schema.json`, `replay-bundle.schema.json`
+- CLI and run reports: `validation.schema.json`, `materialization.schema.json`,
+  `run-sentinel.schema.json`, `capabilities.schema.json`
+- Per-entity reports: `asset-report.schema.json`, `work-report.schema.json`,
+  `variant-report.schema.json`, `bundle-report.schema.json`
+- Consumer comparison contracts: `observed-state.schema.json`,
+  `divergence.schema.json`
+
+Important contract modules:
 
 - `scenario.py` — input YAML; timeline is a discriminated union on `action` (9 event variants)
 - `manifest.py` — current expected library state
 - `journal.py` — JSONL events; **discriminated union on `phase`** (atomic / started / progressed / committed / aborted)
 - `replay_bundle.py` — `replay.json`; **discriminated union on `execution_mode`** (plan_only vs materialize/run). Embeds a second union: `ExecutionTraceEntry` is a discriminated union on `kind` (rng / alloc / materializer; `exit_code` required iff materializer).
-- `validation.py`, `materialization.py`, `run_sentinel.py` — flat report schemas
+- `validation.py`, `materialization.py`, `run_sentinel.py`, `capabilities.py` — CLI and run report schemas
+- `reports.py` — per-entity report schemas
+- `observed_state.py`, `divergence.py` — consumer comparison schemas
 
 `contract/paths.py` (security-critical) enforces `<run-dir>/library/` containment for every scenario path — strict subpath, rejects symlink escapes.
 

@@ -22,7 +22,6 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import filesystem as filesystem_mod
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
@@ -31,6 +30,7 @@ from chaos_librarian.materializer.errors import (
     ToolFailedError,
     UnsupportedMaterializationError,
 )
+from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -187,7 +187,9 @@ def test_materialize_phase_b_oserror_aborts_and_cleans_up(
     call_count = {"n": 0}
     original = filesystem_mod._move_asset
 
-    def crashing_move(ctx: filesystem_mod._PhaseBContext, entry: JournalEntry) -> FilesystemAction:
+    def crashing_move(
+        ctx: filesystem_mod.FilesystemPhaseBContext, entry: JournalEntry
+    ) -> FilesystemAction:
         call_count["n"] += 1
         if call_count["n"] == 2:
             raise OSError(2, "No such file or directory")

@@ -17,27 +17,31 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeRep
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
     Asset,
-    CreateSidecarEvent,
     Scenario,
-    SidecarKind,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
-from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_plan
+from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
-from chaos_librarian.materializer._context import MaterializeArtifacts, RunContext
-from chaos_librarian.materializer.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
 )
-from chaos_librarian.materializer.finalize import build_sentinel
 from chaos_librarian.materializer.manifest_build import (
     augment_manifest,
+)
+from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence.finalize import build_sentinel
+from chaos_librarian.materializer.persistence.reports import (
+    build_metadata,
+    build_replay_bundle,
+    build_report,
+    build_reports,
+)
+from chaos_librarian.materializer.persistence.writer import (
+    cleanup_failed_phase_b_run,
+    finalize_materialize_run,
 )
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
@@ -47,15 +51,13 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
+from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
-from chaos_librarian.materializer.reports import (
-    build_metadata,
-    build_replay_bundle,
-    build_report,
-    build_reports,
-)
 from chaos_librarian.materializer.synthesis import materialize_one_asset
-from chaos_librarian.materializer.writer import cleanup_failed_phase_b_run, finalize_materialize_run
+from chaos_librarian.materializer.tooling.capabilities import (
+    assert_capable_for_static_materialize,
+    detect_capabilities,
+)
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
 
 __all__ = ["replay_run_bundle"]
@@ -95,7 +97,7 @@ def _verified_run_prefix(
     if bundle.applied_events not in valid_boundaries:
         raise ReplayIntegrityError(f"applied_events {bundle.applied_events} is not replayable")
 
-    artifacts = run_plan(
+    artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=report,
         resolved_seed_override=bundle.resolved_seed,
@@ -295,7 +297,7 @@ def _synthesize_phase_a(
     invocations: list[ToolInvocation] = []
     materialized_assets: list[MaterializedAsset] = []
     primary_root_path = scenario.library.roots[0].path
-    skip_by_asset = _timeline_sidecar_languages(scenario)
+    skip_by_asset = timeline_sidecar_languages(scenario)
     for invocation_index, asset in enumerate(iter_assets(scenario)):
         invocation, materialized, probed, sidecar_hashes = materialize_one_asset(
             asset,
@@ -353,15 +355,3 @@ def _apply_prefix_phase_b(
     for entry in artifacts.journal:
         dispatch_phase_b_entry(state, entry)
     augment_phase_b_outputs(artifacts.current_manifest, state)
-
-
-def _timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
-    per_asset: dict[str, set[str]] = {}
-    for event in scenario.timeline:
-        if not isinstance(event, CreateSidecarEvent):
-            continue
-        if event.kind is not SidecarKind.SUBTITLE:
-            continue
-        assert event.language is not None
-        per_asset.setdefault(event.target, set()).add(event.language)
-    return {asset_id: frozenset(langs) for asset_id, langs in per_asset.items()}

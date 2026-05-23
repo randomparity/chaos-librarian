@@ -35,9 +35,9 @@ from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.reports import ReportSet, build_report_set
-from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
+from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline, step_boundaries
 from chaos_librarian.engine.state import build_initial_state
-from chaos_librarian.errors import ChaosLibrarianError
+from chaos_librarian.errors import ChaosLibrarianError, ChaosLibrarianValueError
 from chaos_librarian.validation import (
     RunInput,
     prepare_run_input_from_bytes,
@@ -62,10 +62,7 @@ def run_plan(
     *,
     run_input: RunInput,
     validation_report: ValidationReport,
-    resolved_seed_override: int | None = None,
     steps_limit: int | None = None,
-    run_id_override: uuid.UUID | None = None,
-    applied_events_override: int | None = None,
 ) -> PlanArtifacts:
     """Walk the scenario carried by ``run_input`` and assemble every plan-only artifact.
 
@@ -76,16 +73,40 @@ def run_plan(
         validation_report: The Sprint 1 report; serialized into the fixture
             as ``validation.json``. Must be ``ok=True`` if the caller wants
             a real fixture, but ``run_plan`` does not re-check.
-        resolved_seed_override: Internal-only. When set, skip
-            ``resolve_seed`` and use this value instead. ``replay_plan_bundle``
-            passes ``bundle.resolved_seed`` so ``seed: random`` scenarios
-            reproduce the recorded seed instead of redrawing.
         steps_limit: Cap on resolved events to apply, counted in step units.
             ``None`` (default) runs the entire timeline. ``0`` produces an
             empty journal and ``current_manifest == initial_manifest``.
             Values above ``len(step_boundaries(resolve_timeline(parsed)))``
             are clamped silently. A ``slow_copy_start`` + ``slow_copy_commit``
             adjacent pair counts as one step (advances together).
+
+    Returns:
+        ``PlanArtifacts`` ready to hand to ``write_fixture``.
+    """
+    return _run_plan_artifacts(
+        run_input=run_input,
+        validation_report=validation_report,
+        steps_limit=steps_limit,
+    )
+
+
+def run_materializer_plan(
+    *,
+    run_input: RunInput,
+    validation_report: ValidationReport,
+    resolved_seed_override: int | None = None,
+    steps_limit: int | None = None,
+    run_id_override: uuid.UUID | None = None,
+    applied_events_override: int | None = None,
+) -> PlanArtifacts:
+    """Assemble artifacts for internal replay/materializer-owned plan prefixes.
+
+    Args:
+        run_input: A frozen, byte-bound read of the scenario.
+        validation_report: The validation report to serialize into the fixture.
+        resolved_seed_override: Use a recorded seed instead of resolving the
+            scenario seed expression.
+        steps_limit: Public plan-mode step-unit cap.
         run_id_override: Internal-only. When set, use this materializer-owned
             run id instead of deriving a deterministic plan-only id.
         applied_events_override: Internal-only raw resolved-event count for
@@ -95,8 +116,29 @@ def run_plan(
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
+    return _run_plan_artifacts(
+        run_input=run_input,
+        validation_report=validation_report,
+        resolved_seed_override=resolved_seed_override,
+        steps_limit=steps_limit,
+        run_id_override=run_id_override,
+        applied_events_override=applied_events_override,
+    )
+
+
+def _run_plan_artifacts(
+    *,
+    run_input: RunInput,
+    validation_report: ValidationReport,
+    resolved_seed_override: int | None = None,
+    steps_limit: int | None = None,
+    run_id_override: uuid.UUID | None = None,
+    applied_events_override: int | None = None,
+) -> PlanArtifacts:
     if steps_limit is not None and applied_events_override is not None:
-        raise ValueError("steps_limit and applied_events_override are mutually exclusive")
+        raise ChaosLibrarianValueError(
+            "steps_limit and applied_events_override are mutually exclusive"
+        )
 
     parsed = run_input.scenario
     resolved_seed = (
@@ -109,30 +151,16 @@ def run_plan(
     initial_manifest = initial_state.to_manifest()
 
     resolved_timeline = resolve_timeline(parsed)
-    boundaries = step_boundaries(resolved_timeline)
-    if applied_events_override is not None:
-        if applied_events_override < 0:
-            raise ValueError("applied_events_override must be >= 0")
-        if applied_events_override > len(resolved_timeline):
-            raise ValueError(
-                "applied_events_override exceeds timeline length: "
-                f"{applied_events_override} > {len(resolved_timeline)}"
-            )
-        applied_events = applied_events_override
-    elif steps_limit is not None and steps_limit <= 0:
-        applied_events = 0
-    elif steps_limit is None or steps_limit >= len(boundaries):
-        applied_events = boundaries[-1] if boundaries else 0
-    else:
-        applied_events = boundaries[steps_limit - 1]
-
-    if run_id_override is not None:
-        run_id = run_id_override
-    else:
-        run_id = compute_plan_only_run_id(
-            scenario_content_hash=run_input.content_hash,
-            resolved_seed=resolved_seed,
-        )
+    applied_events = _select_applied_events(
+        resolved_timeline=resolved_timeline,
+        steps_limit=steps_limit,
+        applied_events_override=applied_events_override,
+    )
+    run_id = _select_run_id(
+        run_input=run_input,
+        resolved_seed=resolved_seed,
+        run_id_override=run_id_override,
+    )
     ctx = EngineEventContext(
         run_id=run_id,
         scenario_id=parsed.scenario_id,
@@ -190,6 +218,43 @@ def run_plan(
     )
 
 
+def _select_applied_events(
+    *,
+    resolved_timeline: list[ResolvedEvent],
+    steps_limit: int | None,
+    applied_events_override: int | None,
+) -> int:
+    boundaries = step_boundaries(resolved_timeline)
+    if applied_events_override is not None:
+        if applied_events_override < 0:
+            raise ChaosLibrarianValueError("applied_events_override must be >= 0")
+        if applied_events_override > len(resolved_timeline):
+            raise ChaosLibrarianValueError(
+                "applied_events_override exceeds timeline length: "
+                f"{applied_events_override} > {len(resolved_timeline)}"
+            )
+        return applied_events_override
+    if steps_limit is not None and steps_limit <= 0:
+        return 0
+    if steps_limit is None or steps_limit >= len(boundaries):
+        return boundaries[-1] if boundaries else 0
+    return boundaries[steps_limit - 1]
+
+
+def _select_run_id(
+    *,
+    run_input: RunInput,
+    resolved_seed: int,
+    run_id_override: uuid.UUID | None,
+) -> uuid.UUID:
+    if run_id_override is not None:
+        return run_id_override
+    return compute_plan_only_run_id(
+        scenario_content_hash=run_input.content_hash,
+        resolved_seed=resolved_seed,
+    )
+
+
 class ReplayIntegrityError(ChaosLibrarianError):
     """Raised when a replay bundle's integrity check fails.
 
@@ -232,8 +297,8 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
 
     After the boundary check passes, ``bundle.applied_events`` (translated
     from a raw-event count to a step-unit count) is threaded through to
-    ``run_plan`` as ``steps_limit`` so a partial bundle replays as the same
-    partial fixture.
+    ``run_materializer_plan`` as ``steps_limit`` so a partial bundle replays
+    as the same partial fixture.
 
     Raises:
         ReplayIntegrityError: if any of the three integrity checks fails —
@@ -272,7 +337,7 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     # Safe: boundary check above proved applied_events is in {0, *boundaries}.
     step_count = 0 if bundle.applied_events == 0 else boundaries.index(bundle.applied_events) + 1
 
-    artifacts = run_plan(
+    artifacts = run_materializer_plan(
         run_input=run_input,
         validation_report=report,
         resolved_seed_override=bundle.resolved_seed,

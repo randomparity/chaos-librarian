@@ -41,9 +41,9 @@ from chaos_librarian.engine.reports import build_report_set
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.corruption import _CorruptionContext
 from chaos_librarian.materializer.errors import CorruptionActionError
-from chaos_librarian.materializer.reports import build_reports
+from chaos_librarian.materializer.persistence.reports import build_reports
+from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
 from chaos_librarian.materializer.run import materialize_scenario
 
 _RUN_ID = uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01")
@@ -298,7 +298,7 @@ def _fake_capabilities() -> Capabilities:
 
 
 def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_apply(ctx: _CorruptionContext, entry: JournalEntry) -> CorruptionAction:
+    def fake_apply(ctx: CorruptionPhaseBContext, entry: JournalEntry) -> CorruptionAction:
         output_version_id = entry.output_version_ids[0]
         ctx.post_phase_b_versions[output_version_id] = (_CORRUPTED_HASH, _probed())
         return _corruption_action(output_version_id)
@@ -307,7 +307,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake_apply(_ctx: _CorruptionContext, entry: JournalEntry) -> CorruptionAction:
+    def fake_apply(_ctx: CorruptionPhaseBContext, entry: JournalEntry) -> CorruptionAction:
         raise CorruptionActionError(
             "corrupt_container_header failed for event corrupt_header_001: short file",
             event_id=entry.event_id,

@@ -18,7 +18,7 @@ import hashlib
 from pathlib import Path
 
 from chaos_librarian.contract.scenario import SidecarKind
-from chaos_librarian.materializer.recipes import srt_payload
+from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 __all__ = [
     "perturbed_seed_for_update",

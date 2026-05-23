@@ -20,6 +20,7 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.plan import run_plan
 from chaos_librarian.engine.writer import append_step, write_fixture
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.validation import (
     prepare_run_input,
     prepare_run_input_from_bytes,
@@ -132,6 +133,15 @@ class TestStepFixtureHappyPath:
         assert len(result.new_entries) == 2  # raw entries
         assert result.new_entries[0].phase.value == "started"
         assert result.new_entries[1].phase.value == "committed"
+
+
+class TestStepFixtureArgumentValidation:
+    """step_fixture validates engine-level step counts before touching the run dir."""
+
+    @pytest.mark.parametrize("n_steps", [0, -1])
+    def test_requires_positive_step_count(self, tmp_path: Path, n_steps: int) -> None:
+        with pytest.raises(ChaosLibrarianValueError, match="n_steps must be >= 1"):
+            step_fixture(tmp_path / "missing-run-dir", n_steps=n_steps)
 
 
 class TestStepFixtureSentinelChecks:

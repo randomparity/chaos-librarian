@@ -14,16 +14,35 @@ from chaos_librarian.contract.materialization import CorruptionAction
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
-from chaos_librarian.materializer.probe import probe_file
+from chaos_librarian.materializer.tooling.probe import probe_file
 
 _FFMPEG_POINTER_RE = re.compile(r"(@ )0x[0-9a-fA-F]+")
 
+__all__ = [
+    "CorruptionPhaseBContext",
+    "apply_corruption_action",
+    "make_corruption_phase_b_context",
+    "supports_corruption_action",
+]
+
 
 @dataclass(slots=True)
-class _CorruptionContext:
+class CorruptionPhaseBContext:
     library_root: Path
     resolved_seed: int
     post_phase_b_versions: dict[str, tuple[str, ProbedMedia | None]] = field(default_factory=dict)
+
+
+def make_corruption_phase_b_context(
+    *,
+    library_root: Path,
+    resolved_seed: int,
+) -> CorruptionPhaseBContext:
+    return CorruptionPhaseBContext(library_root=library_root, resolved_seed=resolved_seed)
+
+
+def supports_corruption_action(action: TimelineActionName) -> bool:
+    return action is TimelineActionName.CORRUPT_CONTAINER_HEADER
 
 
 def _replacement_bytes(seed_material: str, byte_count: int) -> bytes:
@@ -87,7 +106,7 @@ def _state_delta_int(delta: dict[str, object], field: str) -> int:
     return value
 
 
-def apply_corruption_action(ctx: _CorruptionContext, entry: JournalEntry) -> CorruptionAction:
+def apply_corruption_action(ctx: CorruptionPhaseBContext, entry: JournalEntry) -> CorruptionAction:
     action = TimelineActionName(entry.action)
     target_asset_id = _target_asset_id(entry)
     started = time.monotonic_ns()

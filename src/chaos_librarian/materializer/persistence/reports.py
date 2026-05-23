@@ -28,7 +28,7 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeRep
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
-from chaos_librarian.materializer.writer import MaterializeMetadata, MaterializeReports
+from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 
 __all__ = ["build_metadata", "build_replay_bundle", "build_report", "build_reports"]
 

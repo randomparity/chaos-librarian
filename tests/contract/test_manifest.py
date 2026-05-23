@@ -117,7 +117,11 @@ def test_manifest_version_probed_defaults_none():
 
 def test_manifest_sidecar_content_hash_optional():
     sidecar = ManifestSidecar(
-        id="s0", asset_id="a0", kind="srt", path="library/a/0.eng.srt", language="eng"
+        id="s0",
+        asset_id="a0",
+        kind="subtitle",
+        path="library/a/0.eng.srt",
+        language="eng",
     )
     assert sidecar.content_hash is None
     payload = sidecar.model_dump(exclude_none=True)
@@ -149,6 +153,7 @@ def test_manifest_sidecar_nfo_no_language():
         language=None,
     )
     assert sidecar.language is None
+    assert sidecar.kind == "nfo"
 
 
 def test_manifest_sidecar_subtitle_keeps_language():
@@ -160,6 +165,20 @@ def test_manifest_sidecar_subtitle_keeps_language():
         language="eng",
     )
     assert sidecar.language == "eng"
+    assert sidecar.kind == "subtitle"
+
+
+def test_manifest_sidecar_kind_remains_free_form_for_v5_compatibility():
+    sidecar = ManifestSidecar.model_validate(
+        {
+            "id": "sidecar_0001",
+            "asset_id": "asset_main",
+            "kind": "srt",
+            "path": "asset_main.eng.srt",
+            "language": "eng",
+        }
+    )
+    assert sidecar.kind == "srt"
 
 
 def test_manifest_v5_schema_version():

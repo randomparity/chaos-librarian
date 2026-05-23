@@ -1,4 +1,4 @@
-"""Phase-B dispatcher tests for ``materializer/filesystem.py``.
+"""Phase-B dispatcher tests for ``materializer/phase_b/filesystem.py``.
 
 One test per per-action helper, plus the dispatcher's contracts:
 ``OSError`` wraps into ``FilesystemActionError`` carrying the originating
@@ -12,9 +12,15 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.contract.scenario import Scenario, TimelineActionName
+from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.materialization import FilesystemAction
+from chaos_librarian.contract.scenario import Asset, Scenario, TimelineActionName
 from chaos_librarian.materializer.errors import FilesystemActionError
-from chaos_librarian.materializer.filesystem import apply_phase_b
+from chaos_librarian.materializer.phase_b import filesystem as filesystem_module
+from chaos_librarian.materializer.phase_b.filesystem import (
+    apply_filesystem_action,
+    make_filesystem_phase_b_context,
+)
 from tests.engine.conftest import _build_minimal_scenario
 from tests.materializer.conftest import (
     _atomic_entry,
@@ -35,6 +41,39 @@ def _scenario() -> Scenario:
     )
 
 
+def _scenario_assets(scenario: Scenario) -> dict[str, Asset]:
+    return {
+        asset.id: asset
+        for work in scenario.works
+        for variant in work.variants
+        for asset in variant.bundle.assets
+    }
+
+
+def _apply_entries(
+    *,
+    library_root: Path,
+    journal: list[JournalEntry],
+    scenario: Scenario,
+    resolved_seed: int,
+) -> tuple[list[FilesystemAction], dict[str, str]]:
+    ctx = make_filesystem_phase_b_context(
+        library_root=library_root,
+        scenario_assets=_scenario_assets(scenario),
+        resolved_seed=resolved_seed,
+    )
+    actions: list[FilesystemAction] = []
+    for entry in journal:
+        action = apply_filesystem_action(ctx, entry)
+        if action is not None:
+            actions.append(action)
+    return actions, dict(ctx.phase_b_sidecar_hashes)
+
+
+def test_filesystem_module_has_no_phase_b_orchestrator() -> None:
+    assert not hasattr(filesystem_module, "apply_phase_b")
+
+
 def test_apply_move_asset_renames_file(tmp_path: Path) -> None:
     """WHY: move_asset must rename src->dst on disk and emit a
     FilesystemAction whose action discriminator is MOVE_ASSET so the
@@ -53,7 +92,7 @@ def test_apply_move_asset_renames_file(tmp_path: Path) -> None:
             },
         )
     ]
-    actions, sidecar_hashes = apply_phase_b(
+    actions, sidecar_hashes = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -89,7 +128,7 @@ def test_apply_rename_file_is_alias_of_move(tmp_path: Path) -> None:
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -114,7 +153,7 @@ def test_apply_delete_file_unlinks(tmp_path: Path) -> None:
             state_delta={"removed_path": "movies-hd/asset_hd_main.mkv"},
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -149,7 +188,7 @@ def test_apply_delete_then_add_file_restores_bytes(tmp_path: Path) -> None:
             state_delta={"added_path": "movies-hd/restored.mkv"},
         ),
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -182,7 +221,7 @@ def test_apply_archive_file_moves_to_archive_root(tmp_path: Path) -> None:
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -213,7 +252,7 @@ def test_apply_archive_file_with_explicit_root(tmp_path: Path) -> None:
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -245,7 +284,7 @@ def test_apply_move_between_roots_crosses_roots(tmp_path: Path) -> None:
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -277,7 +316,7 @@ def test_apply_slow_copy_start_writes_full_bytes_to_temp_path(tmp_path: Path) ->
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -319,7 +358,7 @@ def test_apply_slow_copy_commit_renames_temp_to_final(tmp_path: Path) -> None:
             state_delta={"final_path": "movies-hd/asset_hd_main.mkv"},
         ),
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -362,7 +401,7 @@ def test_apply_slow_copy_commit_unlinks_initial_when_different_from_final(
             state_delta={"final_path": "movies-hd/elsewhere.mkv"},
         ),
     ]
-    apply_phase_b(
+    _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -394,7 +433,7 @@ def test_apply_remove_sidecar_unlinks_file_and_returns_action(tmp_path: Path) ->
             },
         )
     ]
-    actions, _ = apply_phase_b(
+    actions, _ = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -423,7 +462,7 @@ def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None
             state_delta={"resolution": "hd", "codec": "h264"},
         )
     ]
-    actions, sidecar_hashes = apply_phase_b(
+    actions, sidecar_hashes = _apply_entries(
         library_root=library,
         journal=journal,
         scenario=_scenario(),
@@ -452,7 +491,7 @@ def test_apply_non_oserror_also_wraps_into_filesystem_action_error(tmp_path: Pat
         )
     ]
     with pytest.raises(FilesystemActionError) as exc_info:
-        apply_phase_b(
+        _apply_entries(
             library_root=library,
             journal=journal,
             scenario=_scenario(),
@@ -486,7 +525,7 @@ def test_apply_oserror_wraps_into_filesystem_action_error(tmp_path: Path) -> Non
         )
     ]
     with pytest.raises(FilesystemActionError) as exc_info:
-        apply_phase_b(
+        _apply_entries(
             library_root=library,
             journal=journal,
             scenario=_scenario(),

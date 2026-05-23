@@ -31,7 +31,7 @@ from chaos_librarian.contract.profiles import (
     CorruptionRecord,
     ProfileName,
 )
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 
 
 def _manifest(
@@ -65,7 +65,7 @@ def _manifest(
             ManifestSidecar(
                 id="s0",
                 asset_id="a0",
-                kind="srt",
+                kind=SidecarKind.SUBTITLE,
                 path="library/w0/va0/main.eng.srt",
                 language="eng",
                 content_hash="sha256:" + "f" * 64,

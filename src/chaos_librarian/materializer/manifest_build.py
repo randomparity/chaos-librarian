@@ -6,7 +6,7 @@ from collections.abc import Mapping
 
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset
-from chaos_librarian.contract.scenario import Asset
+from chaos_librarian.contract.scenario import Asset, SidecarKind
 
 __all__ = [
     "augment_manifest",
@@ -135,7 +135,7 @@ def find_sidecar_for(
     asset_id: str,
     *,
     language: str | None = None,
-    kind: str = "subtitle",
+    kind: SidecarKind = SidecarKind.SUBTITLE,
 ) -> ManifestSidecar | None:
     """Return the ``ManifestSidecar`` matching ``(asset_id, language, kind)`` or ``None``.
 
@@ -148,9 +148,9 @@ def find_sidecar_for(
     for sidecar in manifest.sidecars:
         if sidecar.asset_id != asset_id:
             continue
-        if kind == "subtitle":
-            if sidecar.kind == "subtitle" and sidecar.language == language:
+        if kind is SidecarKind.SUBTITLE:
+            if sidecar.kind == SidecarKind.SUBTITLE.value and sidecar.language == language:
                 return sidecar
-        elif sidecar.kind == kind:
+        elif sidecar.kind == kind.value:
             return sidecar
     return None
