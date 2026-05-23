@@ -609,7 +609,7 @@ def test_compare_run_replay_ignores_corruption_duration_ns(tmp_path: Path) -> No
 def test_compare_run_replay_compares_replay_content_sources(tmp_path: Path) -> None:
     left = _write_run_compare_fixture(tmp_path / "left")
     right = _write_run_compare_fixture(tmp_path / "right")
-    _update_replay(right, "content_sources", [_run_compare_source_evidence()])
+    _update_replay(right, "content_sources", [_run_compare_source_evidence("1")])
 
     diff = compare_run_replay(left, right)
 
@@ -619,7 +619,7 @@ def test_compare_run_replay_compares_replay_content_sources(tmp_path: Path) -> N
 def test_compare_run_replay_compares_materialization_content_sources(tmp_path: Path) -> None:
     left = _write_run_compare_fixture(tmp_path / "left")
     right = _write_run_compare_fixture(tmp_path / "right")
-    _update_materialization(right, "content_sources", [_run_compare_source_evidence()])
+    _update_materialization(right, "content_sources", [_run_compare_source_evidence("2")])
 
     diff = compare_run_replay(left, right)
 
@@ -799,6 +799,7 @@ def _write_run_compare_fixture(
                 "applied_events": 1,
                 "journal_digest": "0" * 64,
                 "execution_mode": "run",
+                "content_sources": [_run_compare_source_evidence()],
             }
         ),
         encoding="utf-8",
@@ -812,6 +813,7 @@ def _write_run_compare_fixture(
                 "platform": platform,
                 "toolchain": toolchain or {"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
                 "invocations": invocations or [],
+                "content_sources": [_run_compare_source_evidence()],
                 "started_at": "2026-05-21T00:00:00Z",
                 "finished_at": "2026-05-21T00:00:01Z",
                 "corruption_actions": [
@@ -841,13 +843,13 @@ def _write_run_compare_fixture(
     return root
 
 
-def _run_compare_source_evidence() -> dict[str, object]:
+def _run_compare_source_evidence(recipe_digit: str = "0") -> dict[str, object]:
     return {
         "asset_id": "asset_main",
         "track_kind": "video",
         "source": "color_bars",
         "provider": "builtin-lavfi",
-        "recipe_digest": "sha256:" + "1" * 64,
+        "recipe_digest": "sha256:" + recipe_digit * 64,
         "cache_disposition": "not_cacheable",
     }
 
