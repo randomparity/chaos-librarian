@@ -19,9 +19,7 @@ from typing import Final
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
-    AudioSource,
     AudioTrack,
-    VideoSource,
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
@@ -47,12 +45,6 @@ _SUPPORTED_CONTAINERS: Final[frozenset[str]] = frozenset({"mkv", "mp4"})
 _SUPPORTED_RESOLUTIONS: Final[frozenset[str]] = frozenset({"sd", "hd", "1080p"})
 _SUPPORTED_VIDEO_CODECS: Final[frozenset[str]] = frozenset({"h264"})
 _SUPPORTED_AUDIO_CODECS: Final[frozenset[str]] = frozenset({"aac"})
-_SUPPORTED_VIDEO_SOURCES: Final[frozenset[VideoSource]] = frozenset(
-    {VideoSource.MANDELBROT, VideoSource.COLOR_BARS, VideoSource.SOLID_COLOR}
-)
-_SUPPORTED_AUDIO_SOURCES: Final[frozenset[AudioSource]] = frozenset(
-    {AudioSource.SINE, AudioSource.SILENCE, AudioSource.CHANNEL_TONES}
-)
 
 _CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {".mkv": "mkv", ".mp4": "mp4"}
 
@@ -86,51 +78,46 @@ def _resolve_container(output_path: Path) -> str:
 
 
 def _validate_video(video: VideoTrack) -> None:
-    """Reject video tracks outside the supported matrix."""
-    _require(video.source, _SUPPORTED_VIDEO_SOURCES, "video.source")
+    """Reject video tracks outside the codec/resolution matrix."""
     _require(video.codec, _SUPPORTED_VIDEO_CODECS, "video.codec")
     _require(video.resolution, _SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
 def _validate_audio(audios: Sequence[AudioTrack]) -> None:
-    """Reject any audio track outside the supported matrix."""
+    """Reject any audio track outside the codec matrix."""
     for index, audio in enumerate(audios):
-        _require(audio.source, _SUPPORTED_AUDIO_SOURCES, f"audio[{index}].source")
         _require(audio.codec, _SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
 
 
-def _video_input_args(video_input: FFmpegInput) -> list[str]:
-    """Argv slice for the video input — lavfi is mandatory.
+def _input_args(ffmpeg_input: FFmpegInput, *, field: str) -> list[str]:
+    """Argv slice for one resolved input.
 
     ``extra_flags`` (e.g. ``-t 2.0``) are emitted BEFORE ``-i`` because
     ffmpeg treats them as per-input options only when they precede the
     ``-i`` they qualify. Emitted after ``-i`` they bind to the next
     output (or input), which truncates the wrong stream.
     """
-    if video_input.lavfi is None:
-        raise UnsupportedMaterializationError(
-            "video FFmpegInput must carry a lavfi expression",
-            field="video.source",
-            payload={},
-        )
-    return [*video_input.extra_flags, "-f", "lavfi", "-i", video_input.lavfi]
+    if ffmpeg_input.lavfi is not None:
+        return [*ffmpeg_input.extra_flags, "-f", "lavfi", "-i", ffmpeg_input.lavfi]
+    if ffmpeg_input.file_path is not None:
+        return [*ffmpeg_input.extra_flags, "-i", str(ffmpeg_input.file_path)]
+    raise UnsupportedMaterializationError(
+        "FFmpegInput must carry lavfi or file_path",
+        field=field,
+        payload={},
+    )
+
+
+def _video_input_args(video_input: FFmpegInput) -> list[str]:
+    """Argv slice for the resolved video input."""
+    return _input_args(video_input, field="video.source")
 
 
 def _audio_input_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
-    """Argv slice covering all audio inputs — lavfi mandatory.
-
-    Same input-option ordering rule as ``_video_input_args``: extra_flags
-    precede ``-i``.
-    """
+    """Argv slice covering all resolved audio inputs."""
     args: list[str] = []
     for audio_input in audio_inputs:
-        if audio_input.lavfi is None:
-            raise UnsupportedMaterializationError(
-                "audio FFmpegInput must carry a lavfi expression",
-                field="audio.source",
-                payload={},
-            )
-        args.extend([*audio_input.extra_flags, "-f", "lavfi", "-i", audio_input.lavfi])
+        args.extend(_input_args(audio_input, field="audio.source"))
     return args
 
 
@@ -149,9 +136,8 @@ def build_command(
 
     Raises:
         UnsupportedMaterializationError: any element of the (container,
-            video source/codec/resolution, audio source/codec) tuple falls
-            outside the supported matrix, or an FFmpegInput is missing its
-            lavfi expression.
+            video codec/resolution, audio codec) tuple falls outside the
+            supported matrix, or an FFmpegInput is missing its input.
     """
     _resolve_container(output_path)
     _validate_video(video)

@@ -27,6 +27,10 @@ class FFmpegInput:
     file_path: Path | None = None
     extra_flags: tuple[str, ...] = ()
 
+    def __post_init__(self) -> None:
+        if (self.lavfi is None) == (self.file_path is None):
+            raise ValueError("FFmpegInput requires exactly one of lavfi or file_path")
+
 
 def _scale_from_seed(seed: int) -> float:
     """Deterministic 0.0-1.0 mapping for mandelbrot start_scale.
