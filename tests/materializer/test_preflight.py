@@ -38,7 +38,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 8,
+            "schema_version": 9,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",

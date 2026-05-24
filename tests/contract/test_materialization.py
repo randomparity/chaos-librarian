@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract import materialization as materialization_contract
@@ -60,6 +60,22 @@ def _minimal_report(**overrides: object) -> MaterializationReport:
     }
     defaults.update(overrides)
     return MaterializationReport.model_validate(defaults)
+
+
+def _timeline_action(member_name: str) -> TimelineActionName:
+    action = getattr(TimelineActionName, member_name, None)
+    assert isinstance(action, TimelineActionName)
+    return action
+
+
+WRONG_ORACLE_HASH_ACTION = _timeline_action("WRONG_ORACLE_HASH")
+
+
+def _oracle_hash_action_model() -> type[BaseModel]:
+    model = getattr(materialization_contract, "OracleHashAction", None)
+    assert isinstance(model, type)
+    assert issubclass(model, BaseModel)
+    return model
 
 
 def test_minimal_success_report_round_trips():
@@ -137,8 +153,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_eight() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 8
+def test_materialization_schema_version_is_nine() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 9
 
 
 def test_materialization_report_run_timing_defaults() -> None:
@@ -177,6 +193,27 @@ def test_filesystem_action_round_trip() -> None:
     action = FilesystemAction.model_validate(payload)
     assert action.action == TimelineActionName.MOVE_ASSET
     assert action.duration_ns == 1_500_000
+
+
+def test_filesystem_action_touch_mtime_round_trip() -> None:
+    action = FilesystemAction(
+        event_id="mtime_001",
+        action=_timeline_action("TOUCH_MTIME"),
+        target_asset_id="asset_main",
+        from_path="movies-hd/asset_main.mkv",
+        to_path="movies-hd/asset_main.mkv",
+        temp_path=None,
+        content_hash="sha256:" + "0" * 64,
+        mtime_before_ns=1_000_000_000,
+        mtime_after_ns=3_000_000_000,
+        duration_ns=10,
+    )
+
+    loaded = FilesystemAction.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+    assert loaded.content_hash == "sha256:" + "0" * 64
+    assert loaded.mtime_after_ns == 3_000_000_000
 
 
 def test_outcome_fs_failed_present() -> None:
@@ -376,6 +413,8 @@ def test_corruption_action_round_trips_hashes_and_probe_outcome() -> None:
         input_content_hash="sha256:" + "0" * 64,
         output_content_hash="sha256:" + "1" * 64,
         corruptor="container_header_v1",
+        input_size_bytes=8192,
+        output_size_bytes=8192,
         byte_start=0,
         byte_count=64,
         seed_material="container_header_v1:42:corrupt_header_001:asset_main",
@@ -391,6 +430,107 @@ def test_corruption_action_round_trips_hashes_and_probe_outcome() -> None:
     assert loaded.probe_outcome is CorruptionProbeOutcome.FAILED_EXPECTED
 
 
+def test_truncate_file_corruption_action_round_trip() -> None:
+    action = CorruptionAction(
+        event_id="truncate_001",
+        action=TimelineActionName.TRUNCATE_FILE,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        input_content_hash="sha256:" + "0" * 64,
+        output_content_hash="sha256:" + "1" * 64,
+        corruptor="truncate_file_v1",
+        input_size_bytes=128,
+        output_size_bytes=64,
+        byte_start=64,
+        byte_count=64,
+        seed_material="truncate_file_v1:42:truncate_001:asset_main",
+        probe_outcome=CorruptionProbeOutcome.FAILED_EXPECTED,
+        duration_ns=10,
+    )
+
+    loaded = CorruptionAction.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+    assert loaded.input_size_bytes == 128
+    assert loaded.output_size_bytes == 64
+
+
+def test_packet_range_corruption_action_round_trip() -> None:
+    action = CorruptionAction(
+        event_id="packet_corrupt_001",
+        action=TimelineActionName.CORRUPT_PACKET_RANGE,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        input_content_hash="sha256:" + "0" * 64,
+        output_content_hash="sha256:" + "1" * 64,
+        corruptor="packet_range_v1",
+        input_size_bytes=8192,
+        output_size_bytes=8192,
+        stream="video",
+        packet_start=0,
+        packet_count=2,
+        byte_start=4096,
+        byte_count=2048,
+        seed_material="packet_range_v1:42:packet_corrupt_001:asset_main",
+        probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+        duration_ns=10,
+    )
+
+    loaded = CorruptionAction.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+    assert loaded.stream == "video"
+    assert loaded.packet_count == 2
+
+
+def test_oracle_hash_action_round_trip() -> None:
+    action_model = _oracle_hash_action_model()
+    action = action_model(
+        event_id="wrong_hash_001",
+        action=WRONG_ORACLE_HASH_ACTION,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        actual_content_hash="sha256:" + "1" * 64,
+        reported_content_hash="sha256:" + "2" * 64,
+        seed_material="wrong_oracle_hash_v1:42:wrong_hash_001:asset_main",
+        duration_ns=10,
+    )
+
+    loaded = action_model.model_validate_json(action.model_dump_json())
+
+    assert loaded == action
+
+
+def test_materialization_report_carries_oracle_hash_actions() -> None:
+    action_model = _oracle_hash_action_model()
+    action = action_model(
+        event_id="wrong_hash_001",
+        action=WRONG_ORACLE_HASH_ACTION,
+        target_asset_id="asset_main",
+        input_path="movies-hd/asset_main.mkv",
+        output_path="movies-hd/asset_main.mkv",
+        input_version_id="version_0001",
+        output_version_id="version_0002",
+        actual_content_hash="sha256:" + "1" * 64,
+        reported_content_hash="sha256:" + "2" * 64,
+        seed_material="wrong_oracle_hash_v1:42:wrong_hash_001:asset_main",
+        duration_ns=10,
+    )
+
+    report = _minimal_report(oracle_hash_actions=[action])
+
+    assert report.oracle_hash_actions == [action]
+
+
 def test_corruption_action_rejects_bad_input_content_hash() -> None:
     payload = {
         "event_id": "corrupt_header_001",
@@ -403,6 +543,8 @@ def test_corruption_action_rejects_bad_input_content_hash() -> None:
         "input_content_hash": "sha256:not-a-hash",
         "output_content_hash": "sha256:" + "1" * 64,
         "corruptor": "container_header_v1",
+        "input_size_bytes": 8192,
+        "output_size_bytes": 8192,
         "byte_start": 0,
         "byte_count": 64,
         "seed_material": "container_header_v1:42:corrupt_header_001:asset_main",
@@ -426,6 +568,8 @@ def test_corruption_action_rejects_bad_output_content_hash() -> None:
         "input_content_hash": "sha256:" + "0" * 64,
         "output_content_hash": "sha256:not-a-hash",
         "corruptor": "container_header_v1",
+        "input_size_bytes": 8192,
+        "output_size_bytes": 8192,
         "byte_start": 0,
         "byte_count": 64,
         "seed_material": "container_header_v1:42:corrupt_header_001:asset_main",

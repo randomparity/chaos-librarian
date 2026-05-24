@@ -47,7 +47,7 @@ _INPUT_HASH = "sha256:" + "1" * 64
 _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _SCENARIO = b"""\
-schema_version: 8
+schema_version: 9
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -309,6 +309,8 @@ def _corruption_action(*, output_version_id: str) -> CorruptionAction:
         input_content_hash=_INPUT_HASH,
         output_content_hash=_CORRUPTED_HASH,
         corruptor="container_header_v1",
+        input_size_bytes=128,
+        output_size_bytes=128,
         byte_start=0,
         byte_count=64,
         seed_material="container_header_v1:7:corrupt_header_001:asset_main",

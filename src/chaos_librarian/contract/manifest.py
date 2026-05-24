@@ -122,7 +122,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[5]
+    schema_version: Literal[6]
     works: list[ManifestWork]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]

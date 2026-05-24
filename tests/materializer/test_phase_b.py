@@ -101,6 +101,8 @@ def test_dispatch_phase_b_entry_routes_corruption_actions(
         input_content_hash=HASH_A,
         output_content_hash=HASH_B,
         corruptor="container_header_v1",
+        input_size_bytes=128,
+        output_size_bytes=128,
         byte_start=0,
         byte_count=64,
         seed_material="container_header_v1:7:corrupt_header_001:asset_main",
@@ -138,7 +140,7 @@ def test_augment_phase_b_outputs_stamps_all_phase_b_evidence(tmp_path: Path) -> 
     state.corruption_ctx.post_phase_b_versions["version_corrupt"] = (HASH_C, None)
     state.media_ctx.post_phase_b_sidecars["sidecar_updated"] = (HASH_D, "new.srt")
     manifest = Manifest(
-        schema_version=5,
+        schema_version=6,
         works=[],
         variants=[],
         bundles=[],

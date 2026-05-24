@@ -158,6 +158,8 @@ def apply_corruption_action(ctx: CorruptionPhaseBContext, entry: JournalEntry) -
         input_content_hash=input_hash,
         output_content_hash=output_hash,
         corruptor=corruptor,
+        input_size_bytes=len(input_bytes),
+        output_size_bytes=len(final_bytes),
         byte_start=byte_start,
         byte_count=byte_count,
         seed_material=seed_material,

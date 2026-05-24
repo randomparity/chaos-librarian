@@ -54,7 +54,7 @@ _INPUT_HASH = "sha256:" + "1" * 64
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 8
+schema_version: 9
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -118,7 +118,7 @@ def _manifest(*, corrupted: bool) -> Manifest:
             )
         )
     return Manifest(
-        schema_version=5,
+        schema_version=6,
         works=[ManifestWork(id="work_001", title="Broken Header")],
         variants=[ManifestVariant(id="variant_hd", work_id="work_001", label="hd")],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
@@ -150,7 +150,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 8\n",
+            scenario="schema_version: 9\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,
@@ -338,6 +338,8 @@ def _corruption_action(output_version_id: str) -> CorruptionAction:
         input_content_hash=_INPUT_HASH,
         output_content_hash=_CORRUPTED_HASH,
         corruptor="container_header_v1",
+        input_size_bytes=128,
+        output_size_bytes=128,
         byte_start=0,
         byte_count=64,
         seed_material="container_header_v1:42:corrupt_header_001:asset_main",

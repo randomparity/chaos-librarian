@@ -93,6 +93,16 @@ def _minimal_scenario() -> Scenario:
     )
 
 
+def _scenario_payload_with_event(
+    event: dict[str, object], profiles: list[str] | None = None
+) -> dict[str, object]:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["schema_version"] = 9
+    payload["profiles"] = profiles or []
+    payload["timeline"] = [event]
+    return payload
+
+
 def test_minimal_scenario_roundtrip() -> None:
     s = _minimal_scenario()
     loaded = Scenario.model_validate_json(s.model_dump_json())
@@ -210,8 +220,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_eight() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 8
+def test_scenario_schema_version_is_nine() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 9
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -223,6 +233,8 @@ def test_scenario_accepts_profile_labels() -> None:
         "performance-scale",
         "performance-stress",
         "network-fs-lag",
+        "filesystem-artifacts",
+        "negative-oracle",
     ]
 
     scenario = Scenario.model_validate(payload)
@@ -323,6 +335,136 @@ def test_corrupt_container_header_rejects_4097_bytes() -> None:
         CorruptContainerHeaderEvent.model_validate(payload)
 
 
+@pytest.mark.parametrize(
+    "event",
+    [
+        {
+            "id": "truncate_001",
+            "at": "1s",
+            "action": "truncate_file",
+            "target": "a1",
+            "keep_bytes": 64,
+        },
+        {
+            "id": "packet_corrupt_001",
+            "at": "2s",
+            "action": "corrupt_packet_range",
+            "target": "a1",
+            "stream": "video",
+            "packet_start": 0,
+            "packet_count": 2,
+        },
+        {
+            "id": "duration_bad_001",
+            "at": "3s",
+            "action": "write_invalid_duration_metadata",
+            "target": "a1",
+            "value": "not-a-duration",
+        },
+        {
+            "id": "mtime_001",
+            "at": "4s",
+            "action": "touch_mtime",
+            "target": "a1",
+            "offset": "2s",
+        },
+        {
+            "id": "wrong_hash_001",
+            "at": "5s",
+            "action": "wrong_oracle_hash",
+            "target": "a1",
+        },
+    ],
+)
+def test_scenario_v9_accepts_interceptor_events(event: dict[str, object]) -> None:
+    payload = _scenario_payload_with_event(
+        event,
+        profiles=["filesystem-artifacts", "negative-oracle"],
+    )
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.schema_version == 9
+    assert scenario.timeline[0].id == event["id"]
+
+
+@pytest.mark.parametrize(
+    ("event", "field_name"),
+    [
+        (
+            {
+                "id": "truncate_001",
+                "at": "1s",
+                "action": "truncate_file",
+                "target": "a1",
+                "keep_bytes": 0,
+            },
+            "keep_bytes",
+        ),
+        (
+            {
+                "id": "packet_corrupt_001",
+                "at": "2s",
+                "action": "corrupt_packet_range",
+                "target": "a1",
+                "stream": "video",
+                "packet_start": -1,
+                "packet_count": 2,
+            },
+            "packet_start",
+        ),
+        (
+            {
+                "id": "packet_corrupt_001",
+                "at": "2s",
+                "action": "corrupt_packet_range",
+                "target": "a1",
+                "stream": "video",
+                "packet_start": 0,
+                "packet_count": 0,
+            },
+            "packet_count",
+        ),
+        (
+            {
+                "id": "mtime_001",
+                "at": "4s",
+                "action": "touch_mtime",
+                "target": "a1",
+                "offset": "",
+            },
+            "offset",
+        ),
+    ],
+)
+def test_scenario_v9_rejects_invalid_interceptor_bounds(
+    event: dict[str, object], field_name: str
+) -> None:
+    payload = _scenario_payload_with_event(event)
+
+    with pytest.raises(ValidationError) as exc_info:
+        Scenario.model_validate(payload)
+
+    assert any(field_name in err["loc"] for err in exc_info.value.errors())
+
+
+def test_wrong_oracle_hash_rejects_unexpected_bytes_field() -> None:
+    payload = _scenario_payload_with_event(
+        {
+            "id": "wrong_hash_001",
+            "at": "5s",
+            "action": "wrong_oracle_hash",
+            "target": "a1",
+            "bytes": 64,
+        }
+    )
+
+    with pytest.raises(ValidationError) as exc_info:
+        Scenario.model_validate(payload)
+
+    assert any(err["type"] == "extra_forbidden" for err in exc_info.value.errors())
+
+
 def test_archive_file_event_round_trip():
     payload = {
         "id": "ev_arch_001",
@@ -403,7 +545,7 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v8():
+def test_scenario_v4_actions_round_trip_at_v9():
     payload = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_arch_001",
@@ -591,7 +733,7 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v8_round_trip_with_sprint_7_events():
+def test_scenario_v9_round_trip_with_sprint_7_events():
     payload = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_s7_001",

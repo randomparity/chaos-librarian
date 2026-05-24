@@ -24,7 +24,7 @@ def _scenario(
     profiles: list[str] | None = None,
 ) -> Scenario:
     payload: dict[str, object] = {
-        "schema_version": 8,
+        "schema_version": 9,
         "scenario_id": "media",
         "seed": 1,
         "duration_scale": "short",
@@ -147,6 +147,10 @@ class TestCorruptContainerHeaderHandler:
             "byte_start": 0,
             "byte_count": 128,
             "seed_material": "container_header_v1:42:corrupt_header_001:a0",
+            "stream": None,
+            "packet_start": None,
+            "packet_count": None,
+            "metadata": {},
         }
 
     def test_corrupt_container_header_uses_resolved_seed_in_seed_material(self) -> None:

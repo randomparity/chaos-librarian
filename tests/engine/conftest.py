@@ -135,7 +135,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=8``.
+        A fully-validated Scenario at ``schema_version=9``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -185,7 +185,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 8,
+            "schema_version": 9,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",

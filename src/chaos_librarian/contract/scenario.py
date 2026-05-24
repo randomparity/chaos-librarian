@@ -41,6 +41,11 @@ class TimelineActionName(enum.StrEnum):
     REMOVE_SIDECAR = "remove_sidecar"
     UPDATE_SIDECAR = "update_sidecar"
     CORRUPT_CONTAINER_HEADER = "corrupt_container_header"
+    TRUNCATE_FILE = "truncate_file"
+    CORRUPT_PACKET_RANGE = "corrupt_packet_range"
+    WRITE_INVALID_DURATION_METADATA = "write_invalid_duration_metadata"
+    TOUCH_MTIME = "touch_mtime"
+    WRONG_ORACLE_HASH = "wrong_oracle_hash"
     NETWORK_LAG_START = "network_lag_start"
     NETWORK_LAG_COMMIT = "network_lag_commit"
 
@@ -122,6 +127,14 @@ class NetworkLagEffect(enum.StrEnum):
     DELAYED_VISIBILITY = "delayed_visibility"
     DELAYED_RENAME = "delayed_rename"
     HELD_HANDLE = "held_handle"
+
+
+class PacketStreamKind(enum.StrEnum):
+    """Stream kinds selectable by packet-range corruption."""
+
+    VIDEO = "video"
+    AUDIO = "audio"
+    SUBTITLE = "subtitle"
 
 
 # ---- Library ----------------------------------------------------------------
@@ -366,6 +379,41 @@ class CorruptContainerHeaderEvent(_TimelineEventBase):
     bytes: int = Field(default=64, ge=1, le=4096)
 
 
+class TruncateFileEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.TRUNCATE_FILE] = TimelineActionName.TRUNCATE_FILE
+    target: str
+    keep_bytes: int = Field(ge=1)
+
+
+class CorruptPacketRangeEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.CORRUPT_PACKET_RANGE] = (
+        TimelineActionName.CORRUPT_PACKET_RANGE
+    )
+    target: str
+    stream: PacketStreamKind = PacketStreamKind.VIDEO
+    packet_start: int = Field(ge=0)
+    packet_count: int = Field(default=1, ge=1, le=128)
+
+
+class WriteInvalidDurationMetadataEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.WRITE_INVALID_DURATION_METADATA] = (
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA
+    )
+    target: str
+    value: str = Field(default="not-a-duration", min_length=1, max_length=128)
+
+
+class TouchMtimeEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.TOUCH_MTIME] = TimelineActionName.TOUCH_MTIME
+    target: str
+    offset: str = Field(min_length=1)
+
+
+class WrongOracleHashEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.WRONG_ORACLE_HASH] = TimelineActionName.WRONG_ORACLE_HASH
+    target: str
+
+
 class NetworkLagStartEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.NETWORK_LAG_START] = TimelineActionName.NETWORK_LAG_START
     effect: NetworkLagEffect
@@ -402,6 +450,11 @@ TimelineEvent = Annotated[
     | RemoveSidecarEvent
     | UpdateSidecarEvent
     | CorruptContainerHeaderEvent
+    | TruncateFileEvent
+    | CorruptPacketRangeEvent
+    | WriteInvalidDurationMetadataEvent
+    | TouchMtimeEvent
+    | WrongOracleHashEvent
     | NetworkLagStartEvent
     | NetworkLagCommitEvent,
     Field(discriminator="action"),
@@ -415,7 +468,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[8]
+    schema_version: Literal[9]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

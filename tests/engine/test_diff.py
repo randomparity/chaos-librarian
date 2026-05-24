@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from chaos_librarian.engine.diff import (
     FixtureDiff,
     FixtureFileDiff,
     compare_fixtures,
+    compare_run_replay,
 )
 from chaos_librarian.engine.plan import run_plan
 from chaos_librarian.engine.writer import write_fixture
@@ -102,6 +104,51 @@ class TestCompareFixtures:
         diff = compare_fixtures(a, b)
         assert diff.is_clean()
 
+    def test_run_replay_compares_oracle_hash_actions(self, tmp_path: Path) -> None:
+        """Negative-oracle replay evidence is semantic and must not be dropped."""
+        a = _make_run_replay_fixture(
+            tmp_path,
+            "a",
+            [
+                {
+                    "event_id": "wrong_hash_001",
+                    "action": "wrong_oracle_hash",
+                    "target_asset_id": "asset_main",
+                    "input_path": "movies-hd/asset_main.mkv",
+                    "output_path": "movies-hd/asset_main.mkv",
+                    "input_version_id": "version_0001",
+                    "output_version_id": "version_0002",
+                    "actual_content_hash": "sha256:" + "1" * 64,
+                    "reported_content_hash": "sha256:" + "2" * 64,
+                    "seed_material": "wrong_oracle_hash_v1:7:wrong_hash_001:asset_main",
+                    "duration_ns": 1,
+                }
+            ],
+        )
+        b = _make_run_replay_fixture(
+            tmp_path,
+            "b",
+            [
+                {
+                    "event_id": "wrong_hash_001",
+                    "action": "wrong_oracle_hash",
+                    "target_asset_id": "asset_main",
+                    "input_path": "movies-hd/asset_main.mkv",
+                    "output_path": "movies-hd/asset_main.mkv",
+                    "input_version_id": "version_0001",
+                    "output_version_id": "version_0002",
+                    "actual_content_hash": "sha256:" + "1" * 64,
+                    "reported_content_hash": "sha256:" + "3" * 64,
+                    "seed_material": "wrong_oracle_hash_v1:7:wrong_hash_001:asset_main",
+                    "duration_ns": 99,
+                }
+            ],
+        )
+
+        diff = compare_run_replay(a, b)
+
+        assert _find(diff.files, "materialization.json").kind == "byte_diff"
+
 
 def _find(entries: tuple[FixtureFileDiff, ...], path: str) -> FixtureFileDiff:
     """Return the diff entry for ``path``; raises ``AssertionError`` if absent."""
@@ -109,3 +156,40 @@ def _find(entries: tuple[FixtureFileDiff, ...], path: str) -> FixtureFileDiff:
         if entry.path == path:
             return entry
     raise AssertionError(f"no diff entry for {path!r}; have {[e.path for e in entries]}")
+
+
+def _make_run_replay_fixture(
+    tmp_path: Path,
+    name: str,
+    oracle_hash_actions: list[dict[str, object]],
+) -> Path:
+    out = tmp_path / name
+    out.mkdir()
+    (out / "library").mkdir()
+    (out / "reports").mkdir()
+    (out / "manifest.current.json").write_text("{}", encoding="utf-8")
+    (out / "journal.jsonl").write_text("", encoding="utf-8")
+    (out / "replay.json").write_text(
+        (
+            '{"scenario":"s","run_id":"r","resolved_seed":7,'
+            '"applied_events":1,"journal_digest":"d","execution_mode":"run",'
+            '"content_sources":[]}'
+        ),
+        encoding="utf-8",
+    )
+    materialization = {
+        "outcome": "success",
+        "execution_mode": "run",
+        "content_sources": [],
+        "materialized": [],
+        "failures": [],
+        "filesystem_actions": [],
+        "media_actions": [],
+        "corruption_actions": [],
+        "oracle_hash_actions": oracle_hash_actions,
+    }
+    (out / "materialization.json").write_text(
+        json.dumps(materialization),
+        encoding="utf-8",
+    )
+    return out

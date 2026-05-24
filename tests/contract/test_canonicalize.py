@@ -6,6 +6,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract.canonicalize import canonicalize, corruption_evidence
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -46,7 +47,7 @@ def _manifest(
     corrupted: bool = False,
 ) -> Manifest:
     return Manifest(
-        schema_version=5,
+        schema_version=MANIFEST_SCHEMA_VERSION,
         works=[ManifestWork(id="w0", title="Title")],
         variants=[ManifestVariant(id="va0", work_id="w0", label="hd")],
         bundles=[ManifestBundle(id="b0", variant_id="va0")],
@@ -178,7 +179,7 @@ def _report(
     probe_outcome: CorruptionProbeOutcome,
 ) -> MaterializationReport:
     return MaterializationReport(
-        schema_version=8,
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
         run_id=uuid.UUID("11111111-1111-4111-8111-111111111111"),
         outcome=Outcome.SUCCESS,
         platform="test",
@@ -212,6 +213,8 @@ def _report(
                 input_content_hash=input_hash,
                 output_content_hash=output_hash,
                 corruptor="container_header_v1",
+                input_size_bytes=128,
+                output_size_bytes=128,
                 byte_start=0,
                 byte_count=64,
                 seed_material="container_header_v1:7:corrupt_header_001:a0",

@@ -39,20 +39,26 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 |----------|----------------|
-| scenario | 8 |
-| manifest | 5 |
+| scenario | 9 |
+| manifest | 6 |
 | journal | 1 |
 | replay bundle | 6 |
 | validation | 1 |
-| materialization | 8 |
+| materialization | 9 |
 | run sentinel | 2 |
-| asset report | 5 |
+| asset report | 6 |
 | work report | 1 |
 | variant report | 1 |
 | bundle report | 1 |
 | capabilities | 2 |
 | observed state | 1 |
 | divergence | 1 |
+
+Scenario v9 adds the interceptor catalog actions and two profile labels:
+`filesystem-artifacts` and `negative-oracle`. Manifest v6 and asset-report v6
+carry widened corruption metadata for byte ranges, packet ranges, and metadata
+evidence. Materialization v9 adds negative-oracle audit records and mtime
+evidence on filesystem actions.
 
 Scenario v8 adds the performance and network filesystem lag profile labels plus
 `network_lag_start` / `network_lag_commit` timeline events.

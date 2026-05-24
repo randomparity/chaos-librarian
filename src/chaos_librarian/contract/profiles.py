@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import enum
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ProfileName(enum.StrEnum):
@@ -13,6 +13,8 @@ class ProfileName(enum.StrEnum):
     PERFORMANCE_SCALE = "performance-scale"
     PERFORMANCE_STRESS = "performance-stress"
     NETWORK_FS_LAG = "network-fs-lag"
+    FILESYSTEM_ARTIFACTS = "filesystem-artifacts"
+    NEGATIVE_ORACLE = "negative-oracle"
 
 
 class CorruptionProbeOutcome(enum.StrEnum):
@@ -26,6 +28,10 @@ class CorruptionRecord(BaseModel):
     profile: ProfileName
     event_id: str
     corruptor: str
-    byte_start: int
-    byte_count: int
-    seed_material: str
+    byte_start: int | None = None
+    byte_count: int | None = None
+    seed_material: str | None = None
+    stream: str | None = None
+    packet_start: int | None = None
+    packet_count: int | None = None
+    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)

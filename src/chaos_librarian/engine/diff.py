@@ -250,6 +250,7 @@ def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]
         "filesystem_actions": _normalize_action_list(data_obj.get("filesystem_actions")),
         "media_actions": _normalize_action_list(data_obj.get("media_actions")),
         "corruption_actions": _normalize_action_list(data_obj.get("corruption_actions")),
+        "oracle_hash_actions": _normalize_action_list(data_obj.get("oracle_hash_actions")),
     }
 
 

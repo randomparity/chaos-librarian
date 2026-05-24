@@ -1,4 +1,4 @@
-"""Materialization report schema (v8).
+"""Materialization report schema (v9).
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
@@ -129,6 +129,9 @@ class FilesystemAction(BaseModel):
     from_path: str | None = None
     to_path: str | None = None
     temp_path: str | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    mtime_before_ns: int | None = None
+    mtime_after_ns: int | None = None
     duration_ns: int
 
 
@@ -164,7 +167,12 @@ class CorruptionAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
-    action: Literal[TimelineActionName.CORRUPT_CONTAINER_HEADER]
+    action: Literal[
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+    ]
     target_asset_id: str
     input_path: str
     output_path: str
@@ -173,11 +181,35 @@ class CorruptionAction(BaseModel):
     input_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     output_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
     corruptor: str
-    byte_start: int
-    byte_count: int
-    seed_material: str
+    input_size_bytes: int
+    output_size_bytes: int
+    byte_start: int | None = None
+    byte_count: int | None = None
+    seed_material: str | None = None
+    stream: str | None = None
+    packet_start: int | None = None
+    packet_count: int | None = None
+    metadata: dict[str, str | int | float | bool] = Field(default_factory=dict)
     probe_outcome: CorruptionProbeOutcome
     probe_error_tail: str | None = None
+    duration_ns: int
+
+
+class OracleHashAction(BaseModel):
+    """One negative-oracle audit record with divergent reported hash."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: Literal[TimelineActionName.WRONG_ORACLE_HASH]
+    target_asset_id: str
+    input_path: str
+    output_path: str
+    input_version_id: str | None = None
+    output_version_id: str
+    actual_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    reported_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    seed_material: str
     duration_ns: int
 
 
@@ -206,7 +238,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[8]
+    schema_version: Literal[9]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -220,6 +252,7 @@ class MaterializationReport(BaseModel):
     filesystem_actions: list[FilesystemAction] = Field(default_factory=list)
     media_actions: list[MediaAction] = Field(default_factory=list)
     corruption_actions: list[CorruptionAction] = Field(default_factory=list)
+    oracle_hash_actions: list[OracleHashAction] = Field(default_factory=list)
     network_lag_actions: list[NetworkLagAction] = Field(default_factory=list)
     requested_duration_ns: int | None = None
     actual_duration_ns: int | None = None

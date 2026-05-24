@@ -7,7 +7,7 @@ load the matching exported schema.
 
 Asset reports carry content hashes, probed media facts, a typed
 projection of filesystem-affecting events, and a typed projection of
-version-affecting events at ``schema_version: 5``; the other three
+version-affecting events at ``schema_version: 6``; the other three
 entity reports remain at ``schema_version: 1`` because they describe
 manifest topology only.
 """
@@ -96,7 +96,7 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[5]
+    schema_version: Literal[6]
     asset_id: str
     initial: AssetSnapshot
     history: list[AssetHistoryEntry] = Field(default_factory=list)

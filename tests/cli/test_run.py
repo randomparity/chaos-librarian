@@ -11,7 +11,11 @@ from typer.testing import CliRunner
 
 from chaos_librarian.cli import commands as commands_pkg
 from chaos_librarian.cli.app import app
-from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
+from chaos_librarian.contract import (
+    MANIFEST_SCHEMA_VERSION,
+    MATERIALIZATION_SCHEMA_VERSION,
+    REPLAY_BUNDLE_SCHEMA_VERSION,
+)
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
@@ -73,7 +77,7 @@ def _success(out: Path) -> MaterializeArtifacts:
     (out / "replay.json").write_text("{}", encoding="utf-8")
     return MaterializeArtifacts(
         current_manifest=Manifest(
-            schema_version=5,
+            schema_version=MANIFEST_SCHEMA_VERSION,
             works=[],
             variants=[],
             bundles=[],

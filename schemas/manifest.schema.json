@@ -4,12 +4,28 @@
       "additionalProperties": false,
       "properties": {
         "byte_count": {
-          "title": "Byte Count",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Byte Count"
         },
         "byte_start": {
-          "title": "Byte Start",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Byte Start"
         },
         "corruptor": {
           "title": "Corruptor",
@@ -19,21 +35,82 @@
           "title": "Event Id",
           "type": "string"
         },
+        "metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "packet_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packet Count"
+        },
+        "packet_start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packet Start"
+        },
         "profile": {
           "$ref": "#/$defs/ProfileName"
         },
         "seed_material": {
-          "title": "Seed Material",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed Material"
+        },
+        "stream": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stream"
         }
       },
       "required": [
         "profile",
         "event_id",
-        "corruptor",
-        "byte_start",
-        "byte_count",
-        "seed_material"
+        "corruptor"
       ],
       "title": "CorruptionRecord",
       "type": "object"
@@ -449,7 +526,9 @@
         "performance-smoke",
         "performance-scale",
         "performance-stress",
-        "network-fs-lag"
+        "network-fs-lag",
+        "filesystem-artifacts",
+        "negative-oracle"
       ],
       "title": "ProfileName",
       "type": "string"
@@ -489,7 +568,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 5,
+      "const": 6,
       "title": "Schema Version",
       "type": "integer"
     },

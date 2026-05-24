@@ -127,17 +127,38 @@
       "description": "One phase-B intentional corruption audit record.",
       "properties": {
         "action": {
-          "const": "corrupt_container_header",
+          "enum": [
+            "corrupt_container_header",
+            "truncate_file",
+            "corrupt_packet_range",
+            "write_invalid_duration_metadata"
+          ],
           "title": "Action",
           "type": "string"
         },
         "byte_count": {
-          "title": "Byte Count",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Byte Count"
         },
         "byte_start": {
-          "title": "Byte Start",
-          "type": "integer"
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Byte Start"
         },
         "corruptor": {
           "title": "Corruptor",
@@ -160,6 +181,10 @@
           "title": "Input Path",
           "type": "string"
         },
+        "input_size_bytes": {
+          "title": "Input Size Bytes",
+          "type": "integer"
+        },
         "input_version_id": {
           "anyOf": [
             {
@@ -172,6 +197,26 @@
           "default": null,
           "title": "Input Version Id"
         },
+        "metadata": {
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              }
+            ]
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
         "output_content_hash": {
           "pattern": "^sha256:[0-9a-f]{64}$",
           "title": "Output Content Hash",
@@ -181,9 +226,37 @@
           "title": "Output Path",
           "type": "string"
         },
+        "output_size_bytes": {
+          "title": "Output Size Bytes",
+          "type": "integer"
+        },
         "output_version_id": {
           "title": "Output Version Id",
           "type": "string"
+        },
+        "packet_count": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packet Count"
+        },
+        "packet_start": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Packet Start"
         },
         "probe_error_tail": {
           "anyOf": [
@@ -201,8 +274,28 @@
           "$ref": "#/$defs/CorruptionProbeOutcome"
         },
         "seed_material": {
-          "title": "Seed Material",
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed Material"
+        },
+        "stream": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Stream"
         },
         "target_asset_id": {
           "title": "Target Asset Id",
@@ -219,9 +312,8 @@
         "input_content_hash",
         "output_content_hash",
         "corruptor",
-        "byte_start",
-        "byte_count",
-        "seed_material",
+        "input_size_bytes",
+        "output_size_bytes",
         "probe_outcome",
         "duration_ns"
       ],
@@ -255,6 +347,19 @@
         "action": {
           "$ref": "#/$defs/TimelineActionName"
         },
+        "content_hash": {
+          "anyOf": [
+            {
+              "pattern": "^sha256:[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Hash"
+        },
         "duration_ns": {
           "title": "Duration Ns",
           "type": "integer"
@@ -274,6 +379,30 @@
           ],
           "default": null,
           "title": "From Path"
+        },
+        "mtime_after_ns": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mtime After Ns"
+        },
+        "mtime_before_ns": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mtime Before Ns"
         },
         "target_asset_id": {
           "title": "Target Asset Id",
@@ -635,6 +764,81 @@
       "title": "NetworkLagEffect",
       "type": "string"
     },
+    "OracleHashAction": {
+      "additionalProperties": false,
+      "description": "One negative-oracle audit record with divergent reported hash.",
+      "properties": {
+        "action": {
+          "const": "wrong_oracle_hash",
+          "title": "Action",
+          "type": "string"
+        },
+        "actual_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Actual Content Hash",
+          "type": "string"
+        },
+        "duration_ns": {
+          "title": "Duration Ns",
+          "type": "integer"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "input_path": {
+          "title": "Input Path",
+          "type": "string"
+        },
+        "input_version_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Version Id"
+        },
+        "output_path": {
+          "title": "Output Path",
+          "type": "string"
+        },
+        "output_version_id": {
+          "title": "Output Version Id",
+          "type": "string"
+        },
+        "reported_content_hash": {
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "title": "Reported Content Hash",
+          "type": "string"
+        },
+        "seed_material": {
+          "title": "Seed Material",
+          "type": "string"
+        },
+        "target_asset_id": {
+          "title": "Target Asset Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "target_asset_id",
+        "input_path",
+        "output_path",
+        "output_version_id",
+        "actual_content_hash",
+        "reported_content_hash",
+        "seed_material",
+        "duration_ns"
+      ],
+      "title": "OracleHashAction",
+      "type": "object"
+    },
     "Outcome": {
       "description": "High-level materialize result.\n\n``unsupported`` covers both timeline-rejection and matrix-rejection.\n``tool_failed`` covers both ffmpeg subprocess errors and ffprobe parse\nfailures.",
       "enum": [
@@ -671,6 +875,11 @@
         "remove_sidecar",
         "update_sidecar",
         "corrupt_container_header",
+        "truncate_file",
+        "corrupt_packet_range",
+        "write_invalid_duration_metadata",
+        "touch_mtime",
+        "wrong_oracle_hash",
         "network_lag_start",
         "network_lag_commit"
       ],
@@ -840,6 +1049,13 @@
       "title": "Network Lag Actions",
       "type": "array"
     },
+    "oracle_hash_actions": {
+      "items": {
+        "$ref": "#/$defs/OracleHashAction"
+      },
+      "title": "Oracle Hash Actions",
+      "type": "array"
+    },
     "outcome": {
       "$ref": "#/$defs/Outcome"
     },
@@ -870,7 +1086,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 8,
+      "const": 9,
       "title": "Schema Version",
       "type": "integer"
     },
