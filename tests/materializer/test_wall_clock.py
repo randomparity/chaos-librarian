@@ -26,6 +26,7 @@ from chaos_librarian.contract.materialization import (
     FailureStage,
     FilesystemAction,
     MaterializedAsset,
+    OracleHashAction,
     Outcome,
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
@@ -777,6 +778,40 @@ def test_run_corruption_failure_maps_to_corruption_failed(
     assert fake_clock.now_ns == 0
 
 
+def test_run_oracle_hash_failure_preserves_partial_actions(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_second_oracle_hash_failure(monkeypatch)
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: wrong_hash_001
+                at: 0ns
+                action: wrong_oracle_hash
+                target: asset_main
+              - id: wrong_hash_002
+                at: 1ns
+                action: wrong_oracle_hash
+                target: asset_main
+        """,
+        scenario_id="wall-clock-oracle-failure-test",
+        profiles="  - negative-oracle",
+    )
+    out_dir = tmp_path / "run"
+
+    with pytest.raises(CorruptionActionError, match="hash failed"):
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="2ns", speed="1x")
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == Outcome.CORRUPTION_FAILED.value
+    assert report["oracle_hash_actions"][0]["event_id"] == "wrong_hash_001"
+    assert report["oracle_hash_actions"][0]["reported_content_hash"] == "sha256:" + "9" * 64
+    assert not (out_dir / "library").exists()
+    assert fake_clock.now_ns == 1
+
+
 def test_slow_copy_partial_growth_writes_exact_prefix(tmp_path: Path) -> None:
     library = tmp_path / "library"
     session = wall_clock.WallClockSlowCopySession(
@@ -855,6 +890,39 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         )
 
     monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+
+
+def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_apply(ctx, entry: JournalEntry) -> OracleHashAction:
+        if entry.event_id == "wrong_hash_002":
+            raise CorruptionActionError(
+                "wrong_oracle_hash failed for event wrong_hash_002: hash failed",
+                event_id=entry.event_id,
+                action=TimelineActionName.WRONG_ORACLE_HASH,
+                cause=RuntimeError("hash failed"),
+                asset_id=entry.target_ids[0],
+            )
+        output_version_id = entry.output_version_ids[0]
+        reported_hash = "sha256:" + "9" * 64
+        ctx.post_phase_b_oracle_hashes[output_version_id] = (
+            reported_hash,
+            ProbedMedia(container="mkv", duration_seconds=1.0, size_bytes=16, streams=[]),
+        )
+        return OracleHashAction(
+            event_id=entry.event_id,
+            action=TimelineActionName.WRONG_ORACLE_HASH,
+            target_asset_id=entry.target_ids[0],
+            input_path="movies-hd/asset_main.mkv",
+            output_path="movies-hd/asset_main.mkv",
+            input_version_id=entry.input_version_ids[0],
+            output_version_id=output_version_id,
+            actual_content_hash=_INPUT_HASH,
+            reported_content_hash=reported_hash,
+            seed_material="wrong_oracle_hash_v1:7:wrong_hash_001:asset_main",
+            duration_ns=1,
+        )
+
+    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
 
 
 def _corruption_action(*, output_version_id: str) -> CorruptionAction:

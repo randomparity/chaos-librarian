@@ -28,7 +28,10 @@ from chaos_librarian.contract.manifest import (
 )
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
+    FilesystemAction,
     MaterializationReport,
+    NetworkLagAction,
+    OracleHashAction,
     Outcome,
     ToolchainInfo,
 )
@@ -37,7 +40,7 @@ from chaos_librarian.contract.profiles import (
     CorruptionRecord,
     ProfileName,
 )
-from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
 
 
 def _manifest(
@@ -161,6 +164,107 @@ def test_cross_toolchain_corruption_evidence_ignores_probe_and_hash_drift():
     assert left == right
 
 
+def test_oracle_hash_evidence_ignores_actual_and_reported_hash_drift() -> None:
+    left = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "1" * 64,
+            output_hash="sha256:" + "2" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            oracle_hash_actions=[
+                _oracle_hash_action(
+                    actual_hash="sha256:" + "3" * 64,
+                    reported_hash="sha256:" + "4" * 64,
+                )
+            ],
+        ),
+    )
+    right = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "5" * 64,
+            output_hash="sha256:" + "6" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            oracle_hash_actions=[
+                _oracle_hash_action(
+                    actual_hash="sha256:" + "7" * 64,
+                    reported_hash="sha256:" + "8" * 64,
+                )
+            ],
+        ),
+    )
+
+    assert left == right
+    evidence = left["oracle_hash_actions"][0]
+    assert "actual_content_hash" not in evidence
+    assert "reported_content_hash" not in evidence
+
+
+def test_touch_mtime_evidence_preserves_delta_without_volatile_metadata() -> None:
+    left = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "1" * 64,
+            output_hash="sha256:" + "2" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            filesystem_actions=[
+                _touch_mtime_action(
+                    content_hash="sha256:" + "3" * 64,
+                    before_ns=1_000,
+                    after_ns=3_500,
+                )
+            ],
+        ),
+    )
+    right = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "4" * 64,
+            output_hash="sha256:" + "5" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            filesystem_actions=[
+                _touch_mtime_action(
+                    content_hash="sha256:" + "6" * 64,
+                    before_ns=10_000,
+                    after_ns=12_500,
+                )
+            ],
+        ),
+    )
+
+    assert left == right
+    evidence = left["filesystem_metadata_actions"][0]
+    assert evidence["mtime_delta_ns"] == 2_500
+    assert "content_hash" not in evidence
+    assert "mtime_before_ns" not in evidence
+    assert "mtime_after_ns" not in evidence
+
+
+def test_network_lag_evidence_ignores_actual_duration_drift() -> None:
+    left = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "1" * 64,
+            output_hash="sha256:" + "2" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            network_lag_actions=[_network_lag_action(actual_duration_ns=10)],
+        ),
+    )
+    right = corruption_evidence(
+        _manifest(content_hash=None, probed=None),
+        _report(
+            input_hash="sha256:" + "3" * 64,
+            output_hash="sha256:" + "4" * 64,
+            probe_outcome=CorruptionProbeOutcome.STILL_PROBEABLE,
+            network_lag_actions=[_network_lag_action(actual_duration_ns=20)],
+        ),
+    )
+
+    assert left == right
+    evidence = left["network_lag_actions"][0]
+    assert "actual_duration_ns" not in evidence
+
+
 def _corruption_record() -> CorruptionRecord:
     return CorruptionRecord(
         profile=ProfileName.MALFORMED_MEDIA,
@@ -177,6 +281,9 @@ def _report(
     input_hash: str,
     output_hash: str,
     probe_outcome: CorruptionProbeOutcome,
+    filesystem_actions: list[FilesystemAction] | None = None,
+    oracle_hash_actions: list[OracleHashAction] | None = None,
+    network_lag_actions: list[NetworkLagAction] | None = None,
 ) -> MaterializationReport:
     return MaterializationReport(
         schema_version=MATERIALIZATION_SCHEMA_VERSION,
@@ -223,4 +330,60 @@ def _report(
                 duration_ns=123,
             )
         ],
+        filesystem_actions=filesystem_actions or [],
+        oracle_hash_actions=oracle_hash_actions or [],
+        network_lag_actions=network_lag_actions or [],
+    )
+
+
+def _oracle_hash_action(*, actual_hash: str, reported_hash: str) -> OracleHashAction:
+    return OracleHashAction(
+        event_id="wrong_hash_001",
+        action=TimelineActionName.WRONG_ORACLE_HASH,
+        target_asset_id="a0",
+        input_path="library/a0.mkv",
+        output_path="library/a0.mkv",
+        input_version_id="v0",
+        output_version_id="v1",
+        actual_content_hash=actual_hash,
+        reported_content_hash=reported_hash,
+        seed_material="wrong_oracle_hash_v1:7:wrong_hash_001:a0",
+        duration_ns=123,
+    )
+
+
+def _touch_mtime_action(
+    *,
+    content_hash: str,
+    before_ns: int,
+    after_ns: int,
+) -> FilesystemAction:
+    return FilesystemAction(
+        event_id="mtime_001",
+        action=TimelineActionName.TOUCH_MTIME,
+        target_asset_id="a0",
+        from_path="library/a0.mkv",
+        to_path="library/a0.mkv",
+        content_hash=content_hash,
+        mtime_before_ns=before_ns,
+        mtime_after_ns=after_ns,
+        duration_ns=123,
+    )
+
+
+def _network_lag_action(*, actual_duration_ns: int) -> NetworkLagAction:
+    return NetworkLagAction(
+        event_id="lag_start_001",
+        commit_event_id="lag_commit_001",
+        effect=NetworkLagEffect.DELAYED_RENAME,
+        target_ref="a0",
+        after_event_id="rename_001",
+        logical_start_ns=1,
+        logical_commit_ns=2,
+        requested_duration_ns=1,
+        actual_duration_ns=actual_duration_ns,
+        from_path="library/a0.mkv",
+        to_path="library/a0-renamed.mkv",
+        provider="stdlib-local",
+        enforced=True,
     )
