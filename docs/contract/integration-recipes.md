@@ -71,6 +71,18 @@ evidence in `materialization.json.network_lag_actions[]`. Consumers should
 compare watcher observations to those recorded windows, not to guessed sleeps
 or low-level OS notification ordering.
 
+The catalog run fixture exercises delayed rename, delayed visibility, and
+held-handle lag windows under wall-clock execution:
+
+```bash
+uv run chaos-librarian run \
+  tests/fixtures/scenarios/interceptor-catalog-run.yaml \
+  --out /tmp/interceptors-run \
+  --duration 2s \
+  --speed 10x \
+  --json
+```
+
 ## Daemon Churn
 
 For daemon-style churn tests, use `chaos-librarian run` fixtures when the daemon
@@ -84,16 +96,50 @@ Malformed-media fixtures are opt-in and label their corruption evidence in both
 the manifest and materialization report:
 
 ```bash
-chaos-librarian materialize \
+uv run chaos-librarian materialize \
   tests/fixtures/scenarios/malformed-container-header.yaml \
   --out run-malformed-header \
   --json
 ```
 
+The interceptor catalog materialize fixture exercises the static fixture's
+materialize-safe `truncate_file` and `touch_mtime` path:
+
+```bash
+uv run chaos-librarian materialize \
+  tests/fixtures/scenarios/interceptor-catalog.yaml \
+  --out /tmp/interceptors \
+  --json
+```
+
 Adapters should treat `manifest.current.json` as the oracle for identity,
 location, and version lineage. `materialization.json.corruption_actions[]`
-records the byte-level corruption audit trail and whether ffprobe failed as
-expected or still parsed the output.
+records the corruption audit trail, including byte, packet, and metadata
+evidence where applicable, and whether ffprobe failed as expected or still
+parsed the output.
+
+## Negative Oracle Hash
+
+Use `negative-oracle` fixtures to prove a consumer validates hashes rather than
+trusting fixture structure alone:
+
+```bash
+uv run chaos-librarian materialize \
+  tests/fixtures/scenarios/negative-oracle-hash.yaml \
+  --out /tmp/negative-oracle \
+  --json
+
+uv run chaos-librarian compare \
+  /tmp/negative-oracle \
+  observed-state.json \
+  --mode final-state \
+  --json
+```
+
+The observed-state export should include the consumer's actual file hash for
+the affected asset. This recipe succeeds when `compare` reports
+`D_HASH_MISMATCH` and exits with divergence code `6`; a success exit would mean
+the negative-oracle check did not exercise the intended mismatch.
 
 ## CI Guidance
 

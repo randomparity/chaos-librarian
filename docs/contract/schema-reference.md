@@ -54,11 +54,24 @@ Current checked-in contract versions:
 | observed state | 1 |
 | divergence | 1 |
 
-Scenario v9 adds the interceptor catalog actions and two profile labels:
-`filesystem-artifacts` and `negative-oracle`. Manifest v6 and asset-report v6
-carry widened corruption metadata for byte ranges, packet ranges, and metadata
-evidence. Materialization v9 adds negative-oracle audit records and mtime
-evidence on filesystem actions.
+Scenario v9 adds the interceptor catalog actions:
+`truncate_file`, `corrupt_packet_range`, `write_invalid_duration_metadata`,
+`touch_mtime`, and `wrong_oracle_hash`. It also adds the
+`filesystem-artifacts` and `negative-oracle` profile labels. These extend the
+existing `malformed-media` and `network-fs-lag` surfaces rather than changing
+the meaning of earlier actions.
+
+Manifest v6 widens `CorruptionRecord`. Corruption evidence can now include
+optional concrete byte ranges, packet-range evidence (`stream`, `packet_start`,
+`packet_count`), and metadata evidence such as invalid duration tag values.
+
+Materialization v9 adds `OracleHashAction` records for `wrong_oracle_hash`.
+`FilesystemAction` also carries mtime evidence for `touch_mtime` through
+`mtime_before_ns` and `mtime_after_ns`.
+
+Asset report v6 mirrors Manifest v6: each current snapshot can carry the same
+widened corruption metadata so per-asset report consumers do not need to read
+the whole manifest to see byte, packet, or metadata corruption evidence.
 
 Scenario v8 adds the performance and network filesystem lag profile labels plus
 `network_lag_start` / `network_lag_commit` timeline events.
