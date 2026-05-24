@@ -94,12 +94,11 @@ def augment_versions(
 ) -> None:
     """Stamp ``content_hash`` + ``probed`` onto every version whose id is in the map.
 
-    Sprint 7 wiring: each successful media handler (``reencode_*``,
-    ``remux_container``, ``edit_metadata``, ``embed_subtitle``) registers
-    its new version's ``content_hash`` + ``probed`` here; this function
-    drains the map into the manifest. Version ids not present in the map
-    are left untouched, and entries keyed on ids that aren't in the
-    manifest are silently ignored (defensive against deleted rows).
+    Phase-B handlers register each new version's ``content_hash`` +
+    ``probed`` here; this function drains the map into the manifest.
+    Version ids not present in the map are left untouched, and entries
+    keyed on ids that aren't in the manifest are silently ignored
+    (defensive against deleted rows).
     """
     for version in manifest.versions:
         entry = post_phase_b_versions.get(version.id)

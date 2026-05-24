@@ -440,6 +440,7 @@ def _make_dispatch_state(
         fs_ctx=state.fs_ctx,
         media_ctx=state.media_ctx,
         corruption_ctx=state.corruption_ctx,
+        oracle_hash_ctx=state.oracle_hash_ctx,
     )
 
 
@@ -776,6 +777,7 @@ def _finalize_wall_clock_run(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
@@ -843,6 +845,7 @@ def _finalize_wall_clock_phase_b_failure(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,

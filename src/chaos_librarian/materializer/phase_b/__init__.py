@@ -7,13 +7,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from chaos_librarian.contract.journal import JournalEntry
-from chaos_librarian.contract.manifest import Manifest, ManifestSidecar
+from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
     FilesystemAction,
     MaterializationFailure,
     MediaAction,
+    OracleHashAction,
     Outcome,
     ToolInvocation,
 )
@@ -46,6 +47,12 @@ from chaos_librarian.materializer.phase_b.media import (
     make_media_phase_b_context,
     supports_media_action,
 )
+from chaos_librarian.materializer.phase_b.oracle_hash import (
+    OracleHashPhaseBContext,
+    apply_wrong_oracle_hash,
+    make_oracle_hash_phase_b_context,
+    supports_oracle_hash_action,
+)
 
 PhaseBError = FilesystemActionError | MediaActionError | CorruptionActionError
 
@@ -57,9 +64,11 @@ class PhaseBState:
     fs_ctx: FilesystemPhaseBContext
     media_ctx: MediaPhaseBContext
     corruption_ctx: CorruptionPhaseBContext
+    oracle_hash_ctx: OracleHashPhaseBContext
     filesystem_actions: list[FilesystemAction] = field(default_factory=list)
     media_actions: list[MediaAction] = field(default_factory=list)
     corruption_actions: list[CorruptionAction] = field(default_factory=list)
+    oracle_hash_actions: list[OracleHashAction] = field(default_factory=list)
 
 
 def make_phase_b_state(
@@ -74,27 +83,49 @@ def make_phase_b_state(
 ) -> PhaseBState:
     """Build shared phase-B dispatch state for materialize, run, and replay."""
     scenario_assets = _index_assets(scenario)
+    media_ctx = make_media_phase_b_context(
+        library_root=library_root,
+        scenario_assets=scenario_assets,
+        resolved_seed=resolved_seed,
+        ffmpeg_version=ffmpeg_version,
+        ffprobe_version=ffprobe_version,
+        invocations=invocations,
+        sidecar_lookup=_sidecar_lookup_from(manifest),
+    )
+    corruption_ctx = make_corruption_phase_b_context(
+        library_root=library_root,
+        resolved_seed=resolved_seed,
+        ffmpeg_version=ffmpeg_version,
+        ffprobe_version=ffprobe_version,
+        invocations=invocations,
+    )
+    oracle_hashes: dict[str, tuple[str, ProbedMedia | None]] = {}
+    manifest_probes = {version.id: version.probed for version in manifest.versions}
+
+    def version_probe_lookup(version_id: str) -> ProbedMedia | None:
+        entry = oracle_hashes.get(version_id)
+        if entry is not None:
+            return entry[1]
+        entry = corruption_ctx.post_phase_b_versions.get(version_id)
+        if entry is not None:
+            return entry[1]
+        entry = media_ctx.post_phase_b_versions.get(version_id)
+        if entry is not None:
+            return entry[1]
+        return manifest_probes.get(version_id)
+
     return PhaseBState(
         fs_ctx=make_filesystem_phase_b_context(
             library_root=library_root,
             scenario_assets=scenario_assets,
             resolved_seed=resolved_seed,
         ),
-        media_ctx=make_media_phase_b_context(
+        media_ctx=media_ctx,
+        corruption_ctx=corruption_ctx,
+        oracle_hash_ctx=make_oracle_hash_phase_b_context(
             library_root=library_root,
-            scenario_assets=scenario_assets,
-            resolved_seed=resolved_seed,
-            ffmpeg_version=ffmpeg_version,
-            ffprobe_version=ffprobe_version,
-            invocations=invocations,
-            sidecar_lookup=_sidecar_lookup_from(manifest),
-        ),
-        corruption_ctx=make_corruption_phase_b_context(
-            library_root=library_root,
-            resolved_seed=resolved_seed,
-            ffmpeg_version=ffmpeg_version,
-            ffprobe_version=ffprobe_version,
-            invocations=invocations,
+            post_phase_b_oracle_hashes=oracle_hashes,
+            version_probe_lookup=version_probe_lookup,
         ),
     )
 
@@ -113,6 +144,9 @@ def dispatch_phase_b_entry(state: PhaseBState, entry: JournalEntry) -> None:
     if supports_corruption_action(action):
         state.corruption_actions.append(apply_corruption_action(state.corruption_ctx, entry))
         return
+    if supports_oracle_hash_action(action):
+        state.oracle_hash_actions.append(apply_wrong_oracle_hash(state.oracle_hash_ctx, entry))
+        return
     raise MediaActionError(
         f"unsupported phase-B action {action.value!r}",
         event_id=entry.event_id,
@@ -126,6 +160,7 @@ def augment_phase_b_outputs(manifest: Manifest, state: PhaseBState) -> None:
     augment_timeline_sidecars(manifest, state.fs_ctx.phase_b_sidecar_hashes)
     augment_versions(manifest, state.media_ctx.post_phase_b_versions)
     augment_versions(manifest, state.corruption_ctx.post_phase_b_versions)
+    augment_versions(manifest, state.oracle_hash_ctx.post_phase_b_oracle_hashes)
     augment_updated_sidecars(manifest, state.media_ctx.post_phase_b_sidecars)
 
 

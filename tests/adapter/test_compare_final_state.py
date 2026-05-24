@@ -8,7 +8,7 @@ import pytest
 
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
 from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
-from chaos_librarian.contract.divergence import CompareMode
+from chaos_librarian.contract.divergence import CompareMode, DivergenceCode
 from chaos_librarian.contract.manifest import ManifestSidecar
 from chaos_librarian.contract.observed_state import ObservedSidecar
 from chaos_librarian.contract.scenario import SidecarKind
@@ -70,6 +70,16 @@ def test_hash_mismatch_requires_both_hashes() -> None:
 
     assert "D_HASH_MISMATCH" in _codes(with_hashes)
     assert "D_HASH_MISMATCH" not in _codes(missing_hash)
+
+
+def test_negative_oracle_hash_surfaces_hash_mismatch() -> None:
+    report = compare_fixture_to_observed(
+        _fixture(content_hash=HASH_B),
+        _observed(content_hash=HASH_A),
+    )
+
+    assert report.ok is False
+    assert report.findings[0].code is DivergenceCode.HASH_MISMATCH
 
 
 def test_probe_mismatch_requires_both_probed_values() -> None:

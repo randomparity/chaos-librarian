@@ -170,6 +170,7 @@ def _materialize_verified_run_prefix(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        oracle_hash_actions=state.oracle_hash_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -258,6 +259,7 @@ def _finalize_run_replay_phase_b_failure(
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
+        oracle_hash_actions=state.oracle_hash_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )

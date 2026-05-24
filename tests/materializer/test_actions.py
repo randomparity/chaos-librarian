@@ -7,6 +7,7 @@ from chaos_librarian.materializer.actions import (
     _CORRUPTION_ACTIONS,
     _FILESYSTEM_ARTIFACT_ACTIONS,
     _MEDIA_ACTIONS,
+    _ORACLE_HASH_ACTIONS,
     _STDLIB_ACTIONS,
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S7_ACTIONS,
@@ -68,6 +69,11 @@ def test_supported_s10_actions_includes_corruption_actions() -> None:
         == _CORRUPTION_ACTIONS
     )
     assert frozenset({TimelineActionName.TOUCH_MTIME}) == _FILESYSTEM_ARTIFACT_ACTIONS
+    assert frozenset({TimelineActionName.WRONG_ORACLE_HASH}) == _ORACLE_HASH_ACTIONS
     assert SUPPORTED_S10_ACTIONS == (
-        _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS | _FILESYSTEM_ARTIFACT_ACTIONS
+        _STDLIB_ACTIONS
+        | _MEDIA_ACTIONS
+        | _CORRUPTION_ACTIONS
+        | _ORACLE_HASH_ACTIONS
+        | _FILESYSTEM_ARTIFACT_ACTIONS
     )

@@ -129,6 +129,7 @@ def test_finalize_success_writes_complete_metadata(
         [],
         [],
         [],
+        [],
         content_sources=content_sources,
     )
 
@@ -181,6 +182,7 @@ def test_finalize_failure_phase_b_records_failure_metadata(
         [],
         [],
         [action],
+        [],
         [],
         [],
         content_sources=[],

@@ -15,6 +15,7 @@ from chaos_librarian.contract.materialization import (
     MaterializationFailure,
     MaterializedAsset,
     MediaAction,
+    OracleHashAction,
     Outcome,
     ToolInvocation,
 )
@@ -71,6 +72,7 @@ def finalize_success(
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
     *,
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
@@ -88,6 +90,7 @@ def finalize_success(
         filesystem_actions=filesystem_actions,
         media_actions=media_actions,
         corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
@@ -125,6 +128,7 @@ def finalize_failure(
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
     corruption_actions: list[CorruptionAction] | None = None,
+    oracle_hash_actions: list[OracleHashAction] | None = None,
     *,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
@@ -158,6 +162,7 @@ def finalize_failure(
         filesystem_actions=filesystem_actions or [],
         media_actions=media_actions or [],
         corruption_actions=corruption_actions or [],
+        oracle_hash_actions=oracle_hash_actions or [],
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
@@ -189,6 +194,7 @@ def finalize_failure_phase_b(
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
     *,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
@@ -214,6 +220,7 @@ def finalize_failure_phase_b(
         filesystem_actions=filesystem_actions,
         media_actions=media_actions,
         corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(

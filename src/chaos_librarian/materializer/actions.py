@@ -51,6 +51,12 @@ _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
+_ORACLE_HASH_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.WRONG_ORACLE_HASH,
+    }
+)
+
 _FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.TOUCH_MTIME,
@@ -65,5 +71,9 @@ NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 )
 
 SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS | _FILESYSTEM_ARTIFACT_ACTIONS
+    _STDLIB_ACTIONS
+    | _MEDIA_ACTIONS
+    | _CORRUPTION_ACTIONS
+    | _ORACLE_HASH_ACTIONS
+    | _FILESYSTEM_ARTIFACT_ACTIONS
 )
