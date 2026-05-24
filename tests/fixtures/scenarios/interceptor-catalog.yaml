@@ -1,0 +1,43 @@
+schema_version: 9
+scenario_id: interceptor-catalog
+seed: 115
+duration_scale: short
+profiles:
+  - malformed-media
+  - filesystem-artifacts
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_broken
+    title: Interceptor Catalog
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: truncate_001
+    at: 1s
+    action: truncate_file
+    target: asset_main
+    keep_bytes: 64
+  - id: mtime_001
+    at: 2s
+    action: touch_mtime
+    target: asset_main
+    offset: 2s

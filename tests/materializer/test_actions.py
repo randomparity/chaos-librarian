@@ -5,6 +5,7 @@ from __future__ import annotations
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.actions import (
     _CORRUPTION_ACTIONS,
+    _FILESYSTEM_ARTIFACT_ACTIONS,
     _MEDIA_ACTIONS,
     _STDLIB_ACTIONS,
     SUPPORTED_S6_ACTIONS,
@@ -66,4 +67,7 @@ def test_supported_s10_actions_includes_corruption_actions() -> None:
         )
         == _CORRUPTION_ACTIONS
     )
-    assert SUPPORTED_S10_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
+    assert frozenset({TimelineActionName.TOUCH_MTIME}) == _FILESYSTEM_ARTIFACT_ACTIONS
+    assert SUPPORTED_S10_ACTIONS == (
+        _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS | _FILESYSTEM_ARTIFACT_ACTIONS
+    )

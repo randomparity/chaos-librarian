@@ -1,0 +1,84 @@
+schema_version: 9
+scenario_id: interceptor-catalog-run
+seed: 117
+duration_scale: short
+profiles:
+  - network-fs-lag
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_broken
+    title: Interceptor Catalog Run
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: rename_001
+    at: 1s
+    action: rename_file
+    target: asset_main
+    to: movies-hd/catalog-renamed.mkv
+  - id: delayed_rename_start
+    at: 1s
+    action: network_lag_start
+    effect: delayed_rename
+    target: asset_main
+    after: rename_001
+    duration: 1s
+  - id: delayed_rename_commit
+    at: 2s
+    action: network_lag_commit
+    for: delayed_rename_start
+  - id: rename_for_held
+    at: 3s
+    action: rename_file
+    target: asset_main
+    to: movies-hd/catalog-held.mkv
+  - id: held_handle_start
+    at: 3s
+    action: network_lag_start
+    effect: held_handle
+    target: asset_main
+    after: rename_for_held
+    duration: 1s
+  - id: held_handle_commit
+    at: 4s
+    action: network_lag_commit
+    for: held_handle_start
+  - id: delete_for_visibility
+    at: 5s
+    action: delete_file
+    target: asset_main
+  - id: restore_for_visibility
+    at: 6s
+    action: add_file
+    target: asset_main
+    to: movies-hd/catalog-restored.mkv
+  - id: delayed_visibility_start
+    at: 6s
+    action: network_lag_start
+    effect: delayed_visibility
+    target: asset_main
+    after: restore_for_visibility
+    duration: 1s
+  - id: delayed_visibility_commit
+    at: 7s
+    action: network_lag_commit
+    for: delayed_visibility_start

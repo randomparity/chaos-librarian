@@ -51,6 +51,12 @@ _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
+_FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.TOUCH_MTIME,
+    }
+)
+
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.NETWORK_LAG_START,
@@ -59,5 +65,5 @@ NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 )
 
 SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
+    _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS | _FILESYSTEM_ARTIFACT_ACTIONS
 )

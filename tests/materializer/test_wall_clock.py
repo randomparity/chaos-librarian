@@ -45,6 +45,7 @@ _CORRUPTED_HASH = "sha256:" + "2" * 64
 _INPUT_HASH = "sha256:" + "1" * 64
 _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
+_FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 class FakeClock:
@@ -597,6 +598,27 @@ def test_held_handle_records_unenforced_local_audit(fake_clock: FakeClock, tmp_p
     assert action.effect.value == "held_handle"
     assert action.provider == "stdlib-local"
     assert action.enforced is False
+
+
+def test_interceptor_catalog_run_records_network_lag_evidence(
+    fake_clock: FakeClock, tmp_path: Path
+) -> None:
+    scenario = _FIXTURE_DIR / "interceptor-catalog-run.yaml"
+
+    artifacts = wall_clock.run_wall_clock_scenario(
+        scenario,
+        tmp_path / "run",
+        duration="8s",
+        speed="1x",
+    )
+
+    actions_by_effect = {
+        action.effect.value: action
+        for action in artifacts.materialization_report.network_lag_actions
+    }
+    assert fake_clock.now_ns == 8_000_000_000
+    assert {"delayed_rename", "delayed_visibility", "held_handle"} <= actions_by_effect.keys()
+    assert actions_by_effect["held_handle"].enforced is False
 
 
 def test_filesystem_failure_writes_run_failure_metadata(

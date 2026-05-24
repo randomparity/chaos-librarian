@@ -173,6 +173,12 @@ def test_preflight_accepts_malformed_media_corruption_actions() -> None:
     preflight_timeline(scenario)
 
 
+def test_preflight_accepts_touch_mtime_for_filesystem_dispatch() -> None:
+    scenario = _scenario_with_timeline([("touch_mtime", "asset_hd_main", {"offset": "2s"})])
+
+    preflight_timeline(scenario)
+
+
 def test_supported_s10_actions_exported_from_preflight() -> None:
     assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
 

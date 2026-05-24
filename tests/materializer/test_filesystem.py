@@ -8,6 +8,7 @@ future engine-only events do not crash phase B.
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -445,6 +446,45 @@ def test_apply_remove_sidecar_unlinks_file_and_returns_action(tmp_path: Path) ->
     assert actions[0].from_path == "movies-hd/asset_hd_main.en.srt"
     assert actions[0].to_path is None
     assert actions[0].temp_path is None
+
+
+def test_apply_touch_mtime_updates_mtime_without_changing_bytes(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    asset = library / "movies-hd" / "asset_hd_main.mkv"
+    asset.write_bytes(b"same bytes")
+    before_hash = "sha256:" + hashlib.sha256(asset.read_bytes()).hexdigest()
+    before_mtime_ns = asset.stat().st_mtime_ns
+    journal = [
+        _atomic_entry(
+            event_id="mtime_001",
+            action=TimelineActionName.TOUCH_MTIME,
+            target="asset_hd_main",
+            state_delta={
+                "path": "movies-hd/asset_hd_main.mkv",
+                "profile": "filesystem-artifacts",
+                "offset": "2s",
+            },
+        )
+    ]
+
+    actions, _ = _apply_entries(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+
+    after_mtime_ns = asset.stat().st_mtime_ns
+    assert "sha256:" + hashlib.sha256(asset.read_bytes()).hexdigest() == before_hash
+    assert after_mtime_ns == before_mtime_ns + 2_000_000_000
+    assert len(actions) == 1
+    assert actions[0].action is TimelineActionName.TOUCH_MTIME
+    assert actions[0].from_path == "movies-hd/asset_hd_main.mkv"
+    assert actions[0].to_path == "movies-hd/asset_hd_main.mkv"
+    assert actions[0].content_hash == before_hash
+    assert actions[0].mtime_before_ns == before_mtime_ns
+    assert actions[0].mtime_after_ns == after_mtime_ns
 
 
 def test_apply_unknown_action_returns_none_from_dispatch(tmp_path: Path) -> None:
