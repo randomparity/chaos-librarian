@@ -362,8 +362,8 @@ printf 'ready_for.materialize_static: %s\n' "$READY_STATIC"
 printf 'ready_for.materialize_filesystem_mutations: %s\n' "$READY_FILESYSTEM"
 printf 'ready_for.materialize_media_mutations: %s\n' "$READY_MEDIA"
 
-if [[ "$READY_STATIC" != "true" || "$READY_FILESYSTEM" != "true" ]]; then
-  printf 'ffmpeg/ffprobe readiness is required for this functional test.\n' >&2
+if [[ "$READY_STATIC" != "true" || "$READY_FILESYSTEM" != "true" || "$READY_MEDIA" != "true" ]]; then
+  printf 'static, filesystem, and media mutation readiness is required.\n' >&2
   exit 4
 fi
 
@@ -372,16 +372,12 @@ validate_scenario active-library-churn
 validate_scenario duplicate-variant-expanded
 validate_scenario slow-copy-materialize
 validate_scenario interceptor-catalog-run
-if [[ "$READY_MEDIA" == "true" ]]; then
-  validate_scenario version-evolution
-  validate_scenario subtitle-ops-on-mp4
-  validate_scenario embed-extract-roundtrip
-  validate_scenario malformed-container-header
-  validate_scenario negative-oracle-hash
-  validate_scenario interceptor-catalog
-else
-  printf 'media mutation scenarios skipped; materialize_media_mutations is false.\n'
-fi
+validate_scenario version-evolution
+validate_scenario subtitle-ops-on-mp4
+validate_scenario embed-extract-roundtrip
+validate_scenario malformed-container-header
+validate_scenario negative-oracle-hash
+validate_scenario interceptor-catalog
 
 section "plan, step, replay, compare"
 PLAN_DIR="$RUN_ROOT/plan-active-library-churn"
@@ -405,17 +401,13 @@ run_cmd uv run chaos-librarian compare "$PLAN_DIR" "$OBSERVED_JSON" \
 section "materialize enabled mutation fixtures"
 materialize_and_scan duplicate-variant-expanded
 materialize_and_scan slow-copy-materialize
-if [[ "$READY_MEDIA" == "true" ]]; then
-  materialize_and_scan active-library-churn
-  materialize_and_scan version-evolution
-  materialize_and_scan subtitle-ops-on-mp4
-  materialize_and_scan embed-extract-roundtrip
-  materialize_and_scan malformed-container-header
-  materialize_and_scan negative-oracle-hash
-  materialize_and_scan interceptor-catalog
-else
-  printf 'media mutation materialization skipped; materialize_media_mutations is false.\n'
-fi
+materialize_and_scan active-library-churn
+materialize_and_scan version-evolution
+materialize_and_scan subtitle-ops-on-mp4
+materialize_and_scan embed-extract-roundtrip
+materialize_and_scan malformed-container-header
+materialize_and_scan negative-oracle-hash
+materialize_and_scan interceptor-catalog
 
 section "wall-clock mutation scans"
 run_wall_clock_with_scans slow-copy-materialize 5s 1x 0.5 1 1 1 1

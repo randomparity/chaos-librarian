@@ -54,6 +54,66 @@ def test_functional_script_help_documents_coverage_and_scan_evidence() -> None:
         assert expected in output
 
 
+def test_functional_script_requires_media_mutation_readiness(tmp_path: Path) -> None:
+    """The reviewed run should fail instead of silently skipping media coverage."""
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    fake_uv = fake_bin / "uv"
+    fake_uv.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            from __future__ import annotations
+
+            import json
+            import subprocess
+            import sys
+
+            args = sys.argv[1:]
+            if args[:2] == ["run", "python"]:
+                completed = subprocess.run([sys.executable, *args[2:]], check=False)
+                raise SystemExit(completed.returncode)
+
+            if args[:3] == ["run", "chaos-librarian", "capabilities"]:
+                print(
+                    json.dumps(
+                        {{
+                            "ready_for": {{
+                                "materialize_static": True,
+                                "materialize_filesystem_mutations": True,
+                                "materialize_media_mutations": False,
+                            }}
+                        }}
+                    )
+                )
+                raise SystemExit(0)
+
+            print(f"unexpected command after capability gate: {{args}}", file=sys.stderr)
+            raise SystemExit(99)
+            """
+        ),
+        encoding="utf-8",
+    )
+    fake_uv.chmod(0o755)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}{os.pathsep}{env['PATH']}"
+
+    result = subprocess.run(
+        [str(SCRIPT)],
+        check=False,
+        capture_output=True,
+        env=env,
+        text=True,
+        timeout=4,
+    )
+
+    assert result.returncode == 4
+    assert "ready_for.materialize_media_mutations: false" in result.stdout
+    assert "media mutation readiness is required" in result.stdout
+    assert "unexpected command after capability gate" not in result.stdout
+
+
 def test_wall_clock_failure_prints_child_output_without_library_timeout(
     tmp_path: Path,
 ) -> None:
@@ -116,7 +176,7 @@ def test_wall_clock_failure_prints_child_output_without_library_timeout(
                             "ready_for": {{
                                 "materialize_static": True,
                                 "materialize_filesystem_mutations": True,
-                                "materialize_media_mutations": False,
+                                "materialize_media_mutations": True,
                             }}
                         }}
                     )
