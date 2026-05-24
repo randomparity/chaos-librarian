@@ -109,7 +109,7 @@ class TestCompareFixtures:
         a = _make_run_replay_fixture(
             tmp_path,
             "a",
-            [
+            oracle_hash_actions=[
                 {
                     "event_id": "wrong_hash_001",
                     "action": "wrong_oracle_hash",
@@ -128,7 +128,7 @@ class TestCompareFixtures:
         b = _make_run_replay_fixture(
             tmp_path,
             "b",
-            [
+            oracle_hash_actions=[
                 {
                     "event_id": "wrong_hash_001",
                     "action": "wrong_oracle_hash",
@@ -140,6 +140,85 @@ class TestCompareFixtures:
                     "actual_content_hash": "sha256:" + "1" * 64,
                     "reported_content_hash": "sha256:" + "3" * 64,
                     "seed_material": "wrong_oracle_hash_v1:7:wrong_hash_001:asset_main",
+                    "duration_ns": 99,
+                }
+            ],
+        )
+
+        diff = compare_run_replay(a, b)
+
+        assert _find(diff.files, "materialization.json").kind == "byte_diff"
+
+    def test_run_replay_compares_touch_mtime_by_delta(self, tmp_path: Path) -> None:
+        """touch_mtime evidence uses fresh file mtimes; only the requested delta is stable."""
+        a = _make_run_replay_fixture(
+            tmp_path,
+            "a",
+            filesystem_actions=[
+                {
+                    "event_id": "mtime_001",
+                    "action": "touch_mtime",
+                    "target_asset_id": "asset_main",
+                    "from_path": "movies-hd/asset_main.mkv",
+                    "to_path": "movies-hd/asset_main.mkv",
+                    "content_hash": "sha256:" + "1" * 64,
+                    "mtime_before_ns": 1_000,
+                    "mtime_after_ns": 3_000,
+                    "duration_ns": 1,
+                }
+            ],
+        )
+        b = _make_run_replay_fixture(
+            tmp_path,
+            "b",
+            filesystem_actions=[
+                {
+                    "event_id": "mtime_001",
+                    "action": "touch_mtime",
+                    "target_asset_id": "asset_main",
+                    "from_path": "movies-hd/asset_main.mkv",
+                    "to_path": "movies-hd/asset_main.mkv",
+                    "content_hash": "sha256:" + "1" * 64,
+                    "mtime_before_ns": 10_000,
+                    "mtime_after_ns": 12_000,
+                    "duration_ns": 99,
+                }
+            ],
+        )
+
+        diff = compare_run_replay(a, b)
+
+        assert diff.is_clean()
+
+    def test_run_replay_detects_touch_mtime_delta_mismatch(self, tmp_path: Path) -> None:
+        a = _make_run_replay_fixture(
+            tmp_path,
+            "a",
+            filesystem_actions=[
+                {
+                    "event_id": "mtime_001",
+                    "action": "touch_mtime",
+                    "target_asset_id": "asset_main",
+                    "from_path": "movies-hd/asset_main.mkv",
+                    "to_path": "movies-hd/asset_main.mkv",
+                    "mtime_before_ns": 1_000,
+                    "mtime_after_ns": 3_000,
+                    "duration_ns": 1,
+                }
+            ],
+        )
+        b = _make_run_replay_fixture(
+            tmp_path,
+            "b",
+            filesystem_actions=[
+                {
+                    "event_id": "mtime_001",
+                    "action": "touch_mtime",
+                    "target_asset_id": "asset_main",
+                    "from_path": "movies-hd/asset_main.mkv",
+                    "to_path": "movies-hd/asset_main.mkv",
+                    "mtime_before_ns": 10_000,
+                    "mtime_after_ns": 13_000,
                     "duration_ns": 99,
                 }
             ],
@@ -161,7 +240,9 @@ def _find(entries: tuple[FixtureFileDiff, ...], path: str) -> FixtureFileDiff:
 def _make_run_replay_fixture(
     tmp_path: Path,
     name: str,
-    oracle_hash_actions: list[dict[str, object]],
+    *,
+    filesystem_actions: list[dict[str, object]] | None = None,
+    oracle_hash_actions: list[dict[str, object]] | None = None,
 ) -> Path:
     out = tmp_path / name
     out.mkdir()
@@ -183,10 +264,10 @@ def _make_run_replay_fixture(
         "content_sources": [],
         "materialized": [],
         "failures": [],
-        "filesystem_actions": [],
+        "filesystem_actions": filesystem_actions or [],
         "media_actions": [],
         "corruption_actions": [],
-        "oracle_hash_actions": oracle_hash_actions,
+        "oracle_hash_actions": oracle_hash_actions or [],
     }
     (out / "materialization.json").write_text(
         json.dumps(materialization),
