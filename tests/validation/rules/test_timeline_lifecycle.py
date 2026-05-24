@@ -626,3 +626,87 @@ class TestSprint10CorruptionLifecycle:
             "corrupt_container_header" in i.message and "pending slow_copy" in i.message
             for i in issues
         )
+
+
+class TestInterceptorLifecycle:
+    """Interceptor actions require a placed target outside pending slow_copy."""
+
+    @staticmethod
+    def _slow_copy_start() -> dict[str, object]:
+        return {
+            "id": "e_sc",
+            "at": "1s",
+            "action": "slow_copy_start",
+            "target": "a",
+            "to": "a.mkv",
+            "temp_path": "a.mkv.copying",
+            "duration": "5s",
+        }
+
+    @staticmethod
+    def _interceptor_event(action: str, **fields: object) -> dict[str, object]:
+        return {
+            "id": f"{action}_001",
+            "at": "2s",
+            "action": action,
+            "target": "a",
+            **fields,
+        }
+
+    @pytest.mark.parametrize(
+        ("action", "fields"),
+        [
+            ("truncate_file", {"keep_bytes": 64}),
+            (
+                "corrupt_packet_range",
+                {"stream": "video", "packet_start": 0, "packet_count": 1},
+            ),
+            ("write_invalid_duration_metadata", {"value": "not-a-duration"}),
+            ("touch_mtime", {"offset": "2s"}),
+            ("wrong_oracle_hash", {}),
+        ],
+    )
+    def test_interceptor_after_delete_emits_lifecycle_invalid(
+        self, minimal_scenario, empty_index, action, fields
+    ) -> None:
+        raw = minimal_scenario(
+            timeline=[
+                {"id": "ev_del", "at": "0s", "action": "delete_file", "target": "a"},
+                self._interceptor_event(action, **fields),
+            ],
+        )
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        issues = [i for i in collector.issues if i.code == E_LIFECYCLE_INVALID]
+        assert any(action in i.message and "unplaced" in i.message for i in issues)
+
+    @pytest.mark.parametrize(
+        ("action", "fields"),
+        [
+            ("truncate_file", {"keep_bytes": 64}),
+            (
+                "corrupt_packet_range",
+                {"stream": "video", "packet_start": 0, "packet_count": 1},
+            ),
+            ("write_invalid_duration_metadata", {"value": "not-a-duration"}),
+            ("touch_mtime", {"offset": "2s"}),
+            ("wrong_oracle_hash", {}),
+        ],
+    )
+    def test_interceptor_during_slow_copy_emits_lifecycle_invalid(
+        self, minimal_scenario, empty_index, action, fields
+    ) -> None:
+        raw = minimal_scenario(
+            timeline=[
+                self._slow_copy_start(),
+                self._interceptor_event(action, **fields),
+            ],
+        )
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        issues = [i for i in collector.issues if i.code == E_LIFECYCLE_INVALID]
+        assert any(action in i.message and "pending slow_copy" in i.message for i in issues)

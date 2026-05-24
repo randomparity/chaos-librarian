@@ -51,6 +51,11 @@ _LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.REMOVE_SIDECAR,
         TimelineActionName.UPDATE_SIDECAR,
         TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.TOUCH_MTIME,
+        TimelineActionName.WRONG_ORACLE_HASH,
     }
 )
 # Subset of the passthrough set that mutates the on-disk path OR reads asset
@@ -70,6 +75,11 @@ _PATH_MUTATING_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.EMBED_SUBTITLE,
         TimelineActionName.EXTRACT_SUBTITLE,
         TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.TOUCH_MTIME,
+        TimelineActionName.WRONG_ORACLE_HASH,
     }
 )
 

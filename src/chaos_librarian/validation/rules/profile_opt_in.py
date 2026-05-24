@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
@@ -13,6 +13,18 @@ from chaos_librarian.validation.rules._common import Reporter, _iter_timeline_ev
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
+
+
+_REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
+    TimelineActionName.CORRUPT_CONTAINER_HEADER.value: ProfileName.MALFORMED_MEDIA.value,
+    TimelineActionName.TRUNCATE_FILE.value: ProfileName.MALFORMED_MEDIA.value,
+    TimelineActionName.CORRUPT_PACKET_RANGE.value: ProfileName.MALFORMED_MEDIA.value,
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA.value: ProfileName.MALFORMED_MEDIA.value,
+    TimelineActionName.TOUCH_MTIME.value: ProfileName.FILESYSTEM_ARTIFACTS.value,
+    TimelineActionName.WRONG_ORACLE_HASH.value: ProfileName.NEGATIVE_ORACLE.value,
+    TimelineActionName.NETWORK_LAG_START.value: ProfileName.NETWORK_FS_LAG.value,
+    TimelineActionName.NETWORK_LAG_COMMIT.value: ProfileName.NETWORK_FS_LAG.value,
+}
 
 
 def rule_profile_opt_in(
@@ -25,28 +37,13 @@ def rule_profile_opt_in(
     profiles = set(profiles_raw) if isinstance(profiles_raw, list) else set()
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
-        if (
-            action == TimelineActionName.CORRUPT_CONTAINER_HEADER.value
-            and ProfileName.MALFORMED_MEDIA.value not in profiles
-        ):
+        if not isinstance(action, str):
+            continue
+        required_profile = _REQUIRED_PROFILES_BY_ACTION.get(action)
+        if required_profile is not None and required_profile not in profiles:
             _emit_required_profile(
-                action=TimelineActionName.CORRUPT_CONTAINER_HEADER.value,
-                profile=ProfileName.MALFORMED_MEDIA.value,
-                event=event,
-                idx=idx,
-                reporter=reporter,
-            )
-        elif (
-            action
-            in {
-                TimelineActionName.NETWORK_LAG_START.value,
-                TimelineActionName.NETWORK_LAG_COMMIT.value,
-            }
-            and ProfileName.NETWORK_FS_LAG.value not in profiles
-        ):
-            _emit_required_profile(
-                action=str(action),
-                profile=ProfileName.NETWORK_FS_LAG.value,
+                action=action,
+                profile=required_profile,
                 event=event,
                 idx=idx,
                 reporter=reporter,

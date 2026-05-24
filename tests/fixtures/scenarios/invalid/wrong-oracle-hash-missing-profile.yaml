@@ -1,0 +1,27 @@
+# expected: E_PROFILE_REQUIRED
+schema_version: 9
+scenario_id: wrong-oracle-hash-missing-profile
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_001
+    title: Wrong Oracle Hash
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: wrong_hash_001
+    at: 1s
+    action: wrong_oracle_hash
+    target: asset_main
