@@ -759,6 +759,42 @@ def test_compare_run_replay_ignores_materialization_action_duration_ns(
     assert diff.is_clean()
 
 
+def test_compare_run_replay_compares_network_lag_actions(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(left, "network_lag_actions", [_network_lag_action()])
+    _update_materialization(
+        right,
+        "network_lag_actions",
+        [_network_lag_action(effect="delayed_visibility")],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
+def test_compare_run_replay_ignores_network_lag_actual_duration(
+    tmp_path: Path,
+) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(
+        left,
+        "network_lag_actions",
+        [_network_lag_action(actual_duration_ns=10)],
+    )
+    _update_materialization(
+        right,
+        "network_lag_actions",
+        [_network_lag_action(actual_duration_ns=None)],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert diff.is_clean()
+
+
 def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     """WHY: Sprint 5 ships the MaterializeReplayBundle variant for schema
     stability but does NOT implement materialize replay. The CLI must
@@ -866,6 +902,29 @@ def _run_compare_source_evidence(recipe_digit: str = "0") -> dict[str, object]:
         "recipe_digest": "sha256:" + recipe_digit * 64,
         "cache_disposition": "not_cacheable",
     }
+
+
+def _network_lag_action(
+    *,
+    effect: str = "delayed_rename",
+    actual_duration_ns: int | None = 1,
+) -> dict[str, object]:
+    action = {
+        "event_id": "lag_start_001",
+        "commit_event_id": "lag_commit_001",
+        "effect": effect,
+        "target_ref": "asset_main",
+        "after_event_id": "rename_001",
+        "logical_start_ns": 0,
+        "logical_commit_ns": 10,
+        "requested_duration_ns": 10,
+        "actual_duration_ns": actual_duration_ns,
+        "from_path": "movies-hd/asset_main.mkv",
+        "to_path": "movies-hd/renamed.mkv",
+        "provider": "stdlib-local",
+        "enforced": True,
+    }
+    return {key: value for key, value in action.items() if value is not None}
 
 
 def _write_asset_report(root: Path, *, content_hash: str) -> None:

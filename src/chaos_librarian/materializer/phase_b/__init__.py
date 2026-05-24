@@ -14,6 +14,7 @@ from chaos_librarian.contract.materialization import (
     FilesystemAction,
     MaterializationFailure,
     MediaAction,
+    NetworkLagAction,
     OracleHashAction,
     Outcome,
     ToolInvocation,
@@ -69,6 +70,7 @@ class PhaseBState:
     media_actions: list[MediaAction] = field(default_factory=list)
     corruption_actions: list[CorruptionAction] = field(default_factory=list)
     oracle_hash_actions: list[OracleHashAction] = field(default_factory=list)
+    network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
 
 
 def make_phase_b_state(
