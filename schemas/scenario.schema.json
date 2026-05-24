@@ -478,6 +478,59 @@
       "title": "ExtractSubtitleEvent",
       "type": "object"
     },
+    "FuzzProfileName": {
+      "enum": [
+        "fuzz-smoke",
+        "fuzz-regression"
+      ],
+      "title": "FuzzProfileName",
+      "type": "string"
+    },
+    "GenerationBudget": {
+      "additionalProperties": false,
+      "properties": {
+        "assets": {
+          "minimum": 0,
+          "title": "Assets",
+          "type": "integer"
+        },
+        "bundles": {
+          "minimum": 0,
+          "title": "Bundles",
+          "type": "integer"
+        },
+        "sidecars": {
+          "minimum": 0,
+          "title": "Sidecars",
+          "type": "integer"
+        },
+        "timeline_events": {
+          "minimum": 0,
+          "title": "Timeline Events",
+          "type": "integer"
+        },
+        "variants": {
+          "minimum": 0,
+          "title": "Variants",
+          "type": "integer"
+        },
+        "works": {
+          "minimum": 0,
+          "title": "Works",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "works",
+        "variants",
+        "bundles",
+        "assets",
+        "sidecars",
+        "timeline_events"
+      ],
+      "title": "GenerationBudget",
+      "type": "object"
+    },
     "Library": {
       "additionalProperties": false,
       "properties": {
@@ -703,7 +756,9 @@
         "performance-stress",
         "network-fs-lag",
         "filesystem-artifacts",
-        "negative-oracle"
+        "negative-oracle",
+        "fuzz-smoke",
+        "fuzz-regression"
       ],
       "title": "ProfileName",
       "type": "string"
@@ -889,6 +944,41 @@
         "to"
       ],
       "title": "RenameFileEvent",
+      "type": "object"
+    },
+    "ScenarioGeneration": {
+      "additionalProperties": false,
+      "properties": {
+        "budgets": {
+          "$ref": "#/$defs/GenerationBudget"
+        },
+        "generator": {
+          "const": "chaos-librarian",
+          "default": "chaos-librarian",
+          "title": "Generator",
+          "type": "string"
+        },
+        "profile": {
+          "$ref": "#/$defs/FuzzProfileName"
+        },
+        "profile_version": {
+          "const": 1,
+          "title": "Profile Version",
+          "type": "integer"
+        },
+        "seed": {
+          "minimum": 0,
+          "title": "Seed",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "profile",
+        "profile_version",
+        "seed",
+        "budgets"
+      ],
+      "title": "ScenarioGeneration",
       "type": "object"
     },
     "SidecarKind": {
@@ -1284,6 +1374,17 @@
     "duration_scale": {
       "$ref": "#/$defs/DurationScale"
     },
+    "generation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ScenarioGeneration"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
     "library": {
       "$ref": "#/$defs/Library"
     },
@@ -1299,7 +1400,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 9,
+      "const": 10,
       "title": "Schema Version",
       "type": "integer"
     },

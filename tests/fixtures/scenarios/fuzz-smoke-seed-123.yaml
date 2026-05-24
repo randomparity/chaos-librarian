@@ -1,0 +1,99 @@
+schema_version: 10
+scenario_id: fuzz-smoke-seed-123
+seed: 123
+duration_scale: short
+profiles:
+- fuzz-smoke
+generation:
+  generator: chaos-librarian
+  profile: fuzz-smoke
+  profile_version: 1
+  seed: 123
+  budgets:
+    works: 3
+    variants: 4
+    bundles: 4
+    assets: 4
+    sidecars: 8
+    timeline_events: 12
+library:
+  roots:
+  - id: movies_hd
+    path: movies-hd
+works:
+- id: work_001
+  title: fuzz-smoke Work 123-001
+  variants:
+  - id: variant_001
+    label: generated
+    bundle:
+      id: bundle_001
+      assets:
+      - id: asset_001
+        role: primary_video
+        container: mp4
+        duration_seconds: 4
+        video:
+          source: mandelbrot
+          codec: h264
+          resolution: 1080p
+        audio:
+        - source: silence
+          codec: aac
+          channels: mono
+          language: eng
+- id: work_002
+  title: fuzz-smoke Work 123-002
+  variants:
+  - id: variant_002
+    label: generated
+    bundle:
+      id: bundle_002
+      assets:
+      - id: asset_002
+        role: primary_video
+        container: mp4
+        duration_seconds: 2
+        video:
+          source: mandelbrot
+          codec: h264
+          resolution: hd
+        audio:
+        - source: channel_tones
+          codec: aac
+          channels: mono
+          language: eng
+timeline:
+- id: fuzz_0001
+  at: 1ns
+  action: move_asset
+  target: asset_002
+  to: movies-hd/fuzz/asset_002-0001.mp4
+- id: fuzz_0002
+  at: 2ns
+  action: move_asset
+  target: asset_001
+  to: movies-hd/fuzz/asset_001-0002.mp4
+- id: fuzz_0003
+  at: 3ns
+  action: edit_metadata
+  target: asset_002
+  fields:
+    title: Generated Title 0003
+- id: fuzz_0004
+  at: 4ns
+  action: create_sidecar
+  target: asset_001
+  to: movies-hd/fuzz/asset_001-0004.nfo
+  kind: nfo
+- id: fuzz_0005
+  at: 5ns
+  action: edit_metadata
+  target: asset_002
+  fields:
+    title: Generated Title 0005
+- id: fuzz_0006
+  at: 6ns
+  action: move_asset
+  target: asset_002
+  to: movies-hd/fuzz/asset_002-0006.mp4

@@ -58,7 +58,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 9
+schema_version: 10
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -94,7 +94,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 9
+schema_version: 10
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short

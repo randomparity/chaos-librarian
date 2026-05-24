@@ -1,0 +1,80 @@
+"""CLI tests for deterministic scenario generation."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from typer.testing import CliRunner
+
+from chaos_librarian.cli.app import app
+from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.scenario_io import parse_scenario_bytes
+
+runner = CliRunner()
+
+
+def _load_generated(path: Path) -> Scenario:
+    raw, _ = parse_scenario_bytes(path.read_bytes(), source=path)
+    return Scenario.model_validate(raw)
+
+
+def test_generate_help_succeeds() -> None:
+    result = runner.invoke(app, ["generate", "--help"])
+
+    assert result.exit_code == 0
+    assert "--profile" in result.stdout
+    assert "--seed" in result.stdout
+
+
+def test_generate_writes_valid_yaml_and_json_summary(tmp_path: Path) -> None:
+    out = tmp_path / "generated.yaml"
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--profile",
+            "fuzz-smoke",
+            "--seed",
+            "123",
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout + result.stderr
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert payload["profile"] == "fuzz-smoke"
+    assert payload["seed"] == 123
+    assert payload["scenario_id"] == "fuzz-smoke-seed-123"
+    assert payload["scenario_path"] == str(out.resolve())
+    assert len(payload["sha256"]) == 64
+    assert _load_generated(out).scenario_id == "fuzz-smoke-seed-123"
+
+
+def test_generate_rejects_existing_out(tmp_path: Path) -> None:
+    out = tmp_path / "generated.yaml"
+    out.write_text("existing", encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["generate", "--profile", "fuzz-smoke", "--seed", "123", "--out", str(out)],
+    )
+
+    assert result.exit_code == 2
+    assert out.read_text(encoding="utf-8") == "existing"
+
+
+def test_generate_rejects_random_seed(tmp_path: Path) -> None:
+    out = tmp_path / "generated.yaml"
+
+    result = runner.invoke(
+        app,
+        ["generate", "--profile", "fuzz-smoke", "--seed", "random", "--out", str(out)],
+    )
+
+    assert result.exit_code == 2
+    assert not out.exists()

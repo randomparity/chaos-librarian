@@ -54,3 +54,14 @@ def test_replay_bundle_schema_has_oneof_on_execution_mode() -> None:
     schemas_dir = Path(__file__).resolve().parents[2] / "schemas"
     bundle_schema = json.loads((schemas_dir / "replay-bundle.schema.json").read_text())
     assert "discriminator" in bundle_schema or "oneOf" in bundle_schema
+
+
+def test_scenario_schema_freezes_generation_profile_version() -> None:
+    schemas_dir = Path(__file__).resolve().parents[2] / "schemas"
+    scenario_schema = json.loads((schemas_dir / "scenario.schema.json").read_text())
+    profile_version = scenario_schema["$defs"]["ScenarioGeneration"]["properties"][
+        "profile_version"
+    ]
+
+    assert profile_version["const"] == 1
+    assert "minimum" not in profile_version

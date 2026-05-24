@@ -11,7 +11,7 @@ from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from chaos_librarian.contract.profiles import ProfileName
+from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
 
 
 class TimelineActionName(enum.StrEnum):
@@ -431,6 +431,54 @@ class NetworkLagCommitEvent(_TimelineEventBase):
     )
 
 
+class GenerationBudget(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    works: int = Field(ge=0)
+    variants: int = Field(ge=0)
+    bundles: int = Field(ge=0)
+    assets: int = Field(ge=0)
+    sidecars: int = Field(ge=0)
+    timeline_events: int = Field(ge=0)
+
+
+class ScenarioGeneration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    generator: Literal["chaos-librarian"] = "chaos-librarian"
+    profile: FuzzProfileName
+    profile_version: Literal[1]
+    seed: int = Field(ge=0)
+    budgets: GenerationBudget
+
+
+FUZZ_GENERATION_PROFILE_VERSION: Final = 1
+
+FUZZ_GENERATION_BUDGETS: Final[dict[FuzzProfileName, GenerationBudget]] = {
+    FuzzProfileName.FUZZ_SMOKE: GenerationBudget(
+        works=3,
+        variants=4,
+        bundles=4,
+        assets=4,
+        sidecars=8,
+        timeline_events=12,
+    ),
+    FuzzProfileName.FUZZ_REGRESSION: GenerationBudget(
+        works=12,
+        variants=18,
+        bundles=18,
+        assets=18,
+        sidecars=54,
+        timeline_events=80,
+    ),
+}
+
+
+def generation_budget_for(profile: FuzzProfileName) -> GenerationBudget:
+    """Return the canonical generation budget for a fuzz profile."""
+    return FUZZ_GENERATION_BUDGETS[profile]
+
+
 TimelineEvent = Annotated[
     MoveAssetEvent
     | RenameFileEvent
@@ -468,11 +516,29 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[9]
+    schema_version: Literal[10]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
     profiles: tuple[ProfileName, ...] = Field(default_factory=tuple)
+    generation: ScenarioGeneration | None = None
     library: Library
     works: tuple[Work, ...]
     timeline: tuple[TimelineEvent, ...]
+
+    @model_validator(mode="after")
+    def _check_generation_metadata(self) -> Scenario:
+        if self.generation is None:
+            return self
+
+        profile = ProfileName(self.generation.profile.value)
+        if profile not in self.profiles:
+            raise ValueError("generation.profile must be listed in profiles")
+        if self.seed == "random":
+            raise ValueError("generation.seed requires concrete scenario seed")
+        if self.seed != self.generation.seed:
+            raise ValueError("generation.seed must match scenario seed")
+        expected = generation_budget_for(self.generation.profile)
+        if self.generation.budgets != expected:
+            raise ValueError("generation.budgets must match the selected profile")
+        return self

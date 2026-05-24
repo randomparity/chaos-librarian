@@ -15,6 +15,13 @@ class ProfileName(enum.StrEnum):
     NETWORK_FS_LAG = "network-fs-lag"
     FILESYSTEM_ARTIFACTS = "filesystem-artifacts"
     NEGATIVE_ORACLE = "negative-oracle"
+    FUZZ_SMOKE = "fuzz-smoke"
+    FUZZ_REGRESSION = "fuzz-regression"
+
+
+class FuzzProfileName(enum.StrEnum):
+    FUZZ_SMOKE = "fuzz-smoke"
+    FUZZ_REGRESSION = "fuzz-regression"
 
 
 class CorruptionProbeOutcome(enum.StrEnum):

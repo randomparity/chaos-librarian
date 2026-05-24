@@ -1,5 +1,5 @@
 # expected: E_PROFILE_REQUIRED
-schema_version: 9
+schema_version: 10
 scenario_id: wrong-oracle-hash-missing-profile
 seed: 42
 duration_scale: short

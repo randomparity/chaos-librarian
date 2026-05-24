@@ -49,6 +49,30 @@ Recommended exports:
   paths or hashes before treating the compare result as a clean final-state
   check.
 
+## Fuzz Profile Generation
+
+Use fuzz profiles when a consumer needs deterministic variation without
+hand-authoring every mutation:
+
+```bash
+uv run chaos-librarian generate \
+  --profile fuzz-smoke \
+  --seed 123 \
+  --out fuzz-smoke.yaml \
+  --json
+
+uv run chaos-librarian plan fuzz-smoke.yaml --out run-fuzz-smoke --json
+```
+
+The generated YAML carries `profiles: ["fuzz-smoke"]` and a `generation` block
+with the profile, profile version, seed, and static budget ceilings. Timeline
+events are explicit after generation, so downstream commands do not use hidden
+randomness. Replay never calls the generator; it reads the scenario source stored
+in `replay.json`.
+
+`fuzz-smoke` is suitable for local and optional fast checks. `fuzz-regression`
+is reserved for scheduled or maintainer-dispatched jobs.
+
 ## Watcher Identity-History
 
 Export either per-asset `path_history` or global `events` for observed path
@@ -145,12 +169,12 @@ the negative-oracle check did not exercise the intended mismatch.
 
 Fast CI should run small final-state fixtures with scanner/prober exports and
 fail on compare exit `1`, `6`, or `7`. No performance profiles by default run
-in this tier.
+in this tier. `fuzz-smoke` may run only in a separate selectable job.
 
 | Tier | Trigger | Profile coverage | Recommended coverage |
 | --- | --- | --- | --- |
-| Fast | Pull request and `main` push | No performance profiles by default. | Small scanner/prober final-state fixtures. |
-| Extended | Scheduled nightly or maintainer dispatch | `performance-smoke`, `performance-scale` | Identity-history watcher fixtures, slow-copy cases, delete/add restore cases, and run-mode churn fixtures. |
+| Fast | Pull request and `main` push | No performance profiles by default; optional `fuzz-smoke`. | Small scanner/prober final-state fixtures. |
+| Extended | Scheduled nightly or maintainer dispatch | `performance-smoke`, `performance-scale`, `fuzz-smoke`, `fuzz-regression` | Identity-history watcher fixtures, slow-copy cases, delete/add restore cases, and run-mode churn fixtures. |
 | Stress | Manual release-candidate dispatch | `performance-stress` | Long wall-clock runs, cleanup validation, and large-library compare recipes. |
 
 Performance profile labels are accepted by the scenario contract. Extended and

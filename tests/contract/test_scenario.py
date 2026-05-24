@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from pydantic import ValidationError
 
@@ -97,7 +99,7 @@ def _scenario_payload_with_event(
     event: dict[str, object], profiles: list[str] | None = None
 ) -> dict[str, object]:
     payload = _minimal_scenario().model_dump(mode="json")
-    payload["schema_version"] = 9
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
     payload["profiles"] = profiles or []
     payload["timeline"] = [event]
     return payload
@@ -220,8 +222,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_nine() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 9
+def test_scenario_schema_version_is_ten() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 10
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -235,6 +237,8 @@ def test_scenario_accepts_profile_labels() -> None:
         "network-fs-lag",
         "filesystem-artifacts",
         "negative-oracle",
+        "fuzz-smoke",
+        "fuzz-regression",
     ]
 
     scenario = Scenario.model_validate(payload)
@@ -248,6 +252,80 @@ def test_scenario_rejects_unknown_profile_value() -> None:
     payload["profiles"] = ["not-a-profile"]
 
     with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def _generated_scenario_payload() -> dict[str, object]:
+    payload = _minimal_scenario().model_dump(mode="json")
+    payload["schema_version"] = SCENARIO_SCHEMA_VERSION
+    payload["profiles"] = ["fuzz-smoke"]
+    payload["generation"] = {
+        "generator": "chaos-librarian",
+        "profile": "fuzz-smoke",
+        "profile_version": 1,
+        "seed": 1,
+        "budgets": {
+            "works": 3,
+            "variants": 4,
+            "bundles": 4,
+            "assets": 4,
+            "sidecars": 8,
+            "timeline_events": 12,
+        },
+    }
+    return payload
+
+
+def test_scenario_accepts_fuzz_generation_metadata() -> None:
+    scenario = Scenario.model_validate(_generated_scenario_payload())
+
+    assert scenario.generation is not None
+    assert scenario.generation.generator == "chaos-librarian"
+    assert scenario.generation.profile.value == "fuzz-smoke"
+    assert scenario.generation.seed == 1
+    assert scenario.generation.budgets.timeline_events == 12
+
+
+def test_generation_profile_must_be_top_level_profile() -> None:
+    payload = _generated_scenario_payload()
+    payload["profiles"] = []
+
+    with pytest.raises(ValidationError, match=r"generation\.profile"):
+        Scenario.model_validate(payload)
+
+
+def test_generation_rejects_seed_random() -> None:
+    payload = _generated_scenario_payload()
+    payload["seed"] = "random"
+
+    with pytest.raises(ValidationError, match=r"generation\.seed"):
+        Scenario.model_validate(payload)
+
+
+def test_generation_seed_must_match_scenario_seed() -> None:
+    payload = _generated_scenario_payload()
+    payload["seed"] = 2
+
+    with pytest.raises(ValidationError, match=r"generation\.seed"):
+        Scenario.model_validate(payload)
+
+
+def test_generation_profile_version_must_be_supported() -> None:
+    payload = _generated_scenario_payload()
+    generation = cast(dict[str, object], payload["generation"])
+    generation["profile_version"] = 2
+
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def test_generation_budget_must_match_profile() -> None:
+    payload = _generated_scenario_payload()
+    generation = cast(dict[str, object], payload["generation"])
+    budgets = cast(dict[str, object], generation["budgets"])
+    budgets["timeline_events"] = 13
+
+    with pytest.raises(ValidationError, match=r"generation\.budgets"):
         Scenario.model_validate(payload)
 
 
@@ -376,7 +454,7 @@ def test_corrupt_container_header_rejects_4097_bytes() -> None:
         },
     ],
 )
-def test_scenario_v9_accepts_interceptor_events(event: dict[str, object]) -> None:
+def test_scenario_v10_accepts_interceptor_events(event: dict[str, object]) -> None:
     payload = _scenario_payload_with_event(
         event,
         profiles=["filesystem-artifacts", "negative-oracle"],
@@ -384,7 +462,7 @@ def test_scenario_v9_accepts_interceptor_events(event: dict[str, object]) -> Non
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 9
+    assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].id == event["id"]
 
 

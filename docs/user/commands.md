@@ -13,6 +13,21 @@ uv run chaos-librarian validate scenario.yaml --json
 
 Use `validate` while authoring YAML or when CI needs a fast contract check.
 
+## `generate --profile PROFILE --seed SEED --out SCENARIO [--json]`
+
+Generate deterministic fuzz scenario YAML:
+
+```bash
+uv run chaos-librarian generate \
+  --profile fuzz-smoke \
+  --seed 123 \
+  --out fuzz-smoke.yaml \
+  --json
+```
+
+Use `generate` when a test needs bounded randomized coverage. The output is
+ordinary scenario YAML with explicit timeline events and generation metadata.
+
 ## `plan SCENARIO --out RUN_DIR [--steps N] [--json]`
 
 Create an oracle fixture without media files:

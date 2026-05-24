@@ -528,7 +528,9 @@
         "performance-stress",
         "network-fs-lag",
         "filesystem-artifacts",
-        "negative-oracle"
+        "negative-oracle",
+        "fuzz-smoke",
+        "fuzz-regression"
       ],
       "title": "ProfileName",
       "type": "string"
