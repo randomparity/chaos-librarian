@@ -18,8 +18,9 @@ triggers ``shutil.rmtree`` so a partial fixture cannot persist.
 
 JSON canonicalization is centralized in ``_emit_json`` /  ``_emit_jsonl``
 so every Sprint 3 artifact serializes the same way: ``indent=2``,
-``by_alias=True``, ``exclude_none=True``, trailing ``"\n"``. This is what
-makes plan-only output bit-identical.
+``by_alias=True``, optional ``None`` values omitted, required nullable
+fields preserved, trailing ``"\n"``. This is what makes plan-only output
+bit-identical.
 
 ``append_step`` (Sprint 4) updates an existing fixture in place when the
 engine advances by one step: it rewrites ``manifest.current.json``,
@@ -30,6 +31,7 @@ Not atomic across files — recovery is by re-running the step.
 
 from __future__ import annotations
 
+import json
 import shutil
 import tempfile
 from collections.abc import Iterable
@@ -84,8 +86,43 @@ def write_fixture(
 
 
 def canonical_json(model: BaseModel) -> str:
-    """Canonical text form of a Pydantic model: indent=2, by_alias, no None, trailing newline."""
-    return model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
+    """Canonical text form of a Pydantic model: indent=2, by_alias, trailing newline."""
+    payload = _dump_preserving_required_nulls(model)
+    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+
+
+def _dump_preserving_required_nulls(model: BaseModel) -> dict[str, object]:
+    raw = model.model_dump(mode="json", by_alias=True, exclude_none=False)
+    if not isinstance(raw, dict):
+        raise TypeError(f"expected object dump for {type(model).__name__}")
+    return dict(_iter_serialized_fields(model, raw))
+
+
+def _iter_serialized_fields(
+    model: BaseModel,
+    raw: dict[str, object],
+) -> Iterable[tuple[str, object]]:
+    fields = type(model).model_fields.items()
+    for (field_name, field), (key, raw_value) in zip(fields, raw.items(), strict=True):
+        value = getattr(model, field_name)
+        if value is None:
+            if field.is_required():
+                yield key, None
+            continue
+        yield key, _dump_value_preserving_required_nulls(value, raw_value)
+
+
+def _dump_value_preserving_required_nulls(value: object, raw_value: object) -> object:
+    if isinstance(value, BaseModel):
+        return _dump_preserving_required_nulls(value)
+    if isinstance(value, list | tuple):
+        if not isinstance(raw_value, list):
+            return raw_value
+        return [
+            _dump_value_preserving_required_nulls(item, raw_item)
+            for item, raw_item in zip(value, raw_value, strict=True)
+        ]
+    return raw_value
 
 
 def replace_atomic_text(target: Path, content: str) -> None:
