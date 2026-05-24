@@ -362,7 +362,9 @@ printf 'ready_for.materialize_static: %s\n' "$READY_STATIC"
 printf 'ready_for.materialize_filesystem_mutations: %s\n' "$READY_FILESYSTEM"
 printf 'ready_for.materialize_media_mutations: %s\n' "$READY_MEDIA"
 
-if [[ "$READY_STATIC" != "true" || "$READY_FILESYSTEM" != "true" || "$READY_MEDIA" != "true" ]]; then
+if [[ "$READY_STATIC" != "true" ]] ||
+  [[ "$READY_FILESYSTEM" != "true" ]] ||
+  [[ "$READY_MEDIA" != "true" ]]; then
   printf 'static, filesystem, and media mutation readiness is required.\n' >&2
   exit 4
 fi
