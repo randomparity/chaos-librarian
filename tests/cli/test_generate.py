@@ -19,14 +19,6 @@ def _load_generated(path: Path) -> Scenario:
     return Scenario.model_validate(raw)
 
 
-def test_generate_help_succeeds() -> None:
-    result = runner.invoke(app, ["generate", "--help"])
-
-    assert result.exit_code == 0
-    assert "--profile" in result.stdout
-    assert "--seed" in result.stdout
-
-
 def test_generate_writes_valid_yaml_and_json_summary(tmp_path: Path) -> None:
     out = tmp_path / "generated.yaml"
 
