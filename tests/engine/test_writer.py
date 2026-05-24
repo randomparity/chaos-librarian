@@ -8,12 +8,14 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.adapter.fixture import load_fixture
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
+from chaos_librarian.contract.reports import AssetReport
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
-from chaos_librarian.engine import PlanArtifacts, run_plan
+from chaos_librarian.engine import PlanArtifacts, run_plan, step_fixture
 from chaos_librarian.engine import writer as writer_mod
 from chaos_librarian.engine.reports import ReportSet
 from chaos_librarian.engine.writer import append_step, write_fixture
@@ -287,3 +289,30 @@ class TestAppendStep:
         )
         # One line now present in the journal
         assert sum(1 for _ in (out / "journal.jsonl").read_text().splitlines()) == 1
+
+    def test_deleted_asset_report_keeps_required_current_null(self, tmp_path: Path) -> None:
+        run_input, report = _prepare("active-library-churn.yaml")
+        artifacts = run_plan(
+            run_input=run_input,
+            validation_report=report,
+            steps_limit=3,
+        )
+        out = tmp_path / "run"
+        write_fixture(out, artifacts, run_input.raw_bytes)
+
+        step_result = step_fixture(out, n_steps=3)
+        append_step(
+            out,
+            new_entries=step_result.new_entries,
+            new_current_manifest=step_result.new_current_manifest,
+            new_report_set=step_result.new_report_set,
+            new_replay_bundle=step_result.new_replay_bundle,
+        )
+
+        report_path = out / "reports" / "assets" / "asset_main.json"
+        report_json = report_path.read_text()
+        payload = json.loads(report_json)
+        assert "current" in payload
+        assert payload["current"] is None
+        AssetReport.model_validate_json(report_json)
+        load_fixture(out)
