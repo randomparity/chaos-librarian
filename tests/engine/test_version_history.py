@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
+import pytest
 from pydantic import TypeAdapter
 
 from chaos_librarian.contract.journal import JournalEntry
@@ -169,6 +170,125 @@ def test_derive_version_history_includes_corruption_summary() -> None:
         "byte_count": 64,
         "seed_material": "container_header_v1:42:corrupt_header_001:asset_hd_main",
     }
+
+
+@pytest.mark.parametrize(
+    ("action", "state_delta", "expected_summary"),
+    [
+        (
+            TimelineActionName.TRUNCATE_FILE,
+            {
+                "profile": "malformed-media",
+                "corruptor": "truncate_file_v1",
+                "keep_bytes": 64,
+                "seed_material": "truncate_file_v1:42:truncate_001:asset_hd_main",
+                "input_path": "movies-hd/a.mkv",
+                "output_path": "movies-hd/a.mkv",
+            },
+            {
+                "profile": "malformed-media",
+                "corruptor": "truncate_file_v1",
+                "keep_bytes": 64,
+                "seed_material": "truncate_file_v1:42:truncate_001:asset_hd_main",
+            },
+        ),
+        (
+            TimelineActionName.CORRUPT_PACKET_RANGE,
+            {
+                "profile": "malformed-media",
+                "corruptor": "packet_range_v1",
+                "stream": "video",
+                "packet_start": 0,
+                "packet_count": 2,
+                "seed_material": "packet_range_v1:42:packet_corrupt_001:asset_hd_main",
+                "input_path": "movies-hd/a.mkv",
+                "output_path": "movies-hd/a.mkv",
+            },
+            {
+                "profile": "malformed-media",
+                "corruptor": "packet_range_v1",
+                "stream": "video",
+                "packet_start": 0,
+                "packet_count": 2,
+                "seed_material": "packet_range_v1:42:packet_corrupt_001:asset_hd_main",
+            },
+        ),
+        (
+            TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            {
+                "profile": "malformed-media",
+                "corruptor": "invalid_duration_metadata_v1",
+                "value": "not-a-duration",
+                "seed_material": "invalid_duration_metadata_v1:42:duration_bad_001:asset_hd_main",
+                "input_path": "movies-hd/a.mkv",
+                "output_path": "movies-hd/a.mkv",
+            },
+            {
+                "profile": "malformed-media",
+                "corruptor": "invalid_duration_metadata_v1",
+                "value": "not-a-duration",
+                "seed_material": "invalid_duration_metadata_v1:42:duration_bad_001:asset_hd_main",
+            },
+        ),
+        (
+            TimelineActionName.WRONG_ORACLE_HASH,
+            {
+                "profile": "negative-oracle",
+                "algorithm": "sha256",
+                "seed_material": "wrong_oracle_hash_v1:42:wrong_hash_001:asset_hd_main",
+                "input_path": "movies-hd/a.mkv",
+                "output_path": "movies-hd/a.mkv",
+            },
+            {
+                "profile": "negative-oracle",
+                "algorithm": "sha256",
+                "seed_material": "wrong_oracle_hash_v1:42:wrong_hash_001:asset_hd_main",
+            },
+        ),
+    ],
+)
+def test_derive_version_history_includes_interceptor_summaries(
+    action: TimelineActionName,
+    state_delta: dict[str, object],
+    expected_summary: dict[str, object],
+) -> None:
+    journal = [
+        _validated_entry(
+            _atomic(
+                event_id="ev_interceptor",
+                action=action,
+                logical_time_ns=1_000_000_000,
+                target="asset_hd_main",
+                input_version_ids=["version_0001"],
+                output_version_ids=["version_0002"],
+                **state_delta,
+            )
+        ),
+    ]
+
+    history = derive_version_history("asset_hd_main", journal)
+
+    assert len(history) == 1
+    assert history[0].action == action
+    assert history[0].state_delta_summary == expected_summary
+
+
+def test_derive_version_history_excludes_touch_mtime() -> None:
+    journal = [
+        _validated_entry(
+            _atomic(
+                event_id="touch_mtime_001",
+                action=TimelineActionName.TOUCH_MTIME,
+                logical_time_ns=1_000_000_000,
+                target="asset_hd_main",
+                path="movies-hd/a.mkv",
+                profile="filesystem-artifacts",
+                offset="2s",
+            )
+        ),
+    ]
+
+    assert derive_version_history("asset_hd_main", journal) == []
 
 
 def test_version_history_orders_by_journal_order_across_all_5_actions() -> None:

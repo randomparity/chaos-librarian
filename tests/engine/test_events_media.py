@@ -179,6 +179,178 @@ class TestCorruptContainerHeaderHandler:
         assert entry.state_delta["seed_material"] == "container_header_v1:777:corrupt_header_001:a0"
 
 
+class TestInterceptorHandlers:
+    """Interceptors emit deterministic journal evidence for phase-B materializers."""
+
+    @pytest.mark.parametrize(
+        ("event", "expected_delta", "expected_corruptor"),
+        [
+            (
+                {
+                    "id": "truncate_001",
+                    "at": "1s",
+                    "action": "truncate_file",
+                    "target": "a0",
+                    "keep_bytes": 64,
+                },
+                {
+                    "input_path": "movies-hd/a0.mkv",
+                    "output_path": "movies-hd/a0.mkv",
+                    "profile": "malformed-media",
+                    "corruptor": "truncate_file_v1",
+                    "keep_bytes": 64,
+                    "seed_material": "truncate_file_v1:42:truncate_001:a0",
+                },
+                "truncate_file_v1",
+            ),
+            (
+                {
+                    "id": "packet_corrupt_001",
+                    "at": "1s",
+                    "action": "corrupt_packet_range",
+                    "target": "a0",
+                    "stream": "video",
+                    "packet_start": 0,
+                    "packet_count": 2,
+                },
+                {
+                    "input_path": "movies-hd/a0.mkv",
+                    "output_path": "movies-hd/a0.mkv",
+                    "profile": "malformed-media",
+                    "corruptor": "packet_range_v1",
+                    "stream": "video",
+                    "packet_start": 0,
+                    "packet_count": 2,
+                    "seed_material": "packet_range_v1:42:packet_corrupt_001:a0",
+                },
+                "packet_range_v1",
+            ),
+            (
+                {
+                    "id": "duration_bad_001",
+                    "at": "1s",
+                    "action": "write_invalid_duration_metadata",
+                    "target": "a0",
+                    "value": "not-a-duration",
+                },
+                {
+                    "input_path": "movies-hd/a0.mkv",
+                    "output_path": "movies-hd/a0.mkv",
+                    "profile": "malformed-media",
+                    "corruptor": "invalid_duration_metadata_v1",
+                    "value": "not-a-duration",
+                    "seed_material": "invalid_duration_metadata_v1:42:duration_bad_001:a0",
+                },
+                "invalid_duration_metadata_v1",
+            ),
+        ],
+    )
+    def test_malformed_media_interceptors_allocate_corruption_versions(
+        self,
+        event: dict[str, object],
+        expected_delta: dict[str, object],
+        expected_corruptor: str,
+    ) -> None:
+        scenario = _scenario([event], profiles=["malformed-media"])
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        new_version_id = state.version_id_for_asset("a0")
+        assert isinstance(entry, AtomicJournalEntry)
+        assert entry.phase == JournalPhase.ATOMIC
+        assert entry.state_delta == expected_delta
+        assert entry.input_version_ids == [prior_version_id]
+        assert entry.output_version_ids == [new_version_id]
+        assert new_version_id != prior_version_id
+        version = state.versions[new_version_id]
+        assert version.corruption is not None
+        assert version.corruption.corruptor == expected_corruptor
+
+    def test_touch_mtime_records_filesystem_delta_without_new_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "touch_mtime_001",
+                    "at": "1s",
+                    "action": "touch_mtime",
+                    "target": "a0",
+                    "offset": "2s",
+                }
+            ],
+            profiles=["filesystem-artifacts"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        assert isinstance(entry, AtomicJournalEntry)
+        assert entry.phase == JournalPhase.ATOMIC
+        assert entry.state_delta == {
+            "path": "movies-hd/a0.mkv",
+            "profile": "filesystem-artifacts",
+            "offset": "2s",
+        }
+        assert entry.input_version_ids == []
+        assert entry.output_version_ids == []
+        assert state.version_id_for_asset("a0") == prior_version_id
+
+    def test_wrong_oracle_hash_allocates_uncorrupted_version(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "wrong_hash_001",
+                    "at": "1s",
+                    "action": "wrong_oracle_hash",
+                    "target": "a0",
+                }
+            ],
+            profiles=["negative-oracle"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        new_version_id = state.version_id_for_asset("a0")
+        assert isinstance(entry, AtomicJournalEntry)
+        assert entry.phase == JournalPhase.ATOMIC
+        assert entry.state_delta == {
+            "input_path": "movies-hd/a0.mkv",
+            "output_path": "movies-hd/a0.mkv",
+            "profile": "negative-oracle",
+            "algorithm": "sha256",
+            "seed_material": "wrong_oracle_hash_v1:42:wrong_hash_001:a0",
+        }
+        assert entry.input_version_ids == [prior_version_id]
+        assert entry.output_version_ids == [new_version_id]
+        assert new_version_id != prior_version_id
+        assert state.versions[new_version_id].corruption is None
+
+
 class TestReencodeVideoHandler:
     """reencode_video allocates a new version and records the codec/resolution delta.
 
