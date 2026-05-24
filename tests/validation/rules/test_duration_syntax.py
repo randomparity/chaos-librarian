@@ -75,6 +75,26 @@ class TestRule3DurationSyntax:
             for i in collector.issues
         )
 
+    def test_bad_touch_mtime_offset(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(
+            profiles=["filesystem-artifacts"],
+            timeline=[
+                {
+                    "id": "mtime_001",
+                    "at": "1s",
+                    "action": "touch_mtime",
+                    "target": "a",
+                    "offset": "bogus",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_DURATION_SYNTAX and "offset" in (i.path or "")
+            for i in collector.issues
+        )
+
     def test_valid_durations_no_issues(self, minimal_scenario, empty_index) -> None:
         raw = minimal_scenario(
             timeline=[
