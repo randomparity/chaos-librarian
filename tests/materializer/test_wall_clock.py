@@ -622,6 +622,34 @@ def test_interceptor_catalog_run_records_network_lag_evidence(
     assert actions_by_effect["held_handle"].enforced is False
 
 
+def test_active_slow_copy_grows_during_idle_waits(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    observed_sizes: list[int] = []
+    original = wall_clock._grow_active_slow_copies
+
+    def spy(library_root, sessions, *, logical_ns: int) -> None:
+        original(library_root, sessions, logical_ns=logical_ns)
+        temp = library_root / "movies-hd" / "Nova.mkv.part"
+        if temp.exists():
+            observed_sizes.append(temp.stat().st_size)
+
+    monkeypatch.setattr(wall_clock, "_grow_active_slow_copies", spy)
+
+    wall_clock.run_wall_clock_scenario(
+        _FIXTURE_DIR / "slow-copy-materialize.yaml",
+        tmp_path / "run",
+        duration="5s",
+        speed="1x",
+    )
+
+    source_size = len(b"asset_main-bytes")
+    partial_sizes = {size for size in observed_sizes if 0 < size < source_size}
+    assert len(partial_sizes) >= 2
+
+
 def test_filesystem_failure_writes_run_failure_metadata(
     fake_clock: FakeClock,
     monkeypatch: pytest.MonkeyPatch,

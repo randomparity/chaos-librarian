@@ -92,6 +92,8 @@ __all__ = [
     "run_wall_clock_scenario",
 ]
 
+_SLOW_COPY_POLL_INTERVAL_NS = 1_000_000_000
+
 
 class WallClockUsageError(ChaosLibrarianValueError):
     """Raised for invalid wall-clock-only CLI parameters."""
@@ -355,7 +357,10 @@ def _run_timed_phase(
                 break
             due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
             if due_count == 0:
-                _sleep_until(_next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed))
+                wake_ns = _next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed)
+                if state.slow_copies:
+                    wake_ns = min(wake_ns, now_ns + _SLOW_COPY_POLL_INTERVAL_NS)
+                _sleep_until(wake_ns)
                 continue
             for _ in range(due_count):
                 if _monotonic_ns() >= deadline_ns:
