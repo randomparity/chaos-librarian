@@ -39,20 +39,39 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 |----------|----------------|
-| scenario | 8 |
-| manifest | 5 |
+| scenario | 9 |
+| manifest | 6 |
 | journal | 1 |
 | replay bundle | 6 |
 | validation | 1 |
-| materialization | 8 |
+| materialization | 9 |
 | run sentinel | 2 |
-| asset report | 5 |
+| asset report | 6 |
 | work report | 1 |
 | variant report | 1 |
 | bundle report | 1 |
 | capabilities | 2 |
 | observed state | 1 |
 | divergence | 1 |
+
+Scenario v9 adds the interceptor catalog actions:
+`truncate_file`, `corrupt_packet_range`, `write_invalid_duration_metadata`,
+`touch_mtime`, and `wrong_oracle_hash`. It also adds the
+`filesystem-artifacts` and `negative-oracle` profile labels. These extend the
+existing `malformed-media` and `network-fs-lag` surfaces rather than changing
+the meaning of earlier actions.
+
+Manifest v6 widens `CorruptionRecord`. Corruption evidence can now include
+optional concrete byte ranges, packet-range evidence (`stream`, `packet_start`,
+`packet_count`), and metadata evidence such as invalid duration tag values.
+
+Materialization v9 adds `OracleHashAction` records for `wrong_oracle_hash`.
+`FilesystemAction` also carries mtime evidence for `touch_mtime` through
+`mtime_before_ns` and `mtime_after_ns`.
+
+Asset report v6 mirrors Manifest v6: each current snapshot can carry the same
+widened corruption metadata so per-asset report consumers do not need to read
+the whole manifest to see byte, packet, or metadata corruption evidence.
 
 Scenario v8 adds the performance and network filesystem lag profile labels plus
 `network_lag_start` / `network_lag_commit` timeline events.

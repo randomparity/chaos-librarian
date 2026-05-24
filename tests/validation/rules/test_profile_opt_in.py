@@ -28,6 +28,16 @@ def _lag_start_event() -> dict[str, object]:
     }
 
 
+def _profile_gated_event(action: str, **fields: object) -> dict[str, object]:
+    return {
+        "id": f"{action}_001",
+        "at": "1s",
+        "action": action,
+        "target": "a",
+        **fields,
+    }
+
+
 def test_corruption_without_profile_emits_e_profile_required(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(timeline=[_corruption_event()])
     collector = IssueCollector()
@@ -43,6 +53,107 @@ def test_corruption_with_malformed_media_profile_passes_profile_rule(
     raw = minimal_scenario(
         profiles=["malformed-media"],
         timeline=[_corruption_event()],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_malformed_media_interceptor_without_profile_emits_e_profile_required(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        timeline=[
+            _profile_gated_event("truncate_file", keep_bytes=64),
+            _profile_gated_event(
+                "corrupt_packet_range",
+                stream="video",
+                packet_start=0,
+                packet_count=1,
+            ),
+            _profile_gated_event("write_invalid_duration_metadata", value="invalid"),
+        ],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    issues = [issue for issue in collector.issues if issue.code == codes.E_PROFILE_REQUIRED]
+    assert len(issues) == 3
+    assert {issue.path for issue in issues} == {
+        "$.timeline[0].action",
+        "$.timeline[1].action",
+        "$.timeline[2].action",
+    }
+
+
+def test_malformed_media_interceptor_with_profile_passes_profile_rule(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=["malformed-media"],
+        timeline=[
+            _profile_gated_event("truncate_file", keep_bytes=64),
+            _profile_gated_event(
+                "corrupt_packet_range",
+                stream="video",
+                packet_start=0,
+                packet_count=1,
+            ),
+            _profile_gated_event("write_invalid_duration_metadata", value="invalid"),
+        ],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_filesystem_artifact_interceptor_without_profile_emits_e_profile_required(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(timeline=[_profile_gated_event("touch_mtime", offset="2s")])
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_filesystem_artifact_interceptor_with_profile_passes_profile_rule(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=["filesystem-artifacts"],
+        timeline=[_profile_gated_event("touch_mtime", offset="2s")],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_negative_oracle_interceptor_without_profile_emits_e_profile_required(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(timeline=[_profile_gated_event("wrong_oracle_hash")])
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_negative_oracle_interceptor_with_profile_passes_profile_rule(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=["negative-oracle"],
+        timeline=[_profile_gated_event("wrong_oracle_hash")],
     )
     collector = IssueCollector()
 

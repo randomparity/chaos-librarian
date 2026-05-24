@@ -33,6 +33,7 @@ from chaos_librarian.contract.scenario import (
     AddFileEvent,
     ArchiveFileEvent,
     CorruptContainerHeaderEvent,
+    CorruptPacketRangeEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -51,7 +52,11 @@ from chaos_librarian.contract.scenario import (
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
+    TouchMtimeEvent,
+    TruncateFileEvent,
     UpdateSidecarEvent,
+    WriteInvalidDurationMetadataEvent,
+    WrongOracleHashEvent,
 )
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.engine.context import EngineEventContext
@@ -108,6 +113,48 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "corruptor",
             "byte_start",
             "byte_count",
+            "seed_material",
+        }
+    ),
+    TimelineActionName.TRUNCATE_FILE: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "keep_bytes",
+            "seed_material",
+        }
+    ),
+    TimelineActionName.CORRUPT_PACKET_RANGE: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "stream",
+            "packet_start",
+            "packet_count",
+            "seed_material",
+        }
+    ),
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "value",
+            "seed_material",
+        }
+    ),
+    TimelineActionName.TOUCH_MTIME: frozenset({"path", "profile", "offset"}),
+    TimelineActionName.WRONG_ORACLE_HASH: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "algorithm",
             "seed_material",
         }
     ),
@@ -203,6 +250,32 @@ def _new_atomic_entry(
         state_delta=state_delta,
         phase=JournalPhase.ATOMIC,
     )
+
+
+def _seed_material(corruptor: str, ctx: EngineEventContext, event_id: str, target: str) -> str:
+    return f"{corruptor}:{ctx.resolved_seed}:{event_id}:{target}"
+
+
+def _bind_corruption_version(
+    state: WorldState,
+    ids: IdAllocator,
+    *,
+    target: str,
+    record: CorruptionRecord,
+) -> tuple[str, str]:
+    prior_version_id = state.version_id_for_asset(target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=target,
+            index=prior_version.index + 1,
+            corruption=record,
+        ),
+    )
+    return prior_version_id, new_version_id
 
 
 def _handle_move_asset(
@@ -791,11 +864,8 @@ def _handle_corrupt_container_header(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = _checked_event(resolved, CorruptContainerHeaderEvent)
-    prior_version_id = state.version_id_for_asset(event.target)
-    prior_version = state.versions[prior_version_id]
-    new_version_id = ids.next_version_id()
     corruptor = "container_header_v1"
-    seed_material = f"{corruptor}:{ctx.resolved_seed}:{event.id}:{event.target}"
+    seed_material = _seed_material(corruptor, ctx, event.id, event.target)
     record = CorruptionRecord(
         profile=ProfileName.MALFORMED_MEDIA,
         event_id=event.id,
@@ -804,14 +874,8 @@ def _handle_corrupt_container_header(
         byte_count=event.bytes,
         seed_material=seed_material,
     )
-    state.bind_version(
-        event.target,
-        ManifestVersion(
-            id=new_version_id,
-            asset_id=event.target,
-            index=prior_version.index + 1,
-            corruption=record,
-        ),
+    prior_version_id, new_version_id = _bind_corruption_version(
+        state, ids, target=event.target, record=record
     )
     loc_id = state.location_id_for_asset(event.target)
     location = state.locations[loc_id]
@@ -832,6 +896,204 @@ def _handle_corrupt_container_header(
                 "byte_start": 0,
                 "byte_count": event.bytes,
                 "seed_material": seed_material,
+            },
+        ),
+    )
+
+
+def _handle_truncate_file(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = _checked_event(resolved, TruncateFileEvent)
+    corruptor = "truncate_file_v1"
+    seed_material = _seed_material(corruptor, ctx, event.id, event.target)
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        seed_material=seed_material,
+        metadata={"keep_bytes": event.keep_bytes},
+    )
+    prior_version_id, new_version_id = _bind_corruption_version(
+        state, ids, target=event.target, record=record
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.TRUNCATE_FILE,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "keep_bytes": event.keep_bytes,
+                "seed_material": seed_material,
+            },
+        ),
+    )
+
+
+def _handle_corrupt_packet_range(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = _checked_event(resolved, CorruptPacketRangeEvent)
+    corruptor = "packet_range_v1"
+    seed_material = _seed_material(corruptor, ctx, event.id, event.target)
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        seed_material=seed_material,
+        stream=event.stream.value,
+        packet_start=event.packet_start,
+        packet_count=event.packet_count,
+    )
+    prior_version_id, new_version_id = _bind_corruption_version(
+        state, ids, target=event.target, record=record
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.CORRUPT_PACKET_RANGE,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "stream": event.stream.value,
+                "packet_start": event.packet_start,
+                "packet_count": event.packet_count,
+                "seed_material": seed_material,
+            },
+        ),
+    )
+
+
+def _handle_write_invalid_duration_metadata(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = _checked_event(resolved, WriteInvalidDurationMetadataEvent)
+    corruptor = "invalid_duration_metadata_v1"
+    seed_material = _seed_material(corruptor, ctx, event.id, event.target)
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        seed_material=seed_material,
+        metadata={"value": event.value},
+    )
+    prior_version_id, new_version_id = _bind_corruption_version(
+        state, ids, target=event.target, record=record
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "value": event.value,
+                "seed_material": seed_material,
+            },
+        ),
+    )
+
+
+def _handle_touch_mtime(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, TouchMtimeEvent)
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.TOUCH_MTIME,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            state_delta={
+                "path": location.path,
+                "profile": ProfileName.FILESYSTEM_ARTIFACTS.value,
+                "offset": event.offset,
+            },
+        ),
+    )
+
+
+def _handle_wrong_oracle_hash(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = _checked_event(resolved, WrongOracleHashEvent)
+    prior_version_id = state.version_id_for_asset(event.target)
+    prior_version = state.versions[prior_version_id]
+    new_version_id = ids.next_version_id()
+    state.bind_version(
+        event.target,
+        ManifestVersion(
+            id=new_version_id,
+            asset_id=event.target,
+            index=prior_version.index + 1,
+        ),
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.WRONG_ORACLE_HASH,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.NEGATIVE_ORACLE.value,
+                "algorithm": "sha256",
+                "seed_material": _seed_material(
+                    "wrong_oracle_hash_v1", ctx, event.id, event.target
+                ),
             },
         ),
     )
@@ -963,6 +1225,11 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.REMOVE_SIDECAR: _handle_remove_sidecar,
     TimelineActionName.UPDATE_SIDECAR: _handle_update_sidecar,
     TimelineActionName.CORRUPT_CONTAINER_HEADER: _handle_corrupt_container_header,
+    TimelineActionName.TRUNCATE_FILE: _handle_truncate_file,
+    TimelineActionName.CORRUPT_PACKET_RANGE: _handle_corrupt_packet_range,
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA: _handle_write_invalid_duration_metadata,
+    TimelineActionName.TOUCH_MTIME: _handle_touch_mtime,
+    TimelineActionName.WRONG_ORACLE_HASH: _handle_wrong_oracle_hash,
     TimelineActionName.NETWORK_LAG_START: _handle_network_lag_start,
     TimelineActionName.NETWORK_LAG_COMMIT: _handle_network_lag_commit,
 }

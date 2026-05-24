@@ -128,8 +128,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_five():
-    assert MANIFEST_SCHEMA_VERSION == 5
+def test_manifest_schema_version_is_six():
+    assert MANIFEST_SCHEMA_VERSION == 6
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -168,7 +168,7 @@ def test_manifest_sidecar_subtitle_keeps_language():
     assert sidecar.kind == "subtitle"
 
 
-def test_manifest_sidecar_kind_remains_free_form_for_v5_compatibility():
+def test_manifest_sidecar_kind_remains_free_form_for_v6_compatibility():
     sidecar = ManifestSidecar.model_validate(
         {
             "id": "sidecar_0001",
@@ -181,9 +181,9 @@ def test_manifest_sidecar_kind_remains_free_form_for_v5_compatibility():
     assert sidecar.kind == "srt"
 
 
-def test_manifest_v5_schema_version():
+def test_manifest_v6_schema_version():
     manifest = Manifest(
-        schema_version=5,
+        schema_version=6,
         works=[],
         variants=[],
         bundles=[],
@@ -192,7 +192,7 @@ def test_manifest_v5_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 5
+    assert manifest.schema_version == 6
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:

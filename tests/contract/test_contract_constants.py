@@ -32,24 +32,24 @@ def test_namespace_uuid_is_v5() -> None:
     assert CHAOS_LIBRARIAN_NAMESPACE_UUID.version == 5
 
 
-def test_scenario_schema_version_bumped_to_8():
-    assert SCENARIO_SCHEMA_VERSION == 8
+def test_scenario_schema_version_bumped_to_9():
+    assert SCENARIO_SCHEMA_VERSION == 9
 
 
-def test_manifest_schema_version_bumped_to_5():
-    assert MANIFEST_SCHEMA_VERSION == 5
+def test_manifest_schema_version_bumped_to_6():
+    assert MANIFEST_SCHEMA_VERSION == 6
 
 
 def test_replay_bundle_schema_version_bumped_to_6() -> None:
     assert REPLAY_BUNDLE_SCHEMA_VERSION == 6
 
 
-def test_asset_report_schema_version_bumped_to_5():
-    assert ASSET_REPORT_SCHEMA_VERSION == 5
+def test_asset_report_schema_version_bumped_to_6():
+    assert ASSET_REPORT_SCHEMA_VERSION == 6
 
 
-def test_materialization_schema_version_bumped_to_8():
-    assert MATERIALIZATION_SCHEMA_VERSION == 8
+def test_materialization_schema_version_bumped_to_9():
+    assert MATERIALIZATION_SCHEMA_VERSION == 9
 
 
 def test_capabilities_schema_version_bumped_to_2() -> None:

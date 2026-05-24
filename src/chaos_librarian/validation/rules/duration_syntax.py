@@ -29,8 +29,8 @@ def rule_duration_syntax(
 ) -> None:
     """Reject unparseable duration strings on timeline events.
 
-    Fields checked: ``timeline[*].at`` (every event) plus duration-bearing
-    multi-phase starts.
+    Fields checked: ``timeline[*].at`` (every event), duration-bearing
+    multi-phase starts, and ``touch_mtime.offset``.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
     for idx, event in _iter_timeline_events(raw):
@@ -52,6 +52,15 @@ def rule_duration_syntax(
                     raw_str=duration,
                     loc=("timeline", idx, "duration"),
                     field_label="duration",
+                    reporter=reporter,
+                )
+        if event.get("action") == TimelineActionName.TOUCH_MTIME:
+            offset = event.get("offset")
+            if isinstance(offset, str):
+                _check_duration(
+                    raw_str=offset,
+                    loc=("timeline", idx, "offset"),
+                    field_label="offset",
                     reporter=reporter,
                 )
 

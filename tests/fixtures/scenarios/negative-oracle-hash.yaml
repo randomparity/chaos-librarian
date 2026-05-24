@@ -1,0 +1,36 @@
+schema_version: 9
+scenario_id: negative-oracle-hash
+seed: 116
+duration_scale: short
+profiles:
+  - negative-oracle
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_negative
+    title: Negative Oracle
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 4
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: wrong_hash_001
+    at: 1s
+    action: wrong_oracle_hash
+    target: asset_main

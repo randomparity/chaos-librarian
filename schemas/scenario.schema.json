@@ -227,6 +227,53 @@
       "title": "CorruptContainerHeaderEvent",
       "type": "object"
     },
+    "CorruptPacketRangeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "corrupt_packet_range",
+          "default": "corrupt_packet_range",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "packet_count": {
+          "default": 1,
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Packet Count",
+          "type": "integer"
+        },
+        "packet_start": {
+          "minimum": 0,
+          "title": "Packet Start",
+          "type": "integer"
+        },
+        "stream": {
+          "$ref": "#/$defs/PacketStreamKind",
+          "default": "video"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "packet_start"
+      ],
+      "title": "CorruptPacketRangeEvent",
+      "type": "object"
+    },
     "CreateSidecarEvent": {
       "additionalProperties": false,
       "properties": {
@@ -638,13 +685,25 @@
       "title": "NetworkLagStartEvent",
       "type": "object"
     },
+    "PacketStreamKind": {
+      "description": "Stream kinds selectable by packet-range corruption.",
+      "enum": [
+        "video",
+        "audio",
+        "subtitle"
+      ],
+      "title": "PacketStreamKind",
+      "type": "string"
+    },
     "ProfileName": {
       "enum": [
         "malformed-media",
         "performance-smoke",
         "performance-scale",
         "performance-stress",
-        "network-fs-lag"
+        "network-fs-lag",
+        "filesystem-artifacts",
+        "negative-oracle"
       ],
       "title": "ProfileName",
       "type": "string"
@@ -961,6 +1020,78 @@
       "title": "SubtitleTrack",
       "type": "object"
     },
+    "TouchMtimeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "touch_mtime",
+          "default": "touch_mtime",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "offset": {
+          "minLength": 1,
+          "title": "Offset",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "offset"
+      ],
+      "title": "TouchMtimeEvent",
+      "type": "object"
+    },
+    "TruncateFileEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "truncate_file",
+          "default": "truncate_file",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "keep_bytes": {
+          "minimum": 1,
+          "title": "Keep Bytes",
+          "type": "integer"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "keep_bytes"
+      ],
+      "title": "TruncateFileEvent",
+      "type": "object"
+    },
     "UpdateSidecarEvent": {
       "additionalProperties": false,
       "properties": {
@@ -1079,6 +1210,73 @@
       ],
       "title": "Work",
       "type": "object"
+    },
+    "WriteInvalidDurationMetadataEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "write_invalid_duration_metadata",
+          "default": "write_invalid_duration_metadata",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "value": {
+          "default": "not-a-duration",
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Value",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "WriteInvalidDurationMetadataEvent",
+      "type": "object"
+    },
+    "WrongOracleHashEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "wrong_oracle_hash",
+          "default": "wrong_oracle_hash",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "WrongOracleHashEvent",
+      "type": "object"
     }
   },
   "additionalProperties": false,
@@ -1101,7 +1299,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 8,
+      "const": 9,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -1124,6 +1322,7 @@
             "add_file": "#/$defs/AddFileEvent",
             "archive_file": "#/$defs/ArchiveFileEvent",
             "corrupt_container_header": "#/$defs/CorruptContainerHeaderEvent",
+            "corrupt_packet_range": "#/$defs/CorruptPacketRangeEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
             "edit_metadata": "#/$defs/EditMetadataEvent",
@@ -1140,7 +1339,11 @@
             "rename_file": "#/$defs/RenameFileEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
             "slow_copy_start": "#/$defs/SlowCopyStartEvent",
-            "update_sidecar": "#/$defs/UpdateSidecarEvent"
+            "touch_mtime": "#/$defs/TouchMtimeEvent",
+            "truncate_file": "#/$defs/TruncateFileEvent",
+            "update_sidecar": "#/$defs/UpdateSidecarEvent",
+            "write_invalid_duration_metadata": "#/$defs/WriteInvalidDurationMetadataEvent",
+            "wrong_oracle_hash": "#/$defs/WrongOracleHashEvent"
           },
           "propertyName": "action"
         },
@@ -1198,6 +1401,21 @@
           },
           {
             "$ref": "#/$defs/CorruptContainerHeaderEvent"
+          },
+          {
+            "$ref": "#/$defs/TruncateFileEvent"
+          },
+          {
+            "$ref": "#/$defs/CorruptPacketRangeEvent"
+          },
+          {
+            "$ref": "#/$defs/WriteInvalidDurationMetadataEvent"
+          },
+          {
+            "$ref": "#/$defs/TouchMtimeEvent"
+          },
+          {
+            "$ref": "#/$defs/WrongOracleHashEvent"
           },
           {
             "$ref": "#/$defs/NetworkLagStartEvent"

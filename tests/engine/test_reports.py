@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import (
     Manifest,
@@ -38,7 +39,7 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
         else []
     )
     return Manifest(
-        schema_version=5,
+        schema_version=MANIFEST_SCHEMA_VERSION,
         works=[ManifestWork(id="work_blazar", title="Synthetic Blazar")],
         variants=[ManifestVariant(id="variant_hd", work_id="work_blazar", label="hd")],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],

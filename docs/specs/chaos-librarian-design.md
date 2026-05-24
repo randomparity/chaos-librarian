@@ -833,27 +833,28 @@ base recipe
   -> oracle journal
 ```
 
-Future bump-in-the-wire interceptors:
+Implemented bump-in-the-wire interceptor catalog:
 
-- truncate file during copy
-- corrupt container header
-- corrupt one stream packet range
-- write invalid duration metadata
-- remove sidecar after event
-- delay rename commit
-- hold file open
-- alter mtime without changing content
-- simulate network filesystem lag
-- produce intentionally wrong oracle hash for negative adapter tests
+- `corrupt_container_header` (`malformed-media`)
+- `truncate_file` (`malformed-media`)
+- `corrupt_packet_range` (`malformed-media`)
+- `write_invalid_duration_metadata` (`malformed-media`)
+- `touch_mtime` (`filesystem-artifacts`)
+- `network_lag_start` / `network_lag_commit` with `delayed_visibility`
+  (`network-fs-lag`)
+- `network_lag_start` / `network_lag_commit` with `delayed_rename`
+  (`network-fs-lag`)
+- `network_lag_start` / `network_lag_commit` with `held_handle`
+  (`network-fs-lag`)
+- `wrong_oracle_hash` (`negative-oracle`)
 
-Corruption and malformed-media scenarios are not V1 defaults. They are explicit
+Corruption and malformed-media scenarios are not defaults. They are explicit
 opt-in profiles so early failures remain easy to interpret.
-
-Sprint 10 implements the first explicit malformed-media lane:
-`profiles: ["malformed-media"]` plus the atomic `corrupt_container_header`
-timeline action. The broader interceptor framework, packet-range corruption,
-duration-metadata corruption, network-lag profile, and expanded profile packs
-are deferred to GitHub issues #70-#75.
+`write_invalid_duration_metadata` is tag-level corruption: it writes invalid
+duration metadata without claiming that the media essence was transcoded or
+packet-damaged. `wrong_oracle_hash` fixtures intentionally publish an oracle
+hash that does not match the file bytes so `compare` can produce
+`D_HASH_MISMATCH` evidence for consumer validation.
 
 ## Materializer Backends
 

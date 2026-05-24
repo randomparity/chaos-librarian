@@ -18,6 +18,7 @@ from chaos_librarian.contract.scenario import (
     ArchiveFileEvent,
     AudioChannelLayout,
     CorruptContainerHeaderEvent,
+    CorruptPacketRangeEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -37,7 +38,11 @@ from chaos_librarian.contract.scenario import (
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     TimelineActionName,
+    TouchMtimeEvent,
+    TruncateFileEvent,
     UpdateSidecarEvent,
+    WriteInvalidDurationMetadataEvent,
+    WrongOracleHashEvent,
 )
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.context import EngineEventContext
@@ -64,6 +69,11 @@ type _TerminalEvent = (
     | RemoveSidecarEvent
     | UpdateSidecarEvent
     | CorruptContainerHeaderEvent
+    | TruncateFileEvent
+    | CorruptPacketRangeEvent
+    | WriteInvalidDurationMetadataEvent
+    | TouchMtimeEvent
+    | WrongOracleHashEvent
     | NetworkLagStartEvent
     | NetworkLagCommitEvent
 )
@@ -135,7 +145,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=8``.
+        A fully-validated Scenario at ``schema_version=9``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -185,7 +195,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 8,
+            "schema_version": 9,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -325,6 +335,25 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         at="0ns",
         target="asset_hd_main",
         bytes=64,
+    ),
+    TimelineActionName.TRUNCATE_FILE: lambda: TruncateFileEvent(
+        id="ev", at="0ns", target="asset_hd_main", keep_bytes=64
+    ),
+    TimelineActionName.CORRUPT_PACKET_RANGE: lambda: CorruptPacketRangeEvent(
+        id="ev",
+        at="0ns",
+        target="asset_hd_main",
+        packet_start=0,
+        packet_count=2,
+    ),
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA: lambda: WriteInvalidDurationMetadataEvent(
+        id="ev", at="0ns", target="asset_hd_main", value="not-a-duration"
+    ),
+    TimelineActionName.TOUCH_MTIME: lambda: TouchMtimeEvent(
+        id="ev", at="0ns", target="asset_hd_main", offset="2s"
+    ),
+    TimelineActionName.WRONG_ORACLE_HASH: lambda: WrongOracleHashEvent(
+        id="ev", at="0ns", target="asset_hd_main"
     ),
     TimelineActionName.NETWORK_LAG_START: lambda: NetworkLagStartEvent(
         id="ev",

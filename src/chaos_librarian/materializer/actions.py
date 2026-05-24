@@ -43,7 +43,24 @@ _STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
 SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
 
 _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {TimelineActionName.CORRUPT_CONTAINER_HEADER}
+    {
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+    }
+)
+
+_ORACLE_HASH_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.WRONG_ORACLE_HASH,
+    }
+)
+
+_FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.TOUCH_MTIME,
+    }
 )
 
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
@@ -54,5 +71,9 @@ NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 )
 
 SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
+    _STDLIB_ACTIONS
+    | _MEDIA_ACTIONS
+    | _CORRUPTION_ACTIONS
+    | _ORACLE_HASH_ACTIONS
+    | _FILESYSTEM_ARTIFACT_ACTIONS
 )

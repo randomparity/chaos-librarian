@@ -56,6 +56,14 @@ def test_report_and_finalize_builders_require_explicit_content_sources() -> None
     ):
         parameter = inspect.signature(func).parameters["content_sources"]
         assert parameter.default is inspect.Signature.empty
+    for func in (finalize_mod.finalize_success, finalize_mod.finalize_failure_phase_b):
+        for name in (
+            "filesystem_actions",
+            "media_actions",
+            "corruption_actions",
+            "oracle_hash_actions",
+        ):
+            assert inspect.signature(func).parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 def _caps() -> Capabilities:
@@ -126,9 +134,10 @@ def test_finalize_success_writes_complete_metadata(
         ctx,
         [invocation],
         materialized,
-        [],
-        [],
-        [],
+        filesystem_actions=[],
+        media_actions=[],
+        corruption_actions=[],
+        oracle_hash_actions=[],
         content_sources=content_sources,
     )
 
@@ -180,9 +189,10 @@ def test_finalize_failure_phase_b_records_failure_metadata(
         Outcome.FS_FAILED,
         [],
         [],
-        [action],
-        [],
-        [],
+        filesystem_actions=[action],
+        media_actions=[],
+        corruption_actions=[],
+        oracle_hash_actions=[],
         content_sources=[],
     )
 

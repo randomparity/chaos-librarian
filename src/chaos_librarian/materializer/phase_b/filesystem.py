@@ -20,16 +20,20 @@ through ``cleanup_failed_run``.
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
 
+from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import FilesystemAction
+from chaos_librarian.contract.paths import resolve_under_library
 from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.phase_b.content import hash_file
 
 __all__ = [
     "FilesystemPhaseBContext",
@@ -191,6 +195,30 @@ def _remove_sidecar(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> Filesy
     )
 
 
+def _touch_mtime(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
+    """Adjust file mtime without changing content bytes."""
+    asset_id = entry.target_ids[0]
+    path = str(entry.state_delta["path"])
+    target = resolve_under_library(Path(path), ctx.library_root)
+    offset_ns = parse_duration(str(entry.state_delta["offset"]))
+    content_hash = hash_file(target)
+    before = target.stat()
+    mtime_after_ns = before.st_mtime_ns + offset_ns
+    os.utime(target, ns=(before.st_atime_ns, mtime_after_ns))
+    return FilesystemAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.TOUCH_MTIME,
+        target_asset_id=asset_id,
+        from_path=path,
+        to_path=path,
+        temp_path=None,
+        content_hash=content_hash,
+        mtime_before_ns=before.st_mtime_ns,
+        mtime_after_ns=mtime_after_ns,
+        duration_ns=0,
+    )
+
+
 def _slow_copy_start(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Stage a slow-copy at ``temp_path``; defer rename until commit."""
     asset_id = entry.target_ids[0]
@@ -267,6 +295,7 @@ _DISPATCH: Final[
     TimelineActionName.DELETE_FILE: _delete_file,
     TimelineActionName.ADD_FILE: _add_file,
     TimelineActionName.REMOVE_SIDECAR: _remove_sidecar,
+    TimelineActionName.TOUCH_MTIME: _touch_mtime,
     TimelineActionName.SLOW_COPY_START: _slow_copy_start,
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _move_asset,

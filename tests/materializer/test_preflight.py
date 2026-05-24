@@ -38,7 +38,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 8,
+            "schema_version": 9,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",
@@ -153,8 +153,41 @@ def test_preflight_accepts_corrupt_container_header() -> None:
     preflight_timeline(scenario)
 
 
+def test_preflight_accepts_malformed_media_corruption_actions() -> None:
+    scenario = _scenario_with_timeline(
+        [
+            ("truncate_file", "asset_hd_main", {"keep_bytes": 64}),
+            (
+                "corrupt_packet_range",
+                "asset_hd_main",
+                {"stream": "video", "packet_start": 0, "packet_count": 2},
+            ),
+            (
+                "write_invalid_duration_metadata",
+                "asset_hd_main",
+                {"value": "not-a-duration"},
+            ),
+        ]
+    )
+
+    preflight_timeline(scenario)
+
+
+def test_preflight_accepts_touch_mtime_for_filesystem_dispatch() -> None:
+    scenario = _scenario_with_timeline([("touch_mtime", "asset_hd_main", {"offset": "2s"})])
+
+    preflight_timeline(scenario)
+
+
+def test_preflight_accepts_wrong_oracle_hash() -> None:
+    scenario = _scenario_with_timeline([("wrong_oracle_hash", "asset_hd_main", {})])
+
+    preflight_timeline(scenario)
+
+
 def test_supported_s10_actions_exported_from_preflight() -> None:
     assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
+    assert "wrong_oracle_hash" in {action.value for action in SUPPORTED_S10_ACTIONS}
 
 
 def test_preflight_timeline_rejects_network_lag_for_materialize() -> None:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import uuid
 from pathlib import Path
@@ -26,6 +27,7 @@ from chaos_librarian.contract.manifest import (
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
+    OracleHashAction,
     Outcome,
     ToolInvocation,
 )
@@ -46,15 +48,17 @@ from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.persistence.reports import build_reports
 from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 from chaos_librarian.materializer.run import materialize_scenario
 
 _RUN_ID = uuid.UUID("1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01")
 _CORRUPTED_HASH = "sha256:" + "2" * 64
 _INPUT_HASH = "sha256:" + "1" * 64
+_FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 8
+schema_version: 9
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -118,7 +122,7 @@ def _manifest(*, corrupted: bool) -> Manifest:
             )
         )
     return Manifest(
-        schema_version=5,
+        schema_version=6,
         works=[ManifestWork(id="work_001", title="Broken Header")],
         variants=[ManifestVariant(id="variant_hd", work_id="work_001", label="hd")],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
@@ -150,7 +154,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 8\n",
+            scenario="schema_version: 9\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,
@@ -220,6 +224,42 @@ def test_materialize_writes_one_corruption_action(
     assert persisted["corruption_actions"][0]["output_content_hash"] == _CORRUPTED_HASH
 
 
+def test_materialize_negative_oracle_hash_reports_false_hash(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_successful_synthesis(monkeypatch)
+    scenario = _FIXTURE_DIR / "negative-oracle-hash.yaml"
+    out = tmp_path / "run-001"
+
+    artifacts = materialize_scenario(scenario, out)
+
+    action = artifacts.materialization_report.oracle_hash_actions[0]
+    current = _latest_version(artifacts.current_manifest, "asset_main")
+    actual_path = out / "library" / artifacts.current_manifest.locations[0].path
+    actual_hash = "sha256:" + hashlib.sha256(actual_path.read_bytes()).hexdigest()
+    assert action.actual_content_hash != action.reported_content_hash
+    assert current.content_hash == action.reported_content_hash
+    assert current.probed is not None
+    assert actual_hash == action.actual_content_hash
+
+
+def test_oracle_hash_actions_survive_static_phase_b_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_successful_synthesis(monkeypatch)
+    _patch_second_oracle_hash_failure(monkeypatch)
+    out = tmp_path / "run-001"
+
+    with pytest.raises(CorruptionActionError):
+        materialize_scenario(_write_negative_oracle_scenario(tmp_path), out)
+
+    body = json.loads((out / "materialization.json").read_text())
+    assert body["outcome"] == Outcome.CORRUPTION_FAILED.value
+    assert body["oracle_hash_actions"][0]["event_id"] == "wrong_hash_001"
+
+
 def test_materialize_persisted_asset_report_matches_current_manifest(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -259,6 +299,55 @@ def test_corruption_failure_writes_corruption_failed_report(
 def _write_scenario(tmp_path: Path) -> Path:
     path = tmp_path / "malformed.yaml"
     path.write_text(_MALFORMED_SCENARIO)
+    return path
+
+
+def _write_negative_oracle_scenario(tmp_path: Path) -> Path:
+    path = tmp_path / "negative-oracle-two-events.yaml"
+    path.write_text(
+        """\
+schema_version: 9
+scenario_id: negative-oracle-two-events
+seed: 42
+duration_scale: short
+profiles:
+  - negative-oracle
+library:
+  roots:
+    - id: r0
+      path: movies-hd
+works:
+  - id: w0
+    title: Negative Oracle
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: wrong_hash_001
+    at: 1s
+    action: wrong_oracle_hash
+    target: asset_main
+  - id: wrong_hash_002
+    at: 2s
+    action: wrong_oracle_hash
+    target: asset_main
+"""
+    )
     return path
 
 
@@ -322,6 +411,36 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
 
 
+def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_apply(ctx: OracleHashPhaseBContext, entry: JournalEntry) -> OracleHashAction:
+        if entry.event_id == "wrong_hash_002":
+            raise CorruptionActionError(
+                "wrong_oracle_hash failed for event wrong_hash_002: hash failed",
+                event_id=entry.event_id,
+                action=TimelineActionName.WRONG_ORACLE_HASH,
+                cause=RuntimeError("hash failed"),
+                asset_id=entry.target_ids[0],
+            )
+        output_version_id = entry.output_version_ids[0]
+        reported_hash = "sha256:" + "9" * 64
+        ctx.post_phase_b_oracle_hashes[output_version_id] = (reported_hash, _probed())
+        return OracleHashAction(
+            event_id=entry.event_id,
+            action=TimelineActionName.WRONG_ORACLE_HASH,
+            target_asset_id=entry.target_ids[0],
+            input_path="movies-hd/asset_main.mkv",
+            output_path="movies-hd/asset_main.mkv",
+            input_version_id=entry.input_version_ids[0],
+            output_version_id=output_version_id,
+            actual_content_hash=_INPUT_HASH,
+            reported_content_hash=reported_hash,
+            seed_material="wrong_oracle_hash_v1:42:wrong_hash_001:asset_main",
+            duration_ns=1,
+        )
+
+    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
+
+
 def _probed() -> ProbedMedia:
     return ProbedMedia(container="matroska", duration_seconds=1.0, size_bytes=128, streams=[])
 
@@ -338,6 +457,8 @@ def _corruption_action(output_version_id: str) -> CorruptionAction:
         input_content_hash=_INPUT_HASH,
         output_content_hash=_CORRUPTED_HASH,
         corruptor="container_header_v1",
+        input_size_bytes=128,
+        output_size_bytes=128,
         byte_start=0,
         byte_count=64,
         seed_material="container_header_v1:42:corrupt_header_001:asset_main",
@@ -351,3 +472,10 @@ def _corrupted_version(manifest: Manifest) -> ManifestVersion:
         if version.corruption is not None:
             return version
     raise AssertionError("expected a corrupted manifest version")
+
+
+def _latest_version(manifest: Manifest, asset_id: str) -> ManifestVersion:
+    versions = [version for version in manifest.versions if version.asset_id == asset_id]
+    if not versions:
+        raise AssertionError(f"expected version for {asset_id}")
+    return max(versions, key=lambda version: version.index)

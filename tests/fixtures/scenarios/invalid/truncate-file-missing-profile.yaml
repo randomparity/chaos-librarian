@@ -1,0 +1,28 @@
+# expected: E_PROFILE_REQUIRED
+schema_version: 9
+scenario_id: truncate-file-missing-profile
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_001
+    title: Truncated File
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: truncate_001
+    at: 1s
+    action: truncate_file
+    target: asset_main
+    keep_bytes: 64

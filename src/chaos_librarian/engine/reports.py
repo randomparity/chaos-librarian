@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
+from chaos_librarian.contract import ASSET_REPORT_SCHEMA_VERSION
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import (
     Manifest,
@@ -149,7 +150,7 @@ def _build_asset_report(
         if asset_id in entry.target_ids
     ]
     return AssetReport(
-        schema_version=5,
+        schema_version=ASSET_REPORT_SCHEMA_VERSION,
         asset_id=asset_id,
         initial=initial_snapshot,
         history=history,

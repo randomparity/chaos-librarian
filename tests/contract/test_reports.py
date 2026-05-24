@@ -69,7 +69,7 @@ class TestAssetReport:
 
     def test_round_trip(self) -> None:
         report = AssetReport(
-            schema_version=5,
+            schema_version=6,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -80,7 +80,7 @@ class TestAssetReport:
 
     def test_current_may_be_none(self) -> None:
         report = AssetReport(
-            schema_version=5,
+            schema_version=6,
             asset_id="asset_hd_main",
             initial=self._snapshot(),
             history=[self._history_entry()],
@@ -91,7 +91,7 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 5,
+            "schema_version": 6,
             "asset_id": "asset_hd_main",
             "initial": self._snapshot().model_dump(),
             "history": [],
@@ -101,9 +101,9 @@ class TestAssetReport:
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_five(self) -> None:
+    def test_schema_version_constant_is_six(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 5
+        assert ASSET_REPORT_SCHEMA_VERSION == 6
 
 
 class TestOtherReports:
@@ -198,8 +198,8 @@ def test_asset_snapshot_round_trips_corruption_metadata() -> None:
     assert loaded.corruption.event_id == "corrupt_header_001"
 
 
-def test_asset_report_schema_version_is_five() -> None:
-    assert ASSET_REPORT_SCHEMA_VERSION == 5
+def test_asset_report_schema_version_is_six() -> None:
+    assert ASSET_REPORT_SCHEMA_VERSION == 6
 
 
 def test_other_report_schema_versions_stay_at_one():
@@ -229,7 +229,7 @@ def test_path_history_entry_round_trip() -> None:
 
 def test_asset_report_path_history_defaults_to_empty_list() -> None:
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "asset_id": "asset_hd_main",
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
@@ -247,9 +247,9 @@ def test_asset_report_path_history_defaults_to_empty_list() -> None:
     assert report.path_history == []
 
 
-def test_asset_report_v5_round_trip_with_path_history() -> None:
+def test_asset_report_v6_round_trip_with_path_history() -> None:
     payload = {
-        "schema_version": 5,
+        "schema_version": 6,
         "asset_id": "asset_hd_main",
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
@@ -300,17 +300,17 @@ def test_version_history_entry_extract_no_versions():
     assert entry.output_version_id is None
 
 
-def test_asset_report_v5_default_version_history_empty():
+def test_asset_report_v6_default_version_history_empty():
     snapshot = AssetSnapshot(
         location_path="movies/x.mkv",
         version_id="v0",
         version_index=0,
     )
     report = AssetReport(
-        schema_version=5,
+        schema_version=6,
         asset_id="asset_main",
         initial=snapshot,
         current=snapshot,
     )
     assert report.version_history == []
-    assert report.schema_version == 5
+    assert report.schema_version == 6

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
@@ -136,7 +137,7 @@ class WorldState:
     def to_manifest(self) -> Manifest:
         """Serialize back to the immutable Pydantic Manifest."""
         return Manifest(
-            schema_version=5,
+            schema_version=MANIFEST_SCHEMA_VERSION,
             works=list(self.works.values()),
             variants=list(self.variants.values()),
             bundles=list(self.bundles.values()),

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
@@ -31,7 +31,7 @@ def _prepare(scenario_name: str) -> tuple[RunInput, ValidationReport]:
 
 def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     empty_manifest = Manifest(
-        schema_version=5,
+        schema_version=MANIFEST_SCHEMA_VERSION,
         works=[],
         variants=[],
         bundles=[],

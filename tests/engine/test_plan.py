@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     PlanOnlyReplayBundle,
@@ -38,7 +39,7 @@ def _input_and_report(name: str) -> tuple[RunInput, ValidationReport]:
 
 def _corruption_input_and_report(seed: str = "42") -> tuple[RunInput, ValidationReport]:
     scenario = f"""
-schema_version: 8
+schema_version: 9
 scenario_id: corruption-plan-test
 seed: {seed}
 duration_scale: short
@@ -86,8 +87,8 @@ class TestRunPlanBasics:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         artifacts = run_plan(run_input=run_input, validation_report=report)
         assert isinstance(artifacts, PlanArtifacts)
-        assert artifacts.initial_manifest.schema_version == 5
-        assert artifacts.current_manifest.schema_version == 5
+        assert artifacts.initial_manifest.schema_version == MANIFEST_SCHEMA_VERSION
+        assert artifacts.current_manifest.schema_version == MANIFEST_SCHEMA_VERSION
         assert len(artifacts.journal) == 2  # move + rename
         assert isinstance(artifacts.replay_bundle, PlanOnlyReplayBundle)
         assert artifacts.replay_bundle.execution_mode == ExecutionMode.PLAN_ONLY

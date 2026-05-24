@@ -5,7 +5,9 @@ from __future__ import annotations
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.actions import (
     _CORRUPTION_ACTIONS,
+    _FILESYSTEM_ARTIFACT_ACTIONS,
     _MEDIA_ACTIONS,
+    _ORACLE_HASH_ACTIONS,
     _STDLIB_ACTIONS,
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S7_ACTIONS,
@@ -55,5 +57,23 @@ def test_supported_s7_actions_partition_stdlib_and_media_actions() -> None:
 
 
 def test_supported_s10_actions_includes_corruption_actions() -> None:
-    assert frozenset({TimelineActionName.CORRUPT_CONTAINER_HEADER}) == _CORRUPTION_ACTIONS
-    assert SUPPORTED_S10_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS
+    assert (
+        frozenset(
+            {
+                TimelineActionName.CORRUPT_CONTAINER_HEADER,
+                TimelineActionName.TRUNCATE_FILE,
+                TimelineActionName.CORRUPT_PACKET_RANGE,
+                TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            }
+        )
+        == _CORRUPTION_ACTIONS
+    )
+    assert frozenset({TimelineActionName.TOUCH_MTIME}) == _FILESYSTEM_ARTIFACT_ACTIONS
+    assert frozenset({TimelineActionName.WRONG_ORACLE_HASH}) == _ORACLE_HASH_ACTIONS
+    assert SUPPORTED_S10_ACTIONS == (
+        _STDLIB_ACTIONS
+        | _MEDIA_ACTIONS
+        | _CORRUPTION_ACTIONS
+        | _ORACLE_HASH_ACTIONS
+        | _FILESYSTEM_ARTIFACT_ACTIONS
+    )

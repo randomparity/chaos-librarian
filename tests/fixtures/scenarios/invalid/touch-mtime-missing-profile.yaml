@@ -1,0 +1,28 @@
+# expected: E_PROFILE_REQUIRED
+schema_version: 9
+scenario_id: touch-mtime-missing-profile
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+works:
+  - id: work_001
+    title: Touched Mtime
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+timeline:
+  - id: touch_mtime_001
+    at: 1s
+    action: touch_mtime
+    target: asset_main
+    offset: 2s

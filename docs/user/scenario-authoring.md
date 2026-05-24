@@ -2,13 +2,13 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 8`.
+`schema_version: 9`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 8`
+- `schema_version: 9`
 - `scenario_id`
 - `seed`
 - `duration_scale`
@@ -68,7 +68,7 @@ for plan-only fixtures until materializer support exists.
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 8
+schema_version: 9
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -141,6 +141,13 @@ timeline:
 | `remove_sidecar` | `target`, `sidecar_path` |
 | `update_sidecar` | `target`, `sidecar_path` |
 | `corrupt_container_header` | `target`; optional `bytes` defaults to `64` |
+| `truncate_file` | `target`, `keep_bytes` |
+| `corrupt_packet_range` | `target`, `packet_start`; optional `stream`, `packet_count` |
+| `write_invalid_duration_metadata` | `target`; optional `value` |
+| `touch_mtime` | `target`, `offset` |
+| `wrong_oracle_hash` | `target` |
+| `network_lag_start` | `effect`, `target`, `after`, `duration` |
+| `network_lag_commit` | `for` |
 
 Timeline events are ordered by logical time and declaration order. Lifecycle
 validation rejects operations that the engine cannot execute, such as adding an
@@ -156,6 +163,8 @@ Supported profile labels are:
 - `performance-scale`
 - `performance-stress`
 - `network-fs-lag`
+- `filesystem-artifacts`
+- `negative-oracle`
 
 `corrupt_container_header` requires explicit opt-in:
 
@@ -164,8 +173,8 @@ profiles:
   - malformed-media
 ```
 
-Without the `malformed-media` profile, malformed-media corruption scenarios fail
-validation.
+Without the `malformed-media` profile, container-header corruption scenarios
+fail validation.
 
 Network filesystem lag events also require explicit opt-in:
 
