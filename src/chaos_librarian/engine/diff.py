@@ -251,6 +251,9 @@ def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]
         "media_actions": _normalize_action_list(data_obj.get("media_actions")),
         "corruption_actions": _normalize_action_list(data_obj.get("corruption_actions")),
         "oracle_hash_actions": _normalize_action_list(data_obj.get("oracle_hash_actions")),
+        "network_lag_actions": _normalize_network_lag_action_list(
+            data_obj.get("network_lag_actions")
+        ),
     }
 
 
@@ -304,6 +307,20 @@ def _normalize_filesystem_action_list(value: object) -> list[object]:
             normalized_action.pop("mtime_after_ns", None)
             if before_ns is not None and after_ns is not None:
                 normalized_action["mtime_delta_ns"] = after_ns - before_ns
+        normalized.append(normalized_action)
+    return normalized
+
+
+def _normalize_network_lag_action_list(value: object) -> list[object]:
+    actions = _list_or_empty(value)
+    normalized: list[object] = []
+    for action in actions:
+        action_data = _str_keyed_dict(action)
+        if action_data is None:
+            normalized.append(action)
+            continue
+        normalized_action = dict(action_data)
+        normalized_action.pop("actual_duration_ns", None)
         normalized.append(normalized_action)
     return normalized
 

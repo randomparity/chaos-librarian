@@ -7,15 +7,19 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
+from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
+    NetworkLagAction,
     Outcome,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
+    NetworkLagEffect,
     Scenario,
+    TimelineActionName,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_materializer_plan
@@ -122,7 +126,7 @@ def _materialize_verified_run_prefix(
     out_dir: Path,
 ) -> MaterializeArtifacts:
     scenario = run_input.scenario
-    preflight_timeline(scenario)
+    preflight_timeline(scenario, allow_network_lag=True)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
     for asset in iter_assets(scenario):
@@ -171,6 +175,7 @@ def _materialize_verified_run_prefix(
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
+        network_lag_actions=state.network_lag_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -260,6 +265,7 @@ def _finalize_run_replay_phase_b_failure(
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
+        network_lag_actions=state.network_lag_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -330,6 +336,74 @@ def _apply_prefix_phase_b(
     state: PhaseBState,
     artifacts: PlanArtifacts,
 ) -> None:
+    network_lag_starts: dict[str, JournalEntry] = {}
     for entry in artifacts.journal:
+        action = TimelineActionName(entry.action)
+        if action is TimelineActionName.NETWORK_LAG_START:
+            network_lag_starts[entry.event_id] = entry
+            continue
+        if action is TimelineActionName.NETWORK_LAG_COMMIT:
+            state.network_lag_actions.append(
+                _run_replay_network_lag_action(network_lag_starts, entry)
+            )
+            continue
         dispatch_phase_b_entry(state, entry)
     augment_phase_b_outputs(artifacts.current_manifest, state)
+    if network_lag_starts:
+        pending = sorted(network_lag_starts)
+        raise ReplayIntegrityError(f"uncommitted network_lag_start entries: {pending}")
+
+
+def _run_replay_network_lag_action(
+    starts: dict[str, JournalEntry],
+    commit: JournalEntry,
+) -> NetworkLagAction:
+    if not isinstance(commit, CommittedJournalEntry):
+        raise ReplayIntegrityError(f"{commit.event_id} is not a committed network lag entry")
+    start = starts.pop(commit.related_event_id, None)
+    if start is None:
+        raise ReplayIntegrityError(
+            f"network_lag_commit {commit.event_id} references missing start "
+            f"{commit.related_event_id}"
+        )
+    effect = _network_lag_effect(start)
+    return NetworkLagAction(
+        event_id=start.event_id,
+        commit_event_id=commit.event_id,
+        effect=effect,
+        target_ref=_network_lag_str(start, "target_ref"),
+        after_event_id=_network_lag_str(start, "after_event_id"),
+        logical_start_ns=_network_lag_int(start, "logical_start_ns"),
+        logical_commit_ns=_network_lag_int(start, "logical_commit_ns"),
+        requested_duration_ns=_network_lag_int(start, "requested_duration_ns"),
+        actual_duration_ns=None,
+        from_path=_network_lag_optional_str(start, "from_path"),
+        to_path=_network_lag_optional_str(start, "to_path"),
+        provider="stdlib-local",
+        enforced=effect is not NetworkLagEffect.HELD_HANDLE,
+    )
+
+
+def _network_lag_effect(entry: JournalEntry) -> NetworkLagEffect:
+    return NetworkLagEffect(_network_lag_str(entry, "effect"))
+
+
+def _network_lag_str(entry: JournalEntry, key: str) -> str:
+    value = entry.state_delta.get(key)
+    if not isinstance(value, str):
+        raise ReplayIntegrityError(f"{entry.event_id}: missing network-lag {key}")
+    return value
+
+
+def _network_lag_optional_str(entry: JournalEntry, key: str) -> str | None:
+    value = entry.state_delta.get(key)
+    if value is None or isinstance(value, str):
+        return value
+    raise ReplayIntegrityError(f"{entry.event_id}: invalid network-lag {key}")
+
+
+def _network_lag_int(entry: JournalEntry, key: str) -> int:
+    value = entry.state_delta.get(key)
+    if isinstance(value, int):
+        return value
+    raise ReplayIntegrityError(f"{entry.event_id}: missing network-lag {key}")

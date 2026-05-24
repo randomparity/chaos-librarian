@@ -182,6 +182,29 @@ _WRONG_ORACLE_FAILURE_SCENARIO = _scenario_bytes(
     target: asset_main
 """,
 )
+_NETWORK_LAG_SCENARIO = _scenario_bytes(
+    scenario_id="run-replay-network-lag-test",
+    profiles=("network-fs-lag",),
+    title="Network Lag Replay",
+    timeline="""\
+  - id: rename_001
+    at: 0ns
+    action: rename_file
+    target: asset_main
+    to: movies-hd/renamed.mkv
+  - id: lag_start_001
+    at: 0ns
+    action: network_lag_start
+    effect: delayed_rename
+    target: asset_main
+    after: rename_001
+    duration: 10ns
+  - id: lag_commit_001
+    at: 10ns
+    action: network_lag_commit
+    for: lag_start_001
+""",
+)
 
 
 def test_run_replay_reproduces_corruption_action_evidence(
@@ -288,6 +311,33 @@ def test_run_replay_oracle_hash_failure_preserves_partial_actions(
     assert report["outcome"] == Outcome.CORRUPTION_FAILED.value
     assert report["oracle_hash_actions"][0]["event_id"] == "wrong_hash_001"
     assert report["oracle_hash_actions"][0]["reported_content_hash"] == "sha256:" + "9" * 64
+
+
+def test_run_replay_reproduces_network_lag_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_replay_materializer(monkeypatch)
+    out = tmp_path / "replay"
+
+    artifacts = replay_run_bundle(
+        _run_bundle_for(_NETWORK_LAG_SCENARIO, applied_events=3),
+        out,
+    )
+
+    assert (out / "library" / "movies-hd" / "renamed.mkv").read_bytes() == (b"asset_main-bytes")
+    action = artifacts.materialization_report.network_lag_actions[0]
+    assert action.event_id == "lag_start_001"
+    assert action.commit_event_id == "lag_commit_001"
+    assert action.effect.value == "delayed_rename"
+    assert action.after_event_id == "rename_001"
+    assert action.from_path == "movies-hd/asset_main.mkv"
+    assert action.to_path == "movies-hd/renamed.mkv"
+    assert action.provider == "stdlib-local"
+    assert action.enforced is True
+
+    report_payload = json.loads((out / "materialization.json").read_text(encoding="utf-8"))
+    assert report_payload["network_lag_actions"][0]["event_id"] == "lag_start_001"
 
 
 def test_run_replay_persists_regenerated_asset_reports(
