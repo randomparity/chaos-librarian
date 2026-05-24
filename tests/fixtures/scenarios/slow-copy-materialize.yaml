@@ -1,4 +1,4 @@
-schema_version: 9
+schema_version: 10
 scenario_id: slow-copy-materialize
 seed: 7
 duration_scale: short

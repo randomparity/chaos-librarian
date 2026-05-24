@@ -199,6 +199,21 @@ def test_network_filesystem_lag_profile_policy_docs_are_discoverable() -> None:
     assert "Network Filesystem Lag Profile Testing" in testing
 
 
+def test_fuzz_profile_generation_docs_are_discoverable() -> None:
+    source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
+    cli_reference = _read(DOCS / "contract" / "cli-reference.md")
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+    testing = _read(DOCS / "developer" / "testing.md")
+
+    assert "## Fuzz Profile Generation Policy" in source_design
+    assert "`fuzz-smoke`" in source_design
+    assert "`fuzz-regression`" in source_design
+    assert "chaos-librarian generate --profile fuzz-smoke" in cli_reference
+    assert "Fuzz Profile Generation" in integration_recipes
+    assert "Replay never calls the generator" in integration_recipes
+    assert "Fuzz Profile Generation Testing" in testing
+
+
 def test_duplicate_variant_expansion_pack_docs_are_discoverable() -> None:
     source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
     integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")

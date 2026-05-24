@@ -22,6 +22,7 @@ runner = CliRunner()
 
 ALL_COMMANDS = [
     "validate",
+    "generate",
     "plan",
     "materialize",
     "run",

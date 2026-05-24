@@ -56,3 +56,14 @@ Lag profile tests should prove that `materialize` rejects lag events as
 unsupported and that `run` records the delayed visibility, delayed rename, or
 held-handle evidence needed by consumers. Held-handle tests may assert blocking
 behavior only when provider evidence says the behavior is enforced on the host.
+
+## Fuzz Profile Generation Testing
+
+`docs/specs/chaos-librarian-design.md` is the source of truth for the Fuzz
+Profile Generation Policy: profile labels, static budgets, generation metadata,
+and replay guarantees.
+
+Generator tests must prove byte-identical output for the same profile and seed,
+different YAML for different seeds, and schema-valid generated scenarios. Replay
+tests should assert that replay uses the serialized scenario from `replay.json`;
+it must not call the generator.

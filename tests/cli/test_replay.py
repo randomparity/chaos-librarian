@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
@@ -270,6 +271,23 @@ class TestReplayHappyPath:
             app,
             ["replay", str(empty / "replay.json"), "--out", str(out), "--against", str(empty)],
         )
+        assert result.exit_code == 0, result.stdout + result.stderr
+
+    def test_generated_fixture_replays_without_calling_generator(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        def fail_generate(*_args: object, **_kwargs: object) -> bytes:
+            raise AssertionError("replay must use serialized scenario YAML")
+
+        monkeypatch.setattr(generation_mod, "generate_scenario_yaml", fail_generate)
+        fixture = _make_full_fixture(tmp_path, name="fuzz-smoke-seed-123.yaml")
+        out = tmp_path / "replay"
+
+        result = runner.invoke(
+            app,
+            ["replay", str(fixture / "replay.json"), "--out", str(out), "--against", str(fixture)],
+        )
+
         assert result.exit_code == 0, result.stdout + result.stderr
 
 
@@ -806,7 +824,7 @@ def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
             {
                 "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
                 "chaos_librarian_version": "0.1.0",
-                "scenario": "schema_version: 9\nscenario_id: x\n",
+                "scenario": "schema_version: 10\nscenario_id: x\n",
                 "run_id": "00000000-0000-4000-8000-000000000001",
                 "resolved_seed": 1,
                 "applied_events": 0,
@@ -843,7 +861,7 @@ def _write_run_compare_fixture(
     (root / "replay.json").write_text(
         json.dumps(
             {
-                "scenario": "schema_version: 9\n",
+                "scenario": "schema_version: 10\n",
                 "run_id": str(RUN_ID),
                 "resolved_seed": 7,
                 "applied_events": 1,

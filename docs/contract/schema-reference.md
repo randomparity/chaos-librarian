@@ -39,7 +39,7 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 |----------|----------------|
-| scenario | 9 |
+| scenario | 10 |
 | manifest | 6 |
 | journal | 1 |
 | replay bundle | 6 |
@@ -53,6 +53,11 @@ Current checked-in contract versions:
 | capabilities | 2 |
 | observed state | 1 |
 | divergence | 1 |
+
+Scenario v10 adds deterministic fuzz profile generation metadata plus the
+`fuzz-smoke` and `fuzz-regression` profile labels. Generated scenarios still
+serialize explicit timelines; replay bundles embed the generated scenario source
+and never call the generator.
 
 Scenario v9 adds the interceptor catalog actions:
 `truncate_file`, `corrupt_packet_range`, `write_invalid_duration_metadata`,

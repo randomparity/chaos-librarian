@@ -174,7 +174,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 9
+            schema_version: 10
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -227,7 +227,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 9
+            schema_version: 10
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short

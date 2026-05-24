@@ -1,4 +1,4 @@
-"""Rule: performance profiles impose static source-fixture ceilings."""
+"""Rule: selected profiles impose static source-fixture ceilings."""
 
 from __future__ import annotations
 
@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
-from chaos_librarian.contract.profiles import ProfileName
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
+from chaos_librarian.contract.scenario import TimelineActionName, generation_budget_for
 from chaos_librarian.validation.codes import E_PROFILE_BUDGET_EXCEEDED
 from chaos_librarian.validation.rules._common import (
     NS_ASSET_ID,
@@ -35,7 +35,19 @@ class _StaticBudget:
     timeline_events: int
 
 
-_PERFORMANCE_BUDGETS: Final[dict[str, _StaticBudget]] = {
+def _fuzz_budget(profile: FuzzProfileName) -> _StaticBudget:
+    budget = generation_budget_for(profile)
+    return _StaticBudget(
+        assets=budget.assets,
+        works=budget.works,
+        variants=budget.variants,
+        bundles=budget.bundles,
+        sidecars=budget.sidecars,
+        timeline_events=budget.timeline_events,
+    )
+
+
+_STATIC_PROFILE_BUDGETS: Final[dict[str, _StaticBudget]] = {
     ProfileName.PERFORMANCE_SMOKE.value: _StaticBudget(
         assets=40,
         works=40,
@@ -60,6 +72,8 @@ _PERFORMANCE_BUDGETS: Final[dict[str, _StaticBudget]] = {
         sidecars=3_000,
         timeline_events=6_000,
     ),
+    ProfileName.FUZZ_SMOKE.value: _fuzz_budget(FuzzProfileName.FUZZ_SMOKE),
+    ProfileName.FUZZ_REGRESSION.value: _fuzz_budget(FuzzProfileName.FUZZ_REGRESSION),
 }
 
 
@@ -74,7 +88,9 @@ def rule_profile_budgets(
         return
     selected = [profile for profile in profiles if isinstance(profile, str)]
     active_budgets = {
-        profile: budget for profile, budget in _PERFORMANCE_BUDGETS.items() if profile in selected
+        profile: budget
+        for profile, budget in _STATIC_PROFILE_BUDGETS.items()
+        if profile in selected
     }
     if not active_budgets:
         return

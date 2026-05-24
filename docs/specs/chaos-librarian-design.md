@@ -711,6 +711,39 @@ Fast CI may add a `performance-smoke` job only if that job is independently
 selectable. `performance-scale` and `performance-stress` must never run on every
 pull request.
 
+## Fuzz Profile Generation Policy
+
+Fuzz profile generation is opt-in and deterministic. The generator writes normal
+scenario YAML with explicit timeline events; it does not add hidden runtime
+mutations to `plan`, `materialize`, `run`, or `replay`.
+
+Implemented labels:
+
+- `fuzz-smoke`
+- `fuzz-regression`
+
+Generated scenarios carry a top-level `generation` block with the generator
+name, fuzz profile, profile version, concrete seed, and selected budget ceilings.
+The scenario `seed` must be a concrete integer and must match `generation.seed`.
+`generation.profile` must also appear in top-level `profiles`.
+
+Fuzz budgets are hard static ceilings:
+
+| Budget | `fuzz-smoke` | `fuzz-regression` |
+| --- | ---: | ---: |
+| Works | 3 | 12 |
+| Variants | 4 | 18 |
+| Bundles | 4 | 18 |
+| Media assets | 4 | 18 |
+| Sidecars | 8 | 54 |
+| Timeline events | 12 | 80 |
+| Materialized bytes under `library/` | 75 MB | 250 MB |
+| Wall-clock run duration | 2 minutes | 10 minutes |
+| Minimum free disk before run | 500 MB | 1 GB |
+
+Replay never calls the generator. A replay bundle embeds the already generated
+scenario source verbatim, so replay is isolated from later generator changes.
+
 ## Network Filesystem Lag Profile Policy
 
 Network filesystem lag scenarios are reserved for opt-in watcher fixtures. The
@@ -1108,6 +1141,7 @@ Deliverables (may split into multiple PRs):
   and TTS providers remain deferred until source-specific issues.
 - Larger performance profiles that satisfy the Performance Profile Policy
 - Network filesystem lag profile that satisfies the Network Filesystem Lag Profile Policy
+- Fuzz profile generation that satisfies the Fuzz Profile Generation Policy
 - Duplicate/variant expansion pack
 
 Exit criteria:

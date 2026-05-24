@@ -76,3 +76,68 @@ def test_performance_smoke_within_static_ceiling_passes(minimal_scenario, empty_
     run_semantic_pass(raw, empty_index, collector)
 
     assert not any(issue.code == codes.E_PROFILE_BUDGET_EXCEEDED for issue in collector.issues)
+
+
+def test_fuzz_smoke_asset_ceiling_emits(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(profiles=["fuzz-smoke"])
+    bundle = raw["works"][0]["variants"][0]["bundle"]
+    bundle["assets"] = [_asset(f"a{i}") for i in range(5)]
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert any(
+        issue.code == codes.E_PROFILE_BUDGET_EXCEEDED
+        and "assets" in issue.message
+        and "fuzz-smoke" in issue.message
+        for issue in collector.issues
+    )
+
+
+def test_fuzz_smoke_timeline_ceiling_emits(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(
+        profiles=["fuzz-smoke"],
+        timeline=[
+            {
+                "id": f"move_{i}",
+                "at": f"{i}ns",
+                "action": "move_asset",
+                "target": "a",
+                "to": f"r/a-{i}.mkv",
+            }
+            for i in range(13)
+        ],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert any(
+        issue.code == codes.E_PROFILE_BUDGET_EXCEEDED
+        and "timeline events" in issue.message
+        and "fuzz-smoke" in issue.message
+        for issue in collector.issues
+    )
+
+
+def test_fuzz_regression_accepts_fuzz_smoke_sized_case(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(
+        profiles=["fuzz-regression"],
+        timeline=[
+            {
+                "id": f"move_{i}",
+                "at": f"{i}ns",
+                "action": "move_asset",
+                "target": "a",
+                "to": f"r/a-{i}.mkv",
+            }
+            for i in range(13)
+        ],
+    )
+    bundle = raw["works"][0]["variants"][0]["bundle"]
+    bundle["assets"] = [_asset(f"a{i}") for i in range(5)]
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any(issue.code == codes.E_PROFILE_BUDGET_EXCEEDED for issue in collector.issues)

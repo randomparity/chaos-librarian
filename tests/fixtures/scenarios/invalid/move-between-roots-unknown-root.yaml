@@ -1,5 +1,5 @@
 # expected: E_ROOT_UNKNOWN
-schema_version: 4
+schema_version: 10
 scenario_id: sc_invalid_root
 seed: 42
 duration_scale: short

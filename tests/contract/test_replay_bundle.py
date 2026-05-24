@@ -312,7 +312,7 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
         "chaos_librarian_version": "0.1.0",
-        "scenario": "schema_version: 9\nscenario_id: x\n",
+        "scenario": "schema_version: 10\nscenario_id: x\n",
         "run_id": "00000000-0000-4000-8000-000000000000",
         "resolved_seed": 1,
         "applied_events": 0,
