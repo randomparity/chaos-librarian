@@ -55,5 +55,15 @@ def test_supported_s7_actions_partition_stdlib_and_media_actions() -> None:
 
 
 def test_supported_s10_actions_includes_corruption_actions() -> None:
-    assert frozenset({TimelineActionName.CORRUPT_CONTAINER_HEADER}) == _CORRUPTION_ACTIONS
+    assert (
+        frozenset(
+            {
+                TimelineActionName.CORRUPT_CONTAINER_HEADER,
+                TimelineActionName.TRUNCATE_FILE,
+                TimelineActionName.CORRUPT_PACKET_RANGE,
+                TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            }
+        )
+        == _CORRUPTION_ACTIONS
+    )
     assert SUPPORTED_S10_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS | _CORRUPTION_ACTIONS

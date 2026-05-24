@@ -43,7 +43,12 @@ _STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
 SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
 
 _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {TimelineActionName.CORRUPT_CONTAINER_HEADER}
+    {
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+    }
 )
 
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(

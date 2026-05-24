@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-import hashlib
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Final, Literal
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
-from chaos_librarian.contract.materialization import CorruptionAction
+from chaos_librarian.contract.materialization import CorruptionAction, ToolInvocation
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
+from chaos_librarian.materializer.phase_b.corruption_bytes import (
+    hash_bytes,
+    overwrite_range,
+    temp_sibling,
+    truncate_bytes,
+)
+from chaos_librarian.materializer.phase_b.packet_probe import resolve_packet_byte_range
+from chaos_librarian.materializer.tooling.ffmpeg import run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 
 _FFMPEG_POINTER_RE = re.compile(r"(@ )0x[0-9a-fA-F]+")
@@ -30,6 +39,9 @@ __all__ = [
 class CorruptionPhaseBContext:
     library_root: Path
     resolved_seed: int
+    ffmpeg_version: str = ""
+    ffprobe_version: str = ""
+    invocations: list[ToolInvocation] = field(default_factory=list)
     post_phase_b_versions: dict[str, tuple[str, ProbedMedia | None]] = field(default_factory=dict)
 
 
@@ -37,32 +49,50 @@ def make_corruption_phase_b_context(
     *,
     library_root: Path,
     resolved_seed: int,
+    ffmpeg_version: str,
+    ffprobe_version: str,
+    invocations: list[ToolInvocation],
 ) -> CorruptionPhaseBContext:
-    return CorruptionPhaseBContext(library_root=library_root, resolved_seed=resolved_seed)
+    return CorruptionPhaseBContext(
+        library_root=library_root,
+        resolved_seed=resolved_seed,
+        ffmpeg_version=ffmpeg_version,
+        ffprobe_version=ffprobe_version,
+        invocations=invocations,
+    )
 
 
 def supports_corruption_action(action: TimelineActionName) -> bool:
-    return action is TimelineActionName.CORRUPT_CONTAINER_HEADER
+    return action in _HANDLERS
 
 
-def _replacement_bytes(seed_material: str, byte_count: int) -> bytes:
-    output = bytearray()
-    block_index = 0
-    while len(output) < byte_count:
-        block = hashlib.sha256(f"{seed_material}:{block_index}".encode()).digest()
-        output.extend(block)
-        block_index += 1
-    return bytes(output[:byte_count])
+@dataclass(frozen=True, slots=True)
+class _PathPair:
+    input_path_rel: str
+    output_path_rel: str
+    input_path: Path
+    output_path: Path
 
 
-def _hash_bytes(data: bytes) -> str:
-    return "sha256:" + hashlib.sha256(data).hexdigest()
+@dataclass(frozen=True, slots=True)
+class _FinalizedCorruption:
+    paths: _PathPair
+    input_content_hash: str
+    output_content_hash: str
+    input_size_bytes: int
+    output_size_bytes: int
+    probe_outcome: CorruptionProbeOutcome
+    probe_error_tail: str | None
+    output_probed: ProbedMedia | None
 
 
-def _temp_sibling(output_path: Path, resolved_seed: int) -> Path:
-    if output_path.suffix:
-        return output_path.with_name(f"{output_path.stem}.tmp.{resolved_seed}{output_path.suffix}")
-    return output_path.with_name(f"{output_path.name}.tmp.{resolved_seed}")
+_Handler = Callable[[CorruptionPhaseBContext, JournalEntry, int], CorruptionAction]
+_CorruptionTimelineAction = Literal[
+    TimelineActionName.CORRUPT_CONTAINER_HEADER,
+    TimelineActionName.TRUNCATE_FILE,
+    TimelineActionName.CORRUPT_PACKET_RANGE,
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+]
 
 
 def _probe_corrupted_output(
@@ -111,32 +141,10 @@ def apply_corruption_action(ctx: CorruptionPhaseBContext, entry: JournalEntry) -
     target_asset_id = _target_asset_id(entry)
     started = time.monotonic_ns()
     try:
-        delta = entry.state_delta
-        input_path_rel = _state_delta_str(delta, "input_path")
-        output_path_rel = _state_delta_str(delta, "output_path")
-        byte_start = _state_delta_int(delta, "byte_start")
-        byte_count = _state_delta_int(delta, "byte_count")
-        seed_material = _state_delta_str(delta, "seed_material")
-        corruptor = _state_delta_str(delta, "corruptor")
-        input_path = ctx.library_root / input_path_rel
-        output_path = ctx.library_root / output_path_rel
-        input_bytes = input_path.read_bytes()
-        required_length = byte_start + byte_count
-        if len(input_bytes) < required_length:
-            raise ValueError(
-                "input file is shorter than requested corruption range: "
-                f"{len(input_bytes)} < {required_length}"
-            )
-        output_bytes = bytearray(input_bytes)
-        output_bytes[byte_start:required_length] = _replacement_bytes(seed_material, byte_count)
-        temp_output = _temp_sibling(output_path, ctx.resolved_seed)
-        temp_output.write_bytes(output_bytes)
-        temp_output.replace(output_path)
-        final_bytes = output_path.read_bytes()
-        input_hash = _hash_bytes(input_bytes)
-        output_hash = _hash_bytes(final_bytes)
-        probe_outcome, probe_error_tail, probed = _probe_corrupted_output(output_path)
-        output_version_id = _output_version_id(entry)
+        handler = _HANDLERS[action]
+        return handler(ctx, entry, started)
+    except CorruptionActionError:
+        raise
     except Exception as exc:
         raise CorruptionActionError(
             f"{entry.action} failed for event {entry.event_id}: {exc}",
@@ -144,26 +152,281 @@ def apply_corruption_action(ctx: CorruptionPhaseBContext, entry: JournalEntry) -
             action=action,
             cause=exc,
             asset_id=target_asset_id,
+            tool_invocation_index=getattr(exc, "tool_invocation_index", None),
         ) from exc
-    ctx.post_phase_b_versions[output_version_id] = (output_hash, probed)
-    duration_ns = time.monotonic_ns() - started
-    return CorruptionAction(
-        event_id=entry.event_id,
-        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
-        target_asset_id=target_asset_id or "",
-        input_path=input_path_rel,
-        output_path=output_path_rel,
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=output_version_id,
-        input_content_hash=input_hash,
-        output_content_hash=output_hash,
-        corruptor=corruptor,
-        input_size_bytes=len(input_bytes),
-        output_size_bytes=len(final_bytes),
+
+
+def _apply_corrupt_container_header(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    started: int,
+) -> CorruptionAction:
+    delta = entry.state_delta
+    paths = _paths_from_delta(ctx, delta)
+    byte_start = _state_delta_int(delta, "byte_start")
+    byte_count = _state_delta_int(delta, "byte_count")
+    seed_material = _state_delta_str(delta, "seed_material")
+    input_bytes = paths.input_path.read_bytes()
+    output_bytes = overwrite_range(
+        input_bytes,
         byte_start=byte_start,
         byte_count=byte_count,
         seed_material=seed_material,
+    )
+    finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
+    return CorruptionAction(
+        event_id=entry.event_id,
+        action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        target_asset_id=_target_asset_id(entry) or "",
+        input_path=paths.input_path_rel,
+        output_path=paths.output_path_rel,
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=_output_version_id(entry),
+        input_content_hash=finalized.input_content_hash,
+        output_content_hash=finalized.output_content_hash,
+        corruptor=_state_delta_str(delta, "corruptor"),
+        input_size_bytes=finalized.input_size_bytes,
+        output_size_bytes=finalized.output_size_bytes,
+        byte_start=byte_start,
+        byte_count=byte_count,
+        seed_material=seed_material,
+        probe_outcome=finalized.probe_outcome,
+        probe_error_tail=finalized.probe_error_tail,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
+def _apply_truncate_file(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    started: int,
+) -> CorruptionAction:
+    delta = entry.state_delta
+    paths = _paths_from_delta(ctx, delta)
+    keep_bytes = _state_delta_int(delta, "keep_bytes")
+    input_bytes = paths.input_path.read_bytes()
+    output_bytes = truncate_bytes(input_bytes, keep_bytes=keep_bytes)
+    finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
+    return _corruption_action(
+        entry=entry,
+        action=TimelineActionName.TRUNCATE_FILE,
+        finalized=finalized,
+        started=started,
+        corruptor=_state_delta_str(delta, "corruptor"),
+        byte_start=keep_bytes,
+        byte_count=len(input_bytes) - keep_bytes,
+        seed_material=_state_delta_str(delta, "seed_material"),
+    )
+
+
+def _apply_corrupt_packet_range(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    started: int,
+) -> CorruptionAction:
+    delta = entry.state_delta
+    paths = _paths_from_delta(ctx, delta)
+    stream = _state_delta_str(delta, "stream")
+    packet_start = _state_delta_int(delta, "packet_start")
+    packet_count = _state_delta_int(delta, "packet_count")
+    seed_material = _state_delta_str(delta, "seed_material")
+    byte_start, byte_count = resolve_packet_byte_range(
+        paths.input_path,
+        stream=stream,
+        packet_start=packet_start,
+        packet_count=packet_count,
+        ffprobe_version=ctx.ffprobe_version,
+        invocations=ctx.invocations,
+    )
+    input_bytes = paths.input_path.read_bytes()
+    output_bytes = overwrite_range(
+        input_bytes,
+        byte_start=byte_start,
+        byte_count=byte_count,
+        seed_material=seed_material,
+    )
+    finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
+    return _corruption_action(
+        entry=entry,
+        action=TimelineActionName.CORRUPT_PACKET_RANGE,
+        finalized=finalized,
+        started=started,
+        corruptor=_state_delta_str(delta, "corruptor"),
+        byte_start=byte_start,
+        byte_count=byte_count,
+        seed_material=seed_material,
+        stream=stream,
+        packet_start=packet_start,
+        packet_count=packet_count,
+    )
+
+
+def _apply_invalid_duration_metadata(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    started: int,
+) -> CorruptionAction:
+    delta = entry.state_delta
+    paths = _paths_from_delta(ctx, delta)
+    value = _state_delta_str(delta, "value")
+    input_bytes = paths.input_path.read_bytes()
+    input_probed = probe_file(paths.input_path)
+    temp_output = temp_sibling(paths.output_path, ctx.resolved_seed)
+    _run_invalid_duration_copy(
+        ctx,
+        entry=entry,
+        input_path=paths.input_path,
+        output_path=temp_output,
+        value=value,
+    )
+    finalized = _finalize_temp_output(ctx, entry, paths, input_bytes, temp_output)
+    metadata: dict[str, str | int | float | bool] = {
+        "value": value,
+        "input_duration_seconds": input_probed.duration_seconds,
+    }
+    if finalized.output_probed is not None:
+        metadata["output_duration_seconds"] = finalized.output_probed.duration_seconds
+    return _corruption_action(
+        entry=entry,
+        action=TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        finalized=finalized,
+        started=started,
+        corruptor=_state_delta_str(delta, "corruptor"),
+        seed_material=_state_delta_str(delta, "seed_material"),
+        metadata=metadata,
+    )
+
+
+def _paths_from_delta(ctx: CorruptionPhaseBContext, delta: dict[str, object]) -> _PathPair:
+    input_path_rel = _state_delta_str(delta, "input_path")
+    output_path_rel = _state_delta_str(delta, "output_path")
+    return _PathPair(
+        input_path_rel=input_path_rel,
+        output_path_rel=output_path_rel,
+        input_path=ctx.library_root / input_path_rel,
+        output_path=ctx.library_root / output_path_rel,
+    )
+
+
+def _write_bytes_and_finalize(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    paths: _PathPair,
+    input_bytes: bytes,
+    output_bytes: bytes,
+) -> _FinalizedCorruption:
+    temp_output = temp_sibling(paths.output_path, ctx.resolved_seed)
+    temp_output.write_bytes(output_bytes)
+    return _finalize_temp_output(ctx, entry, paths, input_bytes, temp_output)
+
+
+def _finalize_temp_output(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    paths: _PathPair,
+    input_bytes: bytes,
+    temp_output: Path,
+) -> _FinalizedCorruption:
+    temp_output.replace(paths.output_path)
+    final_bytes = paths.output_path.read_bytes()
+    input_hash = hash_bytes(input_bytes)
+    output_hash = hash_bytes(final_bytes)
+    probe_outcome, probe_error_tail, probed = _probe_corrupted_output(paths.output_path)
+    ctx.post_phase_b_versions[_output_version_id(entry)] = (output_hash, probed)
+    return _FinalizedCorruption(
+        paths=paths,
+        input_content_hash=input_hash,
+        output_content_hash=output_hash,
+        input_size_bytes=len(input_bytes),
+        output_size_bytes=len(final_bytes),
         probe_outcome=probe_outcome,
         probe_error_tail=probe_error_tail,
-        duration_ns=duration_ns,
+        output_probed=probed,
     )
+
+
+def _run_invalid_duration_copy(
+    ctx: CorruptionPhaseBContext,
+    *,
+    entry: JournalEntry,
+    input_path: Path,
+    output_path: Path,
+    value: str,
+) -> None:
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-i",
+        str(input_path),
+        "-map",
+        "0",
+        "-c",
+        "copy",
+        "-metadata",
+        f"duration={value}",
+        str(output_path),
+    ]
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=ctx.ffmpeg_version)
+    invocation_index = len(ctx.invocations)
+    ctx.invocations.append(invocation)
+    if invocation.exit_code != 0:
+        tail = stderr_tail or "ffmpeg failed"
+        raise CorruptionActionError(
+            f"write_invalid_duration_metadata failed for event {entry.event_id}: "
+            f"ffmpeg exit {invocation.exit_code}: {tail}",
+            event_id=entry.event_id,
+            action=TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            cause=RuntimeError(f"ffmpeg exit {invocation.exit_code}: {tail}"),
+            asset_id=_target_asset_id(entry),
+            tool_invocation_index=invocation_index,
+        )
+
+
+def _corruption_action(
+    *,
+    entry: JournalEntry,
+    action: _CorruptionTimelineAction,
+    finalized: _FinalizedCorruption,
+    started: int,
+    corruptor: str,
+    byte_start: int | None = None,
+    byte_count: int | None = None,
+    seed_material: str | None = None,
+    stream: str | None = None,
+    packet_start: int | None = None,
+    packet_count: int | None = None,
+    metadata: dict[str, str | int | float | bool] | None = None,
+) -> CorruptionAction:
+    return CorruptionAction(
+        event_id=entry.event_id,
+        action=action,
+        target_asset_id=_target_asset_id(entry) or "",
+        input_path=finalized.paths.input_path_rel,
+        output_path=finalized.paths.output_path_rel,
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=_output_version_id(entry),
+        input_content_hash=finalized.input_content_hash,
+        output_content_hash=finalized.output_content_hash,
+        corruptor=corruptor,
+        input_size_bytes=finalized.input_size_bytes,
+        output_size_bytes=finalized.output_size_bytes,
+        byte_start=byte_start,
+        byte_count=byte_count,
+        seed_material=seed_material,
+        stream=stream,
+        packet_start=packet_start,
+        packet_count=packet_count,
+        metadata=metadata or {},
+        probe_outcome=finalized.probe_outcome,
+        probe_error_tail=finalized.probe_error_tail,
+        duration_ns=time.monotonic_ns() - started,
+    )
+
+
+_HANDLERS: Final[dict[TimelineActionName, _Handler]] = {
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: _apply_corrupt_container_header,
+    TimelineActionName.TRUNCATE_FILE: _apply_truncate_file,
+    TimelineActionName.CORRUPT_PACKET_RANGE: _apply_corrupt_packet_range,
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA: _apply_invalid_duration_metadata,
+}

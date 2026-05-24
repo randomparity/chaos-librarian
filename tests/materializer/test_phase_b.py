@@ -199,6 +199,7 @@ def test_phase_b_failure_helpers_map_error_classes() -> None:
         action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
         cause=RuntimeError("short file"),
         asset_id="asset_main",
+        tool_invocation_index=4,
     )
 
     assert phase_b.phase_b_failure_outcome(fs_error) is Outcome.FS_FAILED
@@ -208,7 +209,9 @@ def test_phase_b_failure_helpers_map_error_classes() -> None:
     assert media_record.stage is FailureStage.MEDIA
     assert media_record.invocation_index == 3
     assert phase_b.phase_b_failure_outcome(corruption_error) is Outcome.CORRUPTION_FAILED
-    assert phase_b.phase_b_failure_record(corruption_error).stage is FailureStage.CORRUPTION
+    corruption_record = phase_b.phase_b_failure_record(corruption_error)
+    assert corruption_record.stage is FailureStage.CORRUPTION
+    assert corruption_record.invocation_index == 4
 
 
 def _state(tmp_path: Path) -> phase_b.PhaseBState:

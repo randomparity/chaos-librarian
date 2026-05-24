@@ -92,6 +92,9 @@ def make_phase_b_state(
         corruption_ctx=make_corruption_phase_b_context(
             library_root=library_root,
             resolved_seed=resolved_seed,
+            ffmpeg_version=ffmpeg_version,
+            ffprobe_version=ffprobe_version,
+            invocations=invocations,
         ),
     )
 
@@ -142,7 +145,7 @@ def phase_b_failure_record(exc: PhaseBError) -> MaterializationFailure:
         invocation_index = exc.tool_invocation_index
     elif isinstance(exc, CorruptionActionError):
         stage = FailureStage.CORRUPTION
-        invocation_index = None
+        invocation_index = exc.tool_invocation_index
     else:
         stage = FailureStage.FILESYSTEM
         invocation_index = None

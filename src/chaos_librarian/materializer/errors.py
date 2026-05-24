@@ -170,16 +170,19 @@ class CorruptionActionError(MaterializationError):
         action: TimelineActionName,
         cause: BaseException,
         asset_id: str | None = None,
+        tool_invocation_index: int | None = None,
         field: str | None = None,
         payload: dict[str, object] | None = None,
     ) -> None:
         merged_payload: dict[str, object] = dict(payload or {})
         merged_payload.setdefault("event_id", event_id)
         merged_payload.setdefault("action", action.value)
+        merged_payload.setdefault("tool_invocation_index", tool_invocation_index)
         super().__init__(message, asset_id=asset_id, field=field, payload=merged_payload)
         self.event_id = event_id
         self.cause = cause
         self.action = action
+        self.tool_invocation_index = tool_invocation_index
 
 
 class ContainmentViolationError(MaterializationError):
