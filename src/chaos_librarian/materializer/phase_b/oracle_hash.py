@@ -13,6 +13,7 @@ from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import OracleHashAction
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError
+from chaos_librarian.materializer.phase_b.content import hash_file
 
 __all__ = [
     "OracleHashPhaseBContext",
@@ -72,7 +73,7 @@ def apply_wrong_oracle_hash(
         input_version_id = entry.input_version_ids[0] if entry.input_version_ids else None
         output_version_id = _output_version_id(entry)
         seed_material = _state_delta_str(entry.state_delta, "seed_material")
-        actual_content_hash = _hash_file(ctx.library_root / input_path_rel)
+        actual_content_hash = hash_file(ctx.library_root / input_path_rel)
         reported_content_hash = false_hash_for(seed_material, actual_content_hash)
         input_probed = (
             ctx.version_probe_lookup(input_version_id) if input_version_id is not None else None
@@ -120,7 +121,3 @@ def _state_delta_str(delta: dict[str, object], field: str) -> str:
     if not isinstance(value, str):
         raise TypeError(f"state_delta.{field} must be a string")
     return value
-
-
-def _hash_file(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()

@@ -15,10 +15,9 @@ from chaos_librarian.contract.materialization import CorruptionAction, ToolInvoc
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
+from chaos_librarian.materializer.phase_b.content import hash_bytes, hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.corruption_bytes import (
-    hash_bytes,
     overwrite_range,
-    temp_sibling,
     truncate_bytes,
 )
 from chaos_librarian.materializer.phase_b.packet_probe import resolve_packet_byte_range
@@ -174,25 +173,15 @@ def _apply_corrupt_container_header(
         seed_material=seed_material,
     )
     finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
-    return CorruptionAction(
-        event_id=entry.event_id,
+    return _corruption_action(
+        entry=entry,
         action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
-        target_asset_id=_target_asset_id(entry) or "",
-        input_path=paths.input_path_rel,
-        output_path=paths.output_path_rel,
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=_output_version_id(entry),
-        input_content_hash=finalized.input_content_hash,
-        output_content_hash=finalized.output_content_hash,
+        finalized=finalized,
+        started=started,
         corruptor=_state_delta_str(delta, "corruptor"),
-        input_size_bytes=finalized.input_size_bytes,
-        output_size_bytes=finalized.output_size_bytes,
         byte_start=byte_start,
         byte_count=byte_count,
         seed_material=seed_material,
-        probe_outcome=finalized.probe_outcome,
-        probe_error_tail=finalized.probe_error_tail,
-        duration_ns=time.monotonic_ns() - started,
     )
 
 
@@ -317,7 +306,14 @@ def _write_bytes_and_finalize(
 ) -> _FinalizedCorruption:
     temp_output = temp_sibling(paths.output_path, ctx.resolved_seed)
     temp_output.write_bytes(output_bytes)
-    return _finalize_temp_output(ctx, entry, paths, input_bytes, temp_output)
+    return _finalize_temp_output(
+        ctx,
+        entry,
+        paths,
+        input_bytes,
+        temp_output,
+        output_bytes=output_bytes,
+    )
 
 
 def _finalize_temp_output(
@@ -326,11 +322,16 @@ def _finalize_temp_output(
     paths: _PathPair,
     input_bytes: bytes,
     temp_output: Path,
+    output_bytes: bytes | None = None,
 ) -> _FinalizedCorruption:
     temp_output.replace(paths.output_path)
-    final_bytes = paths.output_path.read_bytes()
     input_hash = hash_bytes(input_bytes)
-    output_hash = hash_bytes(final_bytes)
+    if output_bytes is None:
+        output_hash = hash_file(paths.output_path)
+        output_size_bytes = paths.output_path.stat().st_size
+    else:
+        output_hash = hash_bytes(output_bytes)
+        output_size_bytes = len(output_bytes)
     probe_outcome, probe_error_tail, probed = _probe_corrupted_output(paths.output_path)
     ctx.post_phase_b_versions[_output_version_id(entry)] = (output_hash, probed)
     return _FinalizedCorruption(
@@ -338,7 +339,7 @@ def _finalize_temp_output(
         input_content_hash=input_hash,
         output_content_hash=output_hash,
         input_size_bytes=len(input_bytes),
-        output_size_bytes=len(final_bytes),
+        output_size_bytes=output_size_bytes,
         probe_outcome=probe_outcome,
         probe_error_tail=probe_error_tail,
         output_probed=probed,

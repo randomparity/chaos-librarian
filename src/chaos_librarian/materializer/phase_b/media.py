@@ -15,7 +15,6 @@ Per-action ffmpeg sketches are in the Sprint 7 spec
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import time
@@ -37,6 +36,7 @@ from chaos_librarian.materializer.actions import (
     SUPPORTED_S7_ACTIONS,
 )
 from chaos_librarian.materializer.errors import MediaActionError
+from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     poster_ffmpeg_argv,
     regenerate_sidecar,
@@ -178,26 +178,6 @@ _RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
 }
 
 
-def _temp_sibling(output_path: Path, resolved_seed: int) -> Path:
-    """Return ``<stem>.tmp.<resolved_seed><suffix>`` sibling Path.
-
-    The suffix order matters: ffmpeg infers its muxer from the trailing
-    extension, so a ``.tmp.<seed>`` tail would defeat format detection
-    (#56). Keeping the original suffix at the end preserves ffmpeg's
-    auto-detection while still landing the temp file in the same
-    directory for ``Path.replace`` to atomically rename over the final
-    name. Files with no suffix get ``.tmp.<seed>`` appended unchanged.
-    """
-    if output_path.suffix:
-        return output_path.with_name(f"{output_path.stem}.tmp.{resolved_seed}{output_path.suffix}")
-    return output_path.with_name(f"{output_path.name}.tmp.{resolved_seed}")
-
-
-def _hash_file(path: Path) -> str:
-    """Return ``sha256:<hex>`` for the file at ``path``."""
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-
-
 @dataclass(frozen=True, slots=True)
 class _VersionOutput:
     version_id: str
@@ -241,7 +221,7 @@ def _finalize_version_output(
     output_version_id: str,
 ) -> _VersionOutput:
     temp_output.replace(output_path)
-    new_hash = _hash_file(output_path)
+    new_hash = hash_file(output_path)
     probed = probe_file(output_path)
     ctx.post_phase_b_versions[output_version_id] = (new_hash, probed)
     return _VersionOutput(version_id=output_version_id, content_hash=new_hash)
@@ -259,7 +239,7 @@ def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
-    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    temp_output = temp_sibling(output_path, ctx.resolved_seed)
     resolution = str(delta["resolution"])
     width, height = _RESOLUTION_PIXELS.get(resolution, (640, 480))
     codec = str(delta["codec"])
@@ -316,7 +296,7 @@ def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
-    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    temp_output = temp_sibling(output_path, ctx.resolved_seed)
     to_channels_name = str(delta["to_channels"])
     try:
         ac_value = _channel_count_for(to_channels_name)
@@ -397,7 +377,7 @@ def _apply_remux_container(ctx: MediaPhaseBContext, entry: JournalEntry) -> Medi
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
-    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    temp_output = temp_sibling(output_path, ctx.resolved_seed)
     argv = [
         "ffmpeg",
         "-hide_banner",
@@ -454,7 +434,7 @@ def _apply_edit_metadata(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaA
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
-    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    temp_output = temp_sibling(output_path, ctx.resolved_seed)
     fields = delta["fields"]
     if not isinstance(fields, dict):
         raise MediaActionError(
@@ -526,7 +506,7 @@ def _apply_embed_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     input_path = ctx.library_root / str(delta["input_path"])
     output_path = ctx.library_root / str(delta["output_path"])
     sidecar_disk_path = ctx.library_root / str(delta["embedded_sidecar_path"])
-    temp_output = _temp_sibling(output_path, ctx.resolved_seed)
+    temp_output = temp_sibling(output_path, ctx.resolved_seed)
     container_ext = output_path.suffix.lstrip(".")
     try:
         subtitle_codec = _subtitle_codec_for_container(container_ext)
@@ -690,7 +670,7 @@ def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Med
     delta = entry.state_delta
     input_path = ctx.library_root / str(delta["input_path"])
     sidecar_path = ctx.library_root / str(delta["sidecar_path"])
-    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     language = str(delta["language"])
     try:
         subtitle_index = _probe_subtitle_index_for_language(ctx, input_path, language)
@@ -726,7 +706,7 @@ def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Med
     )
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     temp_output.replace(sidecar_path)
-    new_hash = _hash_file(sidecar_path)
+    new_hash = hash_file(sidecar_path)
     sidecar_id = str(delta["sidecar_id"])
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
     return MediaAction(
@@ -757,7 +737,7 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     delta = entry.state_delta
     sidecar_id = str(delta["sidecar_id"])
     sidecar_path = ctx.library_root / str(delta["sidecar_path"])
-    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     if ctx.sidecar_lookup is None:
         raise MediaActionError(
             "update_sidecar: ctx.sidecar_lookup is None",
@@ -815,7 +795,7 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             asset_id=sidecar.asset_id,
         )
     temp_output.replace(sidecar_path)
-    new_hash = _hash_file(sidecar_path)
+    new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
     return MediaAction(
         event_id=entry.event_id,
@@ -839,7 +819,7 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     Subtitle → ``srt_payload`` (pure Python). NFO → ``render_nfo`` (pure
     Python). Poster → ``poster_ffmpeg_argv`` (lavfi color source via
     ffmpeg). All three kinds use the standard atomic-rename via
-    ``_temp_sibling`` and stash ``(content_hash, path)`` on
+    ``temp_sibling`` and stash ``(content_hash, path)`` on
     ``ctx.post_phase_b_sidecars`` so ``augment_updated_sidecars`` can
     stamp the engine-allocated ``ManifestSidecar`` row.
 
@@ -855,7 +835,7 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     kind = SidecarKind(str(delta["kind"]))
     raw_language = delta.get("language")
     language = str(raw_language) if isinstance(raw_language, str) else None
-    temp_output = _temp_sibling(sidecar_path, ctx.resolved_seed)
+    temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
     invocation_index: int | None = None
@@ -900,7 +880,7 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             asset_id=asset_id,
         )
     temp_output.replace(sidecar_path)
-    new_hash = _hash_file(sidecar_path)
+    new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
     return MediaAction(
         event_id=entry.event_id,

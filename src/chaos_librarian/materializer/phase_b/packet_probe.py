@@ -63,7 +63,10 @@ def resolve_packet_byte_range(
         str(path),
     ]
     started = time.monotonic_ns()
-    completed = _run_ffprobe_packets(argv)
+    try:
+        completed = _run_ffprobe_packets(argv)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise PacketProbeError(f"ffprobe packet probe failed for {path}: {exc}") from exc
     duration_ns = time.monotonic_ns() - started
     invocation_index = _append_invocation(
         invocations,

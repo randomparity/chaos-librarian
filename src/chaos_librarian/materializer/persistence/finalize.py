@@ -69,11 +69,11 @@ def finalize_success(
     ctx: RunContext,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
+    *,
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
     oracle_hash_actions: list[OracleHashAction],
-    *,
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
@@ -125,12 +125,12 @@ def finalize_failure(
     outcome: Outcome,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
+    *,
+    content_sources: list[ContentSourceEvidence],
     filesystem_actions: list[FilesystemAction] | None = None,
     media_actions: list[MediaAction] | None = None,
     corruption_actions: list[CorruptionAction] | None = None,
     oracle_hash_actions: list[OracleHashAction] | None = None,
-    *,
-    content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
@@ -191,11 +191,11 @@ def finalize_failure_phase_b(
     outcome: Outcome,
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
+    *,
     filesystem_actions: list[FilesystemAction],
     media_actions: list[MediaAction],
     corruption_actions: list[CorruptionAction],
     oracle_hash_actions: list[OracleHashAction],
-    *,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Caught phase-B failure path: phase-B outcome set by caller; library/ wiped.

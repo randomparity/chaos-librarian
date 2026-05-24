@@ -20,7 +20,6 @@ through ``cleanup_failed_run``.
 
 from __future__ import annotations
 
-import hashlib
 import os
 import time
 from collections.abc import Callable, Mapping
@@ -34,6 +33,7 @@ from chaos_librarian.contract.materialization import FilesystemAction
 from chaos_librarian.contract.paths import resolve_under_library
 from chaos_librarian.contract.scenario import Asset, TimelineActionName
 from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.phase_b.content import hash_file
 
 __all__ = [
     "FilesystemPhaseBContext",
@@ -201,8 +201,7 @@ def _touch_mtime(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> Filesyste
     path = str(entry.state_delta["path"])
     target = resolve_under_library(Path(path), ctx.library_root)
     offset_ns = parse_duration(str(entry.state_delta["offset"]))
-    content = target.read_bytes()
-    content_hash = "sha256:" + hashlib.sha256(content).hexdigest()
+    content_hash = hash_file(target)
     before = target.stat()
     mtime_after_ns = before.st_mtime_ns + offset_ns
     os.utime(target, ns=(before.st_atime_ns, mtime_after_ns))

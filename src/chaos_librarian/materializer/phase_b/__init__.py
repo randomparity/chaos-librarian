@@ -158,10 +158,16 @@ def dispatch_phase_b_entry(state: PhaseBState, entry: JournalEntry) -> None:
 def augment_phase_b_outputs(manifest: Manifest, state: PhaseBState) -> None:
     """Drain phase-B content evidence into the manifest."""
     augment_timeline_sidecars(manifest, state.fs_ctx.phase_b_sidecar_hashes)
-    augment_versions(manifest, state.media_ctx.post_phase_b_versions)
-    augment_versions(manifest, state.corruption_ctx.post_phase_b_versions)
-    augment_versions(manifest, state.oracle_hash_ctx.post_phase_b_oracle_hashes)
+    augment_versions(manifest, _version_evidence(state))
     augment_updated_sidecars(manifest, state.media_ctx.post_phase_b_sidecars)
+
+
+def _version_evidence(state: PhaseBState) -> dict[str, tuple[str, ProbedMedia | None]]:
+    versions: dict[str, tuple[str, ProbedMedia | None]] = {}
+    versions.update(state.media_ctx.post_phase_b_versions)
+    versions.update(state.corruption_ctx.post_phase_b_versions)
+    versions.update(state.oracle_hash_ctx.post_phase_b_oracle_hashes)
+    return versions
 
 
 def phase_b_failure_outcome(exc: PhaseBError) -> Outcome:

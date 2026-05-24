@@ -122,3 +122,22 @@ def test_packet_probe_error_carries_invocation_index(monkeypatch) -> None:
 
     assert exc_info.value.tool_invocation_index == 0
     assert invocations[0].exit_code == 1
+
+
+def test_packet_probe_wraps_subprocess_launch_failures(monkeypatch) -> None:
+    def fake_run(_argv, **_kwargs):
+        raise OSError("ffprobe missing")
+
+    monkeypatch.setattr(packet_probe, "_run_ffprobe_packets", fake_run)
+    invocations: list[ToolInvocation] = []
+
+    with pytest.raises(PacketProbeError, match="ffprobe packet probe failed"):
+        resolve_packet_byte_range(
+            Path("asset.mkv"),
+            stream="video",
+            packet_start=0,
+            packet_count=1,
+            invocations=invocations,
+        )
+
+    assert invocations == []

@@ -174,10 +174,10 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             phase_b_failure_outcome(exc),
             phase_a.invocations,
             phase_a.materialized_assets,
-            phase_b_state.filesystem_actions,
-            phase_b_state.media_actions,
-            phase_b_state.corruption_actions,
-            phase_b_state.oracle_hash_actions,
+            filesystem_actions=phase_b_state.filesystem_actions,
+            media_actions=phase_b_state.media_actions,
+            corruption_actions=phase_b_state.corruption_actions,
+            oracle_hash_actions=phase_b_state.oracle_hash_actions,
             content_sources=phase_a.content_sources,
         )
         raise
@@ -186,9 +186,9 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         ctx,
         phase_a.invocations,
         phase_a.materialized_assets,
-        phase_b_state.filesystem_actions,
-        phase_b_state.media_actions,
-        phase_b_state.corruption_actions,
-        phase_b_state.oracle_hash_actions,
+        filesystem_actions=phase_b_state.filesystem_actions,
+        media_actions=phase_b_state.media_actions,
+        corruption_actions=phase_b_state.corruption_actions,
+        oracle_hash_actions=phase_b_state.oracle_hash_actions,
         content_sources=phase_a.content_sources,
     )

@@ -218,6 +218,29 @@ def test_augment_phase_b_outputs_stamps_all_phase_b_evidence(tmp_path: Path) -> 
     assert manifest.sidecars[1].path == "new.srt"
 
 
+def test_augment_phase_b_outputs_merges_version_evidence_once(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state = _state(tmp_path)
+    state.media_ctx.post_phase_b_versions["version_shared"] = (HASH_A, None)
+    state.corruption_ctx.post_phase_b_versions["version_shared"] = (HASH_B, None)
+    state.oracle_hash_ctx.post_phase_b_oracle_hashes["version_shared"] = (HASH_C, None)
+    calls: list[dict[str, tuple[str, ProbedMedia | None]]] = []
+
+    def capture_versions(
+        _manifest: Manifest,
+        versions: dict[str, tuple[str, ProbedMedia | None]],
+    ) -> None:
+        calls.append(dict(versions))
+
+    monkeypatch.setattr(phase_b, "augment_versions", capture_versions)
+
+    phase_b.augment_phase_b_outputs(_manifest_with_version("version_shared"), state)
+
+    assert calls == [{"version_shared": (HASH_C, None)}]
+
+
 def test_make_phase_b_state_oracle_lookup_uses_current_phase_b_probe_order(
     tmp_path: Path,
 ) -> None:
@@ -338,6 +361,19 @@ def _scenario() -> Scenario:
             "works": [],
             "timeline": [],
         }
+    )
+
+
+def _manifest_with_version(version_id: str) -> Manifest:
+    return Manifest(
+        schema_version=6,
+        works=[],
+        variants=[],
+        bundles=[],
+        assets=[],
+        versions=[ManifestVersion(id=version_id, asset_id="asset_main", index=1)],
+        locations=[],
+        sidecars=[],
     )
 
 

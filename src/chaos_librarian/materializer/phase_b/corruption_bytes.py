@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-from pathlib import Path
 
 
 def replacement_bytes(seed_material: str, byte_count: int) -> bytes:
@@ -15,18 +14,6 @@ def replacement_bytes(seed_material: str, byte_count: int) -> bytes:
         output.extend(block)
         block_index += 1
     return bytes(output[:byte_count])
-
-
-def hash_bytes(data: bytes) -> str:
-    """Return ``sha256:<hex>`` for ``data``."""
-    return "sha256:" + hashlib.sha256(data).hexdigest()
-
-
-def temp_sibling(output_path: Path, resolved_seed: int) -> Path:
-    """Return a same-directory temp path that preserves the final suffix."""
-    if output_path.suffix:
-        return output_path.with_name(f"{output_path.stem}.tmp.{resolved_seed}{output_path.suffix}")
-    return output_path.with_name(f"{output_path.name}.tmp.{resolved_seed}")
 
 
 def overwrite_range(
