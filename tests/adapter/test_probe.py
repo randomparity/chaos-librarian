@@ -59,3 +59,38 @@ def test_compare_probed_media_reports_stream_field_paths() -> None:
     assert ("streams.0.width", 1920, 1280) in differences
     assert ("streams.1.language", "eng", "fra") in differences
     assert ("streams.1.sample_rate", 48_000, 44_100) in differences
+
+
+def test_compare_probed_media_treats_audio_video_unknown_language_as_equivalent() -> None:
+    expected = _media(
+        streams=[
+            ProbedStream(kind=StreamKind.VIDEO, codec="h264", language="und"),
+            ProbedStream(kind=StreamKind.AUDIO, codec="aac", language=None),
+        ]
+    )
+    observed = _media(
+        streams=[
+            ProbedStream(kind=StreamKind.VIDEO, codec="h264", language=None),
+            ProbedStream(kind=StreamKind.AUDIO, codec="aac", language="und"),
+        ]
+    )
+
+    assert compare_probed_media(expected, observed) == []
+
+
+def test_compare_probed_media_keeps_subtitle_language_strict() -> None:
+    expected = _media(streams=[ProbedStream(kind=StreamKind.SUBTITLE, codec="srt", language="und")])
+    observed = _media(streams=[ProbedStream(kind=StreamKind.SUBTITLE, codec="srt", language=None)])
+
+    differences = compare_probed_media(expected, observed)
+
+    assert ("streams.0.language", "und", None) in differences
+
+
+def test_compare_probed_media_reports_real_audio_video_language_mismatch() -> None:
+    expected = _media(streams=[ProbedStream(kind=StreamKind.AUDIO, codec="aac", language="eng")])
+    observed = _media(streams=[ProbedStream(kind=StreamKind.AUDIO, codec="aac", language="spa")])
+
+    differences = compare_probed_media(expected, observed)
+
+    assert ("streams.0.language", "eng", "spa") in differences

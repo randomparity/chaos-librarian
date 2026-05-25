@@ -90,6 +90,49 @@ Or emitted as global events:
 }
 ```
 
+## Probe And Sidecar Normalization
+
+Unknown stream language can appear differently across containers and ffprobe
+snapshots.
+
+During `compare`, JSON `null`, omitted language, and `und` are equivalent for
+audio and video streams.
+
+Consumers should export the facts they observed rather than synthesizing
+container-specific language guesses.
+
+Subtitle streams remain strict because subtitle language is assertion data. A
+subtitle stream with missing language does not compare equal to `und`, `eng`, or
+any other concrete tag.
+
+Sidecars are nested under their owning asset and use library-relative POSIX path
+values. Observed sidecars do not carry a separate language field; subtitle
+sidecar language is represented by the path convention when applicable.
+
+```json
+{
+  "observed_ref": "asset-1",
+  "current_path": "movies/Synthetic.mkv",
+  "probed": {
+    "container": "matroska,webm",
+    "duration_seconds": 60.0,
+    "size_bytes": 12345,
+    "streams": [
+      {"kind": "video", "codec": "h264", "width": 1920, "height": 1080},
+      {"kind": "audio", "codec": "aac", "language": "und", "channels": 2}
+    ]
+  },
+  "sidecars": [
+    {
+      "observed_ref": "sidecar-1",
+      "kind": "subtitle",
+      "path": "asset-1.eng.srt",
+      "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}
+```
+
 ## Topology
 
 Topology refs are consumer-owned and only need to be stable inside the payload.
