@@ -3,12 +3,18 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
-from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.materialization import ToolchainInfo
+from chaos_librarian.contract.replay_bundle import (
+    ExecutionMode,
+    MaterializeReplayBundle,
+    PlanOnlyReplayBundle,
+)
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 
 runner = CliRunner()
@@ -23,6 +29,20 @@ def _make_paused(tmp_path: Path) -> Path:
     )
     assert result.exit_code == 0, result.stdout + result.stderr
     return out
+
+
+def _replace_replay_with_materialize_bundle(run_dir: Path) -> None:
+    plan = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
+    payload = plan.model_dump()
+    payload.pop("execution_mode")
+    bundle = MaterializeReplayBundle(
+        **payload,
+        execution_mode=ExecutionMode.MATERIALIZE,
+        created_at=datetime(2026, 5, 25, tzinfo=UTC),
+        toolchain=ToolchainInfo(ffmpeg="8.1.1", ffprobe="8.1.1", mkvtoolnix="98.0"),
+        content_sources=[],
+    )
+    (run_dir / "replay.json").write_text(bundle.model_dump_json(indent=2) + "\n")
 
 
 class TestStepHappyPath:
@@ -128,3 +148,28 @@ class TestStepErrors:
         assert result.exit_code == 7
         payload = json.loads(result.stderr)
         assert payload["error_code"] == "E_SENTINEL_IN_PROGRESS"
+
+    def test_step_refuses_materialized_run_dir_with_structured_json(self, tmp_path: Path) -> None:
+        out = _make_paused(tmp_path)
+        _replace_replay_with_materialize_bundle(out)
+
+        result = runner.invoke(app, ["step", str(out), "--next", "1", "--json"])
+
+        assert result.exit_code == 1
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_STEP_UNSUPPORTED_MODE"
+        assert payload["details"]["execution_mode"] == "materialize"
+        assert payload["details"]["supported_execution_mode"] == "plan_only"
+
+    def test_step_reports_invalid_replay_bundle_json(self, tmp_path: Path) -> None:
+        paused = _make_paused(tmp_path)
+        (paused / "replay.json").write_text("{not json\n")
+
+        result = runner.invoke(app, ["step", str(paused), "--json"])
+
+        assert result.exit_code == 1
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_REPLAY_BUNDLE_INVALID"
+        assert payload["bundle_path"].endswith("replay.json")

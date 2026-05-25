@@ -64,13 +64,15 @@ while it happens.
 
 ## `step RUN_DIR [--next N] [--json]`
 
-Advance a plan fixture by one or more step units:
+Advance a plan-only fixture by one or more step units:
 
 ```bash
 uv run chaos-librarian step run-dir --next 1 --json
 ```
 
 `step` updates mutable oracle files and appends new journal entries.
+Materialize and run directories are rejected with `E_STEP_UNSUPPORTED_MODE`
+until materialized stepping is implemented.
 
 ## `replay BUNDLE --out RUN_DIR [--against ORIGINAL_RUN_DIR] [--json]`
 
