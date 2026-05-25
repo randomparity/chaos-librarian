@@ -1,0 +1,72 @@
+schema_version: 10
+scenario_id: voom-ci-static-library-baseline
+seed: 9701
+duration_scale: short
+library:
+  roots:
+    - id: root_movies
+      path: movies
+works:
+  - id: work_baseline_movie
+    title: VOOM CI Baseline Movie
+    variants:
+      - id: variant_h264_mp4
+        label: h264-mp4
+        bundle:
+          id: bundle_h264_mp4
+          assets:
+            - id: asset_baseline_mp4
+              role: primary_video
+              container: mp4
+              duration_seconds: 2
+              video:
+                source: solid_color
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_h264_mkv
+        label: h264-mkv
+        bundle:
+          id: bundle_h264_mkv
+          assets:
+            - id: asset_baseline_mkv
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: channel_tones
+                  codec: aac
+                  channels: "5.1"
+                  language: eng
+      - id: variant_sidecar
+        label: subtitle-sidecar
+        bundle:
+          id: bundle_sidecar
+          assets:
+            - id: asset_baseline_sidecar
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: mono
+                  language: eng
+              subtitles:
+                - source: generated_srt
+                  codec: srt
+                  language: eng
+                  mode: sidecar
+timeline: []

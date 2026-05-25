@@ -1,0 +1,31 @@
+schema_version: 10
+scenario_id: voom-ci-hevc-noop
+seed: 9703
+duration_scale: short
+library:
+  roots:
+    - id: root_movies
+      path: movies
+works:
+  - id: work_hevc_noop
+    title: VOOM CI HEVC No-Op
+    variants:
+      - id: variant_hevc_mkv
+        label: hevc-mkv
+        bundle:
+          id: bundle_hevc_mkv
+          assets:
+            - id: asset_hevc_mkv
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: hevc
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline: []

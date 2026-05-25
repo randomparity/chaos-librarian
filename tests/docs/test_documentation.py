@@ -239,6 +239,25 @@ def test_duplicate_variant_expansion_pack_docs_are_discoverable() -> None:
     assert "pathless topology export can surface the ambiguous" in integration_recipes
 
 
+def test_voom_ci_pack_docs_are_discoverable() -> None:
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+
+    required_snippets = [
+        "VOOM CI Scenario Pack",
+        "tests/fixtures/scenarios/voom-ci/static-library-baseline.yaml",
+        "tests/fixtures/scenarios/voom-ci/h264-transcode-candidate.yaml",
+        "tests/fixtures/scenarios/voom-ci/hevc-noop.yaml",
+        "tests/fixtures/scenarios/voom-ci/single-step-media-mutation.yaml",
+        "tests/fixtures/scenarios/voom-ci/malformed-media-header.yaml",
+        "ready_for.materialize_static",
+        "ready_for.materialize_hevc_video",
+        "ready_for.materialize_media_mutations",
+        "materialized `step` is plan-only",
+    ]
+    for snippet in required_snippets:
+        assert snippet in integration_recipes
+
+
 def test_schema_reference_lists_current_contract_versions() -> None:
     text = _read(DOCS / "contract" / "schema-reference.md")
 

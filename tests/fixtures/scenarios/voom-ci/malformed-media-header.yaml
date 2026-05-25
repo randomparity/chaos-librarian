@@ -1,0 +1,38 @@
+schema_version: 10
+scenario_id: voom-ci-malformed-media-header
+seed: 9705
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: root_movies
+      path: movies
+works:
+  - id: work_malformed
+    title: VOOM CI Malformed Header
+    variants:
+      - id: variant_malformed
+        label: h264-mkv
+        bundle:
+          id: bundle_malformed
+          assets:
+            - id: asset_malformed_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: corrupt_header_001
+    at: 1s
+    action: corrupt_container_header
+    target: asset_malformed_main
+    bytes: 64
