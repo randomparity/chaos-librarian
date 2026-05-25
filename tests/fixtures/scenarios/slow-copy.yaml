@@ -24,9 +24,9 @@ works:
               container: mkv
               duration_seconds: 6
               video:
-                source: noise
+                source: mandelbrot
                 codec: h264
-                resolution: 720p
+                resolution: hd
               audio:
                 - codec: aac
                   channels: stereo

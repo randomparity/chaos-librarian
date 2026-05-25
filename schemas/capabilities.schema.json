@@ -108,6 +108,10 @@
           "title": "Materialize Filesystem Mutations",
           "type": "boolean"
         },
+        "materialize_hevc_video": {
+          "title": "Materialize Hevc Video",
+          "type": "boolean"
+        },
         "materialize_media_mutations": {
           "title": "Materialize Media Mutations",
           "type": "boolean"
@@ -120,7 +124,8 @@
       "required": [
         "materialize_static",
         "materialize_filesystem_mutations",
-        "materialize_media_mutations"
+        "materialize_media_mutations",
+        "materialize_hevc_video"
       ],
       "title": "ReadyFor",
       "type": "object"
@@ -193,7 +198,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 2,
+      "const": 3,
       "title": "Schema Version",
       "type": "integer"
     }

@@ -59,7 +59,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=2,
+        schema_version=3,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -69,6 +69,7 @@ def _caps() -> Capabilities:
             materialize_static=True,
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
+            materialize_hevc_video=True,
         ),
     )
 

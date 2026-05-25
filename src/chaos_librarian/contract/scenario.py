@@ -59,7 +59,7 @@ class VideoSource(enum.StrEnum):
     MANDELBROT = "mandelbrot"
     COLOR_BARS = "color_bars"
     SOLID_COLOR = "solid_color"
-    NOISE = "noise"  # passes validate; not yet supported by materialize
+    NOISE = "noise"  # reserved; validate rejects it until materialize supports it
 
 
 class SubtitleMode(enum.StrEnum):

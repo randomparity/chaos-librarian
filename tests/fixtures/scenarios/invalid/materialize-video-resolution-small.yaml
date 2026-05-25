@@ -1,0 +1,32 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 10
+scenario_id: materialize-video-resolution-small
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+works:
+  - id: work_movie
+    title: Unsupported Video Resolution
+    variants:
+      - id: variant_small
+        label: small
+        bundle:
+          id: bundle_small
+          assets:
+            - id: asset_small_main
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: small
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline: []

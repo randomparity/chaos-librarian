@@ -52,6 +52,7 @@ def test_capabilities_round_trip():
             materialize_static=True,
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
+            materialize_hevc_video=True,
         ),
     )
     payload = caps.model_dump_json(indent=2, exclude_none=True)
@@ -81,7 +82,18 @@ def test_capabilities_schema_version_pinned():
             materialize_static=True,
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
+            materialize_hevc_video=True,
         ).model_dump(),
     }
     with pytest.raises(ValidationError):
         Capabilities.model_validate(payload)
+
+
+def test_ready_for_requires_hevc_video_flag():
+    payload = {
+        "materialize_static": True,
+        "materialize_filesystem_mutations": True,
+        "materialize_media_mutations": True,
+    }
+    with pytest.raises(ValidationError):
+        ReadyFor.model_validate(payload)

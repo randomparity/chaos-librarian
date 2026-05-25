@@ -43,12 +43,18 @@ track sources.
 
 ## Track Sources
 
-Video source values:
+Materialize-ready video source values:
 
 - `mandelbrot`
 - `color_bars`
 - `solid_color`
-- `noise`
+
+`noise` is reserved in the schema for future synthesis support. Current
+semantic validation rejects it with `E_MATERIALIZE_UNSUPPORTED`.
+
+Materialize-ready video codecs are `h264`, `hevc`, and `h265`. The `hevc`
+and `h265` aliases both require `ready_for.materialize_hevc_video`.
+Materialize-ready video resolutions are `sd`, `hd`, and `1080p`.
 
 Audio source values:
 
@@ -59,9 +65,6 @@ Audio source values:
 Subtitle source values:
 
 - `generated_srt`
-
-`noise` validates as a scenario source but is not materialize-ready. Use it only
-for plan-only fixtures until materializer support exists.
 
 ## Minimal Scenario
 

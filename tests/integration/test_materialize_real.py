@@ -129,6 +129,30 @@ def test_materialize_cross_mode_logical_oracle_ids(tmp_path: Path) -> None:
     assert (plan_out / "journal.jsonl").read_text() == (mat_out / "journal.jsonl").read_text()
 
 
+def test_materialize_hevc_mkv_when_libx265_available(tmp_path: Path) -> None:
+    """WHY: issue #95 requires real HEVC/H.265 synthesis when the host
+    FFmpeg advertises libx265."""
+    caps = detect_capabilities()
+    if not caps.ready_for.materialize_hevc_video:
+        pytest.skip("FFmpeg libx265 encoder not available")
+    out = tmp_path / "hevc"
+    result = runner.invoke(
+        app,
+        ["materialize", str(FIXTURE_DIR / "hevc-mkv.yaml"), "--out", str(out), "--json"],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+
+    manifest = Manifest.model_validate_json((out / "manifest.current.json").read_text())
+    video_streams = [
+        stream
+        for version in manifest.versions
+        if version.probed is not None
+        for stream in version.probed.streams
+        if stream.kind == "video"
+    ]
+    assert [stream.codec for stream in video_streams] == ["hevc"]
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -168,9 +192,9 @@ def _install_failing_ffmpeg(bin_dir: Path) -> None:
     shim.chmod(0o755)
 
 
-def test_materialize_unsupported_codec(tmp_path: Path) -> None:
-    """WHY: lazy allocation (Finding 3) — pre-synthesis rejection must
-    leave NO on-disk artifact; the stderr JSON must omit
+def test_materialize_unsupported_codec_fails_validation_before_allocation(tmp_path: Path) -> None:
+    """WHY: unsupported static media values now fail semantic validation before
+    preflight or run-dir allocation; the envelope must omit
     materialization_report_path."""
     bad_yaml = (
         (FIXTURE_DIR / "static-library.yaml").read_text().replace("codec: aac", "codec: opus", 1)
@@ -179,9 +203,13 @@ def test_materialize_unsupported_codec(tmp_path: Path) -> None:
     scenario_path.write_text(bad_yaml)
     out = tmp_path / "no_run_dir_please"
     result = runner.invoke(app, ["materialize", str(scenario_path), "--out", str(out), "--json"])
-    assert result.exit_code == 5
+    assert result.exit_code == 3
     payload = json.loads(result.stderr)
-    assert payload["error_code"] == "E_MATERIALIZE_UNSUPPORTED"
+    assert payload["error_code"] == "E_MATERIALIZE_VALIDATION_FAILED"
+    validation_report = payload["details"]["validation_report"]
+    assert any(
+        issue["code"] == "E_MATERIALIZE_UNSUPPORTED" for issue in validation_report["issues"]
+    )
     assert "materialization_report_path" not in payload
     assert not out.exists()
 

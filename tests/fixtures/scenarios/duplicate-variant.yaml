@@ -54,10 +54,10 @@ works:
               duration_seconds: 6
               video:
                 source: mandelbrot
-                codec: h265
-                resolution: 4k
+                codec: hevc
+                resolution: 1080p
               audio:
-                - codec: ac3
+                - codec: aac
                   channels: "5.1"
                   language: eng
 

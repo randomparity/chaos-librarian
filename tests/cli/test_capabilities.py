@@ -39,7 +39,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
         meets_minimum=all_ok,
     )
     return Capabilities(
-        schema_version=2,
+        schema_version=3,
         ffmpeg=ffmpeg,
         ffprobe=ffprobe,
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -61,6 +61,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
             materialize_static=all_ok,
             materialize_filesystem_mutations=all_ok,
             materialize_media_mutations=False,
+            materialize_hevc_video=all_ok,
         ),
     )
 
@@ -75,6 +76,7 @@ def test_capabilities_exit_zero_on_minimum_met(monkeypatch):
     payload = json.loads(result.stdout)
     Capabilities.model_validate(payload)
     assert payload["ready_for"]["materialize_static"] is True
+    assert payload["ready_for"]["materialize_hevc_video"] is True
 
 
 def test_capabilities_exit_four_when_ffmpeg_missing(monkeypatch):
@@ -108,6 +110,7 @@ def test_capabilities_human_output_formats_each_tool(monkeypatch):
     assert "ffmpeg" in result.stdout
     assert "ffprobe" in result.stdout
     assert "mkvtoolnix" in result.stdout
+    assert "materialize_hevc_video" in result.stdout
 
 
 def test_capabilities_human_output_formats_content_sources(monkeypatch):

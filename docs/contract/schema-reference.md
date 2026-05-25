@@ -50,7 +50,7 @@ Current checked-in contract versions:
 | work report | 1 |
 | variant report | 1 |
 | bundle report | 1 |
-| capabilities | 2 |
+| capabilities | 3 |
 | observed state | 1 |
 | divergence | 1 |
 
@@ -83,7 +83,9 @@ Scenario v8 adds the performance and network filesystem lag profile labels plus
 Scenario v7 added explicit `profiles`, starting with `malformed-media`, and the
 `corrupt_container_header` timeline action. Manifest v5 and asset-report v5
 carry labeled corruption metadata on current versions/snapshots.
-Materialization v8 adds `network_lag_actions[]` audit evidence. Replay-bundle
-v6, materialization v7, and capabilities v2 add content-source provider
-capability and replay-evidence surfaces for future file-backed and TTS-backed
-providers.
+Capabilities v3 adds `ready_for.materialize_hevc_video`, which is true only
+when the static materialize gate passes and FFmpeg advertises the `libx265`
+encoder required for HEVC/H.265 synthesis. Materialization v8 adds
+`network_lag_actions[]` audit evidence. Replay-bundle v6, materialization v7,
+and capabilities v2 add content-source provider capability and replay-evidence
+surfaces for future file-backed and TTS-backed providers.

@@ -37,6 +37,7 @@ class ReadyFor(BaseModel):
     materialize_static: bool
     materialize_filesystem_mutations: bool
     materialize_media_mutations: bool
+    materialize_hevc_video: bool
 
 
 class Capabilities(BaseModel):
@@ -44,7 +45,7 @@ class Capabilities(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[2]
+    schema_version: Literal[3]
     ffmpeg: ToolStatus
     ffprobe: ToolStatus
     mkvtoolnix: ToolStatus

@@ -66,7 +66,7 @@ def _materialized_hashes(scenario: Scenario, out_dir: Path) -> dict[str, str]:
 
 def _capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=2,
+        schema_version=3,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -76,6 +76,7 @@ def _capabilities() -> Capabilities:
             materialize_static=True,
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
+            materialize_hevc_video=True,
         ),
     )
 

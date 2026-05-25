@@ -19,6 +19,9 @@ from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )
 from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
+from chaos_librarian.validation.rules.materialize_media_matrix import (
+    rule_materialize_media_matrix,
+)
 from chaos_librarian.validation.rules.network_lag import rule_network_lag
 from chaos_librarian.validation.rules.path_containment import rule_path_containment
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
@@ -59,6 +62,7 @@ _RULES: list[Rule] = [
     rule_timeline_order,
     rule_timeline_lifecycle,
     rule_asset_id_container_safe,
+    rule_materialize_media_matrix,
     rule_sidecar_language_consistent,
     rule_sidecar_target,
     rule_extract_track_unknown,
