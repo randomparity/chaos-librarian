@@ -48,7 +48,9 @@ timeline as step mode over elapsed wall-clock time.
 `run --duration` sets the wall-clock run length. `run --speed` scales logical
 time, defaults to `1x`, and accepts multiplier values such as `10x`.
 
-`step` advances a plan fixture by `--next N` user-visible step units.
+`step` advances a plan-only fixture by `--next N` user-visible step units.
+Materialize and run directories are rejected with `E_STEP_UNSUPPORTED_MODE`
+until materialized stepping is implemented.
 
 `replay` reproduces a recorded plan or run replay bundle. `--against` compares
 the replayed output with an existing original run directory.

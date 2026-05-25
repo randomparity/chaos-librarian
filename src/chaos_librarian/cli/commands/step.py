@@ -7,15 +7,20 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+from pydantic import ValidationError
 
 from chaos_librarian.cli._envelope import (
     E_JOURNAL_CORRUPT,
+    E_REPLAY_BUNDLE_INVALID,
     E_SCENARIO_TAMPERED,
     E_SENTINEL_IN_PROGRESS,
     E_SENTINEL_INVALID,
+    E_STEP_UNSUPPORTED_MODE,
     emit_cli_error,
 )
+from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER
 from chaos_librarian.cli.app import app
+from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.engine import (
     JournalCorruptError,
@@ -47,6 +52,7 @@ def step(
             json_output=json_output,
         )
         raise typer.Exit(code=7)
+    _preflight_step_replay_bundle(run_dir, json_output=json_output)
 
     try:
         result = step_fixture(run_dir, n_steps=next_count)
@@ -82,6 +88,34 @@ def step(
         typer.echo(_step_summary_json(result))
     else:
         typer.echo(f"step: applied {result.steps_applied}, remaining {result.steps_remaining}")
+
+
+def _preflight_step_replay_bundle(run_dir: Path, *, json_output: bool) -> None:
+    """Reject invalid or non-plan replay bundles before entering the plan-only engine."""
+    bundle_path = run_dir / "replay.json"
+    try:
+        bundle = REPLAY_BUNDLE_ADAPTER.validate_json(bundle_path.read_bytes())
+    except (OSError, ValidationError) as exc:
+        emit_cli_error(
+            error_code=E_REPLAY_BUNDLE_INVALID,
+            message=f"replay bundle is not parseable: {exc}",
+            json_output=json_output,
+            extra_top_level={"bundle_path": str(bundle_path)},
+        )
+        raise typer.Exit(code=1) from exc
+    if isinstance(bundle, PlanOnlyReplayBundle):
+        return
+    mode = bundle.execution_mode.value
+    emit_cli_error(
+        error_code=E_STEP_UNSUPPORTED_MODE,
+        message=f"step supports plan_only replay bundles only; got {mode}",
+        json_output=json_output,
+        details={
+            "execution_mode": mode,
+            "supported_execution_mode": ExecutionMode.PLAN_ONLY.value,
+        },
+    )
+    raise typer.Exit(code=1)
 
 
 def _step_summary_json(result: StepResult) -> str:
