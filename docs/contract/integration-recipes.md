@@ -24,6 +24,35 @@ Use the scanner recipe, but include `content_hash` and `probed` for each asset.
 The adapter compares hashes only when both sides supply them and compares probed
 media only when both sides supply `probed`.
 
+## VOOM CI Scenario Pack
+
+The `tests/fixtures/scenarios/voom-ci/` pack gives consumer CI a stable set of
+small fixtures that map to common scanner, prober, transcode policy, rescan,
+and malformed-media checks. The fixtures stay consumer-neutral; VOOM-specific
+exporters still own application database reads and policy assertions.
+
+| Fixture | Consumer assertion | Command | Capability gate |
+| --- | --- | --- | --- |
+| `tests/fixtures/scenarios/voom-ci/static-library-baseline.yaml` | Scanner/prober final state contains H.264 MP4, H.264 MKV, audio layout, and sidecar subtitle evidence. | `materialize` then `compare --mode final-state` | `ready_for.materialize_static` |
+| `tests/fixtures/scenarios/voom-ci/h264-transcode-candidate.yaml` | HEVC policy can select H.264 MP4 and MKV inputs as transcode candidates. | `materialize` then consumer policy execution | `ready_for.materialize_static` |
+| `tests/fixtures/scenarios/voom-ci/hevc-noop.yaml` | The same HEVC policy treats an HEVC MKV input as already compliant. | `materialize` then consumer policy execution | `ready_for.materialize_hevc_video` |
+| `tests/fixtures/scenarios/voom-ci/single-step-media-mutation.yaml` | A single deterministic reencode changes final probe/hash evidence for rescan loops. | `run --duration 2s --speed 20x` for live watchers, or `plan`/`step` for oracle-only stepping | `ready_for.materialize_media_mutations` |
+| `tests/fixtures/scenarios/voom-ci/malformed-media-header.yaml` | Malformed-media handling reports stable corruption metadata and expected adapter guidance. | `materialize` then inspect `materialization.json.corruption_actions[]` | `ready_for.materialize_media_mutations` |
+
+Check gates with:
+
+```bash
+uv run chaos-librarian capabilities --json
+```
+
+The malformed fixture opts into the `malformed-media` profile in its YAML. There
+is no separate `ready_for` field for that profile.
+
+For mutation loops, materialized `step` is plan-only and rejects `materialize`
+or `run` directories with `E_STEP_UNSUPPORTED_MODE`. Use `run` when the
+consumer needs live filesystem changes, and use `plan` plus `step` only when a
+test needs deterministic oracle snapshots without on-disk media.
+
 ## Duplicate And Variant Pack
 
 Use this pack when a consumer needs duplicate-candidate and variant-topology

@@ -1,0 +1,37 @@
+schema_version: 10
+scenario_id: voom-ci-single-step-media-mutation
+seed: 9704
+duration_scale: short
+library:
+  roots:
+    - id: root_movies
+      path: movies
+works:
+  - id: work_mutation
+    title: VOOM CI Single-Step Mutation
+    variants:
+      - id: variant_mutation
+        label: h264-mkv
+        bundle:
+          id: bundle_mutation
+          assets:
+            - id: asset_mutation_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: 1080p
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline:
+  - id: reencode_video_001
+    at: 1s
+    action: reencode_video
+    target: asset_mutation_main
+    resolution: hd
+    codec: h264

@@ -1,0 +1,49 @@
+schema_version: 10
+scenario_id: voom-ci-h264-transcode-candidate
+seed: 9702
+duration_scale: short
+library:
+  roots:
+    - id: root_movies
+      path: movies
+works:
+  - id: work_h264_policy
+    title: VOOM CI H264 Policy Candidates
+    variants:
+      - id: variant_candidate_mp4
+        label: h264-mp4
+        bundle:
+          id: bundle_candidate_mp4
+          assets:
+            - id: asset_h264_mp4
+              role: primary_video
+              container: mp4
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: 1080p
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_candidate_mkv
+        label: h264-mkv
+        bundle:
+          id: bundle_candidate_mkv
+          assets:
+            - id: asset_h264_mkv
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: solid_color
+                codec: h264
+                resolution: 1080p
+              audio:
+                - source: channel_tones
+                  codec: aac
+                  channels: "5.1"
+                  language: eng
+timeline: []
