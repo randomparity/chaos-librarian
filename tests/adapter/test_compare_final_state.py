@@ -9,7 +9,12 @@ import pytest
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
 from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
 from chaos_librarian.contract.divergence import CompareMode, DivergenceCode
-from chaos_librarian.contract.manifest import ManifestSidecar
+from chaos_librarian.contract.manifest import (
+    ManifestSidecar,
+    ProbedMedia,
+    ProbedStream,
+    StreamKind,
+)
 from chaos_librarian.contract.observed_state import ObservedSidecar
 from chaos_librarian.contract.scenario import SidecarKind
 from tests.support.adapter import (
@@ -105,6 +110,33 @@ def test_probe_duration_uses_point_zero_five_second_tolerance() -> None:
 
     assert "D_PROBE_MISMATCH" not in _codes(tolerated)
     assert "D_PROBE_MISMATCH" in _codes(outside)
+
+
+def test_probe_unknown_language_equivalence_keeps_final_state_compare_clean() -> None:
+    oracle_probe = ProbedMedia(
+        container="mov,mp4,m4a,3gp,3g2,mj2",
+        duration_seconds=60.0,
+        size_bytes=12345,
+        streams=[
+            ProbedStream(kind=StreamKind.VIDEO, codec="h264", language="und"),
+            ProbedStream(kind=StreamKind.AUDIO, codec="aac", language="und"),
+        ],
+    )
+    observed_probe = oracle_probe.model_copy(
+        update={
+            "streams": [
+                ProbedStream(kind=StreamKind.VIDEO, codec="h264", language=None),
+                ProbedStream(kind=StreamKind.AUDIO, codec="aac", language=None),
+            ]
+        }
+    )
+
+    report = compare_fixture_to_observed(
+        _fixture(probed=oracle_probe),
+        _observed(probed=observed_probe),
+    )
+
+    assert "D_PROBE_MISMATCH" not in _codes(report)
 
 
 def test_missing_observed_sidecar_emits_d_sidecar_missing() -> None:

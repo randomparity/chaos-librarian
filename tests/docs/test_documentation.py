@@ -163,6 +163,22 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_observed_state_docs_cover_language_and_sidecar_normalization() -> None:
+    observed_state = _read(DOCS / "contract" / "observed-state.md")
+
+    required_snippets = [
+        "Unknown stream language",
+        "JSON `null`, omitted language, and `und` are equivalent",
+        "Subtitle streams remain strict",
+        "Consumers should export the facts they observed",
+        '"sidecars"',
+        '"content_hash"',
+        "library-relative POSIX path",
+    ]
+    for snippet in required_snippets:
+        assert snippet in observed_state
+
+
 def test_performance_profile_policy_docs_are_discoverable() -> None:
     source_design = _read(DOCS / "specs" / "chaos-librarian-design.md")
     integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
