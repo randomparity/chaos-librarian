@@ -24,6 +24,13 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
+from chaos_librarian.media_matrix import (
+    SUPPORTED_AUDIO_CODECS,
+    SUPPORTED_CONTAINERS,
+    SUPPORTED_RESOLUTIONS,
+    SUPPORTED_VIDEO_CODECS,
+    VIDEO_ENCODER_BY_CODEC,
+)
 
 _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
     # ``-fflags +bitexact`` MUST appear on the output side: that's the only
@@ -40,11 +47,6 @@ _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
     "creation_time=1970-01-01T00:00:00Z",
 )
 BITEXACT_FLAGS: Final[tuple[str, ...]] = _BITEXACT_OUTPUT_FLAGS
-
-_SUPPORTED_CONTAINERS: Final[frozenset[str]] = frozenset({"mkv", "mp4"})
-_SUPPORTED_RESOLUTIONS: Final[frozenset[str]] = frozenset({"sd", "hd", "1080p"})
-_SUPPORTED_VIDEO_CODECS: Final[frozenset[str]] = frozenset({"h264"})
-_SUPPORTED_AUDIO_CODECS: Final[frozenset[str]] = frozenset({"aac"})
 
 _CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {".mkv": "mkv", ".mp4": "mp4"}
 
@@ -71,22 +73,22 @@ def _resolve_container(output_path: Path) -> str:
         raise UnsupportedMaterializationError(
             f"unknown container extension: {output_path.suffix!r}",
             field="container",
-            payload={"supported": sorted(_SUPPORTED_CONTAINERS)},
+            payload={"supported": sorted(SUPPORTED_CONTAINERS)},
         )
-    _require(container, _SUPPORTED_CONTAINERS, "container")
+    _require(container, SUPPORTED_CONTAINERS, "container")
     return container
 
 
 def _validate_video(video: VideoTrack) -> None:
     """Reject video tracks outside the codec/resolution matrix."""
-    _require(video.codec, _SUPPORTED_VIDEO_CODECS, "video.codec")
-    _require(video.resolution, _SUPPORTED_RESOLUTIONS, "video.resolution")
+    _require(video.codec, SUPPORTED_VIDEO_CODECS, "video.codec")
+    _require(video.resolution, SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
 def _validate_audio(audios: Sequence[AudioTrack]) -> None:
     """Reject any audio track outside the codec matrix."""
     for index, audio in enumerate(audios):
-        _require(audio.codec, _SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
+        _require(audio.codec, SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
 
 
 def _input_args(ffmpeg_input: FFmpegInput, *, field: str) -> list[str]:
@@ -154,7 +156,7 @@ def build_command(
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs))
-    argv.extend(["-c:v", "libx264", "-preset", "medium"])
+    argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
     argv.extend(["-c:a", "aac"])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")

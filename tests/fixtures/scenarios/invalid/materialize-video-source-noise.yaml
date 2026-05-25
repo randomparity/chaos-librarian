@@ -1,0 +1,32 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 10
+scenario_id: materialize-video-source-noise
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+works:
+  - id: work_movie
+    title: Unsupported Video Source
+    variants:
+      - id: variant_noise
+        label: noise
+        bundle:
+          id: bundle_noise
+          assets:
+            - id: asset_noise_main
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: noise
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline: []

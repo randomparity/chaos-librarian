@@ -1,0 +1,31 @@
+schema_version: 10
+scenario_id: hevc-mkv
+seed: 94
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+works:
+  - id: work_hevc
+    title: HEVC MKV Smoke
+    variants:
+      - id: variant_sd
+        label: sd
+        bundle:
+          id: bundle_sd
+          assets:
+            - id: asset_hevc_main
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: hevc
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline: []

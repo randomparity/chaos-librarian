@@ -26,6 +26,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import run as run_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
+    CapabilityGateError,
     FilesystemActionError,
     ScenarioValidationError,
     ToolFailedError,
@@ -33,6 +34,7 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
+from chaos_librarian.validation import codes
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
@@ -42,8 +44,12 @@ INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
 def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """All Layer 3 tests assume capabilities pass; only behavior we care
     about is the orchestrator's own logic."""
-    caps = Capabilities(
-        schema_version=2,
+    monkeypatch.setattr(run_mod, "detect_capabilities", _capabilities)
+
+
+def _capabilities(*, materialize_hevc_video: bool = True) -> Capabilities:
+    return Capabilities(
+        schema_version=3,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -53,9 +59,9 @@ def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_static=True,
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
+            materialize_hevc_video=materialize_hevc_video,
         ),
     )
-    monkeypatch.setattr(run_mod, "detect_capabilities", lambda: caps)
 
 
 def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -232,15 +238,37 @@ def _load_materialization_report(out_dir: Path) -> MaterializationReport:
 def test_orchestrator_refuses_unsupported_audio_codec(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Sprint 5 matrix rejects opus at pre-flight; the run-dir must
-    not be created (lazy allocation guarantee, Finding 3)."""
+    """WHY: unsupported static media now fails semantic validation before
+    preflight; the run-dir must not be created."""
     _patch_success(monkeypatch)
     scenario = tmp_path / "opus.yaml"
     scenario.write_text(_STATIC_SCENARIO_OPUS)
     out = tmp_path / "run"
-    with pytest.raises(UnsupportedMaterializationError) as exc:
+    with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    assert exc.value.field == "audio[0].codec"
+    assert any(
+        issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+        for issue in exc.value.validation_report.issues
+    )
+    assert not out.exists()
+
+
+def test_orchestrator_refuses_hevc_when_encoder_capability_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WHY: HEVC scenarios require libx265. The refusal must happen before
+    run-dir allocation so callers do not get a half-created fixture."""
+    monkeypatch.setattr(
+        run_mod,
+        "detect_capabilities",
+        lambda: _capabilities(materialize_hevc_video=False),
+    )
+
+    out = tmp_path / "hevc-no-libx265"
+    with pytest.raises(CapabilityGateError) as exc:
+        materialize_scenario(FIXTURE_DIR / "hevc-mkv.yaml", out)
+
+    assert exc.value.field == "ready_for.materialize_hevc_video"
     assert not out.exists()
 
 

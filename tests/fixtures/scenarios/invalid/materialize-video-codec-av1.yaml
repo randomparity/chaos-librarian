@@ -1,0 +1,32 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 10
+scenario_id: materialize-video-codec-av1
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+works:
+  - id: work_movie
+    title: Unsupported Video Codec
+    variants:
+      - id: variant_av1
+        label: av1
+        bundle:
+          id: bundle_av1
+          assets:
+            - id: asset_av1_main
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: av1
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+timeline: []

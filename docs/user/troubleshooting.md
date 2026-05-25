@@ -33,6 +33,9 @@ uv run chaos-librarian capabilities --json
 If `ready_for.materialize_media_mutations` is false, install or upgrade
 mkvmerge before enabling media-mutation jobs.
 
+If `ready_for.materialize_hevc_video` is false, install an FFmpeg build with
+the `libx265` encoder before materializing HEVC or H.265 scenarios.
+
 ## Exit `5`
 
 Inspect `materialization.json` and the recorded external tool invocation

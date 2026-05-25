@@ -95,6 +95,26 @@ def _probe_one(name: str, *, regex_key: str) -> ToolStatus:
     )
 
 
+def _ffmpeg_encoder_available(ffmpeg: ToolStatus, encoder: str) -> bool:
+    """Return whether the minimum-passing FFmpeg binary advertises ``encoder``."""
+    if not ffmpeg.meets_minimum or ffmpeg.path is None:
+        return False
+    try:
+        result = subprocess.run(
+            [ffmpeg.path, "-hide_banner", "-encoders"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if result.returncode != 0:
+        return False
+    pattern = re.compile(rf"(^|\s){re.escape(encoder)}(\s|$)")
+    return pattern.search(result.stdout or "") is not None
+
+
 def detect_capabilities() -> Capabilities:
     """Probe ffmpeg, ffprobe, mkvmerge and return a Capabilities report."""
     ffmpeg = _probe_one("ffmpeg", regex_key="ffmpeg")
@@ -103,6 +123,7 @@ def detect_capabilities() -> Capabilities:
     ffmpeg_ok = ffmpeg.meets_minimum
     ffprobe_ok = ffprobe.meets_minimum
     mkv_ok = mkv.meets_minimum
+    libx265_available = _ffmpeg_encoder_available(ffmpeg, "libx265")
     return Capabilities(
         schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ffmpeg,
@@ -114,6 +135,7 @@ def detect_capabilities() -> Capabilities:
             materialize_static=ffmpeg_ok and ffprobe_ok,
             materialize_filesystem_mutations=ffmpeg_ok and ffprobe_ok,
             materialize_media_mutations=ffmpeg_ok and ffprobe_ok and mkv_ok,
+            materialize_hevc_video=ffmpeg_ok and ffprobe_ok and libx265_available,
         ),
     )
 

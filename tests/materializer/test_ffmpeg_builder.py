@@ -25,8 +25,8 @@ from chaos_librarian.materializer.tooling.recipes import (
 )
 
 
-def _video(resolution: str = "hd") -> VideoTrack:
-    return VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution=resolution)
+def _video(resolution: str = "hd", codec: str = "h264") -> VideoTrack:
+    return VideoTrack(source=VideoSource.COLOR_BARS, codec=codec, resolution=resolution)
 
 
 def _audio(channels: AudioChannelLayout = AudioChannelLayout.STEREO) -> AudioTrack:
@@ -85,6 +85,23 @@ def test_unsupported_audio_codec_rejected(tmp_path: Path) -> None:
         )
     assert exc.value.field == "audio[0].codec"
     assert exc.value.payload["supported"] == ["aac"]
+
+
+@pytest.mark.parametrize(
+    ("codec", "encoder"),
+    [("h264", "libx264"), ("hevc", "libx265"), ("h265", "libx265")],
+)
+def test_video_codec_selects_expected_encoder(codec: str, encoder: str, tmp_path: Path) -> None:
+    output = tmp_path / "asset.mkv"
+    argv = build_command(
+        video=_video(codec=codec),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output,
+    )
+
+    assert argv[argv.index("-c:v") + 1] == encoder
 
 
 def test_unsupported_container_rejected(tmp_path: Path) -> None:

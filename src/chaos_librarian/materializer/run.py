@@ -14,11 +14,13 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.materializer.errors import (
+    CapabilityGateError,
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
@@ -51,6 +53,7 @@ from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
+from chaos_librarian.media_matrix import HEVC_VIDEO_CODECS
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input
 
@@ -68,7 +71,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         UnsupportedMaterializationError: scenario declares a codec,
             container, or subtitle mode outside the Sprint 5 matrix.
         CapabilityGateError: ffmpeg / ffprobe / mkvtoolnix missing or
-            below the minimum version.
+            below the minimum version, or libx265 missing for HEVC video.
         ContainmentViolationError: a path escapes ``<out_dir>/library/``.
         ToolFailedError: ffmpeg or mkvtoolnix exited non-zero during
             synthesis.
@@ -103,6 +106,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     preflight_timeline(scenario)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    _assert_capable_for_hevc_video(scenario, caps)
     run_id = uuid.uuid4()
     # materialize executes the whole timeline; pass ``steps_limit=None`` so
     # ``run_materializer_plan`` applies every resolved event. Sprint 5 capped this at 0
@@ -126,6 +130,25 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     )
     begin_materialize_run(ctx.out_dir, build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
     return _run_synthesis(ctx, scenario)
+
+
+def _assert_capable_for_hevc_video(scenario: Scenario, caps: Capabilities) -> None:
+    """Raise before run-dir allocation when scenario needs HEVC and libx265 is absent."""
+    for asset in iter_assets(scenario):
+        if asset.video is None or asset.video.codec not in HEVC_VIDEO_CODECS:
+            continue
+        if caps.ready_for.materialize_hevc_video:
+            return
+        raise CapabilityGateError(
+            "HEVC/H.265 video materialization requires FFmpeg with the libx265 encoder",
+            asset_id=asset.id,
+            field="ready_for.materialize_hevc_video",
+            payload={
+                "capability": "ready_for.materialize_hevc_video",
+                "required_encoder": "libx265",
+                "video_codec": asset.video.codec,
+            },
+        )
 
 
 def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:

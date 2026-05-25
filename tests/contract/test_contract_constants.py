@@ -52,8 +52,8 @@ def test_materialization_schema_version_bumped_to_9():
     assert MATERIALIZATION_SCHEMA_VERSION == 9
 
 
-def test_capabilities_schema_version_bumped_to_2() -> None:
-    assert CAPABILITIES_SCHEMA_VERSION == 2
+def test_capabilities_schema_version_bumped_to_3() -> None:
+    assert CAPABILITIES_SCHEMA_VERSION == 3
 
 
 def test_all_schema_versions_are_positive_integers() -> None:
