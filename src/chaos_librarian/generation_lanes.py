@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Final, cast
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
@@ -190,4 +190,8 @@ def _timeline_events(payload: Mapping[str, object]) -> tuple[Mapping[str, object
     raw = payload.get("timeline", [])
     if not isinstance(raw, list):
         return ()
-    return tuple(event for event in raw if isinstance(event, dict))
+    events: list[Mapping[str, object]] = []
+    for event in raw:
+        if isinstance(event, dict):
+            events.append(cast(Mapping[str, object], event))
+    return tuple(events)

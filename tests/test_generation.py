@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import pytest
 from ruamel.yaml import YAML
@@ -136,7 +137,9 @@ def test_generated_gated_lanes_include_required_profiles(
         seed=459,
     )
 
-    assert tuple(payload["profiles"]) == required_profiles
+    profiles = payload["profiles"]
+    assert isinstance(profiles, list)
+    assert tuple(profiles) == required_profiles
 
 
 def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:
@@ -170,6 +173,7 @@ def _seed_manifest_cases(
         assert isinstance(entries, list)
         for entry in entries:
             assert isinstance(entry, dict)
+            entry = cast(dict[str, object], entry)
             lane = FuzzLaneName(entry["lane"])
             seed = entry["seed"]
             gates = entry["gates"]
