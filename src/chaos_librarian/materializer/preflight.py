@@ -79,7 +79,12 @@ def preflight_asset(
     subtitles: Sequence[SubtitleTrack],
     container: str,
 ) -> None:
-    """Run build_command in a dry mode — raises UnsupportedMaterializationError fast.
+    """Reject unsupported media shapes before run-dir allocation.
+
+    Movie and episode assets resolve video/audio sources, then dry-build the
+    video-backed FFmpeg command through ``build_command``. Track assets enforce
+    the audio-only policy and resolve audio inputs; audio-only muxing dry-build
+    is introduced when ``build_command`` supports optional video.
 
     Subtitle checks are inline: only ``codec=srt, source=generated_srt,
     mode=sidecar`` is supported. Without these gates, ``mode=embedded`` or

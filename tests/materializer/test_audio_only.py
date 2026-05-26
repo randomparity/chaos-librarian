@@ -73,6 +73,32 @@ def test_track_with_subtitle_rejected_by_preflight() -> None:
     assert exc_info.value.field == "subtitles"
 
 
+def test_track_without_audio_rejected_by_preflight() -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        preflight_asset(
+            parent_kind=ParentKind.TRACK,
+            video=None,
+            audios=[],
+            subtitles=[],
+            container="flac",
+        )
+
+    assert exc_info.value.field == "audio"
+
+
+def test_track_with_multiple_audio_streams_rejected_by_preflight() -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        preflight_asset(
+            parent_kind=ParentKind.TRACK,
+            video=None,
+            audios=[_audio("flac"), _audio("flac")],
+            subtitles=[],
+            container="flac",
+        )
+
+    assert exc_info.value.field == "audio"
+
+
 @pytest.mark.parametrize(
     ("container", "codec", "field"),
     [("mkv", "flac", "container"), ("flac", "aac", "audio[0].codec")],
