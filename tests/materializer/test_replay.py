@@ -69,7 +69,7 @@ library:
     - id: movies_hd
       path: movies-hd
 movies:
-  - id: work_001
+  - id: movie_001
     title: {title}
     layout: movie_flat
     variants:
@@ -108,7 +108,7 @@ library:
     - id: movies_hd
       path: movies-hd
 movies:
-  - id: work_001
+  - id: movie_001
     title: Broken Header
     layout: movie_flat
     variants:

@@ -219,14 +219,15 @@ def test_unknown_reencode_audio_channels_fail_validation(tmp_path: Path) -> None
     scenario_yaml = tmp_path / "fail.yaml"
     scenario_yaml.write_text(
         """\
-schema_version: 11
+schema_version: 12
 scenario_id: sc_fail
 seed: 42
 duration_scale: short
 library: {roots: [{id: r0, path: library/movies}]}
-works:
-  - id: w0
+movies:
+  - id: movie_0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd

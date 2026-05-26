@@ -184,7 +184,7 @@ def _write_scenario(
                 - id: movies_hd
                   path: movies-hd
             movies:
-              - id: work_001
+              - id: movie_001
                 title: Synthetic Test
                 layout: movie_flat
                 variants:
@@ -242,7 +242,7 @@ def _write_malformed_scenario(
                 - id: movies_hd
                   path: movies-hd
             movies:
-              - id: work_001
+              - id: movie_001
                 title: Broken Header
                 layout: movie_flat
                 variants:

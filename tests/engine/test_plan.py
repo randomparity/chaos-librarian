@@ -63,6 +63,15 @@ movies:
               role: primary_video
               container: mkv
               duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
 series: []
 artists: []
 timeline:
