@@ -149,6 +149,7 @@ def rule_timeline_lifecycle(
     # the same code, so threading it through five helpers is pure noise.
     emit: _Emit = partial(reporter.error, code=E_LIFECYCLE_INVALID)
     hierarchy_projection = build_hierarchy_projection(raw)
+    hierarchy_pending_slow_copies: dict[str, tuple[str, str]] = {}
     state = _LifecycleState(
         placed=set(iter_asset_ids(raw)),
         pending_slow_copies={},
@@ -204,6 +205,12 @@ def rule_timeline_lifecycle(
             )
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
             _lifecycle_apply_commit(ref=event.get("for"), state=state)
+
+        if not is_hierarchy_action(action):
+            hierarchy_projection.project_non_hierarchy_event(
+                event,
+                hierarchy_pending_slow_copies,
+            )
 
 
 # Pre-bound ``reporter.error(code=E_LIFECYCLE_INVALID, …)`` callable; the

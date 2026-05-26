@@ -93,9 +93,7 @@ def rule_hierarchy_timeline(
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         if not is_hierarchy_action(action):
-            _project_non_hierarchy_current_path(
-                event, projection.current_paths, pending_slow_copies
-            )
+            projection.project_non_hierarchy_event(event, pending_slow_copies)
             continue
         mutation = projection.apply(event)
         _check_hierarchy_rendered_paths(mutation=mutation, event_idx=idx, reporter=reporter)
@@ -287,82 +285,6 @@ def _report_projected_path_collision(
         ),
         loc=_event_loc(event_idx),
     )
-
-
-def _project_non_hierarchy_current_path(
-    event: Mapping[str, object],
-    current_paths: dict[str, str],
-    pending_slow_copies: dict[str, tuple[str, str]],
-) -> None:
-    action = event.get("action")
-    if action in {
-        TimelineActionName.MOVE_ASSET,
-        TimelineActionName.RENAME_FILE,
-        TimelineActionName.ADD_FILE,
-    }:
-        _project_to_field_path(event, current_paths)
-    elif action == TimelineActionName.DELETE_FILE:
-        target = event.get("target")
-        if isinstance(target, str):
-            current_paths.pop(target, None)
-    elif action == TimelineActionName.SLOW_COPY_START:
-        _project_slow_copy_start(event, pending_slow_copies)
-    elif action == TimelineActionName.SLOW_COPY_COMMIT:
-        _project_slow_copy_commit(event, pending_slow_copies, current_paths)
-    elif action == TimelineActionName.REMUX_CONTAINER:
-        _project_remux_container(event, current_paths)
-
-
-def _project_to_field_path(event: Mapping[str, object], current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    path = event.get("to")
-    if isinstance(target, str) and isinstance(path, str):
-        current_paths[target] = path
-
-
-def _project_slow_copy_start(
-    event: Mapping[str, object],
-    pending_slow_copies: dict[str, tuple[str, str]],
-) -> None:
-    event_id = event.get("id")
-    target = event.get("target")
-    final_path = event.get("to")
-    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
-        pending_slow_copies[event_id] = (target, final_path)
-
-
-def _project_slow_copy_commit(
-    event: Mapping[str, object],
-    pending_slow_copies: dict[str, tuple[str, str]],
-    current_paths: dict[str, str],
-) -> None:
-    start_id = event.get("for")
-    if not isinstance(start_id, str):
-        return
-    pending = pending_slow_copies.pop(start_id, None)
-    if pending is None:
-        return
-    target, final_path = pending
-    current_paths[target] = final_path
-
-
-def _project_remux_container(event: Mapping[str, object], current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    to_container = event.get("to_container")
-    if not isinstance(target, str) or not isinstance(to_container, str):
-        return
-    current_path = current_paths.get(target)
-    if current_path is None:
-        return
-    current_paths[target] = _swap_extension(current_path, to_container)
-
-
-def _swap_extension(path: str, new_ext: str) -> str:
-    basename = path.rsplit("/", 1)[-1]
-    if "." in basename:
-        base = path.rsplit(".", 1)[0]
-        return f"{base}.{new_ext}"
-    return f"{path}.{new_ext}"
 
 
 def _event_loc(event_idx: int) -> _Loc:

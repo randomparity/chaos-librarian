@@ -203,6 +203,7 @@ def rule_slow_copy_path_collision(
     current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
     pending_slow_copies: dict[str, tuple[str, str]] = {}
     hierarchy_projection = build_hierarchy_projection(raw)
+    hierarchy_pending_slow_copies: dict[str, tuple[str, str]] = {}
     declared_roots = {
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
@@ -240,6 +241,8 @@ def rule_slow_copy_path_collision(
             _project_remux_container(event, current_paths)
         elif is_hierarchy_action(action):
             _project_hierarchy_action(event, hierarchy_projection, current_paths)
+            continue
+        hierarchy_projection.project_non_hierarchy_event(event, hierarchy_pending_slow_copies)
 
 
 def _check_slow_copy_start_path_collision(

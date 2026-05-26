@@ -74,6 +74,7 @@ def rule_sidecar_target(
     reporter = Reporter(collector=collector, line_index=line_index)
     projection = _seed_projection_from_declared(raw)
     hierarchy_projection = build_hierarchy_projection(raw)
+    pending_slow_copies: dict[str, tuple[str, str]] = {}
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         target = event.get("target")
@@ -82,9 +83,11 @@ def rule_sidecar_target(
         if is_hierarchy_action(action):
             mutation = hierarchy_projection.apply(event)
             _project_declared_sidecars_for_hierarchy_mutation(mutation, projection)
-        elif not isinstance(target, str):
             continue
-        elif action == TimelineActionName.CREATE_SIDECAR:
+        hierarchy_projection.project_non_hierarchy_event(event, pending_slow_copies)
+        if not isinstance(target, str):
+            continue
+        if action == TimelineActionName.CREATE_SIDECAR:
             _handle_create_sidecar(event, target=target, projection=projection)
         elif action == TimelineActionName.EXTRACT_SUBTITLE:
             _handle_extract_subtitle(

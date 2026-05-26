@@ -522,9 +522,9 @@ class HierarchyProjection:
         self.discs: dict[str, _DiscState] = {}
         self.tracks: dict[str, _TrackState] = {}
         self.assets: dict[str, _AssetTail] = {}
-        self.current_paths = {
-            asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()
-        }
+        initial_paths = rendered_asset_paths(raw)
+        self.current_paths = {asset_id: path for asset_id, (path, _loc) in initial_paths.items()}
+        self._renderer_managed_asset_ids = set(initial_paths)
         self._seed_series(raw)
         self._seed_artists(raw)
         self._seed_assets(raw)
@@ -555,6 +555,28 @@ class HierarchyProjection:
             affected_disc_ids=frozenset(discs),
             path_changes=path_changes,
         )
+
+    def project_non_hierarchy_event(
+        self,
+        event: Mapping[str, object],
+        pending_slow_copies: dict[str, tuple[str, str]],
+    ) -> None:
+        """Project non-hierarchy path actions using engine renderer-management rules."""
+        action = event.get("action")
+        if action in {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.ADD_FILE,
+        }:
+            self._project_to_field_path(event)
+        elif action == TimelineActionName.DELETE_FILE:
+            self._project_delete_file(event)
+        elif action == TimelineActionName.SLOW_COPY_START:
+            self._project_slow_copy_start(event, pending_slow_copies)
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
+            self._project_slow_copy_commit(event, pending_slow_copies)
+        elif action == TimelineActionName.REMUX_CONTAINER:
+            self._project_remux_container(event)
 
     def affected_asset_ids(self, event: Mapping[str, object]) -> set[str]:
         """Return assets under the hierarchy entity targeted by ``event``."""
@@ -798,11 +820,60 @@ class HierarchyProjection:
         track.track_number = track_number
         return {old_disc_id, to_disc}
 
+    def _project_to_field_path(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        path = event.get("to")
+        if isinstance(target, str) and isinstance(path, str):
+            self.current_paths[target] = path
+
+    def _project_delete_file(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        if isinstance(target, str):
+            self.current_paths.pop(target, None)
+            self._renderer_managed_asset_ids.discard(target)
+
+    def _project_slow_copy_start(
+        self,
+        event: Mapping[str, object],
+        pending_slow_copies: dict[str, tuple[str, str]],
+    ) -> None:
+        event_id = event.get("id")
+        target = event.get("target")
+        final_path = event.get("to")
+        if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
+            pending_slow_copies[event_id] = (target, final_path)
+
+    def _project_slow_copy_commit(
+        self,
+        event: Mapping[str, object],
+        pending_slow_copies: dict[str, tuple[str, str]],
+    ) -> None:
+        start_id = event.get("for")
+        if not isinstance(start_id, str):
+            return
+        pending = pending_slow_copies.pop(start_id, None)
+        if pending is None:
+            return
+        target, final_path = pending
+        self.current_paths[target] = final_path
+
+    def _project_remux_container(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        to_container = event.get("to_container")
+        if not isinstance(target, str) or not isinstance(to_container, str):
+            return
+        current_path = self.current_paths.get(target)
+        if current_path is None:
+            return
+        self.current_paths[target] = _swap_extension(current_path, to_container)
+
     def _refresh_paths(
         self, asset_ids: set[str], before: Mapping[str, str | None]
     ) -> dict[str, tuple[str | None, str | None]]:
         changes: dict[str, tuple[str | None, str | None]] = {}
         for asset_id in asset_ids:
+            if asset_id not in self._renderer_managed_asset_ids:
+                continue
             old_path = before.get(asset_id)
             if old_path is None:
                 continue
@@ -908,6 +979,14 @@ class HierarchyProjection:
             source.remove(value)
         if value not in destination:
             destination.append(value)
+
+
+def _swap_extension(path: str, new_ext: str) -> str:
+    basename = path.rsplit("/", 1)[-1]
+    if "." in basename:
+        base = path.rsplit(".", 1)[0]
+        return f"{base}.{new_ext}"
+    return f"{path}.{new_ext}"
 
 
 def build_hierarchy_projection(raw: Mapping[str, object]) -> HierarchyProjection:

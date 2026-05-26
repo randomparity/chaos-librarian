@@ -579,6 +579,48 @@ def test_move_episode_to_absolute_named_season_requires_absolute_number(
     )
 
 
+def test_move_unmanaged_added_episode_to_absolute_named_season_keeps_explicit_path(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "delete",
+                "at": "1s",
+                "action": "delete_file",
+                "target": "asset_episode",
+            },
+            {
+                "id": "add",
+                "at": "2s",
+                "action": "add_file",
+                "target": "asset_episode",
+                "to": "TV/manual/explicit.mkv",
+            },
+            {
+                "id": "move",
+                "at": "3s",
+                "action": "move_episode_to_season",
+                "target": "episode_one",
+                "to_season": "season_destination",
+                "episode_number": 1,
+            },
+        ]
+    )
+    source_series = _mapping(_items(raw["series"])[0])
+    source_season = _mapping(_items(source_series["seasons"])[0])
+    source_episode = _mapping(_items(source_season["episodes"])[0])
+    source_episode.pop("absolute_number")
+    _add_destination_series(raw, episode_naming="absolute_3_digit_title")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(
+        issue.code == codes.E_HIERARCHY_INVALID and issue.path == "$.timeline[2].action"
+        for issue in issues
+    )
+
+
 def test_move_episode_to_date_named_season_requires_aired_on(series_scenario, empty_index) -> None:
     raw = series_scenario(
         timeline=[
