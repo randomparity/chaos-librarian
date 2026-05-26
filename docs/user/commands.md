@@ -13,7 +13,7 @@ uv run chaos-librarian validate scenario.yaml --json
 
 Use `validate` while authoring YAML or when CI needs a fast contract check.
 
-## `generate --profile PROFILE --seed SEED --out SCENARIO [--json]`
+## `generate --profile PROFILE [--lane LANE] --seed SEED --out SCENARIO [--json]`
 
 Generate deterministic fuzz scenario YAML:
 
@@ -23,10 +23,19 @@ uv run chaos-librarian generate \
   --seed 123 \
   --out fuzz-smoke.yaml \
   --json
+
+uv run chaos-librarian generate \
+  --profile fuzz-regression \
+  --lane core-fs \
+  --seed 456 \
+  --out fuzz-regression-core-fs.yaml \
+  --json
 ```
 
 Use `generate` when a test needs bounded randomized coverage. The output is
 ordinary scenario YAML with explicit timeline events and generation metadata.
+`--lane` defaults to `smoke` for `fuzz-smoke`; `fuzz-regression` requires an
+explicit lane such as `core-fs`.
 
 ## `plan SCENARIO --out RUN_DIR [--steps N] [--json]`
 

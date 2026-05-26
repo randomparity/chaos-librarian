@@ -478,6 +478,20 @@
       "title": "ExtractSubtitleEvent",
       "type": "object"
     },
+    "FuzzLaneName": {
+      "enum": [
+        "smoke",
+        "core-fs",
+        "media-rewrite",
+        "sidecar-subtitle",
+        "malformed",
+        "negative-oracle",
+        "filesystem-artifact",
+        "network-lag"
+      ],
+      "title": "FuzzLaneName",
+      "type": "string"
+    },
     "FuzzProfileName": {
       "enum": [
         "fuzz-smoke",
@@ -958,11 +972,14 @@
           "title": "Generator",
           "type": "string"
         },
+        "lane": {
+          "$ref": "#/$defs/FuzzLaneName"
+        },
         "profile": {
           "$ref": "#/$defs/FuzzProfileName"
         },
         "profile_version": {
-          "const": 1,
+          "const": 2,
           "title": "Profile Version",
           "type": "integer"
         },
@@ -974,6 +991,7 @@
       },
       "required": [
         "profile",
+        "lane",
         "profile_version",
         "seed",
         "budgets"
@@ -1400,7 +1418,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 10,
+      "const": 11,
       "title": "Schema Version",
       "type": "integer"
     },

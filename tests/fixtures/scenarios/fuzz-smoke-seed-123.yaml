@@ -1,5 +1,5 @@
-schema_version: 10
-scenario_id: fuzz-smoke-seed-123
+schema_version: 11
+scenario_id: fuzz-smoke-smoke-seed-123
 seed: 123
 duration_scale: short
 profiles:
@@ -7,7 +7,8 @@ profiles:
 generation:
   generator: chaos-librarian
   profile: fuzz-smoke
-  profile_version: 1
+  lane: smoke
+  profile_version: 2
   seed: 123
   budgets:
     works: 3
@@ -18,82 +19,138 @@ generation:
     timeline_events: 12
 library:
   roots:
-  - id: movies_hd
+  - id: movies-hd
     path: movies-hd
 works:
 - id: work_001
-  title: fuzz-smoke Work 123-001
+  title: fuzz-smoke smoke Work 123-001
   variants:
   - id: variant_001
-    label: generated
+    label: smoke
     bundle:
       id: bundle_001
       assets:
       - id: asset_001
         role: primary_video
-        container: mp4
-        duration_seconds: 4
+        container: mkv
+        duration_seconds: 8
         video:
-          source: mandelbrot
+          source: color_bars
           codec: h264
-          resolution: 1080p
+          resolution: sd
         audio:
-        - source: silence
+        - source: sine
           codec: aac
           channels: mono
           language: eng
 - id: work_002
-  title: fuzz-smoke Work 123-002
+  title: fuzz-smoke smoke Work 123-002
   variants:
   - id: variant_002
-    label: generated
+    label: smoke
     bundle:
       id: bundle_002
       assets:
       - id: asset_002
         role: primary_video
         container: mp4
-        duration_seconds: 2
+        duration_seconds: 5
         video:
-          source: mandelbrot
+          source: color_bars
           codec: h264
           resolution: hd
         audio:
-        - source: channel_tones
+        - source: sine
           codec: aac
-          channels: mono
+          channels: stereo
           language: eng
+- id: work_003
+  title: fuzz-smoke smoke Work 123-003
+  variants:
+  - id: variant_003
+    label: smoke
+    bundle:
+      id: bundle_003
+      assets:
+      - id: asset_003
+        role: primary_video
+        container: mkv
+        duration_seconds: 6
+        video:
+          source: color_bars
+          codec: h264
+          resolution: 1080p
+        audio:
+        - source: sine
+          codec: aac
+          channels: '5.1'
+          language: eng
+        subtitles:
+        - source: generated_srt
+          codec: srt
+          language: eng
+          mode: sidecar
 timeline:
-- id: fuzz_0001
+- id: fuzz_0001_move
   at: 1ns
   action: move_asset
-  target: asset_002
-  to: movies-hd/fuzz/asset_002-0001.mp4
-- id: fuzz_0002
-  at: 2ns
-  action: move_asset
   target: asset_001
-  to: movies-hd/fuzz/asset_001-0002.mp4
-- id: fuzz_0003
+  to: movies-hd/fuzz/asset_001-0001.mkv
+- id: fuzz_0002_rename
+  at: 2ns
+  action: rename_file
+  target: asset_002
+  to: movies-hd/renamed/asset_002-0002.mp4
+- id: fuzz_0003_metadata
   at: 3ns
   action: edit_metadata
-  target: asset_002
+  target: asset_001
   fields:
     title: Generated Title 0003
-- id: fuzz_0004
+- id: fuzz_0004_create_nfo
   at: 4ns
   action: create_sidecar
   target: asset_001
-  to: movies-hd/fuzz/asset_001-0004.nfo
+  to: movies-hd/sidecars/asset_001-0004.nfo
   kind: nfo
-- id: fuzz_0005
+- id: fuzz_0005_update_sidecar
   at: 5ns
+  action: update_sidecar
+  target: asset_001
+  sidecar_path: movies-hd/sidecars/asset_001-0004.nfo
+- id: fuzz_0006_metadata
+  at: 6ns
   action: edit_metadata
   target: asset_002
   fields:
-    title: Generated Title 0005
-- id: fuzz_0006
-  at: 6ns
+    title: Generated Title 0006
+- id: fuzz_0007_move
+  at: 7ns
+  action: move_asset
+  target: asset_003
+  to: movies-hd/fuzz/asset_003-0007.mkv
+- id: fuzz_0008_move
+  at: 8ns
   action: move_asset
   target: asset_002
-  to: movies-hd/fuzz/asset_002-0006.mp4
+  to: movies-hd/fuzz/asset_002-0008.mp4
+- id: fuzz_0009_rename
+  at: 9ns
+  action: rename_file
+  target: asset_002
+  to: movies-hd/renamed/asset_002-0009.mp4
+- id: fuzz_0010_update_sidecar
+  at: 10ns
+  action: update_sidecar
+  target: asset_001
+  sidecar_path: movies-hd/sidecars/asset_001-0004.nfo
+- id: fuzz_0011_update_sidecar
+  at: 11ns
+  action: update_sidecar
+  target: asset_001
+  sidecar_path: movies-hd/sidecars/asset_001-0004.nfo
+- id: fuzz_0012_update_sidecar
+  at: 12ns
+  action: update_sidecar
+  target: asset_001
+  sidecar_path: movies-hd/sidecars/asset_001-0004.nfo

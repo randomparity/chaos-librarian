@@ -11,7 +11,12 @@ from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
+from chaos_librarian.contract.profiles import (
+    FUZZ_LANES_BY_PROFILE,
+    FuzzLaneName,
+    FuzzProfileName,
+    ProfileName,
+)
 
 
 class TimelineActionName(enum.StrEnum):
@@ -447,12 +452,13 @@ class ScenarioGeneration(BaseModel):
 
     generator: Literal["chaos-librarian"] = "chaos-librarian"
     profile: FuzzProfileName
-    profile_version: Literal[1]
+    lane: FuzzLaneName
+    profile_version: Literal[2]
     seed: int = Field(ge=0)
     budgets: GenerationBudget
 
 
-FUZZ_GENERATION_PROFILE_VERSION: Final = 1
+FUZZ_GENERATION_PROFILE_VERSION: Final = 2
 
 FUZZ_GENERATION_BUDGETS: Final[dict[FuzzProfileName, GenerationBudget]] = {
     FuzzProfileName.FUZZ_SMOKE: GenerationBudget(
@@ -516,7 +522,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[10]
+    schema_version: Literal[11]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
@@ -538,6 +544,9 @@ class Scenario(BaseModel):
             raise ValueError("generation.seed requires concrete scenario seed")
         if self.seed != self.generation.seed:
             raise ValueError("generation.seed must match scenario seed")
+        allowed_lanes = FUZZ_LANES_BY_PROFILE[self.generation.profile]
+        if self.generation.lane not in allowed_lanes:
+            raise ValueError("generation.lane must match generation.profile")
         expected = generation_budget_for(self.generation.profile)
         if self.generation.budgets != expected:
             raise ValueError("generation.budgets must match the selected profile")

@@ -220,14 +220,19 @@ def test_fuzz_profile_generation_docs_are_discoverable() -> None:
     cli_reference = _read(DOCS / "contract" / "cli-reference.md")
     integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
     testing = _read(DOCS / "developer" / "testing.md")
+    user_commands = _read(DOCS / "user" / "commands.md")
 
     assert "## Fuzz Profile Generation Policy" in source_design
     assert "`fuzz-smoke`" in source_design
     assert "`fuzz-regression`" in source_design
+    assert "`core-fs`" in source_design
     assert "chaos-librarian generate --profile fuzz-smoke" in cli_reference
     assert "Fuzz Profile Generation" in integration_recipes
+    assert "--lane media-rewrite" in integration_recipes
     assert "Replay never calls the generator" in integration_recipes
     assert "Fuzz Profile Generation Testing" in testing
+    assert "--lane core-fs" in user_commands
+    assert "Property-based fuzz generation tests use bounded deterministic" in testing
 
 
 def test_duplicate_variant_expansion_pack_docs_are_discoverable() -> None:

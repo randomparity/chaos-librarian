@@ -22,7 +22,7 @@ def _scenario_from_dict(data: dict[str, object]) -> Scenario:
 def _minimal_scenario() -> Scenario:
     return _scenario_from_dict(
         {
-            "schema_version": 10,
+            "schema_version": 11,
             "scenario_id": "min",
             "seed": 1,
             "duration_scale": "short",
@@ -94,7 +94,7 @@ class TestBuildInitialState:
     def test_two_assets_get_independent_locations(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 10,
+                "schema_version": 11,
                 "scenario_id": "two",
                 "seed": 1,
                 "duration_scale": "short",
@@ -169,7 +169,7 @@ class TestUnsafeAssetIdRejectedBeforeBuildInitialState:
 
     def test_asset_id_traversal_rejected_by_validation(self) -> None:
         yaml_bytes = b"""\
-schema_version: 10
+schema_version: 11
 scenario_id: unsafe-id
 seed: 1
 duration_scale: short
@@ -315,7 +315,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_declared_sidecar_subtitle_seeds_one_row(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 10,
+                "schema_version": 11,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",
@@ -366,7 +366,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_embedded_mode_subtitle_is_not_seeded(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 10,
+                "schema_version": 11,
                 "scenario_id": "emb",
                 "seed": 1,
                 "duration_scale": "short",
@@ -411,7 +411,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_sidecar_id_for_path_resolves_declared_subtitle(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 10,
+                "schema_version": 11,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",

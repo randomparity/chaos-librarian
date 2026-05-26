@@ -58,7 +58,7 @@ _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 10
+schema_version: 11
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -154,7 +154,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 10\n",
+            scenario="schema_version: 11\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,
@@ -306,7 +306,7 @@ def _write_negative_oracle_scenario(tmp_path: Path) -> Path:
     path = tmp_path / "negative-oracle-two-events.yaml"
     path.write_text(
         """\
-schema_version: 10
+schema_version: 11
 scenario_id: negative-oracle-two-events
 seed: 42
 duration_scale: short

@@ -2,13 +2,13 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 10`.
+`schema_version: 11`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 10`
+- `schema_version: 11`
 - `scenario_id`
 - `seed`
 - `duration_scale`
@@ -71,7 +71,7 @@ Subtitle source values:
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 10
+schema_version: 11
 scenario_id: static-library
 seed: 1
 duration_scale: short

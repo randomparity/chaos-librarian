@@ -1,0 +1,26 @@
+fuzz_smoke:
+  - lane: smoke
+    seed: 123
+    gates: [validate, plan, replay, materialize]
+fuzz_regression:
+  - lane: core-fs
+    seed: 456
+    gates: [validate, plan, replay, materialize]
+  - lane: media-rewrite
+    seed: 457
+    gates: [validate, plan, replay, materialize]
+  - lane: sidecar-subtitle
+    seed: 458
+    gates: [validate, plan, replay, materialize]
+  - lane: malformed
+    seed: 459
+    gates: [validate, plan, replay, materialize]
+  - lane: negative-oracle
+    seed: 460
+    gates: [validate, plan, replay, materialize, run]
+  - lane: filesystem-artifact
+    seed: 461
+    gates: [validate, plan, replay, materialize, run]
+  - lane: network-lag
+    seed: 462
+    gates: [validate, plan, replay, run]

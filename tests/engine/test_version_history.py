@@ -170,6 +170,13 @@ def test_derive_version_history_includes_corruption_summary() -> None:
         "byte_count": 64,
         "seed_material": "container_header_v1:42:corrupt_header_001:asset_hd_main",
     }
+    assert list(entry.state_delta_summary) == [
+        "profile",
+        "corruptor",
+        "byte_start",
+        "byte_count",
+        "seed_material",
+    ]
 
 
 @pytest.mark.parametrize(
