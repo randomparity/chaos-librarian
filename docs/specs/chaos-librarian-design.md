@@ -745,10 +745,17 @@ Fuzz budgets are hard static ceilings per generated scenario:
 
 | Budget | `fuzz-smoke` | `fuzz-regression` |
 | --- | ---: | ---: |
-| Movies, series, and artists | 3 | 12 |
-| Variants | 4 | 18 |
-| Bundles | 4 | 18 |
-| Media assets | 4 | 18 |
+| Movies | 3 | 12 |
+| Series | 0 | 1 |
+| Seasons | 0 | 2 |
+| Episodes | 0 | 2 |
+| Artists | 0 | 1 |
+| Albums | 0 | 1 |
+| Discs | 0 | 2 |
+| Tracks | 0 | 2 |
+| Variants | 4 | 22 |
+| Bundles | 4 | 22 |
+| Media assets | 4 | 22 |
 | Sidecars | 8 | 54 |
 | Timeline events | 12 | 80 |
 | Materialized bytes under `library/` | 75 MB | 250 MB |
