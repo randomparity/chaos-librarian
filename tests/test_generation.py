@@ -24,6 +24,8 @@ from chaos_librarian.generation_lanes import (
 )
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
+VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
+
 
 def _parse_generated(data: bytes) -> Scenario:
     raw, _ = parse_scenario_bytes(data, source=Path("<generated>"))
@@ -135,6 +137,67 @@ def test_generated_gated_lanes_include_required_profiles(
     )
 
     assert tuple(payload["profiles"]) == required_profiles
+
+
+def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:
+    manifest_path = Path(__file__).resolve().parent / "fixtures" / "fuzz-seeds.yaml"
+    yaml = YAML(typ="safe")
+    manifest = yaml.load(manifest_path.read_text(encoding="utf-8"))
+    assert isinstance(manifest, dict)
+
+    cases = _seed_manifest_cases(manifest)
+    expected_cases = frozenset(generation_lanes.LANE_CONFIGS)
+    assert frozenset((profile, lane) for profile, lane, _, _ in cases) == expected_cases
+
+    for profile, lane, seed, gates in cases:
+        assert frozenset(gates) <= VALID_SEED_MANIFEST_GATES
+        payload = _generated_payload(profile=profile, lane=lane, seed=seed)
+        config = lane_config_for(profile=profile, lane=lane)
+        missing = coverage_for_payload(payload).missing_required_cells(config.required_cells)
+        assert missing == frozenset()
+
+
+def _seed_manifest_cases(
+    manifest: dict[object, object],
+) -> tuple[tuple[FuzzProfileName, FuzzLaneName, int, tuple[str, ...]], ...]:
+    cases: list[tuple[FuzzProfileName, FuzzLaneName, int, tuple[str, ...]]] = []
+    profile_keys = {
+        "fuzz_smoke": FuzzProfileName.FUZZ_SMOKE,
+        "fuzz_regression": FuzzProfileName.FUZZ_REGRESSION,
+    }
+    for key, profile in profile_keys.items():
+        entries = manifest.get(key)
+        assert isinstance(entries, list)
+        for entry in entries:
+            assert isinstance(entry, dict)
+            lane = FuzzLaneName(entry["lane"])
+            seed = entry["seed"]
+            gates = entry["gates"]
+            assert isinstance(seed, int)
+            assert isinstance(gates, list)
+            cases.append((profile, lane, seed, tuple(str(gate) for gate in gates)))
+    return tuple(cases)
+
+
+def test_committed_generated_fixtures_match_generator() -> None:
+    fixture_dir = Path(__file__).resolve().parent / "fixtures" / "scenarios"
+    cases = [
+        (
+            fixture_dir / "fuzz-smoke-seed-123.yaml",
+            FuzzProfileName.FUZZ_SMOKE,
+            FuzzLaneName.SMOKE,
+            123,
+        ),
+        (
+            fixture_dir / "fuzz-regression-seed-456.yaml",
+            FuzzProfileName.FUZZ_REGRESSION,
+            FuzzLaneName.CORE_FS,
+            456,
+        ),
+    ]
+    for path, profile, lane, seed in cases:
+        expected = generate_scenario_yaml(profile=profile, lane=lane, seed=seed)
+        assert path.read_bytes() == expected
 
 
 def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
