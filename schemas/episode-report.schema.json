@@ -1,0 +1,77 @@
+{
+  "additionalProperties": false,
+  "description": "Per-episode report \u2014 variants + transitive asset ids.",
+  "properties": {
+    "absolute_number": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Absolute Number"
+    },
+    "aired_on": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Aired On"
+    },
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "episode_id": {
+      "title": "Episode Id",
+      "type": "string"
+    },
+    "episode_number": {
+      "title": "Episode Number",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "season_id": {
+      "title": "Season Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "variant_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Variant Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "episode_id",
+    "season_id",
+    "episode_number",
+    "title",
+    "variant_ids",
+    "asset_ids"
+  ],
+  "title": "EpisodeReport",
+  "type": "object"
+}

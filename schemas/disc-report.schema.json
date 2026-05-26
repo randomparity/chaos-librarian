@@ -1,0 +1,47 @@
+{
+  "additionalProperties": false,
+  "description": "Per-disc report \u2014 tracks and transitive asset ids.",
+  "properties": {
+    "album_id": {
+      "title": "Album Id",
+      "type": "string"
+    },
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "disc_id": {
+      "title": "Disc Id",
+      "type": "string"
+    },
+    "disc_number": {
+      "title": "Disc Number",
+      "type": "integer"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "track_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Track Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "disc_id",
+    "album_id",
+    "disc_number",
+    "track_ids",
+    "asset_ids"
+  ],
+  "title": "DiscReport",
+  "type": "object"
+}

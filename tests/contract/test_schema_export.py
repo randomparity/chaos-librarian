@@ -23,20 +23,27 @@ def test_committed_schemas_match_models() -> None:
 def test_all_schemas_listed() -> None:
     names = {filename for filename, _ in MODELS}
     assert names == {
+        "album-report.schema.json",
+        "artist-report.schema.json",
         "asset-report.schema.json",
         "bundle-report.schema.json",
         "capabilities.schema.json",
+        "disc-report.schema.json",
         "divergence.schema.json",
+        "episode-report.schema.json",
         "journal.schema.json",
         "manifest.schema.json",
         "materialization.schema.json",
+        "movie-report.schema.json",
         "observed-state.schema.json",
         "replay-bundle.schema.json",
         "run-sentinel.schema.json",
         "scenario.schema.json",
+        "season-report.schema.json",
+        "series-report.schema.json",
+        "track-report.schema.json",
         "validation.schema.json",
         "variant-report.schema.json",
-        "work-report.schema.json",
     }
     assert "profiles.schema.json" not in names
 
@@ -63,5 +70,5 @@ def test_scenario_schema_freezes_generation_profile_version() -> None:
         "profile_version"
     ]
 
-    assert profile_version["const"] == 2
+    assert profile_version["const"] == 3
     assert "minimum" not in profile_version

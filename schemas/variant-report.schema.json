@@ -1,6 +1,18 @@
 {
+  "$defs": {
+    "ParentKind": {
+      "description": "Playable/listenable parent kinds for variants and assets.",
+      "enum": [
+        "movie",
+        "episode",
+        "track"
+      ],
+      "title": "ParentKind",
+      "type": "string"
+    }
+  },
   "additionalProperties": false,
-  "description": "Per-variant report \u2014 owning work, bundle, member assets.",
+  "description": "Per-variant report \u2014 owning hierarchy parent, bundle, member assets.",
   "properties": {
     "asset_ids": {
       "items": {
@@ -17,24 +29,28 @@
       "title": "Label",
       "type": "string"
     },
+    "parent_id": {
+      "title": "Parent Id",
+      "type": "string"
+    },
+    "parent_kind": {
+      "$ref": "#/$defs/ParentKind"
+    },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
     },
     "variant_id": {
       "title": "Variant Id",
       "type": "string"
-    },
-    "work_id": {
-      "title": "Work Id",
-      "type": "string"
     }
   },
   "required": [
     "schema_version",
     "variant_id",
-    "work_id",
+    "parent_kind",
+    "parent_id",
     "label",
     "bundle_id",
     "asset_ids"

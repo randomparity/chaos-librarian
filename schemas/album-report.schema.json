@@ -1,0 +1,67 @@
+{
+  "additionalProperties": false,
+  "description": "Per-album report \u2014 discs, tracks, and transitive asset ids.",
+  "properties": {
+    "album_id": {
+      "title": "Album Id",
+      "type": "string"
+    },
+    "artist_id": {
+      "title": "Artist Id",
+      "type": "string"
+    },
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "disc_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Disc Ids",
+      "type": "array"
+    },
+    "release_year": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Release Year"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "track_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Track Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "album_id",
+    "artist_id",
+    "title",
+    "disc_ids",
+    "track_ids",
+    "asset_ids"
+  ],
+  "title": "AlbumReport",
+  "type": "object"
+}

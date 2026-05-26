@@ -1,0 +1,52 @@
+{
+  "additionalProperties": false,
+  "description": "Per-season report \u2014 episodes and transitive asset ids.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Episode Ids",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "season_id": {
+      "title": "Season Id",
+      "type": "string"
+    },
+    "season_number": {
+      "title": "Season Number",
+      "type": "integer"
+    },
+    "series_id": {
+      "title": "Series Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema_version",
+    "season_id",
+    "series_id",
+    "season_number",
+    "title",
+    "episode_ids",
+    "asset_ids"
+  ],
+  "title": "SeasonReport",
+  "type": "object"
+}

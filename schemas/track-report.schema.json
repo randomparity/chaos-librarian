@@ -1,0 +1,60 @@
+{
+  "additionalProperties": false,
+  "description": "Per-track report \u2014 variants + transitive asset ids.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "disc_id": {
+      "title": "Disc Id",
+      "type": "string"
+    },
+    "performers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Performers",
+      "type": "array"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "track_id": {
+      "title": "Track Id",
+      "type": "string"
+    },
+    "track_number": {
+      "title": "Track Number",
+      "type": "integer"
+    },
+    "variant_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Variant Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "track_id",
+    "disc_id",
+    "track_number",
+    "title",
+    "performers",
+    "variant_ids",
+    "asset_ids"
+  ],
+  "title": "TrackReport",
+  "type": "object"
+}

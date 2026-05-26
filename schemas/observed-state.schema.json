@@ -15,6 +15,75 @@
       "title": "ObservedAction",
       "type": "string"
     },
+    "ObservedAlbum": {
+      "additionalProperties": false,
+      "properties": {
+        "artist_ref": {
+          "title": "Artist Ref",
+          "type": "string"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "release_year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Release Year"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "artist_ref"
+      ],
+      "title": "ObservedAlbum",
+      "type": "object"
+    },
+    "ObservedArtist": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedArtist",
+      "type": "object"
+    },
     "ObservedAsset": {
       "additionalProperties": false,
       "properties": {
@@ -94,18 +163,6 @@
           ],
           "default": null,
           "title": "Variant Ref"
-        },
-        "work_ref": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Work Ref"
         }
       },
       "required": [
@@ -198,6 +255,105 @@
         "name"
       ],
       "title": "ObservedConsumer",
+      "type": "object"
+    },
+    "ObservedDisc": {
+      "additionalProperties": false,
+      "properties": {
+        "album_ref": {
+          "title": "Album Ref",
+          "type": "string"
+        },
+        "disc_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Disc Number"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "album_ref"
+      ],
+      "title": "ObservedDisc",
+      "type": "object"
+    },
+    "ObservedEpisode": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Absolute Number"
+        },
+        "aired_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aired On"
+        },
+        "episode_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Episode Number"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "season_ref": {
+          "title": "Season Ref",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "season_ref"
+      ],
+      "title": "ObservedEpisode",
       "type": "object"
     },
     "ObservedEvent": {
@@ -327,6 +483,32 @@
       "title": "ObservedEvent",
       "type": "object"
     },
+    "ObservedMovie": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedMovie",
+      "type": "object"
+    },
     "ObservedPathHistoryEntry": {
       "additionalProperties": false,
       "properties": {
@@ -413,6 +595,75 @@
       "title": "ObservedPathHistoryEntry",
       "type": "object"
     },
+    "ObservedSeason": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "season_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Season Number"
+        },
+        "series_ref": {
+          "title": "Series Ref",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "series_ref"
+      ],
+      "title": "ObservedSeason",
+      "type": "object"
+    },
+    "ObservedSeries": {
+      "additionalProperties": false,
+      "properties": {
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "observed_ref"
+      ],
+      "title": "ObservedSeries",
+      "type": "object"
+    },
     "ObservedSidecar": {
       "additionalProperties": false,
       "properties": {
@@ -450,6 +701,56 @@
       "title": "ObservedSidecar",
       "type": "object"
     },
+    "ObservedTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "disc_ref": {
+          "title": "Disc Ref",
+          "type": "string"
+        },
+        "observed_ref": {
+          "title": "Observed Ref",
+          "type": "string"
+        },
+        "performers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Performers",
+          "type": "array"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "track_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Track Number"
+        }
+      },
+      "required": [
+        "observed_ref",
+        "disc_ref"
+      ],
+      "title": "ObservedTrack",
+      "type": "object"
+    },
     "ObservedVariant": {
       "additionalProperties": false,
       "properties": {
@@ -469,50 +770,31 @@
           "title": "Observed Ref",
           "type": "string"
         },
-        "work_ref": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Work Ref"
+        "parent_kind": {
+          "$ref": "#/$defs/ParentKind"
+        },
+        "parent_ref": {
+          "title": "Parent Ref",
+          "type": "string"
         }
       },
       "required": [
-        "observed_ref"
+        "observed_ref",
+        "parent_kind",
+        "parent_ref"
       ],
       "title": "ObservedVariant",
       "type": "object"
     },
-    "ObservedWork": {
-      "additionalProperties": false,
-      "properties": {
-        "observed_ref": {
-          "title": "Observed Ref",
-          "type": "string"
-        },
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Title"
-        }
-      },
-      "required": [
-        "observed_ref"
+    "ParentKind": {
+      "description": "Playable/listenable parent kinds for variants and assets.",
+      "enum": [
+        "movie",
+        "episode",
+        "track"
       ],
-      "title": "ObservedWork",
-      "type": "object"
+      "title": "ParentKind",
+      "type": "string"
     },
     "ProbedMedia": {
       "additionalProperties": false,
@@ -675,6 +957,20 @@
   },
   "additionalProperties": false,
   "properties": {
+    "albums": {
+      "items": {
+        "$ref": "#/$defs/ObservedAlbum"
+      },
+      "title": "Albums",
+      "type": "array"
+    },
+    "artists": {
+      "items": {
+        "$ref": "#/$defs/ObservedArtist"
+      },
+      "title": "Artists",
+      "type": "array"
+    },
     "assets": {
       "items": {
         "$ref": "#/$defs/ObservedAsset"
@@ -692,11 +988,32 @@
     "consumer": {
       "$ref": "#/$defs/ObservedConsumer"
     },
+    "discs": {
+      "items": {
+        "$ref": "#/$defs/ObservedDisc"
+      },
+      "title": "Discs",
+      "type": "array"
+    },
+    "episodes": {
+      "items": {
+        "$ref": "#/$defs/ObservedEpisode"
+      },
+      "title": "Episodes",
+      "type": "array"
+    },
     "events": {
       "items": {
         "$ref": "#/$defs/ObservedEvent"
       },
       "title": "Events",
+      "type": "array"
+    },
+    "movies": {
+      "items": {
+        "$ref": "#/$defs/ObservedMovie"
+      },
+      "title": "Movies",
       "type": "array"
     },
     "observed_at": {
@@ -710,22 +1027,36 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 1,
+      "const": 2,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "seasons": {
+      "items": {
+        "$ref": "#/$defs/ObservedSeason"
+      },
+      "title": "Seasons",
+      "type": "array"
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/ObservedSeries"
+      },
+      "title": "Series",
+      "type": "array"
+    },
+    "tracks": {
+      "items": {
+        "$ref": "#/$defs/ObservedTrack"
+      },
+      "title": "Tracks",
+      "type": "array"
     },
     "variants": {
       "items": {
         "$ref": "#/$defs/ObservedVariant"
       },
       "title": "Variants",
-      "type": "array"
-    },
-    "works": {
-      "items": {
-        "$ref": "#/$defs/ObservedWork"
-      },
-      "title": "Works",
       "type": "array"
     }
   },

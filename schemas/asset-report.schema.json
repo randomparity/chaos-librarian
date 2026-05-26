@@ -212,6 +212,16 @@
       "title": "CorruptionRecord",
       "type": "object"
     },
+    "ParentKind": {
+      "description": "Playable/listenable parent kinds for variants and assets.",
+      "enum": [
+        "movie",
+        "episode",
+        "track"
+      ],
+      "title": "ParentKind",
+      "type": "string"
+    },
     "PathHistoryEntry": {
       "additionalProperties": false,
       "description": "One filesystem-affecting event projected for a single asset.\n\nDerived from the journal by ``derive_path_history``. Mirrors the\nverbatim ``AssetHistoryEntry`` but flattens the path-bearing\n``state_delta`` keys into typed ``str | None`` fields so external\nconsumers (voom-v2 adapter) can read them without parsing dicts.",
@@ -472,7 +482,12 @@
         "touch_mtime",
         "wrong_oracle_hash",
         "network_lag_start",
-        "network_lag_commit"
+        "network_lag_commit",
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_season",
+        "renumber_disc",
+        "move_track_to_disc"
       ],
       "title": "TimelineActionName",
       "type": "string"
@@ -534,8 +549,36 @@
   "additionalProperties": false,
   "description": "Per-asset history report \u2014 initial snapshot, ordered history, current snapshot.\n\n``current`` is ``None`` if the asset has been deleted; ``history``\nstill includes the ``delete_file`` entry in that case.",
   "properties": {
+    "album_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Album Id"
+    },
+    "artist_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Artist Id"
+    },
     "asset_id": {
       "title": "Asset Id",
+      "type": "string"
+    },
+    "bundle_id": {
+      "title": "Bundle Id",
       "type": "string"
     },
     "current": {
@@ -548,6 +591,30 @@
         }
       ]
     },
+    "disc_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Disc Id"
+    },
+    "episode_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Episode Id"
+    },
     "history": {
       "items": {
         "$ref": "#/$defs/AssetHistoryEntry"
@@ -558,6 +625,25 @@
     "initial": {
       "$ref": "#/$defs/AssetSnapshot"
     },
+    "movie_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Movie Id"
+    },
+    "parent_id": {
+      "title": "Parent Id",
+      "type": "string"
+    },
+    "parent_kind": {
+      "$ref": "#/$defs/ParentKind"
+    },
     "path_history": {
       "items": {
         "$ref": "#/$defs/PathHistoryEntry"
@@ -566,9 +652,49 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 6,
+      "const": 7,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "season_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Season Id"
+    },
+    "series_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Series Id"
+    },
+    "track_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Track Id"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
     },
     "version_history": {
       "items": {
@@ -581,6 +707,10 @@
   "required": [
     "schema_version",
     "asset_id",
+    "parent_kind",
+    "parent_id",
+    "variant_id",
+    "bundle_id",
     "initial",
     "current"
   ],

@@ -1,0 +1,42 @@
+{
+  "additionalProperties": false,
+  "description": "Per-movie report \u2014 variants + transitive asset ids.",
+  "properties": {
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "movie_id": {
+      "title": "Movie Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "title": {
+      "title": "Title",
+      "type": "string"
+    },
+    "variant_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Variant Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "movie_id",
+    "title",
+    "variant_ids",
+    "asset_ids"
+  ],
+  "title": "MovieReport",
+  "type": "object"
+}
