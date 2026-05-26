@@ -271,6 +271,15 @@ def test_topology_mismatch_emits_d_topology_mismatch_when_both_sides_supply_refs
     report = compare_fixture_to_observed(_fixture(), _observed(topology_label="sd"))
 
     assert "D_TOPOLOGY_MISMATCH" in _codes(report)
+    finding = next(
+        finding for finding in report.findings if finding.code is DivergenceCode.TOPOLOGY_MISMATCH
+    )
+    assert isinstance(finding.expected, dict)
+    assert isinstance(finding.observed, dict)
+    expected = cast("dict[str, object]", finding.expected)
+    observed = cast("dict[str, object]", finding.observed)
+    assert expected["domain_key"] == "movie:Synthetic|hd|1"
+    assert observed["domain_key"] == "movie:Synthetic|sd|1"
 
 
 def test_topology_mismatch_includes_parent_kind_after_path_match() -> None:
@@ -286,6 +295,8 @@ def test_topology_mismatch_includes_parent_kind_after_path_match() -> None:
     observed = cast("dict[str, object]", finding.observed)
     assert expected["parent_kind"] == "movie"
     assert observed["parent_kind"] == "episode"
+    assert expected["domain_key"] == "movie:Synthetic|hd|1"
+    assert observed["domain_key"] == "episode:Synthetic|1|1|Synthetic|hd"
 
 
 def test_final_state_mode_skips_history_when_no_history_supplied() -> None:
