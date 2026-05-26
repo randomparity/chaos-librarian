@@ -21,6 +21,7 @@ from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.synthesis import (
     MaterializeAssetResult,
     materialize_assets_phase_a,
+    materialize_one_asset,
 )
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
@@ -203,6 +204,102 @@ timeline: []
     assert [item.command[-1] for item in phase_a.invocations] == [
         "library/r/Rendered Safe - hd.mkv"
     ]
+
+
+def test_materialize_one_asset_writes_declared_sidecar_next_to_rendered_media(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = _asset_with_declared_sidecar("../../../escape")
+    output_path = tmp_path / "run" / "library" / "r" / "Rendered Safe - hd.mkv"
+
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        Path(argv[-1]).write_bytes(b"media")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda _path: ProbedMedia(
+            container="matroska,webm",
+            duration_seconds=1,
+            size_bytes=output_path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+        ),
+    )
+
+    result = materialize_one_asset(
+        asset,
+        1,
+        tmp_path / "run",
+        _caps(),
+        0,
+        rendered_relative_path="r/Rendered Safe - hd.mkv",
+    )
+
+    assert result.materialized_asset.location_path == "library/r/Rendered Safe - hd.mkv"
+    assert (tmp_path / "run" / "library" / "r" / "Rendered Safe - hd.eng.srt").exists()
+    assert not (tmp_path / "run" / "escape.eng.srt").exists()
+    assert result.sidecar_hashes.keys() == {("../../../escape", "eng")}
+
+
+def _asset_with_declared_sidecar(asset_id: str):
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=f"""\
+schema_version: 12
+scenario_id: sidecar-materialize
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+movies:
+  - id: movie_safe
+    title: Rendered Safe
+    layout: movie_flat
+    variants:
+      - id: variant_safe
+        label: hd
+        bundle:
+          id: bundle_safe
+          assets:
+            - id: {asset_id}
+              role: main
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+              subtitles:
+                - source: generated_srt
+                  codec: srt
+                  language: eng
+                  mode: sidecar
+series: []
+artists: []
+timeline: []
+""".encode(),
+        source_label="test:sidecar-materialize.yaml",
+    ).scenario
+    return scenario.movies[0].variants[0].bundle.assets[0]
 
 
 def _caps() -> Capabilities:

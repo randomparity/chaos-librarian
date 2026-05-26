@@ -48,7 +48,11 @@ from chaos_librarian.materializer.preflight import iter_assets
 from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
-from chaos_librarian.path_rendering import RenderableAssetContext, render_asset_path
+from chaos_librarian.path_rendering import (
+    RenderableAssetContext,
+    render_asset_path,
+    render_declared_sidecar_path,
+)
 from chaos_librarian.topology import AssetContext, iter_asset_contexts
 
 __all__ = [
@@ -237,7 +241,13 @@ def materialize_one_asset(
             invocation=invocation,
             content_sources=tuple(content_sources),
         )
-    sidecar_hashes = write_sidecars(asset, library_dir, seed, skip_languages=skip_languages)
+    sidecar_hashes = write_sidecars(
+        asset,
+        library_dir,
+        seed,
+        rendered_relative_path=rendered_relative_path,
+        skip_languages=skip_languages,
+    )
     try:
         probed = probe_file(output_path)
     except ProbeParseError as exc:
@@ -313,6 +323,7 @@ def write_sidecars(
     library_dir: Path,
     seed: int,
     *,
+    rendered_relative_path: str,
     skip_languages: frozenset[str] = frozenset(),
 ) -> dict[tuple[str, str], str]:
     """Write each declared SRT sidecar and return its sha256 hash.
@@ -337,7 +348,11 @@ def write_sidecars(
     for sub in asset.subtitles:
         if sub.language in skip_languages:
             continue
-        sidecar_path = library_dir / f"{asset.id}.{sub.language}.srt"
+        sidecar_path = library_dir / render_declared_sidecar_path(
+            rendered_relative_path,
+            sub.language,
+        )
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         body = srt_payload(language=sub.language, duration_s=asset.duration_seconds, seed=seed)
         sidecar_path.write_text(body)
         sidecar_hashes[(asset.id, sub.language)] = (
