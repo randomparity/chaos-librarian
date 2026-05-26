@@ -30,6 +30,19 @@ the variant label, and the asset container:
 - `artist_album_flat`:
   `<root>/<artist name>/<album title>/<track stem> - <variant label>.<container>`
 
+For example, these scenario values render to these initial `Location.path`
+values:
+
+- Movie: root `Movies`, title `Orbit`, layout `movie_flat`, variant `1080p`,
+  asset container `mkv` -> `Movies/Orbit - 1080p.mkv`.
+- TV: root `TV`, series `Starline`, season `1`, episode `1`, title `Pilot`,
+  layout `season_folders`, naming `sxxexx_title`, variant `1080p`, asset
+  container `mkv` -> `TV/Starline/Season 01/Starline - S01E01 - Pilot - 1080p.mkv`.
+- Music: root `Music`, artist `North Index`, album `Winter Index`, disc `1`,
+  track `1`, title `Opening`, layout `artist_album_disc`, naming
+  `track_number_title`, variant `lossless`, asset container `flac` ->
+  `Music/North Index/Winter Index/Disc 01/01 - Opening - lossless.flac`.
+
 Episode stems are selected by `episode_naming`: `S01E02`, `1x02`,
 three-digit absolute number, or ISO air date forms. Track stems are selected by
 `track_naming`: `02 - Title` or `01-02 - Title`. Multi-asset bundles add the
