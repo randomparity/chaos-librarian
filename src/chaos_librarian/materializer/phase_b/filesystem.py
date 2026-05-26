@@ -80,6 +80,7 @@ class _PlannedHierarchyMove:
 
 _UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS: Final[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9_.-]")
 _HIERARCHY_TEMP_TOKEN_PREFIX_LENGTH: Final = 48
+_HIERARCHY_TEMP_PATH_ATTEMPTS: Final = 100
 
 
 def make_filesystem_phase_b_context(
@@ -313,11 +314,10 @@ def _plan_hierarchy_moves(
     entry: JournalEntry,
     moves: list[_HierarchyMove],
 ) -> list[_PlannedHierarchyMove]:
-    planned: list[_PlannedHierarchyMove] = []
+    resolved_moves: list[tuple[_HierarchyMove, Path, Path]] = []
     source_paths: set[Path] = set()
     destination_paths: set[Path] = set()
-    event_token = _hierarchy_temp_event_token(entry.event_id)
-    for index, move in enumerate(moves):
+    for move in moves:
         source = resolve_under_library(Path(move.from_path), ctx.library_root)
         destination = resolve_under_library(Path(move.to_path), ctx.library_root)
         if source in source_paths:
@@ -326,12 +326,20 @@ def _plan_hierarchy_moves(
             raise ValueError(f"duplicate hierarchy destination path: {move.to_path}")
         source_paths.add(source)
         destination_paths.add(destination)
+        resolved_moves.append((move, source, destination))
+    planned: list[_PlannedHierarchyMove] = []
+    temp_paths: set[Path] = set()
+    event_token = _hierarchy_temp_event_token(entry.event_id)
+    for index, (move, source, destination) in enumerate(resolved_moves):
+        reserved_paths = source_paths | destination_paths | temp_paths
+        temp = _hierarchy_temp_path(source, event_token, index, reserved_paths)
+        temp_paths.add(temp)
         planned.append(
             _PlannedHierarchyMove(
                 move=move,
                 source=source,
                 destination=destination,
-                temp=_hierarchy_temp_path(source, event_token, index),
+                temp=temp,
             )
         )
     for source in source_paths:
@@ -356,8 +364,20 @@ def _hierarchy_temp_event_token(event_id: str) -> str:
     return f"{token}-{digest}"
 
 
-def _hierarchy_temp_path(source: Path, event_token: str, index: int) -> Path:
-    return source.with_name(f".chaos-hierarchy-{event_token}-{index}.tmp")
+def _hierarchy_temp_path(
+    source: Path,
+    event_token: str,
+    index: int,
+    reserved_paths: set[Path],
+) -> Path:
+    candidate = source.with_name(f".chaos-hierarchy-{event_token}-{index}.tmp")
+    if candidate not in reserved_paths:
+        return candidate
+    for attempt in range(1, _HIERARCHY_TEMP_PATH_ATTEMPTS):
+        candidate = source.with_name(f".chaos-hierarchy-{event_token}-{index}-{attempt}.tmp")
+        if candidate not in reserved_paths:
+            return candidate
+    raise ValueError("could not allocate hierarchy temporary path")
 
 
 def _prepare_hierarchy_destinations(planned: list[_PlannedHierarchyMove]) -> None:
