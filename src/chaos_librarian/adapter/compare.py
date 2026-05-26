@@ -232,6 +232,7 @@ def _compare_topology(
             expected={
                 "parent_kind": oracle_topology.parent_kind.value,
                 "domain_key": oracle_domain_key,
+                "bundle_member_count": len(oracle_topology.bundle_asset_ids),
             },
             observed={
                 "parent_kind": (
@@ -240,6 +241,7 @@ def _compare_topology(
                     else None
                 ),
                 "domain_key": observed_domain_key,
+                "bundle_member_count": len(observed_topology.bundle_asset_refs),
             },
         )
     ]

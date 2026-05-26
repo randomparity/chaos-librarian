@@ -340,6 +340,7 @@ def topology_key(
                 str(episode_number),
                 episode_title or "",
                 label,
+                str(bundle_member_count),
             ),
         )
     elif (
@@ -358,6 +359,7 @@ def topology_key(
                 str(track_number),
                 track_title or "",
                 label,
+                str(bundle_member_count),
             ),
         )
     return key
@@ -365,7 +367,8 @@ def topology_key(
 
 def format_topology_key(key: TopologyKey) -> str:
     """Return the human-readable topology evidence value for a structured key."""
-    return f"{key.kind}:{'|'.join(key.components)}"
+    components = key.components[:-1] if key.kind in {"episode", "track"} else key.components
+    return f"{key.kind}:{'|'.join(components)}"
 
 
 def _lookup_by[T, K: Hashable](

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import replace
 from typing import cast
 
 import pytest
@@ -12,7 +13,11 @@ from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInp
 from chaos_librarian.contract.divergence import CompareMode, DivergenceCode
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
+    ManifestEpisode,
+    ManifestSeason,
+    ManifestSeries,
     ManifestSidecar,
+    ManifestVariant,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -61,6 +66,63 @@ def _observed_episode_topology() -> ObservedState:
     payload["variants"][0]["parent_kind"] = ParentKind.EPISODE
     payload["variants"][0]["parent_ref"] = "consumer-episode"
     return ObservedState.model_validate(payload)
+
+
+def _observed_episode_topology_with_extra_bundle_asset() -> ObservedState:
+    payload = _observed_episode_topology().model_dump(mode="python")
+    payload["assets"].append(
+        {
+            "observed_ref": "observed-extra",
+            "current_path": "library/Extra.mkv",
+            "content_hash": HASH_B,
+            "variant_ref": "consumer-variant",
+            "bundle_ref": "consumer-bundle",
+        }
+    )
+    payload["bundles"][0]["asset_refs"] = ["observed-a", "observed-extra"]
+    return ObservedState.model_validate(payload)
+
+
+def _episode_fixture():
+    base = _fixture()
+    manifest = base.initial_manifest.model_copy(
+        update={
+            "movies": [],
+            "series": [
+                ManifestSeries(
+                    id="series-a",
+                    title="Synthetic",
+                    layout="series_flat",
+                    episode_naming="sxe",
+                )
+            ],
+            "seasons": [
+                ManifestSeason(
+                    id="season-a",
+                    series_id="series-a",
+                    season_number=1,
+                    title="Season 1",
+                )
+            ],
+            "episodes": [
+                ManifestEpisode(
+                    id="episode-a",
+                    season_id="season-a",
+                    episode_number=1,
+                    title="Synthetic",
+                )
+            ],
+            "variants": [
+                ManifestVariant(
+                    id="variant-a",
+                    parent_kind=ParentKind.EPISODE,
+                    parent_id="episode-a",
+                    label="hd",
+                )
+            ],
+        }
+    )
+    return replace(base, initial_manifest=manifest, current_manifest=manifest)
 
 
 def test_clean_observed_state_returns_ok_report() -> None:
@@ -297,6 +359,26 @@ def test_topology_mismatch_includes_parent_kind_after_path_match() -> None:
     assert observed["parent_kind"] == "episode"
     assert expected["domain_key"] == "movie:Synthetic|hd|1"
     assert observed["domain_key"] == "episode:Synthetic|1|1|Synthetic|hd"
+
+
+def test_episode_topology_mismatch_includes_bundle_member_count_after_path_match() -> None:
+    report = compare_fixture_to_observed(
+        _episode_fixture(),
+        _observed_episode_topology_with_extra_bundle_asset(),
+    )
+
+    assert "D_TOPOLOGY_MISMATCH" in _codes(report)
+    finding = next(
+        finding for finding in report.findings if finding.code is DivergenceCode.TOPOLOGY_MISMATCH
+    )
+    assert isinstance(finding.expected, dict)
+    assert isinstance(finding.observed, dict)
+    expected = cast("dict[str, object]", finding.expected)
+    observed = cast("dict[str, object]", finding.observed)
+    assert expected["domain_key"] == "episode:Synthetic|1|1|Synthetic|hd"
+    assert observed["domain_key"] == "episode:Synthetic|1|1|Synthetic|hd"
+    assert expected["bundle_member_count"] == 1
+    assert observed["bundle_member_count"] == 2
 
 
 def test_final_state_mode_skips_history_when_no_history_supplied() -> None:
