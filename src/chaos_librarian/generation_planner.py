@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
-from chaos_librarian.contract.scenario import SidecarKind
+from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind
 from chaos_librarian.generation_lanes import LaneConfig
 
 
@@ -192,6 +192,19 @@ def _emit_lane_required_events(
         _create_nfo_sidecar(planner, assets[1])
         _extract_subtitle(planner, _first_embedded_subtitle_asset(assets))
         _embed_latest_subtitle_sidecar(planner)
+    elif lane is FuzzLaneName.MALFORMED:
+        _corrupt_container_header(planner, assets[0])
+        _truncate_file(planner, assets[1])
+        _corrupt_packet_range(planner, assets[2])
+        _write_invalid_duration_metadata(planner, assets[3])
+    elif lane is FuzzLaneName.NEGATIVE_ORACLE:
+        _wrong_oracle_hash(planner, assets[0])
+    elif lane is FuzzLaneName.FILESYSTEM_ARTIFACT:
+        _touch_mtime(planner, assets[0])
+    elif lane is FuzzLaneName.NETWORK_LAG:
+        _network_lag_pair(planner, assets[0], NetworkLagEffect.DELAYED_VISIBILITY)
+        _network_lag_pair(planner, assets[1], NetworkLagEffect.DELAYED_RENAME)
+        _network_lag_pair(planner, assets[2], NetworkLagEffect.HELD_HANDLE)
 
 
 def _fill_remaining_events(
@@ -356,6 +369,123 @@ def _remux_container(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             "to_container": to_container,
         }
     )
+
+
+def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("corrupt_header"),
+            "at": planner.at(),
+            "action": "corrupt_container_header",
+            "target": asset.asset_id,
+            "bytes": 64,
+        }
+    )
+
+
+def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("truncate"),
+            "at": planner.at(),
+            "action": "truncate_file",
+            "target": asset.asset_id,
+            "keep_bytes": 4096,
+        }
+    )
+
+
+def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("packet_corrupt"),
+            "at": planner.at(),
+            "action": "corrupt_packet_range",
+            "target": asset.asset_id,
+            "stream": "video",
+            "packet_start": 0,
+            "packet_count": 1,
+        }
+    )
+
+
+def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("invalid_duration"),
+            "at": planner.at(),
+            "action": "write_invalid_duration_metadata",
+            "target": asset.asset_id,
+            "value": "not-a-duration",
+        }
+    )
+
+
+def _wrong_oracle_hash(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("wrong_hash"),
+            "at": planner.at(),
+            "action": "wrong_oracle_hash",
+            "target": asset.asset_id,
+        }
+    )
+
+
+def _touch_mtime(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("touch_mtime"),
+            "at": planner.at(),
+            "action": "touch_mtime",
+            "target": asset.asset_id,
+            "offset": "2s",
+        }
+    )
+
+
+def _network_lag_pair(
+    planner: TimelinePlanner,
+    asset: PlannedAsset,
+    effect: NetworkLagEffect,
+) -> None:
+    if effect is NetworkLagEffect.DELAYED_RENAME:
+        _rename_file(planner, asset)
+    else:
+        _edit_metadata(planner, asset)
+
+    trigger = planner.events[-1]
+    trigger_id = trigger["id"]
+    trigger_at = trigger["at"]
+    if not isinstance(trigger_id, str) or not isinstance(trigger_at, str):
+        raise TypeError("network lag trigger event must have string id and at")
+
+    start_id = planner.event_id("network_lag_start")
+    planner.events.append(
+        {
+            "id": start_id,
+            "at": trigger_at,
+            "action": "network_lag_start",
+            "effect": effect.value,
+            "target": asset.asset_id,
+            "after": trigger_id,
+            "duration": "1ns",
+        }
+    )
+    planner.events.append(
+        {
+            "id": planner.event_id("network_lag_commit"),
+            "at": _one_ns_after(trigger_at),
+            "action": "network_lag_commit",
+            "for": start_id,
+        }
+    )
+
+
+def _one_ns_after(at: str) -> str:
+    if not at.endswith("ns"):
+        raise ValueError(f"expected ns timestamp, got {at!r}")
+    return f"{int(at.removesuffix('ns')) + 1}ns"
 
 
 def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:

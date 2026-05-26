@@ -97,6 +97,10 @@ def test_lane_config_rejects_profile_mismatch() -> None:
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS, 456),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MEDIA_REWRITE, 457),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.SIDECAR_SUBTITLE, 458),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED, 459),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE, 460),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT, 461),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG, 462),
     ],
 )
 def test_generated_lane_meets_required_coverage(
@@ -109,6 +113,28 @@ def test_generated_lane_meets_required_coverage(
 
     missing = coverage_for_payload(payload).missing_required_cells(config.required_cells)
     assert missing == frozenset()
+
+
+@pytest.mark.parametrize(
+    ("lane", "required_profiles"),
+    [
+        (FuzzLaneName.MALFORMED, ("fuzz-regression", "malformed-media")),
+        (FuzzLaneName.NEGATIVE_ORACLE, ("fuzz-regression", "negative-oracle")),
+        (FuzzLaneName.FILESYSTEM_ARTIFACT, ("fuzz-regression", "filesystem-artifacts")),
+        (FuzzLaneName.NETWORK_LAG, ("fuzz-regression", "network-fs-lag")),
+    ],
+)
+def test_generated_gated_lanes_include_required_profiles(
+    lane: FuzzLaneName,
+    required_profiles: tuple[str, ...],
+) -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=lane,
+        seed=459,
+    )
+
+    assert tuple(payload["profiles"]) == required_profiles
 
 
 def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
