@@ -222,18 +222,10 @@ uv run pytest tests/validation/rules/test_materialize_media_matrix.py \
 
 - [ ] **Step 3: Implement validation**
 
-Add explicit interlaced support sets to `media_matrix.py`:
-
-```python
-SUPPORTED_INTERLACED_VIDEO_CODECS = SUPPORTED_VIDEO_CODECS
-SUPPORTED_INTERLACED_VIDEO_CONTAINERS = SUPPORTED_VIDEO_CONTAINERS
-```
-
-In `rule_materialize_media_matrix`, when `video.field_order` is present:
-
-- Reject `vfr_cadence` on the same video mapping.
-- Reject unsupported video codecs/containers against the interlaced support
-  sets.
+In `rule_materialize_media_matrix`, when `video.field_order` is present, reject
+`vfr_cadence` on the same video mapping. The existing media matrix checks
+already reject unsupported video codecs and containers before subprocess
+execution.
 
 - [ ] **Step 4: Verify focused tests pass**
 

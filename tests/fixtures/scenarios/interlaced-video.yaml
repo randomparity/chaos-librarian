@@ -1,35 +1,36 @@
-# expected: E_MATERIALIZE_UNSUPPORTED
 schema_version: 14
-scenario_id: materialize-video-source-noise
-seed: 1
+scenario_id: interlaced-video
+seed: 130
 duration_scale: short
 library:
   roots:
     - id: root_main
-      path: library
+      path: movies
 movies:
-  - id: movie_movie
-    title: Unsupported Video Source
+  - id: movie_interlaced
+    title: Interlaced Fixture
     layout: movie_flat
     variants:
-      - id: variant_noise
-        label: noise
+      - id: variant_interlaced
+        label: sd
         bundle:
-          id: bundle_noise
+          id: bundle_interlaced
           assets:
-            - id: asset_noise_main
-              role: main
+            - id: asset_interlaced_main
+              role: primary_video
               container: mkv
               duration_seconds: 2.0
               video:
-                source: noise
+                source: color_bars
                 codec: h264
                 resolution: sd
+                field_order: top_field_first
               audio:
                 - source: sine
                   codec: aac
                   channels: stereo
                   language: eng
+              subtitles: []
 series: []
 artists: []
 timeline: []

@@ -1859,6 +1859,15 @@
       "title": "Variant",
       "type": "object"
     },
+    "VideoFieldOrder": {
+      "description": "Supported interlaced video field orders.",
+      "enum": [
+        "top_field_first",
+        "bottom_field_first"
+      ],
+      "title": "VideoFieldOrder",
+      "type": "string"
+    },
     "VideoSource": {
       "description": "Synthesis recipe for the video stream of an asset.",
       "enum": [
@@ -1876,6 +1885,17 @@
         "codec": {
           "title": "Codec",
           "type": "string"
+        },
+        "field_order": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoFieldOrder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "resolution": {
           "title": "Resolution",
@@ -2027,7 +2047,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 13,
+      "const": 14,
       "title": "Schema Version",
       "type": "integer"
     },

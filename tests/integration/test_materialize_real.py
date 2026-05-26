@@ -184,6 +184,31 @@ def test_materialize_vfr_video_has_variable_packet_intervals(
         assert any(delta in interval for delta in deltas)
 
 
+@pytest.mark.parametrize(
+    ("field_order", "expected_probe"),
+    [
+        ("top_field_first", "tb"),
+        ("bottom_field_first", "bt"),
+    ],
+)
+def test_materialize_interlaced_video_reports_field_order(
+    field_order: str, expected_probe: str, tmp_path: Path
+) -> None:
+    """WHY: #130 needs scanner-visible interlaced metadata, not only a
+    scenario knob. ffprobe field_order proves the encoded stream carries
+    the requested ordering."""
+    scenario_path = _interlaced_scenario_for(field_order, tmp_path)
+    out = tmp_path / "interlaced"
+    result = runner.invoke(
+        app,
+        ["materialize", str(scenario_path), "--out", str(out), "--json"],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    media_path = next((out / "library").rglob("*.mkv"))
+
+    assert _video_field_order(media_path) == expected_probe
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -229,11 +254,53 @@ def _video_packet_deltas(path: Path) -> list[int]:
     return [round((current - previous) * 1000) for previous, current in pairwise(pts_values)]
 
 
+def _video_field_order(path: Path) -> str:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=field_order",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    streams = payload["streams"]
+    assert len(streams) == 1
+    return streams[0]["field_order"]
+
+
 def _vfr_scenario_for(cadence: str, tmp_path: Path) -> Path:
     scenario = (FIXTURE_DIR / "vfr-video.yaml").read_text()
     scenario = scenario.replace("scenario_id: vfr-video", f"scenario_id: vfr-video-{cadence}")
     scenario = scenario.replace("vfr_cadence: 24_30_60", f"vfr_cadence: {cadence}")
     scenario_path = tmp_path / f"vfr-{cadence}.yaml"
+    scenario_path.write_text(scenario)
+    return scenario_path
+
+
+def _interlaced_scenario_for(field_order: str, tmp_path: Path) -> Path:
+    scenario = (FIXTURE_DIR / "interlaced-video.yaml").read_text()
+    scenario = scenario.replace(
+        "scenario_id: interlaced-video",
+        f"scenario_id: interlaced-video-{field_order}",
+    )
+    scenario = scenario.replace(
+        "field_order: top_field_first",
+        f"field_order: {field_order}",
+    )
+    scenario_path = tmp_path / f"interlaced-{field_order}.yaml"
     scenario_path.write_text(scenario)
     return scenario_path
 

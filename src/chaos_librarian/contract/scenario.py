@@ -94,6 +94,13 @@ class VideoVfrCadence(enum.StrEnum):
 _YAML_NUMERIC_VFR_24_30_60: Final = 243060
 
 
+class VideoFieldOrder(enum.StrEnum):
+    """Supported interlaced video field orders."""
+
+    TOP_FIELD_FIRST = "top_field_first"
+    BOTTOM_FIELD_FIRST = "bottom_field_first"
+
+
 class SubtitleMode(enum.StrEnum):
     """How a subtitle track is delivered."""
 
@@ -202,6 +209,7 @@ class VideoTrack(BaseModel):
     codec: str
     resolution: str
     vfr_cadence: VideoVfrCadence | None = None
+    field_order: VideoFieldOrder | None = None
 
     @field_validator("vfr_cadence", mode="before")
     @classmethod
@@ -711,7 +719,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[13]
+    schema_version: Literal[14]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

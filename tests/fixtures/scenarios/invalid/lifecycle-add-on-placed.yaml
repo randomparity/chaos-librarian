@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 13
+schema_version: 14
 scenario_id: lifecycle-add-on-placed
 seed: 1
 duration_scale: short

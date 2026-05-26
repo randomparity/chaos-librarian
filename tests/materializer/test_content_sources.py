@@ -13,6 +13,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    VideoFieldOrder,
     VideoSource,
     VideoTrack,
     VideoVfrCadence,
@@ -30,7 +31,11 @@ from chaos_librarian.materializer.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 
-def _video_request(vfr_cadence: VideoVfrCadence | None = None) -> VideoSourceRequest:
+def _video_request(
+    *,
+    vfr_cadence: VideoVfrCadence | None = None,
+    field_order: VideoFieldOrder | None = None,
+) -> VideoSourceRequest:
     return VideoSourceRequest(
         asset_id="asset_main",
         track_index=None,
@@ -40,6 +45,7 @@ def _video_request(vfr_cadence: VideoVfrCadence | None = None) -> VideoSourceReq
         height=480,
         fps=24,
         vfr_cadence=vfr_cadence,
+        field_order=field_order,
     )
 
 
@@ -53,8 +59,13 @@ def _audio_request() -> AudioSourceRequest:
     )
 
 
-def _video() -> VideoTrack:
-    return VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd")
+def _video(field_order: VideoFieldOrder | None = None) -> VideoTrack:
+    return VideoTrack(
+        source=VideoSource.COLOR_BARS,
+        codec="h264",
+        resolution="sd",
+        field_order=field_order,
+    )
 
 
 def _audio() -> AudioTrack:
@@ -128,6 +139,53 @@ def test_vfr_cadence_changes_recipe_digest() -> None:
     assert vfr.evidence.recipe_digest != cfr.evidence.recipe_digest
 
 
+@pytest.mark.parametrize(
+    ("field_order", "expected_filter"),
+    [
+        (
+            VideoFieldOrder.TOP_FIELD_FIRST,
+            "tinterlace=mode=interleave_top,setfield=tff",
+        ),
+        (
+            VideoFieldOrder.BOTTOM_FIELD_FIRST,
+            "tinterlace=mode=interleave_bottom,setfield=bff",
+        ),
+    ],
+)
+def test_interlaced_video_source_uses_double_rate_field_filter(
+    field_order: VideoFieldOrder, expected_filter: str
+) -> None:
+    request = _video_request(field_order=field_order)
+
+    resolution = resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
+
+    assert resolution.ffmpeg_input.lavfi is not None
+    assert "rate=48" in resolution.ffmpeg_input.lavfi
+    assert expected_filter in resolution.ffmpeg_input.lavfi
+
+
+def test_field_order_changes_recipe_digest() -> None:
+    progressive = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    interlaced = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(field_order=VideoFieldOrder.TOP_FIELD_FIRST),
+    )
+
+    assert interlaced.evidence.recipe_digest != progressive.evidence.recipe_digest
+
+
+def test_field_order_rejects_vfr_cadence() -> None:
+    request = _video_request(
+        vfr_cadence=VideoVfrCadence.TWENTY_FOUR_TO_THIRTY,
+        field_order=VideoFieldOrder.TOP_FIELD_FIRST,
+    )
+
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
+
+    assert exc.value.field == "video.field_order"
+
+
 def test_resolve_audio_source_records_track_index() -> None:
     resolution = resolve_audio_source(
         source=AudioSource.SINE,
@@ -170,6 +228,8 @@ def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
     provider = capabilities.providers[0]
     assert provider.available is True
     assert "video:color_bars" in provider.sources
+    assert "video:interlaced:top_field_first" in provider.sources
+    assert "video:interlaced:bottom_field_first" in provider.sources
 
 
 def test_collect_content_source_capabilities_marks_builtin_unavailable_without_ffmpeg() -> None:
@@ -192,6 +252,8 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "audio:silence",
         "audio:sine",
         "video:color_bars",
+        "video:interlaced:bottom_field_first",
+        "video:interlaced:top_field_first",
         "video:mandelbrot",
         "video:solid_color",
         "video:vfr:24_30_60",

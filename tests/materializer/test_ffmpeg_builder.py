@@ -10,6 +10,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    VideoFieldOrder,
     VideoSource,
     VideoTrack,
 )
@@ -25,8 +26,17 @@ from chaos_librarian.materializer.tooling.recipes import (
 )
 
 
-def _video(resolution: str = "hd", codec: str = "h264") -> VideoTrack:
-    return VideoTrack(source=VideoSource.COLOR_BARS, codec=codec, resolution=resolution)
+def _video(
+    resolution: str = "hd",
+    codec: str = "h264",
+    field_order: VideoFieldOrder | None = None,
+) -> VideoTrack:
+    return VideoTrack(
+        source=VideoSource.COLOR_BARS,
+        codec=codec,
+        resolution=resolution,
+        field_order=field_order,
+    )
 
 
 def _audio(
@@ -106,6 +116,34 @@ def test_video_codec_selects_expected_encoder(codec: str, encoder: str, tmp_path
     )
 
     assert argv[argv.index("-c:v") + 1] == encoder
+
+
+@pytest.mark.parametrize(
+    ("codec", "field_order", "param_name", "param_value"),
+    [
+        ("h264", VideoFieldOrder.TOP_FIELD_FIRST, "-x264-params", "tff=1"),
+        ("h264", VideoFieldOrder.BOTTOM_FIELD_FIRST, "-x264-params", "bff=1"),
+        ("hevc", VideoFieldOrder.TOP_FIELD_FIRST, "-x265-params", "interlace=tff"),
+        ("h265", VideoFieldOrder.BOTTOM_FIELD_FIRST, "-x265-params", "interlace=bff"),
+    ],
+)
+def test_interlaced_video_adds_codec_field_order_params(
+    codec: str,
+    field_order: VideoFieldOrder,
+    param_name: str,
+    param_value: str,
+    tmp_path: Path,
+) -> None:
+    output = tmp_path / "asset.mkv"
+    argv = build_command(
+        video=_video(codec=codec, field_order=field_order),
+        video_input=recipe_color_bars(width=1280, height=720, fps=48, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output,
+    )
+
+    assert argv[argv.index(param_name) + 1] == param_value
 
 
 def test_unsupported_container_rejected(tmp_path: Path) -> None:

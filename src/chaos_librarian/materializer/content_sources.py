@@ -15,11 +15,17 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceProviderCapability,
     ContentTrackKind,
 )
-from chaos_librarian.contract.scenario import AudioSource, VideoSource, VideoVfrCadence
+from chaos_librarian.contract.scenario import (
+    AudioSource,
+    VideoFieldOrder,
+    VideoSource,
+    VideoVfrCadence,
+)
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import (
     VFR_BASE_FPS,
     FFmpegInput,
+    apply_interlaced_field_order,
     apply_vfr_cadence,
     recipe_channel_tones,
     recipe_color_bars,
@@ -53,6 +59,9 @@ AUDIO_RECIPES: Final[dict[AudioSource, AudioRecipe]] = {
 VFR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
     f"video:vfr:{cadence.value}" for cadence in VideoVfrCadence
 )
+INTERLACED_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:interlaced:{field_order.value}" for field_order in VideoFieldOrder
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +73,7 @@ class VideoSourceRequest:
     height: int
     fps: int
     vfr_cadence: VideoVfrCadence | None = None
+    field_order: VideoFieldOrder | None = None
     track_index: None = None
 
 
@@ -166,8 +176,17 @@ class _BuiltinLavfiProvider:
     ) -> FFmpegInput:
         if source not in VIDEO_RECIPES:
             raise _unsupported_source("video.source", VIDEO_RECIPES)
+        if request.vfr_cadence is not None and request.field_order is not None:
+            raise UnsupportedMaterializationError(
+                "field_order cannot be combined with vfr_cadence",
+                field="video.field_order",
+                payload={
+                    "vfr_cadence": request.vfr_cadence.value,
+                    "field_order": request.field_order.value,
+                },
+            )
         recipe = VIDEO_RECIPES[source]
-        fps = VFR_BASE_FPS if request.vfr_cadence is not None else request.fps
+        fps = _recipe_fps(request)
         ffmpeg_input = recipe(
             width=request.width,
             height=request.height,
@@ -175,13 +194,18 @@ class _BuiltinLavfiProvider:
             duration_s=request.duration_s,
             seed=request.seed,
         )
-        if request.vfr_cadence is None:
-            return ffmpeg_input
-        return apply_vfr_cadence(
-            ffmpeg_input,
-            cadence=request.vfr_cadence,
-            duration_s=request.duration_s,
-        )
+        if request.field_order is not None:
+            return apply_interlaced_field_order(
+                ffmpeg_input,
+                field_order=request.field_order,
+            )
+        if request.vfr_cadence is not None:
+            return apply_vfr_cadence(
+                ffmpeg_input,
+                cadence=request.vfr_cadence,
+                duration_s=request.duration_s,
+            )
+        return ffmpeg_input
 
     def resolve_audio_input(
         self,
@@ -205,6 +229,7 @@ class _BuiltinLavfiProvider:
                 *(f"audio:{source.value}" for source in self.audio_source_keys),
                 *(f"video:{source.value}" for source in self.video_source_keys),
                 *VFR_CAPABILITY_SOURCES,
+                *INTERLACED_CAPABILITY_SOURCES,
             ],
         )
 
@@ -232,6 +257,14 @@ def resolve_audio_source(source: AudioSource, request: AudioSourceRequest) -> So
     if provider is None:
         raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
     return provider.resolve_audio(source=source, request=request)
+
+
+def _recipe_fps(request: VideoSourceRequest) -> int:
+    if request.vfr_cadence is not None:
+        return VFR_BASE_FPS
+    if request.field_order is not None:
+        return request.fps * 2
+    return request.fps
 
 
 def resolve_video_input(source: VideoSource, request: VideoSourceRequest) -> FFmpegInput:
@@ -344,6 +377,7 @@ def _request_payload(
                 "height": request.height,
                 "fps": request.fps,
                 "vfr_cadence": (None if request.vfr_cadence is None else request.vfr_cadence.value),
+                "field_order": (None if request.field_order is None else request.field_order.value),
                 "channels": None,
             }
         )

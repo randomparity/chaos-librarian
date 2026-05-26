@@ -72,9 +72,11 @@ materialize validation will reject:
 
 - `field_order` combined with `vfr_cadence`; VFR/interlaced timing composition is
   out of scope for #130.
-- Any future codec or container outside the explicit interlaced support matrix.
-  For the current media matrix, all existing video codecs (`h264`, `h265`,
-  `hevc`) and containers (`mkv`, `mp4`) are supported.
+
+The existing materialize media matrix already rejects unsupported video codecs
+and containers before subprocess execution. For the current matrix, all existing
+video codecs (`h264`, `h265`, `hevc`) and containers (`mkv`, `mp4`) are
+supported for interlaced output.
 
 ## Capabilities
 
