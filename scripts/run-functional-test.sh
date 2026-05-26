@@ -229,8 +229,11 @@ for sidecar in manifest["sidecars"]:
 bundles = {bundle["id"]: bundle for bundle in manifest["bundles"]}
 variants = {variant["id"]: variant for variant in manifest["variants"]}
 bundle_asset_refs = defaultdict(list)
+sidecar_refs_by_bundle = defaultdict(list)
+asset_bundle_refs = {}
 for asset in manifest["assets"]:
     bundle_asset_refs[asset["bundle_id"]].append(asset["id"])
+    asset_bundle_refs[asset["id"]] = asset["bundle_id"]
 
 assets = []
 for asset in manifest["assets"]:
@@ -244,27 +247,93 @@ for asset in manifest["assets"]:
             "current_path": location["path"] if location else None,
             "content_hash": version.get("content_hash"),
             "probed": version.get("probed"),
-            "work_ref": variant["work_id"],
             "variant_ref": variant["id"],
             "bundle_ref": bundle["id"],
             "sidecars": sidecars_by_asset[asset["id"]],
         }
     )
 
+for sidecar in manifest["sidecars"]:
+    bundle_id = asset_bundle_refs.get(sidecar["asset_id"])
+    if bundle_id is None:
+        continue
+    sidecar_refs_by_bundle[bundle_id].append(
+        {
+            "asset_ref": sidecar["asset_id"],
+            "sidecar_ref": f"observed-{sidecar['id']}",
+        }
+    )
+
 observed = {
-    "schema_version": 1,
+    "schema_version": 2,
     "consumer": {"name": "functional-test", "version": "local"},
     "run_id": replay["run_id"],
     "observed_at": datetime.now(UTC).isoformat(),
     "assets": assets,
-    "works": [
-        {"observed_ref": work["id"], "title": work.get("title")}
-        for work in manifest["works"]
+    "movies": [
+        {"observed_ref": movie["id"], "title": movie.get("title")}
+        for movie in manifest["movies"]
+    ],
+    "series": [
+        {"observed_ref": series["id"], "title": series.get("title")}
+        for series in manifest["series"]
+    ],
+    "seasons": [
+        {
+            "observed_ref": season["id"],
+            "series_ref": season["series_id"],
+            "season_number": season.get("season_number"),
+            "title": season.get("title"),
+        }
+        for season in manifest["seasons"]
+    ],
+    "episodes": [
+        {
+            "observed_ref": episode["id"],
+            "season_ref": episode["season_id"],
+            "episode_number": episode.get("episode_number"),
+            "title": episode.get("title"),
+            "aired_on": episode.get("aired_on"),
+            "absolute_number": episode.get("absolute_number"),
+        }
+        for episode in manifest["episodes"]
+    ],
+    "artists": [
+        {"observed_ref": artist["id"], "name": artist.get("name")}
+        for artist in manifest["artists"]
+    ],
+    "albums": [
+        {
+            "observed_ref": album["id"],
+            "artist_ref": album["artist_id"],
+            "title": album.get("title"),
+            "release_year": album.get("release_year"),
+        }
+        for album in manifest["albums"]
+    ],
+    "discs": [
+        {
+            "observed_ref": disc["id"],
+            "album_ref": disc["album_id"],
+            "disc_number": disc.get("disc_number"),
+        }
+        for disc in manifest["discs"]
+    ],
+    "tracks": [
+        {
+            "observed_ref": track["id"],
+            "disc_ref": track["disc_id"],
+            "track_number": track.get("track_number"),
+            "title": track.get("title"),
+            "performers": track.get("performers", []),
+        }
+        for track in manifest["tracks"]
     ],
     "variants": [
         {
             "observed_ref": variant["id"],
-            "work_ref": variant["work_id"],
+            "parent_kind": variant["parent_kind"],
+            "parent_ref": variant["parent_id"],
             "label": variant.get("label"),
         }
         for variant in manifest["variants"]
@@ -274,6 +343,10 @@ observed = {
             "observed_ref": bundle["id"],
             "variant_ref": bundle["variant_id"],
             "asset_refs": sorted(bundle_asset_refs[bundle["id"]]),
+            "sidecar_refs": sorted(
+                sidecar_refs_by_bundle[bundle["id"]],
+                key=lambda ref: (ref["asset_ref"], ref["sidecar_ref"]),
+            ),
         }
         for bundle in manifest["bundles"]
     ],

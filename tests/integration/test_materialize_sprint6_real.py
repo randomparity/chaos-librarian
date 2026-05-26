@@ -137,14 +137,14 @@ def test_archive_file_real(tmp_path: Path) -> None:
 
     library = out_dir / "library"
     # archive-file.yaml declares ``path: library/movies-hd`` so the
-    # archive destination is ``library/movies-hd/archive/`` relative to
-    # ``<out_dir>/library/``.
-    archived = library / "library" / "movies-hd" / "archive" / "asset_hd_main.mkv"
+    # archive destination keeps the renderer filename under
+    # ``library/movies-hd/archive/`` relative to ``<out_dir>/library/``.
+    archived = library / "library" / "movies-hd" / "archive" / "Test Movie For Archive - hd.mkv"
     assert archived.exists()
 
     manifest = _load_current_manifest(out_dir)
     asset_loc = next(loc for loc in manifest.locations if loc.asset_id == "asset_hd_main")
-    assert asset_loc.path == "library/movies-hd/archive/asset_hd_main.mkv"
+    assert asset_loc.path == "library/movies-hd/archive/Test Movie For Archive - hd.mkv"
 
     asset_report = _load_asset_report(out_dir, "asset_hd_main")
     assert [e.action for e in asset_report.path_history] == [TimelineActionName.ARCHIVE_FILE]
@@ -162,14 +162,22 @@ def test_archive_file_real_with_explicit_root(tmp_path: Path) -> None:
     assert artifacts.materialization_report.outcome is Outcome.SUCCESS
 
     library = out_dir / "library"
-    archived = library / "library" / "cold-storage" / "asset_hd_main.mkv"
+    archived = (
+        library / "library" / "cold-storage" / ("Test Movie For Archive Explicit Root - hd.mkv")
+    )
     assert archived.exists()
-    not_under_primary = library / "library" / "movies-hd" / "archive" / "asset_hd_main.mkv"
+    not_under_primary = (
+        library
+        / "library"
+        / "movies-hd"
+        / "archive"
+        / "Test Movie For Archive Explicit Root - hd.mkv"
+    )
     assert not not_under_primary.exists()
 
     manifest = _load_current_manifest(out_dir)
     asset_loc = next(loc for loc in manifest.locations if loc.asset_id == "asset_hd_main")
-    assert asset_loc.path == "library/cold-storage/asset_hd_main.mkv"
+    assert asset_loc.path == "library/cold-storage/Test Movie For Archive Explicit Root - hd.mkv"
 
 
 def test_move_between_roots_real(tmp_path: Path) -> None:
@@ -184,14 +192,14 @@ def test_move_between_roots_real(tmp_path: Path) -> None:
     assert artifacts.materialization_report.outcome is Outcome.SUCCESS
 
     library = out_dir / "library"
-    moved = library / "library" / "cold-storage" / "asset_hd_main.mkv"
-    source = library / "library" / "movies-hd" / "asset_hd_main.mkv"
+    moved = library / "library" / "cold-storage" / "Test Movie For Move-Between-Roots - hd.mkv"
+    source = library / "library" / "movies-hd" / "Test Movie For Move-Between-Roots - hd.mkv"
     assert moved.exists()
     assert not source.exists()
 
     manifest = _load_current_manifest(out_dir)
     asset_loc = next(loc for loc in manifest.locations if loc.asset_id == "asset_hd_main")
-    assert asset_loc.path == "library/cold-storage/asset_hd_main.mkv"
+    assert asset_loc.path == "library/cold-storage/Test Movie For Move-Between-Roots - hd.mkv"
 
     asset_report = _load_asset_report(out_dir, "asset_hd_main")
     assert [e.action for e in asset_report.path_history] == [
@@ -301,11 +309,10 @@ def test_phase_b_failure_cleans_library(tmp_path: Path, monkeypatch: pytest.Monk
     ) -> FilesystemAction | None:
         call_count["n"] += 1
         if call_count["n"] == 1:
-            # Identity-move-rename starts the asset at
-            # ``library/movies-hd/asset_hd_main.mkv``; deleting it
-            # before the first dispatch runs forces the first
+            # Identity-move-rename starts the asset at its renderer path;
+            # deleting it before the first dispatch runs forces the first
             # ``move_asset`` helper to fail with ENOENT.
-            (ctx.library_root / "movies-hd" / "asset_hd_main.mkv").unlink()
+            (ctx.library_root / "movies-hd" / "Synthetic Blazar - hd.mkv").unlink()
         return original_dispatch(ctx, entry)
 
     monkeypatch.setattr(filesystem_mod, "apply_filesystem_action", tampered_apply_filesystem_action)
