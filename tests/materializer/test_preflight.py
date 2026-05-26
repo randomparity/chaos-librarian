@@ -38,7 +38,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",
@@ -48,10 +48,11 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
                     {"id": "cold-storage", "path": "library/cold-storage"},
                 ],
             },
-            "works": [
+            "movies": [
                 {
-                    "id": "work_001",
-                    "title": "Test Work",
+                    "id": "movie_001",
+                    "title": "Test Movie",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "variant_001",
@@ -71,6 +72,8 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": timeline,
         }
     )

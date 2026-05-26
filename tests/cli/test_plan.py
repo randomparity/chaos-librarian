@@ -110,6 +110,13 @@ class TestPlanWritesEveryFile:
             "validation.json",
         ]
         assert (out / "reports" / "assets").is_dir()
-        assert (out / "reports" / "works").is_dir()
+        assert (out / "reports" / "movies").is_dir()
+        assert (out / "reports" / "series").is_dir()
+        assert (out / "reports" / "seasons").is_dir()
+        assert (out / "reports" / "episodes").is_dir()
+        assert (out / "reports" / "artists").is_dir()
+        assert (out / "reports" / "albums").is_dir()
+        assert (out / "reports" / "discs").is_dir()
+        assert (out / "reports" / "tracks").is_dir()
         assert (out / "reports" / "variants").is_dir()
         assert (out / "reports" / "bundles").is_dir()

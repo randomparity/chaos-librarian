@@ -258,7 +258,7 @@ def test_malformed_lane_skips_media_fill_when_all_assets_corrupted(
     monkeypatch.setitem(
         generation_lanes.LANE_CONFIGS,
         key,
-        replace(config, works=4, timeline_events=8),
+        replace(config, movies=4, timeline_events=8),
     )
 
     payload = _generated_payload(
@@ -363,7 +363,7 @@ def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPa
 def test_generate_rejects_budget_overflow(monkeypatch: pytest.MonkeyPatch) -> None:
     key = (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE)
     config = generation_lanes.LANE_CONFIGS[key]
-    monkeypatch.setitem(generation_lanes.LANE_CONFIGS, key, replace(config, works=4))
+    monkeypatch.setitem(generation_lanes.LANE_CONFIGS, key, replace(config, movies=4))
 
     with pytest.raises(
         GeneratedScenarioValidationError,

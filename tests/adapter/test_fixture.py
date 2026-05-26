@@ -217,9 +217,9 @@ def test_load_fixture_rejects_missing_asset_report_when_reports_present(tmp_path
     _assert_fixture_invalid(run_dir)
 
 
-def test_load_fixture_rejects_missing_work_report_when_reports_present(tmp_path: Path) -> None:
+def test_load_fixture_rejects_missing_movie_report_when_reports_present(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "works").glob("*.json")).unlink()
+    next((run_dir / "reports" / "movies").glob("*.json")).unlink()
     _assert_fixture_invalid(run_dir)
 
 

@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import NoReturn
+from typing import Any, NoReturn
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -19,16 +19,39 @@ from chaos_librarian.contract.replay_bundle import (
     ReplayBundle,
     compute_plan_only_run_id,
 )
-from chaos_librarian.contract.reports import AssetReport, BundleReport, VariantReport, WorkReport
+from chaos_librarian.contract.reports import (
+    AlbumReport,
+    ArtistReport,
+    AssetReport,
+    BundleReport,
+    DiscReport,
+    EpisodeReport,
+    MovieReport,
+    SeasonReport,
+    SeriesReport,
+    TrackReport,
+    VariantReport,
+)
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.engine.reports import ReportSet, build_report_set
-from chaos_librarian.engine.step import SentinelInvalidError, verify_sentinel
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
 _REPLAY_ADAPTER: TypeAdapter[ReplayBundle] = TypeAdapter(ReplayBundle)
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
+
+_REPORT_DIR_NAMES = (
+    "assets",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
+    "variants",
+    "bundles",
+)
 
 
 @dataclass(frozen=True)
@@ -36,7 +59,14 @@ class OracleReports:
     """Report maps keyed by oracle entity id."""
 
     assets: Mapping[str, AssetReport]
-    works: Mapping[str, WorkReport]
+    movies: Mapping[str, MovieReport]
+    series: Mapping[str, SeriesReport]
+    seasons: Mapping[str, SeasonReport]
+    episodes: Mapping[str, EpisodeReport]
+    artists: Mapping[str, ArtistReport]
+    albums: Mapping[str, AlbumReport]
+    discs: Mapping[str, DiscReport]
+    tracks: Mapping[str, TrackReport]
     variants: Mapping[str, VariantReport]
     bundles: Mapping[str, BundleReport]
 
@@ -60,16 +90,16 @@ def load_fixture(run_dir: Path) -> OracleFixture:
     """Load and cross-check a Chaos Librarian oracle fixture."""
     try:
         return _load_fixture_checked(run_dir)
-    except SentinelInvalidError:
-        raise
     except AdapterInputError:
         raise
     except (OSError, ValidationError, ValueError, ChaosLibrarianError) as exc:
+        if exc.__class__.__name__ == "SentinelInvalidError":
+            raise
         _fixture_invalid(f"fixture input is invalid: {exc}", path=run_dir)
 
 
 def _load_fixture_checked(run_dir: Path) -> OracleFixture:
-    sentinel = verify_sentinel(run_dir)
+    sentinel = _verify_sentinel(run_dir)
     replay_bundle = _parse_replay(run_dir / "replay.json")
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     scenario_id = _parse_scenario_id(scenario_bytes, run_dir=run_dir)
@@ -219,9 +249,23 @@ def _validate_journal_digest(
         entries = tuple(entry.model_copy(update={"wall_clock_time": None}) for entry in journal)
     else:
         entries = journal
-    digest = hashlib.sha256(serialize_journal_bytes(entries)).hexdigest()
+    digest = hashlib.sha256(_serialize_journal_bytes(entries)).hexdigest()
     if digest != replay_bundle.journal_digest:
         _fixture_invalid("journal_digest does not match journal.jsonl", path=run_dir)
+
+
+def _verify_sentinel(run_dir: Path) -> RunSentinel:
+    # Lazy until engine cleanup lands, so adapter indexes remain importable.
+    from chaos_librarian.engine.step import verify_sentinel  # noqa: PLC0415
+
+    return verify_sentinel(run_dir)
+
+
+def _serialize_journal_bytes(entries: tuple[JournalEntry, ...]) -> bytes:
+    # Lazy until engine cleanup lands, so adapter indexes remain importable.
+    from chaos_librarian.engine.journal_io import serialize_journal_bytes  # noqa: PLC0415
+
+    return serialize_journal_bytes(entries)
 
 
 def _load_or_derive_reports(
@@ -234,28 +278,54 @@ def _load_or_derive_reports(
     reports_dir = run_dir / "reports"
     if not reports_dir.exists():
         return _reports_from_report_set(
-            build_report_set(initial=initial_manifest, current=current_manifest, journal=journal)
+            _build_report_set(initial=initial_manifest, current=current_manifest, journal=journal)
         )
     return _load_present_reports(reports_dir, initial_manifest)
 
 
-def _reports_from_report_set(report_set: ReportSet) -> OracleReports:
+def _build_report_set(
+    *,
+    initial: Manifest,
+    current: Manifest,
+    journal: tuple[JournalEntry, ...],
+) -> object:
+    # Lazy until engine cleanup lands, so adapter indexes remain importable.
+    from chaos_librarian.engine.reports import build_report_set  # noqa: PLC0415
+
+    return build_report_set(initial=initial, current=current, journal=journal)
+
+
+def _reports_from_report_set(report_set: Any) -> OracleReports:
     return OracleReports(
         assets={report.asset_id: report for report in report_set.assets},
-        works={report.work_id: report for report in report_set.works},
+        movies={report.movie_id: report for report in getattr(report_set, "movies", ())},
+        series={report.series_id: report for report in getattr(report_set, "series", ())},
+        seasons={report.season_id: report for report in getattr(report_set, "seasons", ())},
+        episodes={report.episode_id: report for report in getattr(report_set, "episodes", ())},
+        artists={report.artist_id: report for report in getattr(report_set, "artists", ())},
+        albums={report.album_id: report for report in getattr(report_set, "albums", ())},
+        discs={report.disc_id: report for report in getattr(report_set, "discs", ())},
+        tracks={report.track_id: report for report in getattr(report_set, "tracks", ())},
         variants={report.variant_id: report for report in report_set.variants},
         bundles={report.bundle_id: report for report in report_set.bundles},
     )
 
 
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:
-    for name in ("assets", "works", "variants", "bundles"):
+    for name in _REPORT_DIR_NAMES:
         directory = reports_dir / name
         if not directory.is_dir():
             _fixture_invalid(f"reports/{name} directory is missing", path=directory)
     reports = OracleReports(
         assets=_load_report_map(reports_dir / "assets", AssetReport, "asset_id"),
-        works=_load_report_map(reports_dir / "works", WorkReport, "work_id"),
+        movies=_load_report_map(reports_dir / "movies", MovieReport, "movie_id"),
+        series=_load_report_map(reports_dir / "series", SeriesReport, "series_id"),
+        seasons=_load_report_map(reports_dir / "seasons", SeasonReport, "season_id"),
+        episodes=_load_report_map(reports_dir / "episodes", EpisodeReport, "episode_id"),
+        artists=_load_report_map(reports_dir / "artists", ArtistReport, "artist_id"),
+        albums=_load_report_map(reports_dir / "albums", AlbumReport, "album_id"),
+        discs=_load_report_map(reports_dir / "discs", DiscReport, "disc_id"),
+        tracks=_load_report_map(reports_dir / "tracks", TrackReport, "track_id"),
         variants=_load_report_map(reports_dir / "variants", VariantReport, "variant_id"),
         bundles=_load_report_map(reports_dir / "bundles", BundleReport, "bundle_id"),
     )
@@ -287,9 +357,44 @@ def _validate_report_ids(
         reports_dir / "assets",
     )
     _require_exact_report_ids(
-        set(reports.works),
-        {work.id for work in initial_manifest.works},
-        reports_dir / "works",
+        set(reports.movies),
+        {movie.id for movie in initial_manifest.movies},
+        reports_dir / "movies",
+    )
+    _require_exact_report_ids(
+        set(reports.series),
+        {series.id for series in initial_manifest.series},
+        reports_dir / "series",
+    )
+    _require_exact_report_ids(
+        set(reports.seasons),
+        {season.id for season in initial_manifest.seasons},
+        reports_dir / "seasons",
+    )
+    _require_exact_report_ids(
+        set(reports.episodes),
+        {episode.id for episode in initial_manifest.episodes},
+        reports_dir / "episodes",
+    )
+    _require_exact_report_ids(
+        set(reports.artists),
+        {artist.id for artist in initial_manifest.artists},
+        reports_dir / "artists",
+    )
+    _require_exact_report_ids(
+        set(reports.albums),
+        {album.id for album in initial_manifest.albums},
+        reports_dir / "albums",
+    )
+    _require_exact_report_ids(
+        set(reports.discs),
+        {disc.id for disc in initial_manifest.discs},
+        reports_dir / "discs",
+    )
+    _require_exact_report_ids(
+        set(reports.tracks),
+        {track.id for track in initial_manifest.tracks},
+        reports_dir / "tracks",
     )
     _require_exact_report_ids(
         set(reports.variants),

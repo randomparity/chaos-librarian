@@ -6,9 +6,11 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from chaos_librarian.adapter.fixture import OracleFixture
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.observed_state import (
     ObservedAsset,
+    ObservedBundle,
     ObservedEvent,
     ObservedPathHistoryEntry,
     ObservedSidecar,
@@ -34,7 +36,6 @@ class ObservedAssetView:
     current_path: str | None
     content_hash: str | None
     probed: ProbedMedia | None
-    work_ref: str | None
     variant_ref: str | None
     bundle_ref: str | None
     sidecars: tuple[ObservedSidecar, ...]
@@ -46,8 +47,9 @@ class OracleTopologyView:
     asset_id: str
     bundle_id: str
     variant_id: str
-    work_id: str
-    work_title: str | None
+    parent_kind: ParentKind
+    parent_id: str
+    parent_title: str | None
     variant_label: str | None
     bundle_asset_ids: tuple[str, ...]
 
@@ -57,8 +59,9 @@ class ObservedTopologyView:
     observed_ref: str
     bundle_ref: str | None
     variant_ref: str | None
-    work_ref: str | None
-    work_title: str | None
+    parent_kind: ParentKind | None
+    parent_ref: str | None
+    parent_title: str | None
     variant_label: str | None
     bundle_asset_refs: tuple[str, ...]
 
@@ -103,7 +106,11 @@ class OracleIndex:
                 topology,
                 id_of=lambda view: view.asset_id,
                 keys_of=lambda view: (
-                    topology_key(view.work_title, view.variant_label, len(view.bundle_asset_ids)),
+                    topology_key(
+                        view.parent_title,
+                        view.variant_label,
+                        len(view.bundle_asset_ids),
+                    ),
                 ),
             ),
         )
@@ -179,7 +186,11 @@ class ObservedIndex:
                 topology,
                 id_of=lambda view: view.observed_ref,
                 keys_of=lambda view: (
-                    topology_key(view.work_title, view.variant_label, len(view.bundle_asset_refs)),
+                    topology_key(
+                        view.parent_title,
+                        view.variant_label,
+                        len(view.bundle_asset_refs),
+                    ),
                 ),
             ),
         )
@@ -195,14 +206,14 @@ class ObservedIndex:
 
 
 def topology_key(
-    work_title: str | None,
+    parent_title: str | None,
     variant_label: str | None,
     bundle_member_count: int,
 ) -> str | None:
     """Return the consumer-neutral topology key, if enough facts exist."""
-    if work_title is None and variant_label is None and bundle_member_count == 0:
+    if parent_title is None and variant_label is None and bundle_member_count == 0:
         return None
-    return f"{work_title or ''}|{variant_label or ''}|{bundle_member_count}"
+    return f"{parent_title or ''}|{variant_label or ''}|{bundle_member_count}"
 
 
 def _lookup_by[T](
@@ -246,7 +257,7 @@ def _manifest_sidecars_by_asset(
 def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
     bundles = {bundle.id: bundle for bundle in fixture.initial_manifest.bundles}
     variants = {variant.id: variant for variant in fixture.initial_manifest.variants}
-    works = {work.id: work for work in fixture.initial_manifest.works}
+    parent_titles = _oracle_parent_titles(fixture)
     bundle_members: dict[str, list[str]] = {}
     for asset in fixture.initial_manifest.assets:
         bundle_members.setdefault(asset.bundle_id, []).append(asset.id)
@@ -254,14 +265,14 @@ def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
     for asset in fixture.initial_manifest.assets:
         bundle = bundles[asset.bundle_id]
         variant = variants[bundle.variant_id]
-        work = works[variant.work_id]
         views.append(
             OracleTopologyView(
                 asset_id=asset.id,
                 bundle_id=bundle.id,
                 variant_id=variant.id,
-                work_id=work.id,
-                work_title=work.title,
+                parent_kind=variant.parent_kind,
+                parent_id=variant.parent_id,
+                parent_title=parent_titles.get((variant.parent_kind, variant.parent_id)),
                 variant_label=variant.label,
                 bundle_asset_ids=tuple(sorted(bundle_members[bundle.id])),
             )
@@ -275,7 +286,6 @@ def _observed_asset_view(asset: ObservedAsset) -> ObservedAssetView:
         current_path=asset.current_path,
         content_hash=asset.content_hash,
         probed=asset.probed,
-        work_ref=asset.work_ref,
         variant_ref=asset.variant_ref,
         bundle_ref=asset.bundle_ref,
         sidecars=tuple(asset.sidecars),
@@ -284,24 +294,30 @@ def _observed_asset_view(asset: ObservedAsset) -> ObservedAssetView:
 
 
 def _observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]:
-    works = {work.observed_ref: work for work in state.works}
     variants = {variant.observed_ref: variant for variant in state.variants}
     bundles = {bundle.observed_ref: bundle for bundle in state.bundles}
+    parent_titles = _observed_parent_titles(state)
     containing_bundle = _observed_containing_bundle(state)
     views: list[ObservedTopologyView] = []
     for asset in state.assets:
         bundle = bundles.get(asset.bundle_ref or "") or containing_bundle.get(asset.observed_ref)
         variant_ref = asset.variant_ref or (bundle.variant_ref if bundle else None)
         variant = variants.get(variant_ref or "")
-        work_ref = asset.work_ref or (variant.work_ref if variant else None)
-        work = works.get(work_ref or "")
+        parent_kind = variant.parent_kind if variant else None
+        parent_ref = variant.parent_ref if variant else None
+        parent_title = (
+            parent_titles.get((parent_kind, parent_ref))
+            if parent_kind is not None and parent_ref is not None
+            else None
+        )
         views.append(
             ObservedTopologyView(
                 observed_ref=asset.observed_ref,
                 bundle_ref=bundle.observed_ref if bundle else asset.bundle_ref,
                 variant_ref=variant_ref,
-                work_ref=work_ref,
-                work_title=work.title if work else None,
+                parent_kind=parent_kind,
+                parent_ref=parent_ref,
+                parent_title=parent_title,
                 variant_label=variant.label if variant else None,
                 bundle_asset_refs=tuple(sorted(bundle.asset_refs)) if bundle else (),
             )
@@ -309,8 +325,27 @@ def _observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]
     return tuple(views)
 
 
-def _observed_containing_bundle(state: ObservedState):
-    result = {}
+def _oracle_parent_titles(fixture: OracleFixture) -> dict[tuple[ParentKind, str], str]:
+    return {
+        **{(ParentKind.MOVIE, movie.id): movie.title for movie in fixture.initial_manifest.movies},
+        **{
+            (ParentKind.EPISODE, episode.id): episode.title
+            for episode in fixture.initial_manifest.episodes
+        },
+        **{(ParentKind.TRACK, track.id): track.title for track in fixture.initial_manifest.tracks},
+    }
+
+
+def _observed_parent_titles(state: ObservedState) -> dict[tuple[ParentKind, str], str | None]:
+    return {
+        **{(ParentKind.MOVIE, movie.observed_ref): movie.title for movie in state.movies},
+        **{(ParentKind.EPISODE, episode.observed_ref): episode.title for episode in state.episodes},
+        **{(ParentKind.TRACK, track.observed_ref): track.title for track in state.tracks},
+    }
+
+
+def _observed_containing_bundle(state: ObservedState) -> dict[str, ObservedBundle]:
+    result: dict[str, ObservedBundle] = {}
     for bundle in state.bundles:
         for asset_ref in bundle.asset_refs:
             result[asset_ref] = bundle

@@ -15,7 +15,7 @@ class LaneConfig:
     profile: FuzzProfileName
     lane: FuzzLaneName
     profiles: tuple[ProfileName, ...]
-    works: int
+    movies: int
     timeline_events: int
     required_cells: frozenset[str]
 
@@ -43,7 +43,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_SMOKE,
         lane=FuzzLaneName.SMOKE,
         profiles=(ProfileName.FUZZ_SMOKE,),
-        works=3,
+        movies=3,
         timeline_events=12,
         required_cells=frozenset(
             {
@@ -59,7 +59,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.CORE_FS,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -78,7 +78,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.MEDIA_REWRITE,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -93,7 +93,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.SIDECAR_SUBTITLE,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -111,7 +111,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.MALFORMED,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.MALFORMED_MEDIA),
-        works=10,
+        movies=10,
         timeline_events=24,
         required_cells=frozenset(
             {
@@ -126,7 +126,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.NEGATIVE_ORACLE,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NEGATIVE_ORACLE),
-        works=8,
+        movies=8,
         timeline_events=16,
         required_cells=frozenset({_action_cell(TimelineActionName.WRONG_ORACLE_HASH)}),
     ),
@@ -134,7 +134,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.FILESYSTEM_ARTIFACT,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.FILESYSTEM_ARTIFACTS),
-        works=8,
+        movies=8,
         timeline_events=16,
         required_cells=frozenset({_action_cell(TimelineActionName.TOUCH_MTIME)}),
     ),
@@ -142,7 +142,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.NETWORK_LAG,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NETWORK_FS_LAG),
-        works=8,
+        movies=8,
         timeline_events=18,
         required_cells=frozenset(
             {

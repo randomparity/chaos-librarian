@@ -11,6 +11,7 @@ from chaos_librarian.adapter.index import (
     OracleTopologyView,
 )
 from chaos_librarian.adapter.matching import match_assets
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.reports import PathHistoryEntry
 from chaos_librarian.contract.scenario import TimelineActionName
 
@@ -49,7 +50,6 @@ def _observed_asset(
         current_path=current_path,
         content_hash=content_hash,
         probed=None,
-        work_ref=None,
         variant_ref=None,
         bundle_ref=None,
         sidecars=(),
@@ -84,8 +84,9 @@ def _oracle_topology(asset_id: str, *, title: str, label: str) -> OracleTopology
         asset_id=asset_id,
         bundle_id=f"oracle-bundle-{asset_id}",
         variant_id=f"oracle-variant-{asset_id}",
-        work_id=f"oracle-work-{asset_id}",
-        work_title=title,
+        parent_kind=ParentKind.MOVIE,
+        parent_id=f"oracle-movie-{asset_id}",
+        parent_title=title,
         variant_label=label,
         bundle_asset_ids=(asset_id,),
     )
@@ -96,8 +97,9 @@ def _observed_topology(observed_ref: str, *, title: str, label: str) -> Observed
         observed_ref=observed_ref,
         bundle_ref=f"observed-bundle-{observed_ref}",
         variant_ref=f"observed-variant-{observed_ref}",
-        work_ref=f"observed-work-{observed_ref}",
-        work_title=title,
+        parent_kind=ParentKind.MOVIE,
+        parent_ref=f"observed-movie-{observed_ref}",
+        parent_title=title,
         variant_label=label,
         bundle_asset_refs=(observed_ref,),
     )

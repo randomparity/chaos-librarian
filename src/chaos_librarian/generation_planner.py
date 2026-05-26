@@ -64,7 +64,7 @@ def plan_payload_parts(
     _fill_remaining_events(planner=planner, config=config, rng=rng)
     return (
         library,
-        _works_payload(
+        _movies_payload(
             profile=config.profile,
             lane=config.lane,
             seed=seed,
@@ -89,7 +89,7 @@ def _planned_assets(*, config: LaneConfig) -> list[PlannedAsset]:
     resolutions = ("sd", "hd", "1080p")
     channels = ("mono", "stereo", "5.1")
     assets: list[PlannedAsset] = []
-    for index in range(1, config.works + 1):
+    for index in range(1, config.movies + 1):
         assets.append(
             PlannedAsset(
                 asset_id=f"asset_{index:03d}",
@@ -105,7 +105,7 @@ def _planned_assets(*, config: LaneConfig) -> list[PlannedAsset]:
     return assets
 
 
-def _works_payload(
+def _movies_payload(
     *,
     profile: FuzzProfileName,
     lane: FuzzLaneName,
@@ -113,12 +113,13 @@ def _works_payload(
     assets: list[PlannedAsset],
     rng: Any,
 ) -> list[dict[str, object]]:
-    works: list[dict[str, object]] = []
+    movies: list[dict[str, object]] = []
     for index, asset in enumerate(assets, start=1):
-        works.append(
+        movies.append(
             {
-                "id": f"work_{index:03d}",
-                "title": f"{profile.value} {lane.value} Work {seed}-{index:03d}",
+                "id": f"movie_{index:03d}",
+                "title": f"{profile.value} {lane.value} Movie {seed}-{index:03d}",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": f"variant_{index:03d}",
@@ -131,7 +132,7 @@ def _works_payload(
                 ],
             }
         )
-    return works
+    return movies
 
 
 def _asset_payload(asset: PlannedAsset, rng: Any) -> dict[str, object]:

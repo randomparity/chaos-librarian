@@ -190,12 +190,12 @@ def _compare_topology(
     if oracle_topology is None or observed_topology is None:
         return []
     oracle_key = topology_key(
-        oracle_topology.work_title,
+        oracle_topology.parent_title,
         oracle_topology.variant_label,
         len(oracle_topology.bundle_asset_ids),
     )
     observed_key = topology_key(
-        observed_topology.work_title,
+        observed_topology.parent_title,
         observed_topology.variant_label,
         len(observed_topology.bundle_asset_refs),
     )

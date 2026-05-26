@@ -75,7 +75,6 @@ def _observed_index(
                 current_path="library/current.mkv",
                 content_hash=None,
                 probed=None,
-                work_ref=None,
                 variant_ref=None,
                 bundle_ref=None,
                 sidecars=(),

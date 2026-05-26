@@ -47,6 +47,7 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.tooling.ffmpeg import build_command
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
+from chaos_librarian.topology import iter_asset_contexts
 
 __all__ = [
     "AUDIO_RECIPES",
@@ -64,9 +65,8 @@ __all__ = [
 
 def iter_assets(scenario: Scenario) -> Iterator[Asset]:
     """Iterate all assets in scenario order."""
-    for work in scenario.works:
-        for variant in work.variants:
-            yield from variant.bundle.assets
+    for context in iter_asset_contexts(scenario):
+        yield context.asset
 
 
 def preflight_asset(

@@ -12,15 +12,16 @@ from chaos_librarian.contract import (
     MANIFEST_SCHEMA_VERSION,
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
     ManifestBundle,
     ManifestLocation,
+    ManifestMovie,
     ManifestSidecar,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -29,22 +30,20 @@ from chaos_librarian.contract.observed_state import (
     ObservedAsset,
     ObservedBundle,
     ObservedConsumer,
+    ObservedMovie,
     ObservedSidecar,
     ObservedState,
     ObservedVariant,
-    ObservedWork,
 )
 from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
 from chaos_librarian.contract.reports import (
     AssetReport,
     AssetSnapshot,
     BundleReport,
+    MovieReport,
     VariantReport,
-    WorkReport,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.engine import run_plan
-from chaos_librarian.engine.writer import write_fixture
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 RUN_ID = uuid.UUID("7c44eb62-7046-4b8f-a168-eaf3a58e0145")
@@ -64,6 +63,10 @@ def write_plan_fixture(tmp_path: Path, scenario_name: str = "identity-move-renam
     )
     validation_report = run_validation(run_input)
     assert validation_report.ok
+    # Lazy until engine cleanup lands, so adapter-only tests can import helpers.
+    from chaos_librarian.engine import run_plan  # noqa: PLC0415
+    from chaos_librarian.engine.writer import write_fixture  # noqa: PLC0415
+
     artifacts = run_plan(run_input=run_input, validation_report=validation_report)
     run_dir = tmp_path / "run"
     write_fixture(run_dir, artifacts, scenario_yaml_bytes)
@@ -88,8 +91,22 @@ def manifest(
 ) -> Manifest:
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="work-a", title="Synthetic")],
-        variants=[ManifestVariant(id="variant-a", work_id="work-a", label="hd")],
+        movies=[ManifestMovie(id="movie-a", title="Synthetic", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="variant-a",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie-a",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="bundle-a", variant_id="variant-a")],
         assets=[
             ManifestAsset(
@@ -140,25 +157,38 @@ def reports(current_path: str | None = "library/Synthetic.mkv") -> OracleReports
             "asset-a": AssetReport(
                 schema_version=ASSET_REPORT_SCHEMA_VERSION,
                 asset_id="asset-a",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie-a",
+                movie_id="movie-a",
+                variant_id="variant-a",
+                bundle_id="bundle-a",
                 initial=initial_snapshot,
                 history=[],
                 current=current_snapshot,
             )
         },
-        works={
-            "work-a": WorkReport(
+        movies={
+            "movie-a": MovieReport(
                 schema_version=1,
-                work_id="work-a",
+                movie_id="movie-a",
                 title="Synthetic",
                 variant_ids=["variant-a"],
                 asset_ids=["asset-a"],
             )
         },
+        series={},
+        seasons={},
+        episodes={},
+        artists={},
+        albums={},
+        discs={},
+        tracks={},
         variants={
             "variant-a": VariantReport(
-                schema_version=1,
+                schema_version=2,
                 variant_id="variant-a",
-                work_id="work-a",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie-a",
                 label="hd",
                 bundle_id="bundle-a",
                 asset_ids=["asset-a"],
@@ -224,7 +254,7 @@ def observed(
     topology_label: str = "hd",
 ) -> ObservedState:
     return ObservedState(
-        schema_version=1,
+        schema_version=2,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id,
         observed_at=datetime(2026, 5, 22, tzinfo=UTC),
@@ -234,17 +264,17 @@ def observed(
                 current_path=current_path,
                 content_hash=content_hash,
                 probed=probed,
-                work_ref="consumer-work",
                 variant_ref="consumer-variant",
                 bundle_ref="consumer-bundle",
                 sidecars=list(sidecars),
             )
         ],
-        works=[ObservedWork(observed_ref="consumer-work", title="Synthetic")],
+        movies=[ObservedMovie(observed_ref="consumer-movie", title="Synthetic")],
         variants=[
             ObservedVariant(
                 observed_ref="consumer-variant",
-                work_ref="consumer-work",
+                parent_kind=ParentKind.MOVIE,
+                parent_ref="consumer-movie",
                 label=topology_label,
             )
         ],
@@ -270,7 +300,15 @@ def observed_from_fixture(
         location.asset_id: location for location in oracle_fixture.current_manifest.locations
     }
     versions = {version.asset_id: version for version in oracle_fixture.current_manifest.versions}
-    work_refs = {work.id: f"observed-{work.id}" for work in oracle_fixture.current_manifest.works}
+    movie_refs = {
+        movie.id: f"observed-{movie.id}" for movie in oracle_fixture.current_manifest.movies
+    }
+    episode_refs = {
+        episode.id: f"observed-{episode.id}" for episode in oracle_fixture.current_manifest.episodes
+    }
+    track_refs = {
+        track.id: f"observed-{track.id}" for track in oracle_fixture.current_manifest.tracks
+    }
     variant_refs = {
         variant.id: f"observed-{variant.id}" for variant in oracle_fixture.current_manifest.variants
     }
@@ -278,7 +316,6 @@ def observed_from_fixture(
         bundle.id: f"observed-{bundle.id}" for bundle in oracle_fixture.current_manifest.bundles
     }
     bundles_by_id = {bundle.id: bundle for bundle in oracle_fixture.current_manifest.bundles}
-    variants_by_id = {variant.id: variant for variant in oracle_fixture.current_manifest.variants}
     asset_refs_by_bundle: dict[str, list[str]] = {}
     sidecars_by_asset: dict[str, list[ObservedSidecar]] = {}
     for sidecar in oracle_fixture.current_manifest.sidecars:
@@ -295,7 +332,6 @@ def observed_from_fixture(
         location = locations.get(asset.id)
         version = versions.get(asset.id)
         bundle = bundles_by_id[asset.bundle_id]
-        variant = variants_by_id[bundle.variant_id]
         observed_ref = f"observed-{asset.id}"
         asset_refs_by_bundle.setdefault(asset.bundle_id, []).append(observed_ref)
         current_path = location.path if location is not None and include_current_paths else None
@@ -307,20 +343,26 @@ def observed_from_fixture(
                 current_path=current_path,
                 content_hash=version.content_hash if version is not None else None,
                 probed=version.probed if version is not None else None,
-                work_ref=work_refs[variant.work_id] if include_topology else None,
                 variant_ref=variant_refs[bundle.variant_id] if include_topology else None,
                 bundle_ref=bundle_refs[asset.bundle_id] if include_topology else None,
                 sidecars=sidecars_by_asset.get(asset.id, []),
             )
         )
-    works = [
-        ObservedWork(observed_ref=work_refs[work.id], title=work.title)
-        for work in oracle_fixture.current_manifest.works
+    movies = [
+        ObservedMovie(observed_ref=movie_refs[movie.id], title=movie.title)
+        for movie in oracle_fixture.current_manifest.movies
     ]
     variants = [
         ObservedVariant(
             observed_ref=variant_refs[variant.id],
-            work_ref=work_refs[variant.work_id],
+            parent_kind=variant.parent_kind,
+            parent_ref=_parent_ref_for_variant(
+                variant.parent_kind,
+                variant.parent_id,
+                movie_refs=movie_refs,
+                episode_refs=episode_refs,
+                track_refs=track_refs,
+            ),
             label=variant.label,
         )
         for variant in oracle_fixture.current_manifest.variants
@@ -334,12 +376,27 @@ def observed_from_fixture(
         for bundle in oracle_fixture.current_manifest.bundles
     ]
     return ObservedState(
-        schema_version=1,
+        schema_version=2,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id or oracle_fixture.run_id,
         observed_at=oracle_fixture.sentinel.created_at or datetime(2026, 5, 22, tzinfo=UTC),
         assets=assets,
-        works=works if include_topology else [],
+        movies=movies if include_topology else [],
         variants=variants if include_topology else [],
         bundles=bundles if include_topology else [],
     )
+
+
+def _parent_ref_for_variant(
+    parent_kind: ParentKind,
+    parent_id: str,
+    *,
+    movie_refs: dict[str, str],
+    episode_refs: dict[str, str],
+    track_refs: dict[str, str],
+) -> str:
+    if parent_kind is ParentKind.MOVIE:
+        return movie_refs[parent_id]
+    if parent_kind is ParentKind.EPISODE:
+        return episode_refs[parent_id]
+    return track_refs[parent_id]

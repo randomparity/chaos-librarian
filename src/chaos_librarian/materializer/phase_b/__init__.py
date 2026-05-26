@@ -54,6 +54,7 @@ from chaos_librarian.materializer.phase_b.oracle_hash import (
     make_oracle_hash_phase_b_context,
     supports_oracle_hash_action,
 )
+from chaos_librarian.topology import iter_asset_contexts
 
 PhaseBError = FilesystemActionError | MediaActionError | CorruptionActionError
 
@@ -204,10 +205,8 @@ def phase_b_failure_record(exc: PhaseBError) -> MaterializationFailure:
 
 def _index_assets(scenario: Scenario) -> dict[str, Asset]:
     out: dict[str, Asset] = {}
-    for work in scenario.works:
-        for variant in work.variants:
-            for asset in variant.bundle.assets:
-                out[asset.id] = asset
+    for context in iter_asset_contexts(scenario):
+        out[context.asset.id] = context.asset
     return out
 
 

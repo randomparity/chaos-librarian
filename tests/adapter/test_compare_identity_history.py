@@ -44,7 +44,14 @@ def _fixture_with_history(*entries: PathHistoryEntry):
     )
     reports = OracleReports(
         assets={"asset-a": asset_report},
-        works=fixture.reports.works,
+        movies=fixture.reports.movies,
+        series=fixture.reports.series,
+        seasons=fixture.reports.seasons,
+        episodes=fixture.reports.episodes,
+        artists=fixture.reports.artists,
+        albums=fixture.reports.albums,
+        discs=fixture.reports.discs,
+        tracks=fixture.reports.tracks,
         variants=fixture.reports.variants,
         bundles=fixture.reports.bundles,
     )

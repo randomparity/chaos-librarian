@@ -22,6 +22,7 @@ from chaos_librarian.materializer.phase_b.filesystem import (
     apply_filesystem_action,
     make_filesystem_phase_b_context,
 )
+from chaos_librarian.topology import iter_asset_contexts
 from tests.engine.conftest import _build_minimal_scenario
 from tests.materializer.conftest import (
     _atomic_entry,
@@ -43,12 +44,7 @@ def _scenario() -> Scenario:
 
 
 def _scenario_assets(scenario: Scenario) -> dict[str, Asset]:
-    return {
-        asset.id: asset
-        for work in scenario.works
-        for variant in work.variants
-        for asset in variant.bundle.assets
-    }
+    return {context.asset.id: context.asset for context in iter_asset_contexts(scenario)}
 
 
 def _apply_entries(

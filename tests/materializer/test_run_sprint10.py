@@ -10,18 +10,19 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian import __version__ as _chaos_librarian_version
-from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
     ManifestBundle,
     ManifestLocation,
+    ManifestMovie,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
 )
 from chaos_librarian.contract.materialization import (
@@ -58,7 +59,7 @@ _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 11
+schema_version: 12
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -68,9 +69,10 @@ library:
   roots:
     - id: r0
       path: movies-hd
-works:
-  - id: w0
+movies:
+  - id: m0
     title: Broken Header
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -122,9 +124,23 @@ def _manifest(*, corrupted: bool) -> Manifest:
             )
         )
     return Manifest(
-        schema_version=6,
-        works=[ManifestWork(id="work_001", title="Broken Header")],
-        variants=[ManifestVariant(id="variant_hd", work_id="work_001", label="hd")],
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        movies=[ManifestMovie(id="movie_001", title="Broken Header", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="variant_hd",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie_001",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
         assets=[
             ManifestAsset(
@@ -306,7 +322,7 @@ def _write_negative_oracle_scenario(tmp_path: Path) -> Path:
     path = tmp_path / "negative-oracle-two-events.yaml"
     path.write_text(
         """\
-schema_version: 11
+schema_version: 12
 scenario_id: negative-oracle-two-events
 seed: 42
 duration_scale: short
@@ -316,9 +332,10 @@ library:
   roots:
     - id: r0
       path: movies-hd
-works:
-  - id: w0
+movies:
+  - id: m0
     title: Negative Oracle
+    layout: movie_flat
     variants:
       - id: v0
         label: hd

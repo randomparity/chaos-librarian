@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Literal
+
+from pydantic import BaseModel
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import (
@@ -147,8 +150,25 @@ def build_reports(plan_artifacts: PlanArtifacts) -> MaterializeReports:
         journal=plan_artifacts.journal,
     )
     return MaterializeReports(
-        assets={r.asset_id: r for r in reports.assets},
-        works={r.work_id: r for r in reports.works},
-        variants={r.variant_id: r for r in reports.variants},
-        bundles={r.bundle_id: r for r in reports.bundles},
+        assets=_report_map(reports.assets, "asset_id"),
+        movies=_report_map(getattr(reports, "movies", ()), "movie_id"),
+        series=_report_map(getattr(reports, "series", ()), "series_id"),
+        seasons=_report_map(getattr(reports, "seasons", ()), "season_id"),
+        episodes=_report_map(getattr(reports, "episodes", ()), "episode_id"),
+        artists=_report_map(getattr(reports, "artists", ()), "artist_id"),
+        albums=_report_map(getattr(reports, "albums", ()), "album_id"),
+        discs=_report_map(getattr(reports, "discs", ()), "disc_id"),
+        tracks=_report_map(getattr(reports, "tracks", ()), "track_id"),
+        variants=_report_map(reports.variants, "variant_id"),
+        bundles=_report_map(reports.bundles, "bundle_id"),
     )
+
+
+def _report_map[T: BaseModel](reports: Iterable[T], id_field: str) -> dict[str, T]:
+    mapped: dict[str, T] = {}
+    for report in reports:
+        report_id = getattr(report, id_field)
+        if not isinstance(report_id, str):
+            raise TypeError(f"{id_field} must be a string")
+        mapped[report_id] = report
+    return mapped
