@@ -30,6 +30,7 @@ class TimelinePlanner:
     placed_assets: set[str] = field(default_factory=set)
     sidecars_by_asset: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     deleted_assets: set[str] = field(default_factory=set)
+    media_unstable_assets: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self.placed_assets = {asset.asset_id for asset in self.assets}
@@ -216,13 +217,20 @@ def _fill_remaining_events(
     config: LaneConfig,
     rng: Any,
 ) -> None:
-    safe_actions = (_move_asset, _rename_file, _edit_metadata, _create_nfo_sidecar)
+    stable_assets = [
+        asset for asset in planner.assets if asset.asset_id not in planner.media_unstable_assets
+    ]
+    if stable_assets:
+        filler_actions = (_move_asset, _rename_file, _edit_metadata, _create_nfo_sidecar)
+    else:
+        filler_actions = (_move_asset, _rename_file, _create_nfo_sidecar)
     while len(planner.events) < config.timeline_events:
         if planner.sidecars_by_asset and rng.randint(0, 3) == 0:
             _update_first_sidecar(planner)
             continue
-        action = rng.choice(safe_actions)
-        action(planner, rng.choice(planner.assets))
+        action = rng.choice(filler_actions)
+        asset_pool = stable_assets if action is _edit_metadata else planner.assets
+        action(planner, rng.choice(asset_pool))
 
 
 def _move_asset(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -384,6 +392,7 @@ def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> 
             "bytes": 64,
         }
     )
+    planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -396,6 +405,7 @@ def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             "keep_bytes": 4096,
         }
     )
+    planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -410,6 +420,7 @@ def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None
             "packet_count": 1,
         }
     )
+    planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -422,6 +433,7 @@ def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAss
             "value": "not-a-duration",
         }
     )
+    planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _wrong_oracle_hash(planner: TimelinePlanner, asset: PlannedAsset) -> None:

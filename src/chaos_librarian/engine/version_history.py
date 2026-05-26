@@ -36,32 +36,40 @@ _VERSION_AFFECTING_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 )
 
 
-_PRESERVED_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
-    TimelineActionName.REENCODE_VIDEO: frozenset({"resolution", "codec"}),
-    TimelineActionName.REENCODE_AUDIO: frozenset({"from_channels", "to_channels"}),
-    TimelineActionName.REMUX_CONTAINER: frozenset({"from_container", "to_container"}),
-    TimelineActionName.EDIT_METADATA: frozenset({"fields"}),
-    TimelineActionName.EMBED_SUBTITLE: frozenset({"language", "kind"}),
-    TimelineActionName.CORRUPT_CONTAINER_HEADER: frozenset(
-        {"profile", "corruptor", "byte_start", "byte_count", "seed_material"}
+_PRESERVED_DELTA_KEYS: Final[dict[TimelineActionName, tuple[str, ...]]] = {
+    TimelineActionName.REENCODE_VIDEO: ("resolution", "codec"),
+    TimelineActionName.REENCODE_AUDIO: ("from_channels", "to_channels"),
+    TimelineActionName.REMUX_CONTAINER: ("from_container", "to_container"),
+    TimelineActionName.EDIT_METADATA: ("fields",),
+    TimelineActionName.EMBED_SUBTITLE: ("language", "kind"),
+    TimelineActionName.CORRUPT_CONTAINER_HEADER: (
+        "profile",
+        "corruptor",
+        "byte_start",
+        "byte_count",
+        "seed_material",
     ),
-    TimelineActionName.TRUNCATE_FILE: frozenset(
-        {"profile", "corruptor", "keep_bytes", "seed_material"}
+    TimelineActionName.TRUNCATE_FILE: (
+        "profile",
+        "corruptor",
+        "keep_bytes",
+        "seed_material",
     ),
-    TimelineActionName.CORRUPT_PACKET_RANGE: frozenset(
-        {
-            "profile",
-            "corruptor",
-            "stream",
-            "packet_start",
-            "packet_count",
-            "seed_material",
-        }
+    TimelineActionName.CORRUPT_PACKET_RANGE: (
+        "profile",
+        "corruptor",
+        "stream",
+        "packet_start",
+        "packet_count",
+        "seed_material",
     ),
-    TimelineActionName.WRITE_INVALID_DURATION_METADATA: frozenset(
-        {"profile", "corruptor", "value", "seed_material"}
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA: (
+        "profile",
+        "corruptor",
+        "value",
+        "seed_material",
     ),
-    TimelineActionName.WRONG_ORACLE_HASH: frozenset({"profile", "algorithm", "seed_material"}),
+    TimelineActionName.WRONG_ORACLE_HASH: ("profile", "algorithm", "seed_material"),
 }
 
 

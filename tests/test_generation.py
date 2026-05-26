@@ -225,6 +225,37 @@ def test_sidecar_subtitle_lane_updates_final_manifest_sidecars() -> None:
     assert update_sidecar_ids <= final_sidecar_ids
 
 
+def test_malformed_lane_avoids_media_rewrite_after_corruption() -> None:
+    """WHY: materialize cannot ffmpeg-rewrite intentionally malformed files again."""
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MALFORMED,
+        seed=459,
+    )
+    _assert_no_media_rewrite_after_corruption(payload["timeline"])
+
+
+def test_malformed_lane_skips_media_fill_when_all_assets_corrupted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WHY: no stable target must mean no fill-in media rewrite events."""
+    key = (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED)
+    config = generation_lanes.LANE_CONFIGS[key]
+    monkeypatch.setitem(
+        generation_lanes.LANE_CONFIGS,
+        key,
+        replace(config, works=4, timeline_events=8),
+    )
+
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MALFORMED,
+        seed=1,
+    )
+
+    _assert_no_media_rewrite_after_corruption(payload["timeline"])
+
+
 def _seed_manifest_cases(
     manifest: dict[object, object],
 ) -> tuple[tuple[FuzzProfileName, FuzzLaneName, int, tuple[str, ...]], ...]:
@@ -246,6 +277,35 @@ def _seed_manifest_cases(
             assert isinstance(gates, list)
             cases.append((profile, lane, seed, tuple(str(gate) for gate in gates)))
     return tuple(cases)
+
+
+def _assert_no_media_rewrite_after_corruption(timeline: object) -> None:
+    assert isinstance(timeline, list)
+    corrupted_assets: set[str] = set()
+    corruption_actions = {
+        "corrupt_container_header",
+        "truncate_file",
+        "corrupt_packet_range",
+        "write_invalid_duration_metadata",
+    }
+    media_rewrite_actions = {
+        "reencode_video",
+        "reencode_audio",
+        "remux_container",
+        "edit_metadata",
+        "embed_subtitle",
+        "extract_subtitle",
+    }
+    for event in timeline:
+        assert isinstance(event, dict)
+        event = cast(dict[str, object], event)
+        action = event.get("action")
+        target = event.get("target")
+        if not isinstance(action, str) or not isinstance(target, str):
+            continue
+        assert not (action in media_rewrite_actions and target in corrupted_assets)
+        if action in corruption_actions:
+            corrupted_assets.add(target)
 
 
 def test_committed_generated_fixtures_match_generator() -> None:
