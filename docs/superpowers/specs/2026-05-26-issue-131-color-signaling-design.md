@@ -39,6 +39,11 @@ Unset fields preserve current encoder defaults. Because this changes the
 Scenario contract, bump `SCENARIO_SCHEMA_VERSION` from 14 to 15 and regenerate
 `schemas/scenario.schema.json`.
 
+Video content-source evidence records also carry the selected `color_space` and
+`color_range` when present. That changes materialization and materialize/run
+replay output shapes, so bump materialization schema version 9 to 10 and replay
+bundle schema version 7 to 8.
+
 ## Materialization
 
 Color signaling is output metadata, not a new lavfi source. The materializer
@@ -46,13 +51,15 @@ will:
 
 1. Pass `video.color_space` and `video.color_range` through `VideoSourceRequest`
    so replay evidence changes when either value changes.
-2. Add content-source capability markers:
+2. Stamp selected values onto video `ContentSourceEvidence`; omit the fields
+   when a video track leaves them unset and for non-video evidence.
+3. Add content-source capability markers:
    - `video:color_space:bt601`
    - `video:color_space:bt709`
    - `video:color_space:bt2020`
    - `video:color_range:limited`
    - `video:color_range:full`
-3. Add ffmpeg output args in `build_command` when values are present:
+4. Add ffmpeg output args in `build_command` when values are present:
    - `bt601` -> `-colorspace smpte170m`
    - `bt709` -> `-colorspace bt709`
    - `bt2020` -> `-colorspace bt2020nc`

@@ -9,8 +9,9 @@
 **Architecture:** Add optional `VideoTrack.color_space` and
 `VideoTrack.color_range` enum fields. These values do not change the lavfi
 source, but they are included in `VideoSourceRequest` so replay evidence changes
-when signaling changes. The ffmpeg argv builder emits output-side `-colorspace`
-and `-color_range` flags.
+when signaling changes. Video content-source evidence carries the selected
+values when present. The ffmpeg argv builder emits output-side `-colorspace` and
+`-color_range` flags.
 
 **Tech Stack:** Python 3.13, Pydantic v2, FFmpeg/ffprobe, pytest, ruff, ty,
 JSON Schema export.
@@ -24,6 +25,12 @@ JSON Schema export.
 - Modify: `src/chaos_librarian/contract/scenario.py`
 - Modify: `tests/contract/test_contract_constants.py`
 - Modify: `tests/contract/test_scenario.py`
+- Modify: `src/chaos_librarian/contract/content_sources.py`
+- Modify: `src/chaos_librarian/contract/materialization.py`
+- Modify: `src/chaos_librarian/contract/replay_bundle.py`
+- Modify: `tests/contract/test_content_sources.py`
+- Modify: `tests/contract/test_materialization.py`
+- Modify: `tests/contract/test_replay_bundle.py`
 
 - [ ] **Step 1: Write failing contract tests**
 
@@ -54,7 +61,10 @@ uv run pytest tests/contract/test_scenario.py \
 
 Add `VideoColorSpace` and `VideoColorRange` enum classes, add the optional
 fields to `VideoTrack`, bump `SCENARIO_SCHEMA_VERSION` to `15`, and change
-`Scenario.schema_version` to `Literal[15]`.
+`Scenario.schema_version` to `Literal[15]`. Add optional `color_space` and
+`color_range` fields to `ContentSourceEvidence`; bump materialization schema
+version to `10` and replay bundle schema version to `8` because materialize/run
+JSON can now include those fields.
 
 - [ ] **Step 4: Verify contract tests pass**
 
@@ -77,6 +87,7 @@ Add content-source tests that prove:
 
 - `color_space` changes `recipe_digest`.
 - `color_range` changes `recipe_digest`.
+- Video evidence carries selected `color_space` and `color_range` values.
 - Capabilities include all five markers:
   `video:color_space:bt601`, `video:color_space:bt709`,
   `video:color_space:bt2020`, `video:color_range:limited`,
@@ -135,11 +146,18 @@ validation already rejects unknown enum values, so add a public validation
 pipeline test proving an unsupported `color_space` value fails before
 materialization. No extra semantic rule is needed for the first slice.
 
-Add a real ffprobe integration test parametrized over representative pairs:
+Add a real ffprobe integration test parametrized over the full supported SDR
+matrix:
 
 - `bt601` + `limited` -> `smpte170m` + `tv`
+- `bt601` + `full` -> `smpte170m` + `pc`
+- `bt709` + `limited` -> `bt709` + `tv`
 - `bt709` + `full` -> `bt709` + `pc`
 - `bt2020` + `limited` -> `bt2020nc` + `tv`
+- `bt2020` + `full` -> `bt2020nc` + `pc`
+
+Assert `materialization.json` and `replay.json` content-source evidence expose
+the selected contract values.
 
 - [ ] **Step 2: Verify tests fail**
 
@@ -164,6 +182,8 @@ Run the same focused command with `--no-cov`.
 
 **Files:**
 - Modify: `schemas/scenario.schema.json`
+- Modify: `schemas/materialization.schema.json`
+- Modify: `schemas/replay-bundle.schema.json`
 - Modify: `docs/contract/schema-reference.md`
 - Modify: scenario fixtures/tests that carry the current Scenario version.
 

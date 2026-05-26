@@ -21,6 +21,8 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     AudioTrack,
+    VideoColorRange,
+    VideoColorSpace,
     VideoFieldOrder,
     VideoTrack,
 )
@@ -68,6 +70,15 @@ _X264_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
 _X265_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
     VideoFieldOrder.TOP_FIELD_FIRST: "interlace=tff",
     VideoFieldOrder.BOTTOM_FIELD_FIRST: "interlace=bff",
+}
+_COLOR_SPACE_OUTPUT_ARGS: Final[dict[VideoColorSpace, str]] = {
+    VideoColorSpace.BT601: "smpte170m",
+    VideoColorSpace.BT709: "bt709",
+    VideoColorSpace.BT2020: "bt2020nc",
+}
+_COLOR_RANGE_OUTPUT_ARGS: Final[dict[VideoColorRange, str]] = {
+    VideoColorRange.LIMITED: "tv",
+    VideoColorRange.FULL: "pc",
 }
 
 
@@ -123,6 +134,15 @@ def _interlaced_video_args(video: VideoTrack) -> list[str]:
         field="video.codec",
         payload={"supported": sorted(SUPPORTED_VIDEO_CODECS)},
     )
+
+
+def _color_signal_args(video: VideoTrack) -> list[str]:
+    args: list[str] = []
+    if video.color_space is not None:
+        args.extend(["-colorspace", _COLOR_SPACE_OUTPUT_ARGS[video.color_space]])
+    if video.color_range is not None:
+        args.extend(["-color_range", _COLOR_RANGE_OUTPUT_ARGS[video.color_range]])
+    return args
 
 
 def _validate_audio_only(container: str, audios: Sequence[AudioTrack]) -> None:
@@ -208,6 +228,7 @@ def _build_video_command(
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
     argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
     argv.extend(_interlaced_video_args(video))
+    argv.extend(_color_signal_args(video))
     argv.extend(["-c:a", "aac"])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")

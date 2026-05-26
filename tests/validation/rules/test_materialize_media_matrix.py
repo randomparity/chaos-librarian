@@ -9,7 +9,7 @@ from chaos_librarian.validation import codes, prepare_run_input, run_validation
 
 def _write_track_scenario(path: Path, *, container: str, codec: str) -> None:
     path.write_text(
-        f"""schema_version: 14
+        f"""schema_version: 15
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -67,11 +67,15 @@ def _write_movie_scenario(
     video_resolution: str = "sd",
     vfr_cadence: str | None = None,
     field_order: str | None = None,
+    color_space: str | None = None,
+    color_range: str | None = None,
 ) -> None:
     vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
     field_order_line = f"                field_order: {field_order}\n" if field_order else ""
+    color_space_line = f"                color_space: {color_space}\n" if color_space else ""
+    color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     path.write_text(
-        f"""schema_version: 14
+        f"""schema_version: 15
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -99,6 +103,8 @@ movies:
                 resolution: {video_resolution}
 {vfr_line.rstrip()}
 {field_order_line.rstrip()}
+{color_space_line.rstrip()}
+{color_range_line.rstrip()}
               audio:
                 - source: sine
                   codec: {audio_codec}
@@ -167,7 +173,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 14
+        """schema_version: 15
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -263,6 +269,16 @@ def test_interlaced_video_rejects_yaml_numeric_vfr_cadence(tmp_path: Path) -> No
     assert issue.path is not None
     assert issue.path.endswith(".video.field_order")
     assert "vfr_cadence" in issue.message
+
+
+def test_color_signaling_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "color-signaling.yaml"
+    _write_movie_scenario(scenario, color_space="bt709", color_range="full")
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
 
 
 def test_audio_only_flac_track_validates_clean(tmp_path: Path) -> None:

@@ -10,6 +10,8 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    VideoColorRange,
+    VideoColorSpace,
     VideoFieldOrder,
     VideoSource,
     VideoTrack,
@@ -30,12 +32,16 @@ def _video(
     resolution: str = "hd",
     codec: str = "h264",
     field_order: VideoFieldOrder | None = None,
+    color_space: VideoColorSpace | None = None,
+    color_range: VideoColorRange | None = None,
 ) -> VideoTrack:
     return VideoTrack(
         source=VideoSource.COLOR_BARS,
         codec=codec,
         resolution=resolution,
         field_order=field_order,
+        color_space=color_space,
+        color_range=color_range,
     )
 
 
@@ -144,6 +150,51 @@ def test_interlaced_video_adds_codec_field_order_params(
     )
 
     assert argv[argv.index(param_name) + 1] == param_value
+
+
+@pytest.mark.parametrize(
+    ("color_space", "ffmpeg_value"),
+    [
+        (VideoColorSpace.BT601, "smpte170m"),
+        (VideoColorSpace.BT709, "bt709"),
+        (VideoColorSpace.BT2020, "bt2020nc"),
+    ],
+)
+def test_video_color_space_adds_ffmpeg_output_arg(
+    color_space: VideoColorSpace, ffmpeg_value: str, tmp_path: Path
+) -> None:
+    output = tmp_path / "asset.mkv"
+    argv = build_command(
+        video=_video(color_space=color_space),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output,
+    )
+
+    assert argv[argv.index("-colorspace") + 1] == ffmpeg_value
+
+
+@pytest.mark.parametrize(
+    ("color_range", "ffmpeg_value"),
+    [
+        (VideoColorRange.LIMITED, "tv"),
+        (VideoColorRange.FULL, "pc"),
+    ],
+)
+def test_video_color_range_adds_ffmpeg_output_arg(
+    color_range: VideoColorRange, ffmpeg_value: str, tmp_path: Path
+) -> None:
+    output = tmp_path / "asset.mkv"
+    argv = build_command(
+        video=_video(color_range=color_range),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output,
+    )
+
+    assert argv[argv.index("-color_range") + 1] == ffmpeg_value
 
 
 def test_unsupported_container_rejected(tmp_path: Path) -> None:

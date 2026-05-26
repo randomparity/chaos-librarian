@@ -57,6 +57,8 @@ from chaos_librarian.contract.scenario import (
     TrackNaming,
     UpdateSidecarEvent,
     Variant,
+    VideoColorRange,
+    VideoColorSpace,
     VideoFieldOrder,
     VideoSource,
     VideoTrack,
@@ -177,7 +179,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v14_payload() -> None:
+def test_movie_only_scenario_v15_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -190,7 +192,7 @@ def test_movie_only_scenario_v14_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 14
+    assert scenario.schema_version == 15
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -632,8 +634,65 @@ def test_video_track_rejects_unknown_field_order() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_fourteen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 14
+def test_video_color_space_enum_values() -> None:
+    assert VideoColorSpace.BT601.value == "bt601"
+    assert VideoColorSpace.BT709.value == "bt709"
+    assert VideoColorSpace.BT2020.value == "bt2020"
+
+
+def test_video_color_range_enum_values() -> None:
+    assert VideoColorRange.LIMITED.value == "limited"
+    assert VideoColorRange.FULL.value == "full"
+
+
+def test_video_track_color_signaling_defaults_to_none() -> None:
+    track = VideoTrack.model_validate({"source": "color_bars", "codec": "h264", "resolution": "sd"})
+
+    assert track.color_space is None
+    assert track.color_range is None
+
+
+def test_video_track_accepts_supported_color_signaling() -> None:
+    track = VideoTrack.model_validate(
+        {
+            "source": "color_bars",
+            "codec": "h264",
+            "resolution": "sd",
+            "color_space": "bt709",
+            "color_range": "full",
+        }
+    )
+
+    assert track.color_space is VideoColorSpace.BT709
+    assert track.color_range is VideoColorRange.FULL
+
+
+def test_video_track_rejects_unknown_color_space() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "h264",
+        "resolution": "sd",
+        "color_space": "ntsc_j",
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_video_track_rejects_unknown_color_range() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "h264",
+        "resolution": "sd",
+        "color_range": "wide",
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_scenario_schema_version_is_fifteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 15
 
 
 def test_scenario_accepts_profile_labels() -> None:

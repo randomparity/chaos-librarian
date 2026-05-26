@@ -17,6 +17,8 @@ from chaos_librarian.contract.content_sources import (
 )
 from chaos_librarian.contract.scenario import (
     AudioSource,
+    VideoColorRange,
+    VideoColorSpace,
     VideoFieldOrder,
     VideoSource,
     VideoVfrCadence,
@@ -62,6 +64,12 @@ VFR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
 INTERLACED_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
     f"video:interlaced:{field_order.value}" for field_order in VideoFieldOrder
 )
+COLOR_SPACE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:color_space:{color_space.value}" for color_space in VideoColorSpace
+)
+COLOR_RANGE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:color_range:{color_range.value}" for color_range in VideoColorRange
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +82,8 @@ class VideoSourceRequest:
     fps: int
     vfr_cadence: VideoVfrCadence | None = None
     field_order: VideoFieldOrder | None = None
+    color_space: VideoColorSpace | None = None
+    color_range: VideoColorRange | None = None
     track_index: None = None
 
 
@@ -230,6 +240,8 @@ class _BuiltinLavfiProvider:
                 *(f"video:{source.value}" for source in self.video_source_keys),
                 *VFR_CAPABILITY_SOURCES,
                 *INTERLACED_CAPABILITY_SOURCES,
+                *COLOR_SPACE_CAPABILITY_SOURCES,
+                *COLOR_RANGE_CAPABILITY_SOURCES,
             ],
         )
 
@@ -308,6 +320,8 @@ def _builtin_evidence(
             request=request,
             ffmpeg_input=ffmpeg_input,
         ),
+        color_space=(request.color_space if isinstance(request, VideoSourceRequest) else None),
+        color_range=(request.color_range if isinstance(request, VideoSourceRequest) else None),
         track_index=request.track_index,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
@@ -378,6 +392,8 @@ def _request_payload(
                 "fps": request.fps,
                 "vfr_cadence": (None if request.vfr_cadence is None else request.vfr_cadence.value),
                 "field_order": (None if request.field_order is None else request.field_order.value),
+                "color_space": (None if request.color_space is None else request.color_space.value),
+                "color_range": (None if request.color_range is None else request.color_range.value),
                 "channels": None,
             }
         )

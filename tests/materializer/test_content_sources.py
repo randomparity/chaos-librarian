@@ -13,6 +13,8 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    VideoColorRange,
+    VideoColorSpace,
     VideoFieldOrder,
     VideoSource,
     VideoTrack,
@@ -35,6 +37,8 @@ def _video_request(
     *,
     vfr_cadence: VideoVfrCadence | None = None,
     field_order: VideoFieldOrder | None = None,
+    color_space: VideoColorSpace | None = None,
+    color_range: VideoColorRange | None = None,
 ) -> VideoSourceRequest:
     return VideoSourceRequest(
         asset_id="asset_main",
@@ -46,6 +50,8 @@ def _video_request(
         fps=24,
         vfr_cadence=vfr_cadence,
         field_order=field_order,
+        color_space=color_space,
+        color_range=color_range,
     )
 
 
@@ -59,12 +65,18 @@ def _audio_request() -> AudioSourceRequest:
     )
 
 
-def _video(field_order: VideoFieldOrder | None = None) -> VideoTrack:
+def _video(
+    field_order: VideoFieldOrder | None = None,
+    color_space: VideoColorSpace | None = None,
+    color_range: VideoColorRange | None = None,
+) -> VideoTrack:
     return VideoTrack(
         source=VideoSource.COLOR_BARS,
         codec="h264",
         resolution="sd",
         field_order=field_order,
+        color_space=color_space,
+        color_range=color_range,
     )
 
 
@@ -186,6 +198,30 @@ def test_field_order_rejects_vfr_cadence() -> None:
     assert exc.value.field == "video.field_order"
 
 
+def test_color_space_changes_recipe_digest() -> None:
+    default = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    signaled = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(color_space=VideoColorSpace.BT709),
+    )
+
+    assert signaled.evidence.recipe_digest != default.evidence.recipe_digest
+    assert signaled.evidence.color_space is VideoColorSpace.BT709
+    assert default.evidence.color_space is None
+
+
+def test_color_range_changes_recipe_digest() -> None:
+    default = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    signaled = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(color_range=VideoColorRange.FULL),
+    )
+
+    assert signaled.evidence.recipe_digest != default.evidence.recipe_digest
+    assert signaled.evidence.color_range is VideoColorRange.FULL
+    assert default.evidence.color_range is None
+
+
 def test_resolve_audio_source_records_track_index() -> None:
     resolution = resolve_audio_source(
         source=AudioSource.SINE,
@@ -230,6 +266,8 @@ def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
     assert "video:color_bars" in provider.sources
     assert "video:interlaced:top_field_first" in provider.sources
     assert "video:interlaced:bottom_field_first" in provider.sources
+    assert "video:color_space:bt709" in provider.sources
+    assert "video:color_range:full" in provider.sources
 
 
 def test_collect_content_source_capabilities_marks_builtin_unavailable_without_ffmpeg() -> None:
@@ -252,6 +290,11 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "audio:silence",
         "audio:sine",
         "video:color_bars",
+        "video:color_range:full",
+        "video:color_range:limited",
+        "video:color_space:bt2020",
+        "video:color_space:bt601",
+        "video:color_space:bt709",
         "video:interlaced:bottom_field_first",
         "video:interlaced:top_field_first",
         "video:mandelbrot",

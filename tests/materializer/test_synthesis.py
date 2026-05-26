@@ -43,7 +43,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 14
+schema_version: 15
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -157,7 +157,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 14
+schema_version: 15
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -348,7 +348,7 @@ def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 14
+schema_version: 15
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -396,7 +396,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 14
+schema_version: 15
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short

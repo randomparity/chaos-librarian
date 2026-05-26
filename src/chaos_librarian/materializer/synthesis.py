@@ -263,6 +263,8 @@ def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
                 fps=FPS_DEFAULT,
                 vfr_cadence=video.vfr_cadence,
                 field_order=video.field_order,
+                color_space=video.color_space,
+                color_range=video.color_range,
             ),
         )
         video_input = video_resolution.ffmpeg_input
