@@ -8,6 +8,7 @@ from chaos_librarian.contract.content_sources import (
     CacheDisposition,
     ContentTrackKind,
 )
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
@@ -129,7 +130,13 @@ def test_preflight_asset_does_not_build_content_source_evidence(
 
     monkeypatch.setattr(content_sources, "_recipe_digest", fail_recipe_digest)
 
-    preflight_asset(_video(), [_audio()], [], "mkv")
+    preflight_asset(
+        parent_kind=ParentKind.MOVIE,
+        video=_video(),
+        audios=[_audio()],
+        subtitles=[],
+        container="mkv",
+    )
 
 
 def test_collect_content_source_capabilities_reports_builtin_provider() -> None:

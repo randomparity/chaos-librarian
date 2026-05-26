@@ -63,7 +63,6 @@ from chaos_librarian.materializer.phase_b import (
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
 from chaos_librarian.materializer.preflight import (
-    iter_assets,
     preflight_asset,
     preflight_timeline,
 )
@@ -83,6 +82,7 @@ from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input
 
@@ -184,8 +184,15 @@ def run_wall_clock_scenario(
         validation_report=validation_report,
         run_id_override=run_id,
     )
-    for asset in iter_assets(scenario):
-        preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+    for context in iter_asset_contexts(scenario):
+        asset = context.asset
+        preflight_asset(
+            parent_kind=context.parent_kind,
+            video=asset.video,
+            audios=asset.audio,
+            subtitles=asset.subtitles,
+            container=asset.container,
+        )
 
     staging_dir = _create_staging_dir(out_dir)
     baseline_artifacts = run_materializer_plan(
