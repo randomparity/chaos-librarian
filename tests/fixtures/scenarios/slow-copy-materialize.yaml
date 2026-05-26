@@ -11,7 +11,7 @@ library:
       path: movies-hd
 
 movies:
-  - id: work_nova
+  - id: movie_nova
     title: Synthetic Nova
     layout: movie_flat
     variants:

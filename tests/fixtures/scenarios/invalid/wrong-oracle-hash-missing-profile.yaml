@@ -8,7 +8,7 @@ library:
     - id: movies_hd
       path: movies-hd
 movies:
-  - id: work_001
+  - id: movie_001
     title: Wrong Oracle Hash
     layout: movie_flat
     variants:

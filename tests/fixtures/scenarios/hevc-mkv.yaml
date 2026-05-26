@@ -7,7 +7,7 @@ library:
     - id: root_main
       path: library
 movies:
-  - id: work_hevc
+  - id: movie_hevc
     title: HEVC MKV Smoke
     layout: movie_flat
     variants:

@@ -8,7 +8,7 @@ library:
     - id: root_main
       path: library
 movies:
-  - id: work_movie
+  - id: movie_movie
     title: Unsupported Video Codec
     layout: movie_flat
     variants:

@@ -9,7 +9,7 @@ library:
       path: movies-hd
 
 movies:
-  - id: work_pulsar
+  - id: movie_pulsar
     title: Synthetic Pulsar
     layout: movie_flat
     variants:

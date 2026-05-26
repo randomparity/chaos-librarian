@@ -9,7 +9,7 @@ library:
       path: movies-hd
 
 movies:
-  - id: work_quasar
+  - id: movie_quasar
     title: Synthetic Quasar
     layout: movie_flat
     variants:

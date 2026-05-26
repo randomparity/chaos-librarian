@@ -9,7 +9,7 @@ library:
     - id: cold-storage
       path: library/cold-storage
 movies:
-  - id: work_001
+  - id: movie_001
     title: Test Movie For Move-Between-Roots
     layout: movie_flat
     variants:

@@ -9,7 +9,7 @@ library:
       path: movies-hd
 
 movies:
-  - id: work_meridian
+  - id: movie_meridian
     title: Synthetic Meridian
     layout: movie_flat
     variants:

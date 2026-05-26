@@ -10,7 +10,7 @@ library:
       path: library/cold-storage
   archive_root: cold-storage
 movies:
-  - id: work_001
+  - id: movie_001
     title: Test Movie For Archive Explicit Root
     layout: movie_flat
     variants:

@@ -9,7 +9,7 @@ library:
       path: movies-hd
 
 movies:
-  - id: work_orbit
+  - id: movie_orbit
     title: Synthetic Orbit
     layout: movie_flat
     variants:

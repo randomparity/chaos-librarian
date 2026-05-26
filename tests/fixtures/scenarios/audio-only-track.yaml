@@ -1,0 +1,47 @@
+schema_version: 12
+scenario_id: audio-only-track
+seed: 10603
+duration_scale: short
+library:
+  roots:
+    - id: music_root
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_tone
+    name: Tone Lab
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_tone
+        title: Calibration
+        discs:
+          - id: disc_tone_1
+            disc_number: 1
+            tracks:
+              - id: track_tone_1
+                track_number: 1
+                title: Stereo Sweep
+                variants:
+                  - id: variant_tone_mp3
+                    label: mp3
+                    bundle:
+                      id: bundle_tone_mp3
+                      assets:
+                        - id: asset_tone_track1
+                          role: primary_audio
+                          container: mp3
+                          duration_seconds: 4
+                          audio:
+                            - source: sine
+                              codec: mp3
+                              channels: stereo
+                              language: eng
+timeline:
+  - id: ev_reencode_audio
+    at: 1s
+    action: reencode_audio
+    target: asset_tone_track1
+    from_channels: stereo
+    to_channels: mono

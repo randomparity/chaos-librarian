@@ -1,0 +1,58 @@
+schema_version: 12
+scenario_id: tv-season-folders
+seed: 10601
+duration_scale: short
+library:
+  roots:
+    - id: tv_root
+      path: tv
+movies: []
+series:
+  - id: series_atlas
+    title: Atlas Station
+    layout: season_folders
+    episode_naming: sxxexx_title
+    seasons:
+      - id: season_atlas_1
+        season_number: 1
+        title: Season 1
+        episodes:
+          - id: episode_atlas_1
+            episode_number: 1
+            title: First Signal
+            variants:
+              - id: variant_atlas_hd
+                label: hd
+                bundle:
+                  id: bundle_atlas_hd
+                  assets:
+                    - id: asset_atlas_ep1
+                      role: primary_video
+                      container: mkv
+                      duration_seconds: 5
+                      video:
+                        source: color_bars
+                        codec: h264
+                        resolution: hd
+                      audio:
+                        - source: sine
+                          codec: aac
+                          channels: stereo
+                          language: eng
+      - id: season_atlas_2
+        season_number: 2
+        title: Season 2
+        episodes: []
+artists: []
+timeline:
+  - id: ev_renumber_atlas
+    at: 1s
+    action: renumber_episode
+    target: episode_atlas_1
+    episode_number: 2
+  - id: ev_move_atlas
+    at: 2s
+    action: move_episode_to_season
+    target: episode_atlas_1
+    to_season: season_atlas_2
+    episode_number: 1

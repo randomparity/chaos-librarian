@@ -10,7 +10,7 @@ library:
     - id: movies_hd
       path: movies-hd
 movies:
-  - id: work_broken
+  - id: movie_broken
     title: Interceptor Catalog
     layout: movie_flat
     variants:

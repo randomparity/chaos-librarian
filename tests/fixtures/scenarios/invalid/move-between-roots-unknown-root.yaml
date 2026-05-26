@@ -8,7 +8,7 @@ library:
     - id: movies-hd
       path: library/movies-hd
 movies:
-  - id: work_001
+  - id: movie_001
     title: Test Movie
     layout: movie_flat
     variants:
