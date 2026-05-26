@@ -17,16 +17,15 @@ from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
+    HierarchyMutation,
+    HierarchyProjection,
     Reporter,
     _iter_timeline_events,
     _Loc,
+    build_hierarchy_projection,
+    is_hierarchy_action,
     iter_asset_ids,
     iter_declared_sidecars,
-)
-from chaos_librarian.validation.rules.hierarchy import (
-    HierarchyMutation,
-    HierarchyProjection,
-    build_hierarchy_projection,
 )
 
 if TYPE_CHECKING:
@@ -166,7 +165,7 @@ def rule_timeline_lifecycle(
 
         if action == TimelineActionName.ADD_FILE and isinstance(target, str):
             _lifecycle_check_add_file(target=target, state=state, emit=emit, loc=loc)
-        elif _is_hierarchy_action(action):
+        elif is_hierarchy_action(action):
             _lifecycle_check_hierarchy_action(
                 event=event,
                 state=state,
@@ -295,16 +294,6 @@ def _lifecycle_check_slow_copy_start(
         )
     state.pending_slow_copies[ev_id] = target
     state.assets_with_pending_copy.add(target)
-
-
-def _is_hierarchy_action(action: object) -> bool:
-    return action in {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
 
 
 def _lifecycle_apply_commit(*, ref: object, state: _LifecycleState) -> None:

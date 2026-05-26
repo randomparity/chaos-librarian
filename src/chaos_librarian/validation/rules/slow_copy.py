@@ -25,12 +25,13 @@ from chaos_librarian.validation.rules._common import (
     _as_mapping,
     _iter_timeline_events,
     _RawMapping,
+    build_hierarchy_projection,
+    is_hierarchy_action,
     iter_declared_roots,
     primary_root_path,
     rendered_asset_paths,
     try_parse_duration,
 )
-from chaos_librarian.validation.rules.hierarchy import build_hierarchy_projection
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -237,7 +238,7 @@ def rule_slow_copy_path_collision(
             _project_move_between_roots(event, roots=declared_roots, current_paths=current_paths)
         elif action == TimelineActionName.REMUX_CONTAINER:
             _project_remux_container(event, current_paths)
-        elif _is_hierarchy_action(action):
+        elif is_hierarchy_action(action):
             _project_hierarchy_action(event, hierarchy_projection, current_paths)
 
 
@@ -393,16 +394,6 @@ def _project_hierarchy_action(event, hierarchy_projection, current_paths: dict[s
             current_paths.pop(asset_id, None)
         else:
             current_paths[asset_id] = path
-
-
-def _is_hierarchy_action(action: object) -> bool:
-    return action in {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
 
 
 def _current_root_for_path(path: str, roots: Mapping[str, str]) -> str:

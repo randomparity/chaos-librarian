@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-import enum
 import os
 from collections.abc import Mapping
-from contextlib import suppress
-from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
-    ArtistLayout,
     EpisodeNaming,
-    SeriesLayout,
     TimelineActionName,
-    TrackNaming,
 )
-from chaos_librarian.path_rendering import RenderableAssetContext, render_asset_path
 from chaos_librarian.validation.codes import (
     E_HIERARCHY_INVALID,
     E_MATERIALIZE_UNSUPPORTED,
@@ -26,14 +19,17 @@ from chaos_librarian.validation.codes import (
     format_jsonpath,
 )
 from chaos_librarian.validation.rules._common import (
+    HierarchyMutation,
+    HierarchyProjection,
     RawAssetContext,
     Reporter,
     _as_list,
     _as_mapping,
     _iter_timeline_events,
     _Loc,
+    build_hierarchy_projection,
+    is_hierarchy_action,
     iter_asset_contexts,
-    primary_root_path,
     rendered_asset_paths,
 )
 
@@ -42,7 +38,6 @@ if TYPE_CHECKING:
     from chaos_librarian.validation.pipeline import IssueCollector
 
 __all__ = [
-    "build_hierarchy_projection",
     "rule_hierarchy_invariants",
     "rule_hierarchy_timeline",
     "rule_media_action_compatible_with_parent",
@@ -97,7 +92,7 @@ def rule_hierarchy_timeline(
     pending_slow_copies: dict[str, tuple[str, str]] = {}
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
-        if not _is_hierarchy_action(action):
+        if not is_hierarchy_action(action):
             _project_non_hierarchy_current_path(
                 event, projection.current_paths, pending_slow_copies
             )
@@ -133,490 +128,6 @@ def rule_media_action_compatible_with_parent(
         if context is None or context.parent_kind != ParentKind.TRACK.value:
             continue
         _check_track_media_action(event=event, event_idx=idx, reporter=reporter)
-
-
-@dataclass(slots=True)
-class _AssetTail:
-    id: str
-    parent_id: str
-    variant_label: str
-    asset_role: str
-    asset_container: str
-    bundle_asset_count: int
-    loc: _Loc
-
-
-@dataclass(slots=True)
-class _SeriesState:
-    id: str
-    title: str
-    layout: SeriesLayout
-    episode_naming: EpisodeNaming
-
-
-@dataclass(slots=True)
-class _EpisodeState:
-    id: str
-    season_id: str
-    episode_number: int
-    title: str
-    aired_on: date | None
-    absolute_number: int | None
-    asset_ids: set[str] = field(default_factory=set)
-
-
-@dataclass(slots=True)
-class _SeasonState:
-    id: str
-    series_id: str
-    season_number: int
-    title: str
-    episode_ids: list[str]
-
-
-@dataclass(slots=True)
-class _ArtistState:
-    id: str
-    name: str
-    layout: ArtistLayout
-    track_naming: TrackNaming
-
-
-@dataclass(slots=True)
-class _AlbumState:
-    id: str
-    artist_id: str
-    title: str
-
-
-@dataclass(slots=True)
-class _DiscState:
-    id: str
-    album_id: str
-    disc_number: int
-    track_ids: list[str]
-
-
-@dataclass(slots=True)
-class _TrackState:
-    id: str
-    disc_id: str
-    track_number: int
-    title: str
-    asset_ids: set[str] = field(default_factory=set)
-
-
-@dataclass(frozen=True, slots=True)
-class HierarchyMutation:
-    affected_asset_ids: frozenset[str]
-    affected_season_ids: frozenset[str]
-    affected_album_ids: frozenset[str]
-    affected_disc_ids: frozenset[str]
-    path_changes: Mapping[str, tuple[str | None, str | None]]
-
-
-class HierarchyProjection:
-    """Mutable validation-only projection for hierarchy timeline actions."""
-
-    def __init__(self, raw: Mapping[str, object]) -> None:
-        self.root_path = primary_root_path(raw)
-        self.series: dict[str, _SeriesState] = {}
-        self.seasons: dict[str, _SeasonState] = {}
-        self.episodes: dict[str, _EpisodeState] = {}
-        self.artists: dict[str, _ArtistState] = {}
-        self.albums: dict[str, _AlbumState] = {}
-        self.discs: dict[str, _DiscState] = {}
-        self.tracks: dict[str, _TrackState] = {}
-        self.assets: dict[str, _AssetTail] = {}
-        self.current_paths = {
-            asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()
-        }
-        self._seed_series(raw)
-        self._seed_artists(raw)
-        self._seed_assets(raw)
-
-    def apply(self, event: Mapping[str, object]) -> HierarchyMutation:
-        """Apply one hierarchy action and return affected IDs and path changes."""
-        affected_assets = self.affected_asset_ids(event)
-        before = {asset_id: self.current_paths.get(asset_id) for asset_id in affected_assets}
-        seasons: set[str] = set()
-        albums: set[str] = set()
-        discs: set[str] = set()
-        action = event.get("action")
-        if action == TimelineActionName.RENUMBER_EPISODE:
-            seasons.update(self._apply_renumber_episode(event))
-        elif action == TimelineActionName.MOVE_EPISODE_TO_SEASON:
-            seasons.update(self._apply_move_episode(event))
-        elif action == TimelineActionName.RENAME_SEASON:
-            seasons.update(self._apply_rename_season(event))
-        elif action == TimelineActionName.RENUMBER_DISC:
-            albums.update(self._apply_renumber_disc(event))
-        elif action == TimelineActionName.MOVE_TRACK_TO_DISC:
-            discs.update(self._apply_move_track(event))
-        path_changes = self._refresh_paths(affected_assets, before)
-        return HierarchyMutation(
-            affected_asset_ids=frozenset(affected_assets),
-            affected_season_ids=frozenset(seasons),
-            affected_album_ids=frozenset(albums),
-            affected_disc_ids=frozenset(discs),
-            path_changes=path_changes,
-        )
-
-    def affected_asset_ids(self, event: Mapping[str, object]) -> set[str]:
-        """Return assets under the hierarchy entity targeted by ``event``."""
-        target = event.get("target")
-        if not isinstance(target, str):
-            return set()
-        action = event.get("action")
-        if action in {
-            TimelineActionName.RENUMBER_EPISODE,
-            TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        }:
-            episode = self.episodes.get(target)
-            return set() if episode is None else set(episode.asset_ids)
-        if action == TimelineActionName.RENAME_SEASON:
-            return self._asset_ids_for_season(target)
-        if action == TimelineActionName.RENUMBER_DISC:
-            return self._asset_ids_for_disc(target)
-        if action == TimelineActionName.MOVE_TRACK_TO_DISC:
-            track = self.tracks.get(target)
-            return set() if track is None else set(track.asset_ids)
-        return set()
-
-    def render_asset_path(self, asset_id: str) -> str | None:
-        """Render one asset from the current hierarchy snapshot."""
-        if self.root_path is None:
-            return None
-        tail = self.assets.get(asset_id)
-        if tail is None:
-            return None
-        try:
-            if tail.parent_id in self.episodes:
-                return self._render_episode_asset(tail)
-            if tail.parent_id in self.tracks:
-                return self._render_track_asset(tail)
-        except ValueError:
-            return None
-        return self.current_paths.get(asset_id)
-
-    def _seed_series(self, raw: Mapping[str, object]) -> None:
-        series_items = _as_list(raw.get("series")) or []
-        for series_obj in series_items:
-            series = _as_mapping(series_obj)
-            if series is None:
-                continue
-            series_id = _str(series.get("id"))
-            layout = _enum(SeriesLayout, series.get("layout"))
-            naming = _enum(EpisodeNaming, series.get("episode_naming"))
-            title = _str(series.get("title"))
-            if series_id is None or layout is None or naming is None or title is None:
-                continue
-            self.series[series_id] = _SeriesState(series_id, title, layout, naming)
-            self._seed_seasons(series, series_id=series_id)
-
-    def _seed_seasons(self, series: Mapping[str, object], *, series_id: str) -> None:
-        for season_obj in _as_list(series.get("seasons")) or []:
-            season = _as_mapping(season_obj)
-            if season is None:
-                continue
-            season_id = _str(season.get("id"))
-            season_number = _int(season.get("season_number"))
-            title = _str(season.get("title"))
-            if season_id is None or season_number is None or title is None:
-                continue
-            episode_ids = self._seed_episodes(season, season_id=season_id)
-            self.seasons[season_id] = _SeasonState(
-                season_id, series_id, season_number, title, episode_ids
-            )
-
-    def _seed_episodes(self, season: Mapping[str, object], *, season_id: str) -> list[str]:
-        episode_ids: list[str] = []
-        for episode_obj in _as_list(season.get("episodes")) or []:
-            episode = _as_mapping(episode_obj)
-            if episode is None:
-                continue
-            episode_id = _str(episode.get("id"))
-            episode_number = _int(episode.get("episode_number"))
-            title = _str(episode.get("title"))
-            if episode_id is None or episode_number is None or title is None:
-                continue
-            episode_ids.append(episode_id)
-            self.episodes[episode_id] = _EpisodeState(
-                id=episode_id,
-                season_id=season_id,
-                episode_number=episode_number,
-                title=title,
-                aired_on=_date(episode.get("aired_on")),
-                absolute_number=_int(episode.get("absolute_number")),
-            )
-        return episode_ids
-
-    def _seed_artists(self, raw: Mapping[str, object]) -> None:
-        for artist_obj in _as_list(raw.get("artists")) or []:
-            artist = _as_mapping(artist_obj)
-            if artist is None:
-                continue
-            artist_id = _str(artist.get("id"))
-            name = _str(artist.get("name"))
-            layout = _enum(ArtistLayout, artist.get("layout"))
-            naming = _enum(TrackNaming, artist.get("track_naming"))
-            if artist_id is None or name is None or layout is None or naming is None:
-                continue
-            self.artists[artist_id] = _ArtistState(artist_id, name, layout, naming)
-            self._seed_albums(artist, artist_id=artist_id)
-
-    def _seed_albums(self, artist: Mapping[str, object], *, artist_id: str) -> None:
-        for album_obj in _as_list(artist.get("albums")) or []:
-            album = _as_mapping(album_obj)
-            if album is None:
-                continue
-            album_id = _str(album.get("id"))
-            title = _str(album.get("title"))
-            if album_id is None or title is None:
-                continue
-            self.albums[album_id] = _AlbumState(album_id, artist_id, title)
-            self._seed_discs(album, album_id=album_id)
-
-    def _seed_discs(self, album: Mapping[str, object], *, album_id: str) -> None:
-        for disc_obj in _as_list(album.get("discs")) or []:
-            disc = _as_mapping(disc_obj)
-            if disc is None:
-                continue
-            disc_id = _str(disc.get("id"))
-            disc_number = _int(disc.get("disc_number"))
-            if disc_id is None or disc_number is None:
-                continue
-            track_ids = self._seed_tracks(disc, disc_id=disc_id)
-            self.discs[disc_id] = _DiscState(disc_id, album_id, disc_number, track_ids)
-
-    def _seed_tracks(self, disc: Mapping[str, object], *, disc_id: str) -> list[str]:
-        track_ids: list[str] = []
-        for track_obj in _as_list(disc.get("tracks")) or []:
-            track = _as_mapping(track_obj)
-            if track is None:
-                continue
-            track_id = _str(track.get("id"))
-            track_number = _int(track.get("track_number"))
-            title = _str(track.get("title"))
-            if track_id is None or track_number is None or title is None:
-                continue
-            track_ids.append(track_id)
-            self.tracks[track_id] = _TrackState(track_id, disc_id, track_number, title)
-        return track_ids
-
-    def _seed_assets(self, raw: Mapping[str, object]) -> None:
-        for context in iter_asset_contexts(raw):
-            asset_id = _str(context.asset.get("id"))
-            variant_label = _str(context.variant.get("label"))
-            role = _str(context.asset.get("role"))
-            container = _str(context.asset.get("container"))
-            if asset_id is None:
-                continue
-            if variant_label is None or role is None or container is None:
-                continue
-            tail = _AssetTail(
-                id=asset_id,
-                parent_id=context.parent_id,
-                variant_label=variant_label,
-                asset_role=role,
-                asset_container=container,
-                bundle_asset_count=context.bundle_asset_count,
-                loc=context.asset_loc,
-            )
-            self.assets[asset_id] = tail
-            if context.parent_id in self.episodes:
-                self.episodes[context.parent_id].asset_ids.add(asset_id)
-            elif context.parent_id in self.tracks:
-                self.tracks[context.parent_id].asset_ids.add(asset_id)
-
-    def _apply_renumber_episode(self, event: Mapping[str, object]) -> set[str]:
-        target = event.get("target")
-        episode_number = _int(event.get("episode_number"))
-        if not isinstance(target, str) or episode_number is None:
-            return set()
-        episode = self.episodes.get(target)
-        if episode is None:
-            return set()
-        episode.episode_number = episode_number
-        absolute_number = _int(event.get("absolute_number"))
-        if absolute_number is not None:
-            episode.absolute_number = absolute_number
-        return {episode.season_id}
-
-    def _apply_move_episode(self, event: Mapping[str, object]) -> set[str]:
-        target = event.get("target")
-        to_season = event.get("to_season")
-        episode_number = _int(event.get("episode_number"))
-        if not isinstance(target, str) or not isinstance(to_season, str):
-            return set()
-        episode = self.episodes.get(target)
-        destination = self.seasons.get(to_season)
-        if episode is None or destination is None or episode_number is None:
-            return set()
-        old_season_id = episode.season_id
-        self._move_list_item(
-            self.seasons[old_season_id].episode_ids,
-            target,
-            destination.episode_ids,
-        )
-        episode.season_id = to_season
-        episode.episode_number = episode_number
-        absolute_number = _int(event.get("absolute_number"))
-        if absolute_number is not None:
-            episode.absolute_number = absolute_number
-        return {old_season_id, to_season}
-
-    def _apply_rename_season(self, event: Mapping[str, object]) -> set[str]:
-        target = event.get("target")
-        title = _str(event.get("title"))
-        if not isinstance(target, str) or title is None:
-            return set()
-        season = self.seasons.get(target)
-        if season is None:
-            return set()
-        season.title = title
-        return {target}
-
-    def _apply_renumber_disc(self, event: Mapping[str, object]) -> set[str]:
-        target = event.get("target")
-        disc_number = _int(event.get("disc_number"))
-        if not isinstance(target, str) or disc_number is None:
-            return set()
-        disc = self.discs.get(target)
-        if disc is None:
-            return set()
-        disc.disc_number = disc_number
-        return {disc.album_id}
-
-    def _apply_move_track(self, event: Mapping[str, object]) -> set[str]:
-        target = event.get("target")
-        to_disc = event.get("to_disc")
-        track_number = _int(event.get("track_number"))
-        if not isinstance(target, str) or not isinstance(to_disc, str):
-            return set()
-        track = self.tracks.get(target)
-        destination = self.discs.get(to_disc)
-        if track is None or destination is None or track_number is None:
-            return set()
-        old_disc_id = track.disc_id
-        self._move_list_item(self.discs[old_disc_id].track_ids, target, destination.track_ids)
-        track.disc_id = to_disc
-        track.track_number = track_number
-        return {old_disc_id, to_disc}
-
-    def _refresh_paths(
-        self, asset_ids: set[str], before: Mapping[str, str | None]
-    ) -> dict[str, tuple[str | None, str | None]]:
-        changes: dict[str, tuple[str | None, str | None]] = {}
-        for asset_id in asset_ids:
-            new_path = self.render_asset_path(asset_id)
-            if new_path is None:
-                self.current_paths.pop(asset_id, None)
-            else:
-                self.current_paths[asset_id] = new_path
-            old_path = before.get(asset_id)
-            if old_path != new_path:
-                changes[asset_id] = (old_path, new_path)
-        return changes
-
-    def _asset_ids_for_season(self, season_id: str) -> set[str]:
-        season = self.seasons.get(season_id)
-        if season is None:
-            return set()
-        asset_ids: set[str] = set()
-        for episode_id in season.episode_ids:
-            episode = self.episodes.get(episode_id)
-            if episode is not None:
-                asset_ids.update(episode.asset_ids)
-        return asset_ids
-
-    def _asset_ids_for_disc(self, disc_id: str) -> set[str]:
-        disc = self.discs.get(disc_id)
-        if disc is None:
-            return set()
-        asset_ids: set[str] = set()
-        for track_id in disc.track_ids:
-            track = self.tracks.get(track_id)
-            if track is not None:
-                asset_ids.update(track.asset_ids)
-        return asset_ids
-
-    def _render_episode_asset(self, tail: _AssetTail) -> str | None:
-        episode = self.episodes[tail.parent_id]
-        season = self.seasons.get(episode.season_id)
-        if season is None or self.root_path is None:
-            return None
-        series = self.series.get(season.series_id)
-        if series is None:
-            return None
-        context = RenderableAssetContext(
-            parent_kind=ParentKind.EPISODE,
-            root_path=self.root_path,
-            layout=series.layout,
-            naming=series.episode_naming,
-            movie_title=None,
-            series_title=series.title,
-            season_number=season.season_number,
-            episode_number=episode.episode_number,
-            episode_title=episode.title,
-            aired_on=episode.aired_on,
-            absolute_number=episode.absolute_number,
-            artist_name=None,
-            album_title=None,
-            disc_number=None,
-            track_number=None,
-            track_title=None,
-            variant_label=tail.variant_label,
-            asset_role=tail.asset_role,
-            asset_container=tail.asset_container,
-            bundle_asset_count=tail.bundle_asset_count,
-        )
-        return render_asset_path(context)
-
-    def _render_track_asset(self, tail: _AssetTail) -> str | None:
-        track = self.tracks[tail.parent_id]
-        disc = self.discs.get(track.disc_id)
-        if disc is None or self.root_path is None:
-            return None
-        album = self.albums.get(disc.album_id)
-        artist = self.artists.get(album.artist_id) if album is not None else None
-        if album is None or artist is None:
-            return None
-        context = RenderableAssetContext(
-            parent_kind=ParentKind.TRACK,
-            root_path=self.root_path,
-            layout=artist.layout,
-            naming=artist.track_naming,
-            movie_title=None,
-            series_title=None,
-            season_number=None,
-            episode_number=None,
-            episode_title=None,
-            aired_on=None,
-            absolute_number=None,
-            artist_name=artist.name,
-            album_title=album.title,
-            disc_number=disc.disc_number,
-            track_number=track.track_number,
-            track_title=track.title,
-            variant_label=tail.variant_label,
-            asset_role=tail.asset_role,
-            asset_container=tail.asset_container,
-            bundle_asset_count=tail.bundle_asset_count,
-        )
-        return render_asset_path(context)
-
-    @staticmethod
-    def _move_list_item(source: list[str], value: str, destination: list[str]) -> None:
-        with suppress(ValueError):
-            source.remove(value)
-        if value not in destination:
-            destination.append(value)
-
-
-def build_hierarchy_projection(raw: Mapping[str, object]) -> HierarchyProjection:
-    """Build a mutable hierarchy projection for timeline-walking rules."""
-    return HierarchyProjection(raw)
 
 
 def _check_hierarchy_mutation_numbers(
@@ -840,52 +351,12 @@ def _swap_extension(path: str, new_ext: str) -> str:
     return f"{path}.{new_ext}"
 
 
-def _is_hierarchy_action(action: object) -> bool:
-    return action in {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
-
-
 def _event_loc(event_idx: int) -> _Loc:
     return ("timeline", event_idx, "action")
 
 
 def _normalize(path: str) -> str:
     return os.path.normpath(path)
-
-
-def _str(value: object) -> str | None:
-    return value if isinstance(value, str) else None
-
-
-def _int(value: object) -> int | None:
-    if isinstance(value, int) and not isinstance(value, bool):
-        return value
-    return None
-
-
-def _date(value: object) -> date | None:
-    if isinstance(value, date):
-        return value
-    if not isinstance(value, str):
-        return None
-    try:
-        return date.fromisoformat(value)
-    except ValueError:
-        return None
-
-
-def _enum[T: enum.StrEnum](enum_type: type[T], value: object) -> T | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return enum_type(value)
-    except ValueError:
-        return None
 
 
 def _check_series(raw: Mapping[str, object], reporter: Reporter) -> None:

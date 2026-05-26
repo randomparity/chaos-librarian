@@ -27,13 +27,12 @@ from chaos_librarian.validation.codes import (
     E_SIDECAR_TARGET_UNKNOWN,
 )
 from chaos_librarian.validation.rules._common import (
+    HierarchyMutation,
     Reporter,
     _iter_timeline_events,
-    iter_declared_sidecars,
-)
-from chaos_librarian.validation.rules.hierarchy import (
-    HierarchyMutation,
     build_hierarchy_projection,
+    is_hierarchy_action,
+    iter_declared_sidecars,
 )
 
 if TYPE_CHECKING:
@@ -80,7 +79,7 @@ def rule_sidecar_target(
         target = event.get("target")
         if not isinstance(action, str):
             continue
-        if _is_hierarchy_action(action):
+        if is_hierarchy_action(action):
             mutation = hierarchy_projection.apply(event)
             _project_declared_sidecars_for_hierarchy_mutation(mutation, projection)
         elif not isinstance(target, str):
@@ -305,13 +304,3 @@ def _project_declared_sidecars_for_hierarchy_mutation(
             if sidecar_path == old_sidecar_path:
                 del projection[key]
                 projection[(asset_id, new_sidecar_path)] = value
-
-
-def _is_hierarchy_action(action: object) -> bool:
-    return action in {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
