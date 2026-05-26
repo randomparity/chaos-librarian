@@ -61,10 +61,15 @@ def _serialize_journal_bytes(entries: list[JournalEntry]) -> bytes:
     return b"".join(chunks)
 
 
-def _assert_fixture_invalid(run_dir: Path) -> None:
+def _fixture_invalid_error(run_dir: Path) -> AdapterInputError:
     with pytest.raises(AdapterInputError) as exc_info:
         load_fixture(run_dir)
     assert exc_info.value.error_code == E_ADAPTER_FIXTURE_INVALID
+    return exc_info.value
+
+
+def _assert_fixture_invalid(run_dir: Path) -> None:
+    _fixture_invalid_error(run_dir)
 
 
 class _IncompleteReportSet:
@@ -267,7 +272,10 @@ def test_load_fixture_rejects_missing_report_family(
         report.unlink()
     reports_dir.rmdir()
 
-    _assert_fixture_invalid(run_dir)
+    error = _fixture_invalid_error(run_dir)
+
+    assert error.details["missing"] == [directory_name]
+    assert error.details["extra"] == []
 
 
 def test_load_fixture_rejects_old_work_report_directory(tmp_path: Path) -> None:
@@ -276,4 +284,7 @@ def test_load_fixture_rejects_old_work_report_directory(tmp_path: Path) -> None:
     works_dir.mkdir()
     (works_dir / "work-a.json").write_text("{}")
 
-    _assert_fixture_invalid(run_dir)
+    error = _fixture_invalid_error(run_dir)
+
+    assert error.details["missing"] == []
+    assert error.details["extra"] == ["works"]
