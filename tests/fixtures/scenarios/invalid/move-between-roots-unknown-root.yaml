@@ -1,5 +1,5 @@
 # expected: E_ROOT_UNKNOWN
-schema_version: 11
+schema_version: 12
 scenario_id: sc_invalid_root
 seed: 42
 duration_scale: short
@@ -7,9 +7,10 @@ library:
   roots:
     - id: movies-hd
       path: library/movies-hd
-works:
+movies:
   - id: work_001
     title: Test Movie
+    layout: movie_flat
     variants:
       - id: variant_001
         label: hd
@@ -24,6 +25,13 @@ works:
                 source: mandelbrot
                 codec: h264
                 resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
 timeline:
   - id: ev_mbr_001
     at: 0ns

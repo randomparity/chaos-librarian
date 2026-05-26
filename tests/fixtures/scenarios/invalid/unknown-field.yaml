@@ -1,10 +1,12 @@
 # expected: E_FIELD_UNKNOWN
-schema_version: 11
+schema_version: 12
 scenario_id: bad
 seed: 1
 duration_scale: short
 library:
   roots: []
-works: []
+movies: []
+series: []
+artists: []
 timeline: []
 made_up_field: 1

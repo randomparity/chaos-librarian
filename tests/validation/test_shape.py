@@ -52,12 +52,14 @@ class TestShapePassUnknownField:
 
     def test_unknown_top_level_field(self) -> None:
         raw = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": []},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [],
             "made_up_extra_field": 1,
         }
@@ -75,12 +77,14 @@ class TestShapePassLiteralValue:
 
     def test_wrong_duration_scale(self) -> None:
         raw = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "extremely_long",  # not in Literal
             "library": {"roots": []},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
         collector = IssueCollector()
@@ -98,12 +102,14 @@ class TestShapePassDiscriminatorTag:
 
     def test_unknown_action(self) -> None:
         raw = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": []},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [
                 {"id": "e1", "at": "1s", "action": "bogus_action", "target": "x"},
             ],
@@ -123,12 +129,14 @@ class TestShapePassJSONPathStripping:
 
     def test_for_alias_under_slow_copy_commit(self) -> None:
         raw = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": []},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [
                 {
                     "id": "e1",
@@ -149,7 +157,8 @@ class TestShapePassJSONPathStripping:
 class TestShapePassTupleType:
     """Pydantic 'tuple_type' → E_FIELD_TYPE.
 
-    WHY: Scenario collection fields (``library.roots``, ``works``,
+    WHY: Scenario collection fields (``library.roots``, ``movies``,
+    ``series``, ``artists``,
     ``timeline``, etc.) are ``tuple[X, ...]`` so the cached parse can't be
     mutated via list methods. A non-sequence value supplied for one of
     these fields surfaces as Pydantic ``tuple_type`` and must map to the
@@ -162,7 +171,9 @@ class TestShapePassTupleType:
         ("mutation_path", "bad_value"),
         [
             (("library", "roots"), {}),
-            (("works",), {}),
+            (("movies",), {}),
+            (("series",), {}),
+            (("artists",), {}),
             (("timeline",), "not-a-sequence"),
         ],
     )
@@ -172,12 +183,14 @@ class TestShapePassTupleType:
         bad_value: object,
     ) -> None:
         raw: dict[str, Any] = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": []},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
         target = raw
@@ -200,12 +213,14 @@ class TestShapePassNoErrorsForValidScenario:
 
     def test_valid_scenario_produces_no_issues(self) -> None:
         raw = {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": [{"id": "r", "path": "r"}]},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
         collector = IssueCollector()

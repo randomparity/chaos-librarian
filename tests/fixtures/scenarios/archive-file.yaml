@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: sc_archive_file
 seed: 42
 duration_scale: short
@@ -6,10 +6,11 @@ library:
   roots:
     - id: movies-hd
       path: library/movies-hd
-  archive_root: null
-works:
+  archive_root:
+movies:
   - id: work_001
     title: Test Movie For Archive
+    layout: movie_flat
     variants:
       - id: variant_001
         label: hd
@@ -29,6 +30,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: en
+series: []
+artists: []
 timeline:
   - id: ev_archive_001
     at: 0ns

@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -6,9 +6,10 @@ library:
   roots:
     - id: root_main
       path: library
-works:
+movies:
   - id: w_movie
     title: Static Library Smoke Test
+    layout: movie_flat
     variants:
       - id: va_hd
         label: hd
@@ -69,4 +70,6 @@ works:
                   codec: srt
                   language: eng
                   mode: sidecar
+series: []
+artists: []
 timeline: []

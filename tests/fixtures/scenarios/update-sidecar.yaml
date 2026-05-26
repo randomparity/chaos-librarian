@@ -1,11 +1,12 @@
-schema_version: 11
+schema_version: 12
 scenario_id: sc_update_sidecar_001
 seed: 42
 duration_scale: short
 library: {roots: [{id: r0, path: movies}]}
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -20,9 +21,11 @@ works:
               audio: [{codec: aac, channels: stereo, language: eng}]
               subtitles:
                 - {codec: srt, language: eng, mode: sidecar}
+series: []
+artists: []
 timeline:
   - id: ev_update
     at: 1s
     action: update_sidecar
     target: a0
-    sidecar_path: a0.eng.srt
+    sidecar_path: movies/T - hd.eng.srt

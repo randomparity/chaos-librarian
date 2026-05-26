@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: sidecar-collision
 seed: 23
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
+movies:
   - id: work_meridian
     title: Synthetic Meridian
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -34,6 +35,8 @@ works:
                   language: eng
                   mode: sidecar
 
+series: []
+artists: []
 timeline:
   - id: create_subs_001
     at: 1s

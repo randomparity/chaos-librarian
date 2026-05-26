@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: hevc-mkv
 seed: 94
 duration_scale: short
@@ -6,9 +6,10 @@ library:
   roots:
     - id: root_main
       path: library
-works:
+movies:
   - id: work_hevc
     title: HEVC MKV Smoke
+    layout: movie_flat
     variants:
       - id: variant_sd
         label: sd
@@ -28,4 +29,6 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline: []

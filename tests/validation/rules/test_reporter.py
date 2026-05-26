@@ -34,7 +34,7 @@ def test_reporter_error_emits_one_error_issue() -> None:
     collector = IssueCollector()
     reporter = Reporter(collector=collector, line_index=LineIndex())
 
-    reporter.error(code=E_ID_DUPLICATE, message="dup", loc=("works", 0, "id"))
+    reporter.error(code=E_ID_DUPLICATE, message="dup", loc=("movies", 0, "id"))
 
     assert len(collector.issues) == 1
     issue = collector.issues[0]

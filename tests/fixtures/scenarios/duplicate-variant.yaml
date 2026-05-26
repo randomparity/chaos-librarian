@@ -33,7 +33,7 @@ movies:
                   channels: stereo
                   language: eng
             - id: asset_hd_dup
-              role: primary_video
+              role: secondary_video
               container: mkv
               duration_seconds: 6
               video:

@@ -1,5 +1,5 @@
 # expected: E_PROFILE_REQUIRED
-schema_version: 11
+schema_version: 12
 scenario_id: truncate-file-missing-profile
 seed: 42
 duration_scale: short
@@ -7,9 +7,10 @@ library:
   roots:
     - id: movies_hd
       path: movies-hd
-works:
+movies:
   - id: work_001
     title: Truncated File
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -20,6 +21,17 @@ works:
               role: primary_video
               container: mkv
               duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
 timeline:
   - id: truncate_001
     at: 1s

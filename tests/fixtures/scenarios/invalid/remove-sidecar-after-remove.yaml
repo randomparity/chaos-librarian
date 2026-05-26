@@ -1,12 +1,13 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 11
+schema_version: 12
 scenario_id: sc_inv_rs_001
 seed: 1
 duration_scale: short
 library: {roots: [{id: r0, path: library/movies}]}
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -21,14 +22,16 @@ works:
               audio: [{codec: aac, channels: stereo, language: eng}]
               subtitles:
                 - {codec: srt, language: eng, mode: sidecar}
+series: []
+artists: []
 timeline:
   - id: ev_rs_1
     at: 1s
     action: remove_sidecar
     target: a0
-    sidecar_path: a0.eng.srt
+    sidecar_path: library/movies/T - hd.eng.srt
   - id: ev_rs_2
     at: 2s
     action: remove_sidecar
     target: a0
-    sidecar_path: a0.eng.srt
+    sidecar_path: library/movies/T - hd.eng.srt

@@ -53,7 +53,7 @@ class TestRuleSidecarLanguageConsistent:
                 },
             ],
         )
-        bundle = as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])
+        bundle = as_dict(as_list(as_list(raw["movies"])[0]["variants"])[0]["bundle"])
         assets = as_list(bundle["assets"])
         assets[0] = _asset_with_eng_subtitle()
         collector = IssueCollector()
@@ -83,7 +83,7 @@ class TestRuleSidecarLanguageConsistent:
                 },
             ],
         )
-        bundle = as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])
+        bundle = as_dict(as_list(as_list(raw["movies"])[0]["variants"])[0]["bundle"])
         assets = as_list(bundle["assets"])
         assets[0] = _asset_with_eng_subtitle()
         collector = IssueCollector()
@@ -106,7 +106,7 @@ class TestRuleSidecarLanguageConsistent:
                 },
             ],
         )
-        bundle = as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])
+        bundle = as_dict(as_list(as_list(raw["movies"])[0]["variants"])[0]["bundle"])
         assets = as_list(bundle["assets"])
         assets[0] = _asset_with_eng_subtitle()
         collector = IssueCollector()

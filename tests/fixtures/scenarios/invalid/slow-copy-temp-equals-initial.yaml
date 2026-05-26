@@ -1,5 +1,5 @@
 # expected: E_SLOW_COPY_PATH_COLLISION
-schema_version: 11
+schema_version: 12
 scenario_id: sc_temp_equals_initial
 seed: 1
 duration_scale: short
@@ -7,9 +7,10 @@ library:
   roots:
     - id: movies-hd
       path: library/movies-hd
-works:
+movies:
   - id: w
     title: t
+    layout: movie_flat
     variants:
       - id: v
         label: l
@@ -20,13 +21,24 @@ works:
               role: primary_video
               container: mkv
               duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
 timeline:
   - id: scs
     at: 0ns
     action: slow_copy_start
     target: asset_hd_main
     to: movies-hd/final.mkv
-    temp_path: library/movies-hd/asset_hd_main.mkv
+    temp_path: library/movies-hd/t - l.mkv
     duration: 1ns
   - id: scc
     at: 1ns

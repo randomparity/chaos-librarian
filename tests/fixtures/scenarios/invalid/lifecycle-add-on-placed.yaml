@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 11
+schema_version: 12
 scenario_id: lifecycle-add-on-placed
 seed: 1
 duration_scale: short
@@ -9,9 +9,10 @@ library:
     - id: r0
       path: movies-hd
 
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -23,6 +24,17 @@ works:
               container: mkv
               duration_seconds: 1
 
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
 timeline:
   - id: e1
     at: "0"

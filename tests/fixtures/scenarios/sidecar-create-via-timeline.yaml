@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: sidecar-create-via-timeline
 seed: 17
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
+movies:
   - id: work_pulsar
     title: Synthetic Pulsar
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -30,6 +31,8 @@ works:
                   channels: stereo
                   language: eng
 
+series: []
+artists: []
 timeline:
   - id: create_subs_001
     at: 1s

@@ -1,12 +1,13 @@
 # expected: E_SIDECAR_PATH_COLLISION
-schema_version: 11
+schema_version: 12
 scenario_id: sc_inv_xs_002
 seed: 1
 duration_scale: short
 library: {roots: [{id: r0, path: library/movies}]}
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -21,10 +22,12 @@ works:
               audio: [{codec: aac, channels: stereo, language: eng}]
               subtitles:
                 - {codec: srt, language: eng, mode: sidecar}
+series: []
+artists: []
 timeline:
   - id: ev_xs
     at: 1s
     action: extract_subtitle
     target: a0
-    to: a0.eng.srt
+    to: library/movies/T - hd.eng.srt
     language: eng
