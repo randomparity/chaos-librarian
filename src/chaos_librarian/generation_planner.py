@@ -172,6 +172,26 @@ def _emit_lane_required_events(
         _edit_metadata(planner, assets[0])
         _create_nfo_sidecar(planner, assets[0])
         _update_first_sidecar(planner)
+    elif lane is FuzzLaneName.CORE_FS:
+        _move_asset(planner, assets[0])
+        _rename_file(planner, assets[1])
+        _delete_file(planner, assets[2])
+        _add_file(planner, assets[2])
+        _archive_file(planner, assets[3])
+        _move_between_roots(planner, assets[4])
+        _slow_copy_pair(planner, assets[5])
+    elif lane is FuzzLaneName.MEDIA_REWRITE:
+        _reencode_video(planner, assets[0])
+        _reencode_audio(planner, assets[1])
+        _remux_container(planner, assets[2])
+        _edit_metadata(planner, assets[3])
+    elif lane is FuzzLaneName.SIDECAR_SUBTITLE:
+        _create_subtitle_sidecar(planner, assets[0])
+        _update_first_sidecar(planner)
+        _remove_first_sidecar(planner)
+        _create_nfo_sidecar(planner, assets[1])
+        _extract_subtitle(planner, _first_embedded_subtitle_asset(assets))
+        _embed_latest_subtitle_sidecar(planner)
 
 
 def _fill_remaining_events(
@@ -182,6 +202,9 @@ def _fill_remaining_events(
 ) -> None:
     safe_actions = (_move_asset, _rename_file, _edit_metadata, _create_nfo_sidecar)
     while len(planner.events) < config.timeline_events:
+        if planner.sidecars_by_asset and rng.randint(0, 3) == 0:
+            _update_first_sidecar(planner)
+            continue
         action = rng.choice(safe_actions)
         action(planner, rng.choice(planner.assets))
 
@@ -216,6 +239,125 @@ def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     )
 
 
+def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("delete"),
+            "at": planner.at(),
+            "action": "delete_file",
+            "target": asset.asset_id,
+        }
+    )
+    planner.deleted_assets.add(asset.asset_id)
+    planner.placed_assets.discard(asset.asset_id)
+
+
+def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("add"),
+            "at": planner.at(),
+            "action": "add_file",
+            "target": asset.asset_id,
+            "to": (
+                f"{planner.root_path}/restored/"
+                f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
+            ),
+        }
+    )
+    planner.deleted_assets.discard(asset.asset_id)
+    planner.placed_assets.add(asset.asset_id)
+
+
+def _archive_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("archive"),
+            "at": planner.at(),
+            "action": "archive_file",
+            "target": asset.asset_id,
+        }
+    )
+
+
+def _move_between_roots(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.events.append(
+        {
+            "id": planner.event_id("move_between_roots"),
+            "at": planner.at(),
+            "action": "move_between_roots",
+            "target": asset.asset_id,
+            "from_root_id": planner.root_id,
+            "to_root_id": planner.secondary_root_id,
+        }
+    )
+
+
+def _slow_copy_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    start_index = planner.next_index()
+    start_id = planner.event_id("slow_copy_start")
+    planner.events.append(
+        {
+            "id": start_id,
+            "at": f"{start_index}ns",
+            "action": "slow_copy_start",
+            "target": asset.asset_id,
+            "to": f"{planner.root_path}/fuzz/{asset.asset_id}-slow.{asset.container}",
+            "temp_path": f"{planner.root_path}/fuzz/.{asset.asset_id}-slow.tmp",
+            "duration": "1ns",
+        }
+    )
+    planner.events.append(
+        {
+            "id": planner.event_id("slow_copy_commit"),
+            "at": f"{start_index + 1}ns",
+            "action": "slow_copy_commit",
+            "for": start_id,
+        }
+    )
+
+
+def _reencode_video(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    resolution = "1080p" if asset.resolution != "1080p" else "hd"
+    planner.events.append(
+        {
+            "id": planner.event_id("reencode_video"),
+            "at": planner.at(),
+            "action": "reencode_video",
+            "target": asset.asset_id,
+            "resolution": resolution,
+            "codec": "h264",
+        }
+    )
+
+
+def _reencode_audio(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    to_channels = "stereo" if asset.audio_channels != "stereo" else "mono"
+    planner.events.append(
+        {
+            "id": planner.event_id("reencode_audio"),
+            "at": planner.at(),
+            "action": "reencode_audio",
+            "target": asset.asset_id,
+            "from_channels": asset.audio_channels,
+            "to_channels": to_channels,
+        }
+    )
+
+
+def _remux_container(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    to_container = "mp4" if asset.container != "mp4" else "mkv"
+    planner.events.append(
+        {
+            "id": planner.event_id("remux"),
+            "at": planner.at(),
+            "action": "remux_container",
+            "target": asset.asset_id,
+            "to_container": to_container,
+        }
+    )
+
+
 def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.events.append(
         {
@@ -243,6 +385,48 @@ def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.sidecars_by_asset.setdefault(asset.asset_id, []).append((SidecarKind.NFO.value, path))
 
 
+def _create_subtitle_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
+    planner.events.append(
+        {
+            "id": planner.event_id("create_subtitle"),
+            "at": planner.at(),
+            "action": "create_sidecar",
+            "target": asset.asset_id,
+            "to": path,
+            "kind": SidecarKind.SUBTITLE.value,
+            "language": "eng",
+        }
+    )
+    planner.sidecars_by_asset.setdefault(asset.asset_id, []).append(
+        (SidecarKind.SUBTITLE.value, path)
+    )
+
+
+def _extract_subtitle(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
+    planner.events.append(
+        {
+            "id": planner.event_id("extract_subtitle"),
+            "at": planner.at(),
+            "action": "extract_subtitle",
+            "target": asset.asset_id,
+            "to": path,
+            "language": "eng",
+        }
+    )
+    planner.sidecars_by_asset.setdefault(asset.asset_id, []).append(
+        (SidecarKind.SUBTITLE.value, path)
+    )
+
+
+def _first_embedded_subtitle_asset(assets: list[PlannedAsset]) -> PlannedAsset:
+    for asset in assets:
+        if asset.has_embedded_subtitle:
+            return asset
+    raise ValueError("lane requires at least one asset with embedded subtitles")
+
+
 def _update_first_sidecar(planner: TimelinePlanner) -> None:
     for asset_id, sidecars in planner.sidecars_by_asset.items():
         if not sidecars:
@@ -258,3 +442,40 @@ def _update_first_sidecar(planner: TimelinePlanner) -> None:
             }
         )
         return
+
+
+def _remove_first_sidecar(planner: TimelinePlanner) -> None:
+    for asset_id, sidecars in planner.sidecars_by_asset.items():
+        if not sidecars:
+            continue
+        _, path = sidecars.pop(0)
+        planner.events.append(
+            {
+                "id": planner.event_id("remove_sidecar"),
+                "at": planner.at(),
+                "action": "remove_sidecar",
+                "target": asset_id,
+                "sidecar_path": path,
+            }
+        )
+        return
+
+
+def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
+    for asset_id, sidecars in reversed(planner.sidecars_by_asset.items()):
+        for index in range(len(sidecars) - 1, -1, -1):
+            kind, path = sidecars[index]
+            if kind != SidecarKind.SUBTITLE.value:
+                continue
+            sidecars.pop(index)
+            planner.events.append(
+                {
+                    "id": planner.event_id("embed_subtitle"),
+                    "at": planner.at(),
+                    "action": "embed_subtitle",
+                    "target": asset_id,
+                    "sidecar_path": path,
+                }
+            )
+            return
+    raise ValueError("lane requires a live subtitle sidecar")

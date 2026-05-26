@@ -94,6 +94,9 @@ def test_lane_config_rejects_profile_mismatch() -> None:
     [
         (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE, 9),
         (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE, 123),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS, 456),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MEDIA_REWRITE, 457),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.SIDECAR_SUBTITLE, 458),
     ],
 )
 def test_generated_lane_meets_required_coverage(
