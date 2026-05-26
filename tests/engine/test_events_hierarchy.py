@@ -273,6 +273,83 @@ def test_move_episode_to_season_composes_with_current_episode_metadata() -> None
     ]
 
 
+def test_hierarchy_rerender_preserves_current_episode_root() -> None:
+    """WHY: hierarchy metadata changes must not undo a prior root relocation."""
+    payload = _series_scenario(
+        [
+            {
+                "id": "ev_move_root",
+                "at": "1s",
+                "action": "move_between_roots",
+                "target": "episode_asset",
+                "from_root_id": "tv",
+                "to_root_id": "cold",
+            },
+            {
+                "id": "ev_renumber",
+                "at": "2s",
+                "action": "renumber_episode",
+                "target": "episode_1",
+                "episode_number": 2,
+            },
+        ]
+    ).model_dump(mode="json")
+    payload["library"]["roots"].append({"id": "cold", "path": "library/cold"})
+    scenario = Scenario.model_validate(payload)
+
+    state, _move_entry, entry = _apply_timeline(scenario)
+
+    assert entry.state_delta["path_moves"] == [
+        {
+            "asset_id": "episode_asset",
+            "location_id": "location_0001",
+            "from_path": "library/cold/Show/Season 01/Show - S01E01 - Pilot - web.mkv",
+            "to_path": "library/cold/Show/Season 01/Show - S01E02 - Pilot - web.mkv",
+        }
+    ]
+    loc_id = state.location_id_for_asset("episode_asset")
+    assert state.locations[loc_id].path == (
+        "library/cold/Show/Season 01/Show - S01E02 - Pilot - web.mkv"
+    )
+
+
+def test_hierarchy_rerender_after_manual_move_falls_back_to_primary_root() -> None:
+    """WHY: manual moves outside declared roots must not crash hierarchy actions."""
+    scenario = _series_scenario(
+        [
+            {
+                "id": "ev_move_manual",
+                "at": "1s",
+                "action": "move_asset",
+                "target": "episode_asset",
+                "to": "library/manual/episode.mkv",
+            },
+            {
+                "id": "ev_renumber",
+                "at": "2s",
+                "action": "renumber_episode",
+                "target": "episode_1",
+                "episode_number": 2,
+            },
+        ]
+    )
+
+    state, _move_entry, entry = _apply_timeline(scenario)
+
+    assert entry.state_delta["path_moves"] == [
+        {
+            "asset_id": "episode_asset",
+            "location_id": "location_0001",
+            "from_path": "library/manual/episode.mkv",
+            "to_path": "library/tv/Show/Season 01/Show - S01E02 - Pilot - web.mkv",
+        }
+    ]
+    loc_id = state.location_id_for_asset("episode_asset")
+    assert state.locations[loc_id].path == (
+        "library/tv/Show/Season 01/Show - S01E02 - Pilot - web.mkv"
+    )
+
+
 def test_rename_season_updates_metadata_without_path_moves_for_current_renderer() -> None:
     """WHY: season title is manifest metadata, but today's renderer does not use it."""
     scenario = _series_scenario(
@@ -322,6 +399,46 @@ def test_renumber_disc_moves_track_assets_under_disc_layout() -> None:
             "to_path": "library/music/Artist/Album/Disc 02/02-01 - Opener - flac.flac",
         }
     ]
+
+
+def test_hierarchy_rerender_preserves_current_track_root() -> None:
+    """WHY: music hierarchy moves share the same renderer root semantics as episodes."""
+    payload = _music_scenario(
+        [
+            {
+                "id": "ev_move_root",
+                "at": "1s",
+                "action": "move_between_roots",
+                "target": "track_asset",
+                "from_root_id": "music",
+                "to_root_id": "cold",
+            },
+            {
+                "id": "ev_renumber_disc",
+                "at": "2s",
+                "action": "renumber_disc",
+                "target": "disc_1",
+                "disc_number": 2,
+            },
+        ]
+    ).model_dump(mode="json")
+    payload["library"]["roots"].append({"id": "cold", "path": "library/cold"})
+    scenario = Scenario.model_validate(payload)
+
+    state, _move_entry, entry = _apply_timeline(scenario)
+
+    assert entry.state_delta["path_moves"] == [
+        {
+            "asset_id": "track_asset",
+            "location_id": "location_0001",
+            "from_path": "library/cold/Artist/Album/Disc 01/01-01 - Opener - flac.flac",
+            "to_path": "library/cold/Artist/Album/Disc 02/02-01 - Opener - flac.flac",
+        }
+    ]
+    loc_id = state.location_id_for_asset("track_asset")
+    assert state.locations[loc_id].path == (
+        "library/cold/Artist/Album/Disc 02/02-01 - Opener - flac.flac"
+    )
 
 
 def test_move_track_to_disc_changes_disc_and_track_number() -> None:

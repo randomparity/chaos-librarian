@@ -694,6 +694,144 @@ def test_sequential_hierarchy_actions_render_from_mutated_metadata(
     assert not any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
 
 
+def test_hierarchy_collision_after_root_move_uses_current_root(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "move-root",
+                "at": "1s",
+                "action": "move_between_roots",
+                "target": "asset_episode",
+                "from_root_id": "tv",
+                "to_root_id": "cold",
+            },
+            {
+                "id": "move-other",
+                "at": "2s",
+                "action": "move_asset",
+                "target": "asset_episode_other",
+                "to": "Cold/Starline/Season 01/Starline - S01E02 - Pilot - HD.mkv",
+            },
+            {
+                "id": "renumber",
+                "at": "3s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+        ],
+        library={"roots": [{"id": "tv", "path": "TV"}, {"id": "cold", "path": "Cold"}]},
+    )
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    episodes = _items(season["episodes"])
+    other = dict(episodes[0])
+    other["id"] = "episode_other"
+    other["episode_number"] = 3
+    other["title"] = "Other"
+    other["variants"] = [
+        {
+            "id": "variant_episode_other",
+            "label": "Other",
+            "bundle": {
+                "id": "bundle_episode_other",
+                "assets": [
+                    {
+                        "id": "asset_episode_other",
+                        "role": "main",
+                        "container": "mkv",
+                        "duration_seconds": 1,
+                        "video": {"source": "color_bars", "codec": "h264", "resolution": "sd"},
+                        "audio": [
+                            {
+                                "source": "sine",
+                                "codec": "aac",
+                                "channels": "stereo",
+                                "language": "eng",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+    ]
+    episodes.append(other)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_hierarchy_collision_after_manual_move_uses_primary_root(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "move-manual",
+                "at": "1s",
+                "action": "move_asset",
+                "target": "asset_episode",
+                "to": "Custom/episode.mkv",
+            },
+            {
+                "id": "move-other",
+                "at": "2s",
+                "action": "move_asset",
+                "target": "asset_episode_other",
+                "to": "TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.mkv",
+            },
+            {
+                "id": "renumber",
+                "at": "3s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+        ]
+    )
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    episodes = _items(season["episodes"])
+    other = dict(episodes[0])
+    other["id"] = "episode_other"
+    other["episode_number"] = 3
+    other["title"] = "Other"
+    other["variants"] = [
+        {
+            "id": "variant_episode_other",
+            "label": "Other",
+            "bundle": {
+                "id": "bundle_episode_other",
+                "assets": [
+                    {
+                        "id": "asset_episode_other",
+                        "role": "main",
+                        "container": "mkv",
+                        "duration_seconds": 1,
+                        "video": {"source": "color_bars", "codec": "h264", "resolution": "sd"},
+                        "audio": [
+                            {
+                                "source": "sine",
+                                "codec": "aac",
+                                "channels": "stereo",
+                                "language": "eng",
+                            }
+                        ],
+                    }
+                ],
+            },
+        }
+    ]
+    episodes.append(other)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
 def test_hierarchy_action_under_pending_slow_copy_is_rejected(series_scenario, empty_index) -> None:
     raw = series_scenario(
         timeline=[

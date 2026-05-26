@@ -38,6 +38,7 @@ from chaos_librarian.path_rendering import (
     RenderableAssetContext,
     render_asset_path,
     render_declared_sidecar_path,
+    replace_root_prefix,
 )
 
 if TYPE_CHECKING:
@@ -501,7 +502,11 @@ class HierarchyProjection:
     """Mutable validation-only projection for hierarchy timeline actions."""
 
     def __init__(self, raw: Mapping[str, object]) -> None:
-        self.root_path = primary_root_path(raw)
+        self.root_path: str | None = primary_root_path(raw)
+        self.root_paths: dict[str, str] = {
+            root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
+        }
+        self.archive_base_path: str | None = self._archive_base_path(raw)
         self.series: dict[str, _SeriesState] = {}
         self.seasons: dict[str, _SeasonState] = {}
         self.episodes: dict[str, _EpisodeState] = {}
@@ -563,6 +568,10 @@ class HierarchyProjection:
             self._project_slow_copy_start(event, pending_slow_copies)
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
             self._project_slow_copy_commit(event, pending_slow_copies)
+        elif action == TimelineActionName.ARCHIVE_FILE:
+            self._project_archive_file(event)
+        elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
+            self._project_move_between_roots(event)
         elif action == TimelineActionName.REMUX_CONTAINER:
             self._project_remux_container(event)
 
@@ -589,19 +598,27 @@ class HierarchyProjection:
 
     def render_asset_path(self, asset_id: str) -> str | None:
         """Render one asset from the current hierarchy snapshot."""
-        if self.root_path is None:
-            return None
         tail = self.assets.get(asset_id)
         if tail is None:
             return None
+        root_path = self._render_root_path_for_asset(asset_id)
+        if root_path is None:
+            return None
         try:
             if tail.parent_id in self.episodes:
-                return self._render_episode_asset(tail)
+                return self._render_episode_asset(tail, root_path=root_path)
             if tail.parent_id in self.tracks:
-                return self._render_track_asset(tail)
+                return self._render_track_asset(tail, root_path=root_path)
         except ValueError:
             return None
         return self.current_paths.get(asset_id)
+
+    def _render_root_path_for_asset(self, asset_id: str) -> str | None:
+        current_path = self.current_paths.get(asset_id)
+        if current_path is None:
+            return self.root_path
+        current_root = self._current_root_for_path(current_path)
+        return current_root if current_root is not None else self.root_path
 
     def _seed_series(self, raw: Mapping[str, object]) -> None:
         series_items = _as_list(raw.get("series")) or []
@@ -845,6 +862,49 @@ class HierarchyProjection:
         target, final_path = pending
         self.current_paths[target] = final_path
 
+    def _project_archive_file(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        if not isinstance(target, str) or self.archive_base_path is None:
+            return
+        current_path = self.current_paths.get(target)
+        if current_path is None:
+            return
+        current_root = self._current_root_for_path(current_path)
+        if current_root is None:
+            return
+        try:
+            self.current_paths[target] = replace_root_prefix(
+                current_path,
+                from_root=current_root,
+                to_root=self.archive_base_path,
+            )
+        except ValueError:
+            return
+
+    def _project_move_between_roots(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        from_root_id = event.get("from_root_id")
+        to_root_id = event.get("to_root_id")
+        if not (
+            isinstance(target, str)
+            and isinstance(from_root_id, str)
+            and isinstance(to_root_id, str)
+        ):
+            return
+        current_path = self.current_paths.get(target)
+        from_root = self.root_paths.get(from_root_id)
+        to_root = self.root_paths.get(to_root_id)
+        if current_path is None or from_root is None or to_root is None:
+            return
+        try:
+            self.current_paths[target] = replace_root_prefix(
+                current_path,
+                from_root=from_root,
+                to_root=to_root,
+            )
+        except ValueError:
+            return
+
     def _project_remux_container(self, event: Mapping[str, object]) -> None:
         target = event.get("target")
         to_container = event.get("to_container")
@@ -896,17 +956,17 @@ class HierarchyProjection:
                 asset_ids.update(track.asset_ids)
         return asset_ids
 
-    def _render_episode_asset(self, tail: _AssetTail) -> str | None:
+    def _render_episode_asset(self, tail: _AssetTail, *, root_path: str) -> str | None:
         episode = self.episodes[tail.parent_id]
         season = self.seasons.get(episode.season_id)
-        if season is None or self.root_path is None:
+        if season is None:
             return None
         series = self.series.get(season.series_id)
         if series is None:
             return None
         context = RenderableAssetContext(
             parent_kind=ParentKind.EPISODE,
-            root_path=self.root_path,
+            root_path=root_path,
             layout=series.layout,
             naming=series.episode_naming,
             movie_title=None,
@@ -928,10 +988,10 @@ class HierarchyProjection:
         )
         return render_asset_path(context)
 
-    def _render_track_asset(self, tail: _AssetTail) -> str | None:
+    def _render_track_asset(self, tail: _AssetTail, *, root_path: str) -> str | None:
         track = self.tracks[tail.parent_id]
         disc = self.discs.get(track.disc_id)
-        if disc is None or self.root_path is None:
+        if disc is None:
             return None
         album = self.albums.get(disc.album_id)
         artist = self.artists.get(album.artist_id) if album is not None else None
@@ -939,7 +999,7 @@ class HierarchyProjection:
             return None
         context = RenderableAssetContext(
             parent_kind=ParentKind.TRACK,
-            root_path=self.root_path,
+            root_path=root_path,
             layout=artist.layout,
             naming=artist.track_naming,
             movie_title=None,
@@ -960,6 +1020,25 @@ class HierarchyProjection:
             bundle_asset_count=tail.bundle_asset_count,
         )
         return render_asset_path(context)
+
+    def _archive_base_path(self, raw: Mapping[str, object]) -> str | None:
+        if self.root_path is None:
+            return None
+        library = _as_mapping(raw.get("library"))
+        archive_root = library.get("archive_root") if library is not None else None
+        if archive_root is None or archive_root == "archive":
+            return f"{self.root_path}/archive"
+        if isinstance(archive_root, str):
+            return self.root_paths.get(archive_root)
+        return None
+
+    def _current_root_for_path(self, path: str) -> str | None:
+        root_paths: list[str] = list(self.root_paths.values())
+        root_paths.sort(key=len, reverse=True)
+        for root_path in root_paths:
+            if path == root_path or path.startswith(f"{root_path}/"):
+                return root_path
+        return None
 
     @staticmethod
     def _move_list_item(source: list[str], value: str, destination: list[str]) -> None:

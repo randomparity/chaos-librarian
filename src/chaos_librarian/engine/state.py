@@ -225,11 +225,21 @@ class WorldState:
         """Render ``asset_id`` from current mutable metadata."""
         return render_asset_path(self.renderable_context_for_asset(asset_id))
 
+    def _render_root_path_for_asset(self, asset_id: str) -> str:
+        if not self.has_location(asset_id):
+            return self._primary_root_path
+        loc_id = self.location_id_for_asset(asset_id)
+        try:
+            return self._current_root_for_path(self.locations[loc_id].path)
+        except ChaosLibrarianValueError:
+            return self._primary_root_path
+
     def renderable_context_for_asset(self, asset_id: str) -> RenderableAssetContext:
         """Build a renderer context from normalized current WorldState metadata."""
         asset = self.assets[asset_id]
         bundle = self.bundles[asset.bundle_id]
         variant = self.variants[bundle.variant_id]
+        root_path = self._render_root_path_for_asset(asset_id)
         bundle_asset_count = sum(
             1 for candidate in self.assets.values() if candidate.bundle_id == bundle.id
         )
@@ -237,7 +247,7 @@ class WorldState:
             movie = self.movies[variant.parent_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.MOVIE,
-                root_path=self._primary_root_path,
+                root_path=root_path,
                 layout=MovieLayout(movie.layout),
                 naming=None,
                 movie_title=movie.title,
@@ -263,7 +273,7 @@ class WorldState:
             series = self.series[season.series_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.EPISODE,
-                root_path=self._primary_root_path,
+                root_path=root_path,
                 layout=SeriesLayout(series.layout),
                 naming=EpisodeNaming(series.episode_naming),
                 movie_title=None,
@@ -290,7 +300,7 @@ class WorldState:
             artist = self.artists[album.artist_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.TRACK,
-                root_path=self._primary_root_path,
+                root_path=root_path,
                 layout=ArtistLayout(artist.layout),
                 naming=TrackNaming(artist.track_naming),
                 movie_title=None,
