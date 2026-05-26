@@ -7,6 +7,7 @@ Timeline events are a discriminated union on ``action``.
 from __future__ import annotations
 
 import enum
+from datetime import date
 from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
@@ -53,6 +54,11 @@ class TimelineActionName(enum.StrEnum):
     WRONG_ORACLE_HASH = "wrong_oracle_hash"
     NETWORK_LAG_START = "network_lag_start"
     NETWORK_LAG_COMMIT = "network_lag_commit"
+    RENUMBER_EPISODE = "renumber_episode"
+    MOVE_EPISODE_TO_SEASON = "move_episode_to_season"
+    RENAME_SEASON = "rename_season"
+    RENUMBER_DISC = "renumber_disc"
+    MOVE_TRACK_TO_DISC = "move_track_to_disc"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -192,7 +198,7 @@ class SubtitleTrack(BaseModel):
     mode: SubtitleMode
 
 
-# ---- Asset / Bundle / Variant / Work ----------------------------------------
+# ---- Asset / Bundle / Variant / Domain hierarchy ----------------------------
 
 
 class Asset(BaseModel):
@@ -219,11 +225,99 @@ class Variant(BaseModel):
     bundle: Bundle
 
 
-class Work(BaseModel):
+class MovieLayout(enum.StrEnum):
+    MOVIE_FLAT = "movie_flat"
+    MOVIE_FOLDER = "movie_folder"
+
+
+class SeriesLayout(enum.StrEnum):
+    SEASON_FOLDERS = "season_folders"
+    SERIES_FLAT = "series_flat"
+
+
+class EpisodeNaming(enum.StrEnum):
+    SXXEXX_TITLE = "sxxexx_title"
+    ONE_XX_TITLE = "one_xx_title"
+    ABSOLUTE_3_DIGIT_TITLE = "absolute_3_digit_title"
+    DATE_TITLE = "date_title"
+
+
+class ArtistLayout(enum.StrEnum):
+    ARTIST_ALBUM_DISC = "artist_album_disc"
+    ARTIST_ALBUM_FLAT = "artist_album_flat"
+
+
+class TrackNaming(enum.StrEnum):
+    TRACK_NUMBER_TITLE = "track_number_title"
+    DISC_TRACK_NUMBER_TITLE = "disc_track_number_title"
+
+
+class Movie(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     title: str
+    layout: MovieLayout
     variants: tuple[Variant, ...]
+
+
+class Episode(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    episode_number: int = Field(ge=1)
+    title: str
+    aired_on: date | None = None
+    absolute_number: int | None = Field(default=None, ge=1)
+    variants: tuple[Variant, ...]
+
+
+class Season(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    season_number: int = Field(ge=0)
+    title: str
+    episodes: tuple[Episode, ...]
+
+
+class Series(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    title: str
+    layout: SeriesLayout
+    episode_naming: EpisodeNaming
+    seasons: tuple[Season, ...]
+
+
+class Track(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    track_number: int = Field(ge=1)
+    title: str
+    performers: tuple[str, ...] = Field(default_factory=tuple)
+    variants: tuple[Variant, ...]
+
+
+class Disc(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    disc_number: int = Field(ge=1)
+    tracks: tuple[Track, ...]
+
+
+class Album(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    title: str
+    release_year: int | None = None
+    discs: tuple[Disc, ...]
+
+
+class Artist(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    name: str
+    layout: ArtistLayout
+    track_naming: TrackNaming
+    albums: tuple[Album, ...]
 
 
 # ---- Timeline events --------------------------------------------------------
@@ -436,10 +530,53 @@ class NetworkLagCommitEvent(_TimelineEventBase):
     )
 
 
+class RenumberEpisodeEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.RENUMBER_EPISODE] = TimelineActionName.RENUMBER_EPISODE
+    target: str
+    episode_number: int = Field(ge=1)
+    absolute_number: int | None = Field(default=None, ge=1)
+
+
+class MoveEpisodeToSeasonEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.MOVE_EPISODE_TO_SEASON] = (
+        TimelineActionName.MOVE_EPISODE_TO_SEASON
+    )
+    target: str
+    to_season: str
+    episode_number: int = Field(ge=1)
+    absolute_number: int | None = Field(default=None, ge=1)
+
+
+class RenameSeasonEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.RENAME_SEASON] = TimelineActionName.RENAME_SEASON
+    target: str
+    title: str
+
+
+class RenumberDiscEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.RENUMBER_DISC] = TimelineActionName.RENUMBER_DISC
+    target: str
+    disc_number: int = Field(ge=1)
+
+
+class MoveTrackToDiscEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.MOVE_TRACK_TO_DISC] = TimelineActionName.MOVE_TRACK_TO_DISC
+    target: str
+    to_disc: str
+    track_number: int = Field(ge=1)
+
+
 class GenerationBudget(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    works: int = Field(ge=0)
+    movies: int = Field(ge=0)
+    series: int = Field(ge=0)
+    seasons: int = Field(ge=0)
+    episodes: int = Field(ge=0)
+    artists: int = Field(ge=0)
+    albums: int = Field(ge=0)
+    discs: int = Field(ge=0)
+    tracks: int = Field(ge=0)
     variants: int = Field(ge=0)
     bundles: int = Field(ge=0)
     assets: int = Field(ge=0)
@@ -453,16 +590,23 @@ class ScenarioGeneration(BaseModel):
     generator: Literal["chaos-librarian"] = "chaos-librarian"
     profile: FuzzProfileName
     lane: FuzzLaneName
-    profile_version: Literal[2]
+    profile_version: Literal[3]
     seed: int = Field(ge=0)
     budgets: GenerationBudget
 
 
-FUZZ_GENERATION_PROFILE_VERSION: Final = 2
+FUZZ_GENERATION_PROFILE_VERSION: Final = 3
 
 FUZZ_GENERATION_BUDGETS: Final[dict[FuzzProfileName, GenerationBudget]] = {
     FuzzProfileName.FUZZ_SMOKE: GenerationBudget(
-        works=3,
+        movies=3,
+        series=0,
+        seasons=0,
+        episodes=0,
+        artists=0,
+        albums=0,
+        discs=0,
+        tracks=0,
         variants=4,
         bundles=4,
         assets=4,
@@ -470,7 +614,14 @@ FUZZ_GENERATION_BUDGETS: Final[dict[FuzzProfileName, GenerationBudget]] = {
         timeline_events=12,
     ),
     FuzzProfileName.FUZZ_REGRESSION: GenerationBudget(
-        works=12,
+        movies=12,
+        series=0,
+        seasons=0,
+        episodes=0,
+        artists=0,
+        albums=0,
+        discs=0,
+        tracks=0,
         variants=18,
         bundles=18,
         assets=18,
@@ -510,7 +661,12 @@ TimelineEvent = Annotated[
     | TouchMtimeEvent
     | WrongOracleHashEvent
     | NetworkLagStartEvent
-    | NetworkLagCommitEvent,
+    | NetworkLagCommitEvent
+    | RenumberEpisodeEvent
+    | MoveEpisodeToSeasonEvent
+    | RenameSeasonEvent
+    | RenumberDiscEvent
+    | MoveTrackToDiscEvent,
     Field(discriminator="action"),
 ]
 
@@ -522,14 +678,16 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[11]
+    schema_version: Literal[12]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
     profiles: tuple[ProfileName, ...] = Field(default_factory=tuple)
     generation: ScenarioGeneration | None = None
     library: Library
-    works: tuple[Work, ...]
+    movies: tuple[Movie, ...]
+    series: tuple[Series, ...]
+    artists: tuple[Artist, ...]
     timeline: tuple[TimelineEvent, ...]
 
     @model_validator(mode="after")

@@ -8,9 +8,14 @@ import pytest
 from pydantic import ValidationError
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
+from chaos_librarian.contract.profiles import FuzzProfileName
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
+    FUZZ_GENERATION_PROFILE_VERSION,
+    Album,
     ArchiveFileEvent,
+    Artist,
+    ArtistLayout,
     Asset,
     AudioChannelLayout,
     AudioSource,
@@ -18,14 +23,19 @@ from chaos_librarian.contract.scenario import (
     Bundle,
     CorruptContainerHeaderEvent,
     CreateSidecarEvent,
+    Disc,
     DurationScale,
     EditMetadataEvent,
     EmbedSubtitleEvent,
+    Episode,
+    EpisodeNaming,
     ExtractSubtitleEvent,
     Library,
     LibraryRoot,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    Movie,
+    MovieLayout,
     NetworkLagCommitEvent,
     NetworkLagStartEvent,
     ReencodeAudioEvent,
@@ -33,6 +43,9 @@ from chaos_librarian.contract.scenario import (
     RemoveSidecarEvent,
     RemuxContainerEvent,
     Scenario,
+    Season,
+    Series,
+    SeriesLayout,
     SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
@@ -40,11 +53,13 @@ from chaos_librarian.contract.scenario import (
     SubtitleSource,
     SubtitleTrack,
     TimelineActionName,
+    Track,
+    TrackNaming,
     UpdateSidecarEvent,
     Variant,
     VideoSource,
     VideoTrack,
-    Work,
+    generation_budget_for,
 )
 
 
@@ -55,10 +70,11 @@ def _minimal_scenario() -> Scenario:
         seed=1,
         duration_scale=DurationScale.SHORT,
         library=Library(roots=(LibraryRoot(id="movies_hd", path="movies-hd"),)),
-        works=(
-            Work(
-                id="w1",
-                title="W1",
+        movies=(
+            Movie(
+                id="movie_1",
+                title="Movie 1",
+                layout=MovieLayout.MOVIE_FLAT,
                 variants=(
                     Variant(
                         id="v1",
@@ -91,6 +107,8 @@ def _minimal_scenario() -> Scenario:
                 ),
             ),
         ),
+        series=(),
+        artists=(),
         timeline=(),
     )
 
@@ -105,10 +123,230 @@ def _scenario_payload_with_event(
     return payload
 
 
+def _video_asset_payload(asset_id: str = "asset_main") -> dict[str, object]:
+    return {
+        "id": asset_id,
+        "role": "feature",
+        "container": "mkv",
+        "duration_seconds": 60.0,
+        "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+        "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+        "subtitles": [],
+    }
+
+
+def _audio_asset_payload(asset_id: str = "asset_track") -> dict[str, object]:
+    return {
+        "id": asset_id,
+        "role": "main",
+        "container": "flac",
+        "duration_seconds": 180.0,
+        "audio": [{"codec": "flac", "channels": "stereo", "language": "zxx"}],
+        "subtitles": [],
+    }
+
+
+def _variant_payload(asset: dict[str, object]) -> dict[str, object]:
+    return {
+        "id": f"variant_{asset['id']}",
+        "label": "1080p" if asset["container"] == "mkv" else "lossless",
+        "bundle": {"id": f"bundle_{asset['id']}", "assets": [asset]},
+    }
+
+
+def _base_payload() -> dict[str, object]:
+    return {
+        "schema_version": SCENARIO_SCHEMA_VERSION,
+        "scenario_id": "contract-hierarchy",
+        "seed": 1,
+        "duration_scale": "short",
+        "profiles": [],
+        "library": {"roots": [{"id": "primary", "path": "Library"}]},
+        "movies": [],
+        "series": [],
+        "artists": [],
+        "timeline": [],
+    }
+
+
 def test_minimal_scenario_roundtrip() -> None:
     s = _minimal_scenario()
     loaded = Scenario.model_validate_json(s.model_dump_json())
     assert loaded == s
+
+
+def test_movie_only_scenario_v12_payload() -> None:
+    payload = _base_payload()
+    payload["movies"] = [
+        {
+            "id": "movie_orbit",
+            "title": "Orbit",
+            "layout": "movie_flat",
+            "variants": [_variant_payload(_video_asset_payload("asset_orbit"))],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.schema_version == 12
+    assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
+    assert scenario.series == ()
+    assert scenario.artists == ()
+
+
+def test_tv_only_scenario_accepts_season_zero_specials() -> None:
+    payload = _base_payload()
+    payload["series"] = [
+        {
+            "id": "series_starline",
+            "title": "Starline",
+            "layout": "season_folders",
+            "episode_naming": "sxxexx_title",
+            "seasons": [
+                {
+                    "id": "season_specials",
+                    "season_number": 0,
+                    "title": "Specials",
+                    "episodes": [
+                        {
+                            "id": "episode_special_01",
+                            "episode_number": 1,
+                            "title": "First Signal",
+                            "aired_on": "2024-05-01",
+                            "absolute_number": 7,
+                            "variants": [_variant_payload(_video_asset_payload("asset_special"))],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.series[0].layout is SeriesLayout.SEASON_FOLDERS
+    assert scenario.series[0].episode_naming is EpisodeNaming.SXXEXX_TITLE
+    assert scenario.series[0].seasons[0].season_number == 0
+
+
+def test_music_only_scenario_v12_payload() -> None:
+    payload = _base_payload()
+    payload["artists"] = [
+        {
+            "id": "artist_north",
+            "name": "North Index",
+            "layout": "artist_album_disc",
+            "track_naming": "track_number_title",
+            "albums": [
+                {
+                    "id": "album_winter",
+                    "title": "Winter Index",
+                    "release_year": 2024,
+                    "discs": [
+                        {
+                            "id": "disc_winter_01",
+                            "disc_number": 1,
+                            "tracks": [
+                                {
+                                    "id": "track_opening",
+                                    "track_number": 1,
+                                    "title": "Opening",
+                                    "performers": ["North Index"],
+                                    "variants": [_variant_payload(_audio_asset_payload())],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.artists[0].layout is ArtistLayout.ARTIST_ALBUM_DISC
+    assert scenario.artists[0].track_naming is TrackNaming.TRACK_NUMBER_TITLE
+    track = scenario.artists[0].albums[0].discs[0].tracks[0]
+    assert track.performers == ("North Index",)
+
+
+def test_track_performers_default_to_empty_tuple() -> None:
+    payload = _base_payload()
+    payload["artists"] = [
+        {
+            "id": "artist_north",
+            "name": "North Index",
+            "layout": "artist_album_flat",
+            "track_naming": "disc_track_number_title",
+            "albums": [
+                {
+                    "id": "album_winter",
+                    "title": "Winter Index",
+                    "discs": [
+                        {
+                            "id": "disc_winter_01",
+                            "disc_number": 1,
+                            "tracks": [
+                                {
+                                    "id": "track_opening",
+                                    "track_number": 1,
+                                    "title": "Opening",
+                                    "variants": [_variant_payload(_audio_asset_payload())],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.artists[0].albums[0].discs[0].tracks[0].performers == ()
+
+
+def test_hierarchy_model_constructors_accept_tuple_fields() -> None:
+    episode = Episode(
+        id="episode_pilot",
+        episode_number=1,
+        title="Pilot",
+        variants=(),
+    )
+    series = Series(
+        id="series_starline",
+        title="Starline",
+        layout=SeriesLayout.SEASON_FOLDERS,
+        episode_naming=EpisodeNaming.SXXEXX_TITLE,
+        seasons=(Season(id="season_1", season_number=1, title="Season 1", episodes=(episode,)),),
+    )
+    track = Track(id="track_opening", track_number=1, title="Opening", variants=())
+    artist = Artist(
+        id="artist_north",
+        name="North Index",
+        layout=ArtistLayout.ARTIST_ALBUM_DISC,
+        track_naming=TrackNaming.TRACK_NUMBER_TITLE,
+        albums=(
+            Album(
+                id="album_winter",
+                title="Winter Index",
+                discs=(Disc(id="disc_1", disc_number=1, tracks=(track,)),),
+            ),
+        ),
+    )
+
+    assert series.seasons[0].episodes[0].id == "episode_pilot"
+    assert artist.albums[0].discs[0].tracks[0].id == "track_opening"
+
+
+def test_scenario_v12_rejects_works_field() -> None:
+    payload = _base_payload()
+    payload["works"] = [{"id": "work_old", "title": "Old", "variants": []}]
+
+    with pytest.raises(ValidationError) as exc_info:
+        Scenario.model_validate(payload)
+
+    assert "works" in str(exc_info.value)
 
 
 def test_timeline_action_discriminator() -> None:
@@ -137,6 +375,75 @@ def test_timeline_action_discriminator() -> None:
         "SlowCopyStartEvent",
         "SlowCopyCommitEvent",
     ]
+
+
+@pytest.mark.parametrize(
+    ("event", "expected_type"),
+    [
+        (
+            {
+                "id": "ev_renumber_episode",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_special_01",
+                "episode_number": 2,
+                "absolute_number": 8,
+            },
+            "RenumberEpisodeEvent",
+        ),
+        (
+            {
+                "id": "ev_move_episode",
+                "at": "2s",
+                "action": "move_episode_to_season",
+                "target": "episode_special_01",
+                "to_season": "season_starline_01",
+                "episode_number": 1,
+            },
+            "MoveEpisodeToSeasonEvent",
+        ),
+        (
+            {
+                "id": "ev_rename_season",
+                "at": "3s",
+                "action": "rename_season",
+                "target": "season_specials",
+                "title": "Special Episodes",
+            },
+            "RenameSeasonEvent",
+        ),
+        (
+            {
+                "id": "ev_renumber_disc",
+                "at": "4s",
+                "action": "renumber_disc",
+                "target": "disc_winter_01",
+                "disc_number": 2,
+            },
+            "RenumberDiscEvent",
+        ),
+        (
+            {
+                "id": "ev_move_track",
+                "at": "5s",
+                "action": "move_track_to_disc",
+                "target": "track_opening",
+                "to_disc": "disc_winter_02",
+                "track_number": 4,
+            },
+            "MoveTrackToDiscEvent",
+        ),
+    ],
+)
+def test_hierarchy_timeline_event_discriminators(
+    event: dict[str, object], expected_type: str
+) -> None:
+    payload = _base_payload()
+    payload["timeline"] = [event]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert type(scenario.timeline[0]).__name__ == expected_type
 
 
 def test_unknown_action_rejected() -> None:
@@ -222,8 +529,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_eleven() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 11
+def test_scenario_schema_version_is_twelve() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 12
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -263,10 +570,17 @@ def _generated_scenario_payload() -> dict[str, object]:
         "generator": "chaos-librarian",
         "profile": "fuzz-smoke",
         "lane": "smoke",
-        "profile_version": 2,
+        "profile_version": 3,
         "seed": 1,
         "budgets": {
-            "works": 3,
+            "movies": 3,
+            "series": 0,
+            "seasons": 0,
+            "episodes": 0,
+            "artists": 0,
+            "albums": 0,
+            "discs": 0,
+            "tracks": 0,
             "variants": 4,
             "bundles": 4,
             "assets": 4,
@@ -285,7 +599,28 @@ def test_scenario_accepts_fuzz_generation_metadata() -> None:
     assert scenario.generation.profile.value == "fuzz-smoke"
     assert scenario.generation.lane.value == "smoke"
     assert scenario.generation.seed == 1
+    assert scenario.generation.budgets.movies == 3
     assert scenario.generation.budgets.timeline_events == 12
+
+
+def test_generation_budget_uses_domain_counts() -> None:
+    budget = generation_budget_for(FuzzProfileName.FUZZ_SMOKE)
+
+    assert FUZZ_GENERATION_PROFILE_VERSION == 3
+    assert budget.movies == 3
+    assert budget.series == 0
+    assert budget.seasons == 0
+    assert budget.episodes == 0
+    assert budget.artists == 0
+    assert budget.albums == 0
+    assert budget.discs == 0
+    assert budget.tracks == 0
+    assert budget.variants == 4
+    assert budget.bundles == 4
+    assert budget.assets == 4
+    assert budget.sidecars == 8
+    assert budget.timeline_events == 12
+    assert not hasattr(budget, "works")
 
 
 def test_scenario_accepts_fuzz_lane_metadata() -> None:
@@ -481,7 +816,7 @@ def test_corrupt_container_header_rejects_4097_bytes() -> None:
         },
     ],
 )
-def test_scenario_v11_accepts_interceptor_events(event: dict[str, object]) -> None:
+def test_scenario_v12_accepts_interceptor_events(event: dict[str, object]) -> None:
     payload = _scenario_payload_with_event(
         event,
         profiles=["filesystem-artifacts", "negative-oracle"],
@@ -542,7 +877,7 @@ def test_scenario_v11_accepts_interceptor_events(event: dict[str, object]) -> No
         ),
     ],
 )
-def test_scenario_v9_rejects_invalid_interceptor_bounds(
+def test_scenario_v12_rejects_invalid_interceptor_bounds(
     event: dict[str, object], field_name: str
 ) -> None:
     payload = _scenario_payload_with_event(event)
@@ -650,7 +985,7 @@ def test_library_archive_root_accepts_real_root_id():
     assert library.archive_root == "staging"
 
 
-def test_scenario_v4_actions_round_trip_at_v9():
+def test_scenario_archive_actions_round_trip():
     payload = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_arch_001",
@@ -660,7 +995,9 @@ def test_scenario_v4_actions_round_trip_at_v9():
             "roots": [{"id": "movies-hd", "path": "library/movies-hd"}],
             "archive_root": None,
         },
-        "works": [],
+        "movies": [],
+        "series": [],
+        "artists": [],
         "timeline": [
             {
                 "id": "ev_arch_001",
@@ -838,14 +1175,16 @@ def test_update_sidecar_event_round_trip():
     assert event.sidecar_path == "asset_main.eng.srt"
 
 
-def test_scenario_v9_round_trip_with_sprint_7_events():
+def test_scenario_round_trip_with_sprint_7_events():
     payload = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": "sc_s7_001",
         "seed": 42,
         "duration_scale": "short",
         "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
-        "works": [],
+        "movies": [],
+        "series": [],
+        "artists": [],
         "timeline": [
             {
                 "id": "e0",
