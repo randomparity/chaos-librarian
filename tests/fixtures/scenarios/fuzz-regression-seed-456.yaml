@@ -3,7 +3,7 @@ scenario_id: fuzz-regression-core-fs-seed-456
 seed: 456
 duration_scale: short
 profiles:
-  - fuzz-regression
+- fuzz-regression
 generation:
   generator: chaos-librarian
   profile: fuzz-regression
@@ -26,416 +26,416 @@ generation:
     timeline_events: 80
 library:
   roots:
-    - id: movies-hd
-      path: movies-hd
-    - id: cold-storage
-      path: cold-storage
+  - id: movies-hd
+    path: movies-hd
+  - id: cold-storage
+    path: cold-storage
   archive_root: cold-storage
 movies:
-  - id: work_001
-    title: fuzz-regression core-fs Work 456-001
-    layout: movie_flat
-    variants:
-      - id: variant_001
-        label: core-fs
-        bundle:
-          id: bundle_001
-          assets:
-            - id: asset_001
-              role: primary_video
-              container: mkv
-              duration_seconds: 7
-              video:
-                source: color_bars
-                codec: h264
-                resolution: sd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: mono
-                  language: eng
-  - id: work_002
-    title: fuzz-regression core-fs Work 456-002
-    layout: movie_flat
-    variants:
-      - id: variant_002
-        label: core-fs
-        bundle:
-          id: bundle_002
-          assets:
-            - id: asset_002
-              role: primary_video
-              container: mp4
-              duration_seconds: 4
-              video:
-                source: color_bars
-                codec: h264
-                resolution: hd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: stereo
-                  language: eng
-  - id: work_003
-    title: fuzz-regression core-fs Work 456-003
-    layout: movie_flat
-    variants:
-      - id: variant_003
-        label: core-fs
-        bundle:
-          id: bundle_003
-          assets:
-            - id: asset_003
-              role: primary_video
-              container: mkv
-              duration_seconds: 8
-              video:
-                source: color_bars
-                codec: h264
-                resolution: 1080p
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: '5.1'
-                  language: eng
-              subtitles:
-                - source: generated_srt
-                  codec: srt
-                  language: eng
-                  mode: sidecar
-  - id: work_004
-    title: fuzz-regression core-fs Work 456-004
-    layout: movie_flat
-    variants:
-      - id: variant_004
-        label: core-fs
-        bundle:
-          id: bundle_004
-          assets:
-            - id: asset_004
-              role: primary_video
-              container: mp4
-              duration_seconds: 6
-              video:
-                source: color_bars
-                codec: h264
-                resolution: sd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: mono
-                  language: eng
-  - id: work_005
-    title: fuzz-regression core-fs Work 456-005
-    layout: movie_flat
-    variants:
-      - id: variant_005
-        label: core-fs
-        bundle:
-          id: bundle_005
-          assets:
-            - id: asset_005
-              role: primary_video
-              container: mkv
-              duration_seconds: 3
-              video:
-                source: color_bars
-                codec: hevc
-                resolution: hd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: stereo
-                  language: eng
-  - id: work_006
-    title: fuzz-regression core-fs Work 456-006
-    layout: movie_flat
-    variants:
-      - id: variant_006
-        label: core-fs
-        bundle:
-          id: bundle_006
-          assets:
-            - id: asset_006
-              role: primary_video
-              container: mp4
-              duration_seconds: 6
-              video:
-                source: color_bars
-                codec: h264
-                resolution: 1080p
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: '5.1'
-                  language: eng
-              subtitles:
-                - source: generated_srt
-                  codec: srt
-                  language: eng
-                  mode: sidecar
-  - id: work_007
-    title: fuzz-regression core-fs Work 456-007
-    layout: movie_flat
-    variants:
-      - id: variant_007
-        label: core-fs
-        bundle:
-          id: bundle_007
-          assets:
-            - id: asset_007
-              role: primary_video
-              container: mkv
-              duration_seconds: 2
-              video:
-                source: color_bars
-                codec: h264
-                resolution: sd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: mono
-                  language: eng
-  - id: work_008
-    title: fuzz-regression core-fs Work 456-008
-    layout: movie_flat
-    variants:
-      - id: variant_008
-        label: core-fs
-        bundle:
-          id: bundle_008
-          assets:
-            - id: asset_008
-              role: primary_video
-              container: mp4
-              duration_seconds: 5
-              video:
-                source: color_bars
-                codec: h264
-                resolution: hd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: stereo
-                  language: eng
-  - id: work_009
-    title: fuzz-regression core-fs Work 456-009
-    layout: movie_flat
-    variants:
-      - id: variant_009
-        label: core-fs
-        bundle:
-          id: bundle_009
-          assets:
-            - id: asset_009
-              role: primary_video
-              container: mkv
-              duration_seconds: 7
-              video:
-                source: color_bars
-                codec: h264
-                resolution: 1080p
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: '5.1'
-                  language: eng
-              subtitles:
-                - source: generated_srt
-                  codec: srt
-                  language: eng
-                  mode: sidecar
-  - id: work_010
-    title: fuzz-regression core-fs Work 456-010
-    layout: movie_flat
-    variants:
-      - id: variant_010
-        label: core-fs
-        bundle:
-          id: bundle_010
-          assets:
-            - id: asset_010
-              role: primary_video
-              container: mp4
-              duration_seconds: 4
-              video:
-                source: color_bars
-                codec: hevc
-                resolution: sd
-              audio:
-                - source: sine
-                  codec: aac
-                  channels: mono
-                  language: eng
+- id: movie_001
+  title: fuzz-regression core-fs Movie 456-001
+  layout: movie_flat
+  variants:
+  - id: variant_001
+    label: core-fs
+    bundle:
+      id: bundle_001
+      assets:
+      - id: asset_001
+        role: primary_video
+        container: mkv
+        duration_seconds: 7
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        audio:
+        - source: sine
+          codec: aac
+          channels: mono
+          language: eng
+- id: movie_002
+  title: fuzz-regression core-fs Movie 456-002
+  layout: movie_flat
+  variants:
+  - id: variant_002
+    label: core-fs
+    bundle:
+      id: bundle_002
+      assets:
+      - id: asset_002
+        role: primary_video
+        container: mp4
+        duration_seconds: 4
+        video:
+          source: color_bars
+          codec: h264
+          resolution: hd
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+- id: movie_003
+  title: fuzz-regression core-fs Movie 456-003
+  layout: movie_flat
+  variants:
+  - id: variant_003
+    label: core-fs
+    bundle:
+      id: bundle_003
+      assets:
+      - id: asset_003
+        role: primary_video
+        container: mkv
+        duration_seconds: 8
+        video:
+          source: color_bars
+          codec: h264
+          resolution: 1080p
+        audio:
+        - source: sine
+          codec: aac
+          channels: '5.1'
+          language: eng
+        subtitles:
+        - source: generated_srt
+          codec: srt
+          language: eng
+          mode: sidecar
+- id: movie_004
+  title: fuzz-regression core-fs Movie 456-004
+  layout: movie_flat
+  variants:
+  - id: variant_004
+    label: core-fs
+    bundle:
+      id: bundle_004
+      assets:
+      - id: asset_004
+        role: primary_video
+        container: mp4
+        duration_seconds: 6
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        audio:
+        - source: sine
+          codec: aac
+          channels: mono
+          language: eng
+- id: movie_005
+  title: fuzz-regression core-fs Movie 456-005
+  layout: movie_flat
+  variants:
+  - id: variant_005
+    label: core-fs
+    bundle:
+      id: bundle_005
+      assets:
+      - id: asset_005
+        role: primary_video
+        container: mkv
+        duration_seconds: 3
+        video:
+          source: color_bars
+          codec: hevc
+          resolution: hd
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+- id: movie_006
+  title: fuzz-regression core-fs Movie 456-006
+  layout: movie_flat
+  variants:
+  - id: variant_006
+    label: core-fs
+    bundle:
+      id: bundle_006
+      assets:
+      - id: asset_006
+        role: primary_video
+        container: mp4
+        duration_seconds: 6
+        video:
+          source: color_bars
+          codec: h264
+          resolution: 1080p
+        audio:
+        - source: sine
+          codec: aac
+          channels: '5.1'
+          language: eng
+        subtitles:
+        - source: generated_srt
+          codec: srt
+          language: eng
+          mode: sidecar
+- id: movie_007
+  title: fuzz-regression core-fs Movie 456-007
+  layout: movie_flat
+  variants:
+  - id: variant_007
+    label: core-fs
+    bundle:
+      id: bundle_007
+      assets:
+      - id: asset_007
+        role: primary_video
+        container: mkv
+        duration_seconds: 2
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        audio:
+        - source: sine
+          codec: aac
+          channels: mono
+          language: eng
+- id: movie_008
+  title: fuzz-regression core-fs Movie 456-008
+  layout: movie_flat
+  variants:
+  - id: variant_008
+    label: core-fs
+    bundle:
+      id: bundle_008
+      assets:
+      - id: asset_008
+        role: primary_video
+        container: mp4
+        duration_seconds: 5
+        video:
+          source: color_bars
+          codec: h264
+          resolution: hd
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+- id: movie_009
+  title: fuzz-regression core-fs Movie 456-009
+  layout: movie_flat
+  variants:
+  - id: variant_009
+    label: core-fs
+    bundle:
+      id: bundle_009
+      assets:
+      - id: asset_009
+        role: primary_video
+        container: mkv
+        duration_seconds: 7
+        video:
+          source: color_bars
+          codec: h264
+          resolution: 1080p
+        audio:
+        - source: sine
+          codec: aac
+          channels: '5.1'
+          language: eng
+        subtitles:
+        - source: generated_srt
+          codec: srt
+          language: eng
+          mode: sidecar
+- id: movie_010
+  title: fuzz-regression core-fs Movie 456-010
+  layout: movie_flat
+  variants:
+  - id: variant_010
+    label: core-fs
+    bundle:
+      id: bundle_010
+      assets:
+      - id: asset_010
+        role: primary_video
+        container: mp4
+        duration_seconds: 4
+        video:
+          source: color_bars
+          codec: hevc
+          resolution: sd
+        audio:
+        - source: sine
+          codec: aac
+          channels: mono
+          language: eng
 series: []
 artists: []
 timeline:
-  - id: fuzz_0001_move
-    at: 1ns
-    action: move_asset
-    target: asset_001
-    to: movies-hd/fuzz/asset_001-0001.mkv
-  - id: fuzz_0002_rename
-    at: 2ns
-    action: rename_file
-    target: asset_002
-    to: movies-hd/renamed/asset_002-0002.mp4
-  - id: fuzz_0003_delete
-    at: 3ns
-    action: delete_file
-    target: asset_003
-  - id: fuzz_0004_add
-    at: 4ns
-    action: add_file
-    target: asset_003
-    to: movies-hd/restored/asset_003-0004.mkv
-  - id: fuzz_0005_archive
-    at: 5ns
-    action: archive_file
-    target: asset_004
-  - id: fuzz_0006_move_between_roots
-    at: 6ns
-    action: move_between_roots
-    target: asset_005
-    from_root_id: movies-hd
-    to_root_id: cold-storage
-  - id: fuzz_0007_slow_copy_start
-    at: 7ns
-    action: slow_copy_start
-    target: asset_006
-    to: movies-hd/fuzz/asset_006-slow.mp4
-    temp_path: movies-hd/fuzz/.asset_006-slow.tmp
-    duration: 1ns
-  - id: fuzz_0008_slow_copy_commit
-    at: 8ns
-    action: slow_copy_commit
-    for: fuzz_0007_slow_copy_start
-  - id: fuzz_0009_create_nfo
-    at: 9ns
-    action: create_sidecar
-    target: asset_009
-    to: movies-hd/sidecars/asset_009-0009.nfo
-    kind: nfo
-  - id: fuzz_0010_metadata
-    at: 10ns
-    action: edit_metadata
-    target: asset_003
-    fields:
-      title: Generated Title 0010
-  - id: fuzz_0011_update_sidecar
-    at: 11ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0012_update_sidecar
-    at: 12ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0013_metadata
-    at: 13ns
-    action: edit_metadata
-    target: asset_001
-    fields:
-      title: Generated Title 0013
-  - id: fuzz_0014_rename
-    at: 14ns
-    action: rename_file
-    target: asset_005
-    to: movies-hd/renamed/asset_005-0014.mkv
-  - id: fuzz_0015_metadata
-    at: 15ns
-    action: edit_metadata
-    target: asset_005
-    fields:
-      title: Generated Title 0015
-  - id: fuzz_0016_rename
-    at: 16ns
-    action: rename_file
-    target: asset_001
-    to: movies-hd/renamed/asset_001-0016.mkv
-  - id: fuzz_0017_move
-    at: 17ns
-    action: move_asset
-    target: asset_008
-    to: movies-hd/fuzz/asset_008-0017.mp4
-  - id: fuzz_0018_create_nfo
-    at: 18ns
-    action: create_sidecar
-    target: asset_004
-    to: movies-hd/sidecars/asset_004-0018.nfo
-    kind: nfo
-  - id: fuzz_0019_update_sidecar
-    at: 19ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0020_update_sidecar
-    at: 20ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0021_metadata
-    at: 21ns
-    action: edit_metadata
-    target: asset_010
-    fields:
-      title: Generated Title 0021
-  - id: fuzz_0022_metadata
-    at: 22ns
-    action: edit_metadata
-    target: asset_010
-    fields:
-      title: Generated Title 0022
-  - id: fuzz_0023_update_sidecar
-    at: 23ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0024_create_nfo
-    at: 24ns
-    action: create_sidecar
-    target: asset_008
-    to: movies-hd/sidecars/asset_008-0024.nfo
-    kind: nfo
-  - id: fuzz_0025_move
-    at: 25ns
-    action: move_asset
-    target: asset_006
-    to: movies-hd/fuzz/asset_006-0025.mp4
-  - id: fuzz_0026_move
-    at: 26ns
-    action: move_asset
-    target: asset_006
-    to: movies-hd/fuzz/asset_006-0026.mp4
-  - id: fuzz_0027_metadata
-    at: 27ns
-    action: edit_metadata
-    target: asset_009
-    fields:
-      title: Generated Title 0027
-  - id: fuzz_0028_move
-    at: 28ns
-    action: move_asset
-    target: asset_001
-    to: movies-hd/fuzz/asset_001-0028.mkv
-  - id: fuzz_0029_update_sidecar
-    at: 29ns
-    action: update_sidecar
-    target: asset_009
-    sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
-  - id: fuzz_0030_move
-    at: 30ns
-    action: move_asset
-    target: asset_005
-    to: movies-hd/fuzz/asset_005-0030.mkv
-  - id: fuzz_0031_rename
-    at: 31ns
-    action: rename_file
-    target: asset_003
-    to: movies-hd/renamed/asset_003-0031.mkv
-  - id: fuzz_0032_move
-    at: 32ns
-    action: move_asset
-    target: asset_003
-    to: movies-hd/fuzz/asset_003-0032.mkv
+- id: fuzz_0001_move
+  at: 1ns
+  action: move_asset
+  target: asset_001
+  to: movies-hd/fuzz/asset_001-0001.mkv
+- id: fuzz_0002_rename
+  at: 2ns
+  action: rename_file
+  target: asset_002
+  to: movies-hd/renamed/asset_002-0002.mp4
+- id: fuzz_0003_delete
+  at: 3ns
+  action: delete_file
+  target: asset_003
+- id: fuzz_0004_add
+  at: 4ns
+  action: add_file
+  target: asset_003
+  to: movies-hd/restored/asset_003-0004.mkv
+- id: fuzz_0005_archive
+  at: 5ns
+  action: archive_file
+  target: asset_004
+- id: fuzz_0006_move_between_roots
+  at: 6ns
+  action: move_between_roots
+  target: asset_005
+  from_root_id: movies-hd
+  to_root_id: cold-storage
+- id: fuzz_0007_slow_copy_start
+  at: 7ns
+  action: slow_copy_start
+  target: asset_006
+  to: movies-hd/fuzz/asset_006-slow.mp4
+  temp_path: movies-hd/fuzz/.asset_006-slow.tmp
+  duration: 1ns
+- id: fuzz_0008_slow_copy_commit
+  at: 8ns
+  action: slow_copy_commit
+  for: fuzz_0007_slow_copy_start
+- id: fuzz_0009_create_nfo
+  at: 9ns
+  action: create_sidecar
+  target: asset_009
+  to: movies-hd/sidecars/asset_009-0009.nfo
+  kind: nfo
+- id: fuzz_0010_metadata
+  at: 10ns
+  action: edit_metadata
+  target: asset_003
+  fields:
+    title: Generated Title 0010
+- id: fuzz_0011_update_sidecar
+  at: 11ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0012_update_sidecar
+  at: 12ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0013_metadata
+  at: 13ns
+  action: edit_metadata
+  target: asset_001
+  fields:
+    title: Generated Title 0013
+- id: fuzz_0014_rename
+  at: 14ns
+  action: rename_file
+  target: asset_005
+  to: movies-hd/renamed/asset_005-0014.mkv
+- id: fuzz_0015_metadata
+  at: 15ns
+  action: edit_metadata
+  target: asset_005
+  fields:
+    title: Generated Title 0015
+- id: fuzz_0016_rename
+  at: 16ns
+  action: rename_file
+  target: asset_001
+  to: movies-hd/renamed/asset_001-0016.mkv
+- id: fuzz_0017_move
+  at: 17ns
+  action: move_asset
+  target: asset_008
+  to: movies-hd/fuzz/asset_008-0017.mp4
+- id: fuzz_0018_create_nfo
+  at: 18ns
+  action: create_sidecar
+  target: asset_004
+  to: movies-hd/sidecars/asset_004-0018.nfo
+  kind: nfo
+- id: fuzz_0019_update_sidecar
+  at: 19ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0020_update_sidecar
+  at: 20ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0021_metadata
+  at: 21ns
+  action: edit_metadata
+  target: asset_010
+  fields:
+    title: Generated Title 0021
+- id: fuzz_0022_metadata
+  at: 22ns
+  action: edit_metadata
+  target: asset_010
+  fields:
+    title: Generated Title 0022
+- id: fuzz_0023_update_sidecar
+  at: 23ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0024_create_nfo
+  at: 24ns
+  action: create_sidecar
+  target: asset_008
+  to: movies-hd/sidecars/asset_008-0024.nfo
+  kind: nfo
+- id: fuzz_0025_move
+  at: 25ns
+  action: move_asset
+  target: asset_006
+  to: movies-hd/fuzz/asset_006-0025.mp4
+- id: fuzz_0026_move
+  at: 26ns
+  action: move_asset
+  target: asset_006
+  to: movies-hd/fuzz/asset_006-0026.mp4
+- id: fuzz_0027_metadata
+  at: 27ns
+  action: edit_metadata
+  target: asset_009
+  fields:
+    title: Generated Title 0027
+- id: fuzz_0028_move
+  at: 28ns
+  action: move_asset
+  target: asset_001
+  to: movies-hd/fuzz/asset_001-0028.mkv
+- id: fuzz_0029_update_sidecar
+  at: 29ns
+  action: update_sidecar
+  target: asset_009
+  sidecar_path: movies-hd/sidecars/asset_009-0009.nfo
+- id: fuzz_0030_move
+  at: 30ns
+  action: move_asset
+  target: asset_005
+  to: movies-hd/fuzz/asset_005-0030.mkv
+- id: fuzz_0031_rename
+  at: 31ns
+  action: rename_file
+  target: asset_003
+  to: movies-hd/renamed/asset_003-0031.mkv
+- id: fuzz_0032_move
+  at: 32ns
+  action: move_asset
+  target: asset_003
+  to: movies-hd/fuzz/asset_003-0032.mkv
