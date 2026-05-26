@@ -220,10 +220,7 @@ def test_extract_subtitle_rejects_audio_only_track_asset(music_scenario, empty_i
 
     issues = _issues_for(raw, empty_index)
 
-    assert any(
-        issue.code in {codes.E_MATERIALIZE_UNSUPPORTED, codes.E_EXTRACT_TRACK_UNKNOWN}
-        for issue in issues
-    )
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
 
 
 def test_reencode_audio_allows_audio_only_track_asset(music_scenario, empty_index) -> None:

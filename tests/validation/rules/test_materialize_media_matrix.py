@@ -61,6 +61,7 @@ timeline: []
 def _write_movie_scenario(
     path: Path,
     *,
+    audio_codec: str = "aac",
     video_source: str = "color_bars",
     video_codec: str = "h264",
     video_resolution: str = "sd",
@@ -94,7 +95,7 @@ movies:
                 resolution: {video_resolution}
               audio:
                 - source: sine
-                  codec: aac
+                  codec: {audio_codec}
                   channels: stereo
                   language: eng
 series: []
@@ -142,6 +143,19 @@ def test_unsupported_video_source_names_field(tmp_path: Path) -> None:
     assert issue.path is not None
     assert issue.path.endswith(".video.source")
     assert "noise" in issue.message
+
+
+def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
+    scenario = tmp_path / "materialize-movie-audio-flac.yaml"
+    _write_movie_scenario(scenario, audio_codec="flac")
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    assert issue.path.endswith(".audio[0].codec")
+    assert "flac" in issue.message
 
 
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
