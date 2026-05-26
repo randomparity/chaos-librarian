@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
 from dataclasses import replace
 from typing import cast
 
@@ -44,6 +45,11 @@ from tests.support.adapter import (
 
 def _codes(report) -> list[str]:
     return [finding.code for finding in report.findings]
+
+
+class _BlockedTopologyIterable:
+    def __iter__(self) -> Iterator[object]:
+        raise AssertionError("path-only observed export walked topology")
 
 
 def _observed_episode_topology() -> ObservedState:
@@ -181,7 +187,21 @@ def test_observed_from_fixture_emits_track_domain_rows() -> None:
 
 def test_observed_from_fixture_without_topology_does_not_walk_domain_refs() -> None:
     fixture = _fixture_for_episode()
-    manifest = fixture.current_manifest.model_copy(update={"seasons": []})
+    blocked = _BlockedTopologyIterable()
+    manifest = fixture.current_manifest.model_copy(
+        update={
+            "movies": blocked,
+            "series": blocked,
+            "seasons": blocked,
+            "episodes": blocked,
+            "artists": blocked,
+            "albums": blocked,
+            "discs": blocked,
+            "tracks": blocked,
+            "variants": blocked,
+            "bundles": blocked,
+        }
+    )
     fixture = replace(fixture, current_manifest=manifest)
 
     observed = _observed_from_fixture(fixture, include_topology=False)
@@ -205,6 +225,7 @@ def test_episode_fixture_reports_match_manifest_topology() -> None:
     season_report = fixture.reports.seasons[season.id]
     episode_report = fixture.reports.episodes[episode.id]
     variant_report = fixture.reports.variants[variant.id]
+    asset_report = fixture.reports.assets["asset-a"]
 
     assert set(fixture.reports.series) == {series.id}
     assert set(fixture.reports.seasons) == {season.id}
@@ -218,6 +239,11 @@ def test_episode_fixture_reports_match_manifest_topology() -> None:
     assert episode_report.title == episode.title
     assert variant_report.parent_kind is variant.parent_kind
     assert variant_report.parent_id == episode.id
+    assert asset_report.parent_kind is ParentKind.EPISODE
+    assert asset_report.parent_id == episode.id
+    assert asset_report.series_id == series.id
+    assert asset_report.season_id == season.id
+    assert asset_report.episode_id == episode.id
 
 
 def test_track_fixture_reports_match_manifest_topology() -> None:
@@ -234,6 +260,7 @@ def test_track_fixture_reports_match_manifest_topology() -> None:
     disc_report = fixture.reports.discs[disc.id]
     track_report = fixture.reports.tracks[track.id]
     variant_report = fixture.reports.variants[variant.id]
+    asset_report = fixture.reports.assets["asset-a"]
 
     assert set(fixture.reports.artists) == {artist.id}
     assert set(fixture.reports.albums) == {album.id}
@@ -250,6 +277,12 @@ def test_track_fixture_reports_match_manifest_topology() -> None:
     assert track_report.title == track.title
     assert variant_report.parent_kind is variant.parent_kind
     assert variant_report.parent_id == track.id
+    assert asset_report.parent_kind is ParentKind.TRACK
+    assert asset_report.parent_id == track.id
+    assert asset_report.artist_id == artist.id
+    assert asset_report.album_id == album.id
+    assert asset_report.disc_id == disc.id
+    assert asset_report.track_id == track.id
 
 
 def test_episode_topology_from_fixture_compares_clean() -> None:

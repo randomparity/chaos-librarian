@@ -817,21 +817,30 @@ def _observed_sidecars_by_asset(current_manifest: Manifest) -> dict[str, list[Ob
 def _observed_assets_from_manifest(
     current_manifest: Manifest,
     *,
-    refs: _ObservedRefs,
+    refs: _ObservedRefs | None,
     include_current_paths: bool,
     include_topology: bool,
     path_override: str | None,
 ) -> tuple[list[ObservedAsset], dict[str, list[str]]]:
     locations = {location.asset_id: location for location in current_manifest.locations}
     versions = {version.asset_id: version for version in current_manifest.versions}
-    bundles_by_id = {bundle.id: bundle for bundle in current_manifest.bundles}
+    bundles_by_id = (
+        {bundle.id: bundle for bundle in current_manifest.bundles} if include_topology else {}
+    )
     asset_refs_by_bundle: dict[str, list[str]] = {}
     sidecars_by_asset = _observed_sidecars_by_asset(current_manifest)
     assets: list[ObservedAsset] = []
     for asset in current_manifest.assets:
         location = locations.get(asset.id)
         version = versions.get(asset.id)
-        bundle = bundles_by_id[asset.bundle_id] if include_topology else None
+        variant_ref = None
+        bundle_ref = None
+        if include_topology:
+            if refs is None:
+                raise ValueError("topology refs are required when include_topology=True")
+            bundle = bundles_by_id[asset.bundle_id]
+            variant_ref = refs.variants[bundle.variant_id]
+            bundle_ref = refs.bundles[asset.bundle_id]
         observed_ref = f"observed-{asset.id}"
         asset_refs_by_bundle.setdefault(asset.bundle_id, []).append(observed_ref)
         current_path = location.path if location is not None and include_current_paths else None
@@ -843,8 +852,8 @@ def _observed_assets_from_manifest(
                 current_path=current_path,
                 content_hash=version.content_hash if version is not None else None,
                 probed=version.probed if version is not None else None,
-                variant_ref=refs.variants[bundle.variant_id] if bundle is not None else None,
-                bundle_ref=refs.bundles[asset.bundle_id] if include_topology else None,
+                variant_ref=variant_ref,
+                bundle_ref=bundle_ref,
                 sidecars=sidecars_by_asset.get(asset.id, []),
             )
         )
@@ -966,7 +975,7 @@ def observed_from_fixture(
     include_topology: bool = False,
 ) -> ObservedState:
     current_manifest = oracle_fixture.current_manifest
-    refs = _observed_refs(current_manifest)
+    refs = _observed_refs(current_manifest) if include_topology else None
     assets, asset_refs_by_bundle = _observed_assets_from_manifest(
         current_manifest,
         refs=refs,
@@ -985,6 +994,8 @@ def observed_from_fixture(
     variants: list[ObservedVariant] = []
     bundles: list[ObservedBundle] = []
     if include_topology:
+        if refs is None:
+            raise ValueError("topology refs are required when include_topology=True")
         domain_rows = _observed_domain_rows(current_manifest, refs)
         movies = domain_rows.movies
         series = domain_rows.series
