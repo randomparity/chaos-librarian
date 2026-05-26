@@ -247,3 +247,81 @@ def test_absolute_named_episode_without_absolute_number_is_not_renderable(
     renderable = renderable_context_for(context, "TV")
 
     assert renderable is None
+
+
+def test_season_zero_specials_is_valid(series_scenario, empty_index) -> None:
+    raw = series_scenario()
+    series = _items(raw["series"])[0]
+    _items(series["seasons"])[0]["season_number"] = 0
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_duplicate_episode_number_in_one_season_is_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario()
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    episodes = _items(season["episodes"])
+    duplicate = dict(episodes[0])
+    duplicate["id"] = "episode_two"
+    episodes.append(duplicate)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_date_title_requires_aired_on(series_scenario, empty_index) -> None:
+    raw = series_scenario(episode_naming="date_title")
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    _items(season["episodes"])[0].pop("aired_on")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_absolute_3_digit_title_requires_absolute_number(series_scenario, empty_index) -> None:
+    raw = series_scenario(episode_naming="absolute_3_digit_title")
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    _items(season["episodes"])[0].pop("absolute_number")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_duplicate_disc_number_in_one_album_is_rejected(music_scenario, empty_index) -> None:
+    raw = music_scenario()
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    duplicate: dict[str, object] = {
+        "id": "disc_two",
+        "disc_number": 1,
+        "tracks": [],
+    }
+    _items(album["discs"]).append(duplicate)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_duplicate_track_number_in_one_disc_is_rejected(music_scenario, empty_index) -> None:
+    raw = music_scenario()
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    disc = _items(album["discs"])[0]
+    tracks = _items(disc["tracks"])
+    duplicate = dict(tracks[0])
+    duplicate["id"] = "track_two"
+    duplicate["variants"] = []
+    tracks.append(duplicate)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
