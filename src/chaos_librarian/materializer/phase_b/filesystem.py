@@ -79,6 +79,7 @@ class _PlannedHierarchyMove:
 
 
 _UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS: Final[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9_.-]")
+_HIERARCHY_TEMP_TOKEN_PREFIX_LENGTH: Final = 48
 
 
 def make_filesystem_phase_b_context(
@@ -346,9 +347,9 @@ def _plan_hierarchy_moves(
 
 
 def _hierarchy_temp_event_token(event_id: str) -> str:
-    token = _UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS.sub("_", event_id)
-    if token == event_id and token:
-        return token
+    token = _UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS.sub("_", event_id)[
+        :_HIERARCHY_TEMP_TOKEN_PREFIX_LENGTH
+    ]
     if not token:
         token = "event"
     digest = hashlib.sha256(event_id.encode("utf-8")).hexdigest()[:8]

@@ -14,6 +14,7 @@ from chaos_librarian.materializer.actions import (
     SUPPORTED_S7_ACTIONS,
     SUPPORTED_S10_ACTIONS,
 )
+from chaos_librarian.materializer.phase_b.filesystem import supports_filesystem_action
 
 
 def test_supported_s6_actions_match_sprint_6_materializer_surface() -> None:
@@ -93,3 +94,4 @@ def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
     )
     assert expected == _HIERARCHY_ACTIONS
     assert expected <= SUPPORTED_S10_ACTIONS
+    assert all(supports_filesystem_action(action) for action in _HIERARCHY_ACTIONS)
