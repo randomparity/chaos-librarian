@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 from typing import cast
 
 from chaos_librarian.contract.validation import ValidationIssue
-from chaos_librarian.validation import codes
+from chaos_librarian.validation import codes, prepare_run_input, run_validation
 from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.rules._common import iter_asset_contexts, renderable_context_for
 from chaos_librarian.validation.semantic import run_semantic_pass
@@ -41,6 +42,58 @@ def _first_track_asset(raw: dict[str, object]) -> dict[str, object]:
     variant = _mapping(_items(track["variants"])[0])
     bundle = _mapping(variant["bundle"])
     return _mapping(_items(bundle["assets"])[0])
+
+
+def _write_music_scenario(path: Path, *, timeline: str) -> None:
+    path.write_text(
+        f"""schema_version: 12
+scenario_id: music-action-validation
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies: []
+series: []
+artists:
+  - id: artist_north
+    name: North Index
+    layout: artist_album_disc
+    track_naming: track_number_title
+    albums:
+      - id: album_winter
+        title: Winter Index
+        release_year: 2024
+        discs:
+          - id: disc_one
+            disc_number: 1
+            tracks:
+              - id: track_one
+                track_number: 1
+                title: Opening
+                performers:
+                  - North Index
+                variants:
+                  - id: variant_track
+                    label: Lossless
+                    bundle:
+                      id: bundle_track
+                      assets:
+                        - id: asset_track
+                          role: main
+                          container: flac
+                          duration_seconds: 1
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+timeline:
+{timeline}
+""",
+        encoding="utf-8",
+    )
 
 
 def test_movie_asset_target_is_found_by_raw_hierarchy_walker(minimal_scenario, empty_index) -> None:
@@ -141,6 +194,7 @@ def test_reencode_video_rejects_audio_only_track_asset(music_scenario, empty_ind
                 "action": "reencode_video",
                 "target": "asset_track",
                 "codec": "h264",
+                "resolution": "sd",
             }
         ]
     )
@@ -180,7 +234,8 @@ def test_reencode_audio_allows_audio_only_track_asset(music_scenario, empty_inde
                 "at": "1s",
                 "action": "reencode_audio",
                 "target": "asset_track",
-                "codec": "flac",
+                "from_channels": "stereo",
+                "to_channels": "mono",
             }
         ]
     )
@@ -188,6 +243,44 @@ def test_reencode_audio_allows_audio_only_track_asset(music_scenario, empty_inde
     issues = _issues_for(raw, empty_index)
 
     assert not any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_validation_reencode_video_rejects_audio_only_track_asset(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-reencode-video.yaml"
+    _write_music_scenario(
+        scenario,
+        timeline="""  - id: ev
+    at: 1s
+    action: reencode_video
+    target: asset_track
+    codec: h264
+    resolution: sd
+""",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in report.issues)
+
+
+def test_validation_reencode_audio_allows_audio_only_track_asset(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-reencode-audio.yaml"
+    _write_music_scenario(
+        scenario,
+        timeline="""  - id: ev
+    at: 1s
+    action: reencode_audio
+    target: asset_track
+    from_channels: stereo
+    to_channels: mono
+""",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
 
 
 def test_corrupt_packet_range_rejects_track_video_stream(music_scenario, empty_index) -> None:
