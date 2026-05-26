@@ -337,3 +337,110 @@ def test_duplicate_track_number_in_one_disc_is_rejected(music_scenario, empty_in
     issues = _issues_for(raw, empty_index)
 
     assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_rendered_initial_asset_path_collision_is_rejected(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    first_movie = _mapping(_items(raw["movies"])[0])
+    second_movie = {
+        "id": "movie_two",
+        "title": first_movie["title"],
+        "layout": first_movie["layout"],
+        "variants": [
+            {
+                "id": "v_two",
+                "label": "l",
+                "bundle": {
+                    "id": "b_two",
+                    "assets": [
+                        {
+                            "id": "asset_two",
+                            "role": "main",
+                            "container": "mkv",
+                            "duration_seconds": 1,
+                            "video": {
+                                "source": "color_bars",
+                                "codec": "h264",
+                                "resolution": "sd",
+                            },
+                            "audio": [
+                                {
+                                    "source": "sine",
+                                    "codec": "aac",
+                                    "channels": "stereo",
+                                    "language": "eng",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    _items(raw["movies"]).append(second_movie)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_rendered_title_dot_segment_is_rejected(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    _mapping(_items(raw["movies"])[0])["title"] = "."
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_CONTAINMENT for issue in issues)
+
+
+def test_rendered_track_path_uses_music_layout_for_collision_check(
+    music_scenario, empty_index
+) -> None:
+    raw = music_scenario()
+    artist = _mapping(_items(raw["artists"])[0])
+    artist["layout"] = "artist_album_flat"
+    album = _mapping(_items(artist["albums"])[0])
+    disc = _mapping(_items(album["discs"])[0])
+    original_track = _mapping(_items(disc["tracks"])[0])
+    second_track = {
+        "id": "track_two",
+        "track_number": original_track["track_number"],
+        "title": original_track["title"],
+        "performers": ["North Index"],
+        "variants": [
+            {
+                "id": "variant_track_two",
+                "label": "Lossless",
+                "bundle": {
+                    "id": "bundle_track_two",
+                    "assets": [
+                        {
+                            "id": "asset_track_two",
+                            "role": "main",
+                            "container": "flac",
+                            "duration_seconds": 1,
+                            "audio": [
+                                {
+                                    "source": "sine",
+                                    "codec": "flac",
+                                    "channels": "stereo",
+                                    "language": "eng",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    _items(album["discs"]).append(
+        {
+            "id": "disc_two",
+            "disc_number": 2,
+            "tracks": [second_track],
+        }
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)

@@ -18,7 +18,10 @@ from chaos_librarian.validation.rules.duration_syntax import rule_duration_synta
 from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )
-from chaos_librarian.validation.rules.hierarchy import rule_hierarchy_invariants
+from chaos_librarian.validation.rules.hierarchy import (
+    rule_hierarchy_invariants,
+    rule_rendered_path_collisions,
+)
 from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
 from chaos_librarian.validation.rules.materialize_media_matrix import (
     rule_materialize_media_matrix,
@@ -56,6 +59,7 @@ _RULES: list[Rule] = [
     rule_profile_budgets,
     rule_root_unknown,
     rule_hierarchy_invariants,
+    rule_rendered_path_collisions,
     rule_slow_copy_unpaired,
     rule_slow_copy_timing,
     rule_slow_copy_path_collision,

@@ -330,6 +330,8 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
         if not isinstance(asset_id, str):
             continue
         media_path = _rendered_path_for_sidecar(context, root_path)
+        if media_path is None:
+            continue
         for sub_obj in _as_list(asset.get("subtitles")) or []:
             sub = _as_mapping(sub_obj)
             if sub is None or sub.get("mode") != "sidecar":
@@ -337,9 +339,13 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
             language = sub.get("language")
             if not isinstance(language, str):
                 continue
+            try:
+                path = render_declared_sidecar_path(media_path, language)
+            except ValueError:
+                continue
             yield DeclaredSidecar(
                 asset_id=asset_id,
-                path=_sidecar_path(media_path, asset_id=asset_id, language=language),
+                path=path,
                 kind=SidecarKind.SUBTITLE.value,
                 language=language,
             )
@@ -970,15 +976,6 @@ def _rendered_path_for_sidecar(raw_context: RawAssetContext, root_path: str | No
         return render_asset_path(renderable)
     except ValueError:
         return None
-
-
-def _sidecar_path(media_path: str | None, *, asset_id: str, language: str) -> str:
-    if media_path is None:
-        return f"{asset_id}.{language}.srt"
-    try:
-        return render_declared_sidecar_path(media_path, language)
-    except ValueError:
-        return f"{asset_id}.{language}.srt"
 
 
 def _parent_kind(value: str) -> ParentKind | None:

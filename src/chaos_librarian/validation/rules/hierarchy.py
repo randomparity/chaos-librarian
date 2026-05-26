@@ -2,24 +2,26 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import EpisodeNaming
-from chaos_librarian.validation.codes import E_HIERARCHY_INVALID
+from chaos_librarian.validation.codes import E_HIERARCHY_INVALID, E_PATH_COLLISION
 from chaos_librarian.validation.rules._common import (
     Reporter,
     _as_list,
     _as_mapping,
     _Loc,
+    rendered_asset_paths,
 )
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["rule_hierarchy_invariants"]
+__all__ = ["rule_hierarchy_invariants", "rule_rendered_path_collisions"]
 
 
 def rule_hierarchy_invariants(
@@ -31,6 +33,30 @@ def rule_hierarchy_invariants(
     reporter = Reporter(collector=collector, line_index=line_index)
     _check_series(raw, reporter)
     _check_artists(raw, reporter)
+
+
+def rule_rendered_path_collisions(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject duplicate rendered initial media paths."""
+    reporter = Reporter(collector=collector, line_index=line_index)
+    seen: dict[str, tuple[str, _Loc]] = {}
+    for asset_id, (path, loc) in rendered_asset_paths(raw).items():
+        normalized = os.path.normpath(path)
+        if normalized in seen:
+            first_asset_id, first_loc = seen[normalized]
+            reporter.error(
+                code=E_PATH_COLLISION,
+                message=(
+                    f"rendered initial path {normalized!r} for asset {asset_id!r} "
+                    f"collides with asset {first_asset_id!r} at {first_loc!r}"
+                ),
+                loc=loc,
+            )
+        else:
+            seen[normalized] = (asset_id, loc)
 
 
 def _check_series(raw: Mapping[str, object], reporter: Reporter) -> None:

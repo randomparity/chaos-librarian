@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.paths import (
-    INITIAL_PATH_TEMPLATE,
     PathContainmentError,
     resolve_under_library,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.path_rendering import replace_root_prefix
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from chaos_librarian.validation.rules._common import (
     Reporter,
@@ -20,9 +20,9 @@ from chaos_librarian.validation.rules._common import (
     _list_at_path,
     _Loc,
     _RawMapping,
-    asset_containers,
     iter_declared_roots,
     primary_root_path,
+    rendered_asset_paths,
 )
 
 if TYPE_CHECKING:
@@ -105,7 +105,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
     archive_base = _archive_base_path(raw, declared_roots)
-    containers_by_asset = asset_containers(raw)
+    initial_paths = rendered_asset_paths(raw)
 
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -114,7 +114,8 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 archive_base=archive_base,
-                asset_containers=containers_by_asset,
+                primary_root=primary_root_path(raw),
+                initial_paths=initial_paths,
                 reporter=reporter,
             )
         elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
@@ -122,7 +123,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 declared_roots=declared_roots,
-                asset_containers=containers_by_asset,
+                initial_paths=initial_paths,
                 reporter=reporter,
             )
 
@@ -132,19 +133,22 @@ def _check_archive_file(
     *,
     idx: int,
     archive_base: str | None,
-    asset_containers: Mapping[str, str],
+    primary_root: str | None,
+    initial_paths: Mapping[str, tuple[str, _Loc]],
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the archive destination for one ``archive_file``."""
     target = event.get("target")
-    if not isinstance(target, str) or archive_base is None:
+    if not isinstance(target, str) or archive_base is None or primary_root is None:
         return
-    container = asset_containers.get(target)
-    if container is None:
+    initial = initial_paths.get(target)
+    if initial is None:
         return
-    synthesized = INITIAL_PATH_TEMPLATE.format(
-        root_path=archive_base, asset_id=target, container=container
-    )
+    try:
+        synthesized = replace_root_prefix(initial[0], from_root=primary_root, to_root=archive_base)
+    except ValueError as error:
+        reporter.error(code=E_PATH_CONTAINMENT, message=str(error), loc=("timeline", idx, "target"))
+        return
     _check_containment(synthesized, loc=("timeline", idx, "target"), reporter=reporter)
 
 
@@ -153,21 +157,35 @@ def _check_move_between_roots(
     *,
     idx: int,
     declared_roots: Mapping[str, str],
-    asset_containers: Mapping[str, str],
+    initial_paths: Mapping[str, tuple[str, _Loc]],
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the destination for one ``move_between_roots``."""
     target = event.get("target")
+    from_root_id = event.get("from_root_id")
     to_root_id = event.get("to_root_id")
-    if not isinstance(target, str) or not isinstance(to_root_id, str):
+    if not isinstance(target, str):
         return
+    if not isinstance(from_root_id, str) or not isinstance(to_root_id, str):
+        return
+    from_root_path = declared_roots.get(from_root_id)
     to_root_path = declared_roots.get(to_root_id)
-    container = asset_containers.get(target)
-    if to_root_path is None or container is None:
+    initial = initial_paths.get(target)
+    if from_root_path is None or to_root_path is None or initial is None:
         return
-    synthesized = INITIAL_PATH_TEMPLATE.format(
-        root_path=to_root_path, asset_id=target, container=container
-    )
+    try:
+        synthesized = replace_root_prefix(
+            initial[0],
+            from_root=from_root_path,
+            to_root=to_root_path,
+        )
+    except ValueError as error:
+        reporter.error(
+            code=E_PATH_CONTAINMENT,
+            message=str(error),
+            loc=("timeline", idx, "to_root_id"),
+        )
+        return
     _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
 
 
