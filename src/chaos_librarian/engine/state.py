@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAlbum,
@@ -42,6 +43,7 @@ from chaos_librarian.contract.scenario import (
     SidecarKind,
     SubtitleMode,
     TrackNaming,
+    Variant,
 )
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.errors import ChaosLibrarianValueError
@@ -230,6 +232,8 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
             title=movie.title,
             layout=movie.layout.value,
         )
+        for variant in movie.variants:
+            _seed_variant_bundle_rows(state, variant, ParentKind.MOVIE, movie.id)
     for series in scenario.series:
         state.series[series.id] = ManifestSeries(
             id=series.id,
@@ -253,6 +257,8 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
                     aired_on=episode.aired_on,
                     absolute_number=episode.absolute_number,
                 )
+                for variant in episode.variants:
+                    _seed_variant_bundle_rows(state, variant, ParentKind.EPISODE, episode.id)
     for artist in scenario.artists:
         state.artists[artist.id] = ManifestArtist(
             id=artist.id,
@@ -281,6 +287,26 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
                         title=track.title,
                         performers=list(track.performers),
                     )
+                    for variant in track.variants:
+                        _seed_variant_bundle_rows(state, variant, ParentKind.TRACK, track.id)
+
+
+def _seed_variant_bundle_rows(
+    state: WorldState,
+    variant: Variant,
+    parent_kind: ParentKind,
+    parent_id: str,
+) -> None:
+    state.variants[variant.id] = ManifestVariant(
+        id=variant.id,
+        parent_kind=parent_kind,
+        parent_id=parent_id,
+        label=variant.label,
+    )
+    state.bundles[variant.bundle.id] = ManifestBundle(
+        id=variant.bundle.id,
+        variant_id=variant.id,
+    )
 
 
 def _seed_asset_context(
@@ -289,16 +315,8 @@ def _seed_asset_context(
     ids: IdAllocator,
     primary_root_path: str,
 ) -> None:
-    variant = context.variant
     bundle = context.bundle
     asset = context.asset
-    state.variants[variant.id] = ManifestVariant(
-        id=variant.id,
-        parent_kind=context.parent_kind,
-        parent_id=context.parent_id,
-        label=variant.label,
-    )
-    state.bundles[bundle.id] = ManifestBundle(id=bundle.id, variant_id=variant.id)
     state.assets[asset.id] = ManifestAsset(
         id=asset.id,
         bundle_id=bundle.id,

@@ -63,6 +63,7 @@ from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.path_rendering import replace_root_prefix
 
 _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
@@ -588,15 +589,16 @@ def _handle_move_between_roots(
 ) -> tuple[JournalEntry, ...]:
     """Move ``target`` from ``from_root_id`` to ``to_root_id``.
 
-    The destination is ``<to_root.path>/<asset_id>.<container>``. Validation
-    has already proven both root ids exist.
+    The destination preserves the current rendered path suffix and replaces
+    only the declared library root prefix. Validation has already proven
+    both root ids exist.
     """
     event = _checked_event(resolved, MoveBetweenRootsEvent)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
-    asset = state.assets[event.target]
+    from_root_path = state.root_path_for(event.from_root_id)
     to_root_path = state.root_path_for(event.to_root_id)
-    destination = f"{to_root_path}/{event.target}.{asset.container}"
+    destination = replace_root_prefix(previous.path, from_root=from_root_path, to_root=to_root_path)
     state.locations[loc_id] = previous.model_copy(update={"path": destination})
     entry = _new_atomic_entry(
         resolved=resolved,

@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: version-evolution
 seed: 17
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
-  - id: work_pulsar
+movies:
+  - id: movie_pulsar
     title: Synthetic Pulsar
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -29,6 +30,8 @@ works:
                 - codec: aac
                   channels: "5.1"
                   language: eng
+series: []
+artists: []
 
 timeline:
   - id: reencode_video_001

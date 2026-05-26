@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: bundle-sidecars
 seed: 99
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
-  - id: work_quasar
+movies:
+  - id: movie_quasar
     title: Synthetic Quasar
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -33,6 +34,8 @@ works:
                 - codec: srt
                   language: eng
                   mode: sidecar
+series: []
+artists: []
 
 timeline:
   - id: ev_create_poster
@@ -51,7 +54,7 @@ timeline:
     at: 1s
     action: embed_subtitle
     target: asset_main
-    sidecar_path: asset_main.eng.srt
+    sidecar_path: movies-hd/Synthetic Quasar - hd.eng.srt
   - id: ev_rename_asset
     at: 2s
     action: rename_file

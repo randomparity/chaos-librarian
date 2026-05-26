@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: duplicate-variant
 seed: 23
 duration_scale: short
@@ -10,9 +10,10 @@ library:
     - id: movies_4k
       path: movies-4k
 
-works:
-  - id: work_supernova
+movies:
+  - id: movie_supernova
     title: Synthetic Supernova
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -60,5 +61,7 @@ works:
                 - codec: aac
                   channels: "5.1"
                   language: eng
+series: []
+artists: []
 
 timeline: []

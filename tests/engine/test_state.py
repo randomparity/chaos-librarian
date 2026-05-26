@@ -289,6 +289,122 @@ class TestBuildInitialState:
             "library/Starline/Season 00/Starline - S00E01 - First Signal - 1080p.mkv",
         ]
 
+    def test_empty_bundles_still_seed_variant_and_bundle_rows(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 12,
+                "scenario_id": "empty-bundles",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "primary", "path": "library"}]},
+                "movies": [
+                    {
+                        "id": "movie_orbit",
+                        "title": "Orbit",
+                        "layout": "movie_flat",
+                        "variants": [
+                            {
+                                "id": "variant_movie",
+                                "label": "1080p",
+                                "bundle": {"id": "bundle_movie", "assets": []},
+                            }
+                        ],
+                    }
+                ],
+                "series": [
+                    {
+                        "id": "series_starline",
+                        "title": "Starline",
+                        "layout": "season_folders",
+                        "episode_naming": "sxxexx_title",
+                        "seasons": [
+                            {
+                                "id": "season_specials",
+                                "season_number": 0,
+                                "title": "Specials",
+                                "episodes": [
+                                    {
+                                        "id": "episode_special_01",
+                                        "episode_number": 1,
+                                        "title": "First Signal",
+                                        "variants": [
+                                            {
+                                                "id": "variant_episode",
+                                                "label": "1080p",
+                                                "bundle": {
+                                                    "id": "bundle_episode",
+                                                    "assets": [],
+                                                },
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                "artists": [
+                    {
+                        "id": "artist_north",
+                        "name": "North Index",
+                        "layout": "artist_album_disc",
+                        "track_naming": "track_number_title",
+                        "albums": [
+                            {
+                                "id": "album_winter",
+                                "title": "Winter Index",
+                                "discs": [
+                                    {
+                                        "id": "disc_winter_01",
+                                        "disc_number": 1,
+                                        "tracks": [
+                                            {
+                                                "id": "track_opening",
+                                                "track_number": 1,
+                                                "title": "Opening",
+                                                "performers": ["North Index"],
+                                                "variants": [
+                                                    {
+                                                        "id": "variant_track",
+                                                        "label": "lossless",
+                                                        "bundle": {
+                                                            "id": "bundle_track",
+                                                            "assets": [],
+                                                        },
+                                                    }
+                                                ],
+                                            }
+                                        ],
+                                    }
+                                ],
+                            }
+                        ],
+                    }
+                ],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+
+        state = build_initial_state(scenario, ids)
+        manifest = state.to_manifest()
+
+        assert [
+            (variant.id, variant.parent_kind, variant.parent_id) for variant in manifest.variants
+        ] == [
+            ("variant_movie", ParentKind.MOVIE, "movie_orbit"),
+            ("variant_episode", ParentKind.EPISODE, "episode_special_01"),
+            ("variant_track", ParentKind.TRACK, "track_opening"),
+        ]
+        assert [(bundle.id, bundle.variant_id) for bundle in manifest.bundles] == [
+            ("bundle_movie", "variant_movie"),
+            ("bundle_episode", "variant_episode"),
+            ("bundle_track", "variant_track"),
+        ]
+        assert manifest.assets == []
+        assert manifest.versions == []
+        assert manifest.locations == []
+
 
 class TestWorldStateMutations:
     """The dataclass supports the mutations event handlers need.

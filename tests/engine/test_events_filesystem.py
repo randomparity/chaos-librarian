@@ -284,14 +284,14 @@ class TestMoveBetweenRootsHandler:
             ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
-        assert state.locations[loc_id].path == "library/staging/asset_hd_main.mkv"
+        assert state.locations[loc_id].path == "library/staging/movie_001 - default.mkv"
         assert len(entries) == 1
         (entry,) = entries
         assert entry.action == TimelineActionName.MOVE_BETWEEN_ROOTS
         assert entry.target_ids == ["asset_hd_main"]
         assert entry.state_delta == {
             "from_path": "library/movies-hd/movie_001 - default.mkv",
-            "to_path": "library/staging/asset_hd_main.mkv",
+            "to_path": "library/staging/movie_001 - default.mkv",
             "from_root_id": "movies-hd",
             "to_root_id": "staging",
         }
