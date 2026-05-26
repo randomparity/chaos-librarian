@@ -1,5 +1,5 @@
 # expected: E_FIELD_MISSING
-schema_version: 12
+schema_version: 13
 seed: 1
 duration_scale: short
 library:

@@ -59,6 +59,7 @@ from chaos_librarian.contract.scenario import (
     Variant,
     VideoSource,
     VideoTrack,
+    VideoVfrCadence,
     generation_budget_for,
 )
 
@@ -175,7 +176,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v12_payload() -> None:
+def test_movie_only_scenario_v13_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -188,7 +189,7 @@ def test_movie_only_scenario_v12_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 12
+    assert scenario.schema_version == 13
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -229,7 +230,7 @@ def test_tv_only_scenario_accepts_season_zero_specials() -> None:
     assert scenario.series[0].seasons[0].season_number == 0
 
 
-def test_music_only_scenario_v12_payload() -> None:
+def test_music_only_scenario_v13_payload() -> None:
     payload = _base_payload()
     payload["artists"] = [
         {
@@ -339,7 +340,7 @@ def test_hierarchy_model_constructors_accept_tuple_fields() -> None:
     assert artist.albums[0].discs[0].tracks[0].id == "track_opening"
 
 
-def test_scenario_v12_rejects_works_field() -> None:
+def test_scenario_v13_rejects_works_field() -> None:
     payload = _base_payload()
     payload["works"] = [{"id": "work_old", "title": "Old", "variants": []}]
 
@@ -529,8 +530,73 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_twelve() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 12
+def test_video_vfr_cadence_enum_values() -> None:
+    assert VideoVfrCadence.TWENTY_FOUR_TO_THIRTY.value == "24_to_30"
+    assert VideoVfrCadence.THIRTY_TO_SIXTY.value == "30_to_60"
+    assert VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY.value == "24_30_60"
+
+
+def test_video_track_vfr_cadence_defaults_to_none() -> None:
+    track = VideoTrack.model_validate({"source": "color_bars", "codec": "h264", "resolution": "sd"})
+
+    assert track.vfr_cadence is None
+
+
+def test_video_track_accepts_supported_vfr_cadence() -> None:
+    track = VideoTrack.model_validate(
+        {
+            "source": "color_bars",
+            "codec": "h264",
+            "resolution": "sd",
+            "vfr_cadence": "24_to_30",
+        }
+    )
+
+    assert track.vfr_cadence is VideoVfrCadence.TWENTY_FOUR_TO_THIRTY
+
+
+def test_video_track_accepts_yaml_numeric_vfr_cadence() -> None:
+    """WHY: YAML parses unquoted ``24_30_60`` as integer ``243060``.
+    Scenario authors should not have to discover that parser edge by
+    trial and error for a documented cadence value."""
+    track = VideoTrack.model_validate(
+        {
+            "source": "color_bars",
+            "codec": "h264",
+            "resolution": "sd",
+            "vfr_cadence": 243060,
+        }
+    )
+
+    assert track.vfr_cadence is VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY
+
+
+def test_video_track_rejects_float_vfr_cadence_alias() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "h264",
+        "resolution": "sd",
+        "vfr_cadence": 243060.0,
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_video_track_rejects_unknown_vfr_cadence() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "h264",
+        "resolution": "sd",
+        "vfr_cadence": "12_to_144",
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_scenario_schema_version_is_thirteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 13
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -816,7 +882,7 @@ def test_corrupt_container_header_rejects_4097_bytes() -> None:
         },
     ],
 )
-def test_scenario_v12_accepts_interceptor_events(event: dict[str, object]) -> None:
+def test_scenario_v13_accepts_interceptor_events(event: dict[str, object]) -> None:
     payload = _scenario_payload_with_event(
         event,
         profiles=["filesystem-artifacts", "negative-oracle"],
@@ -877,7 +943,7 @@ def test_scenario_v12_accepts_interceptor_events(event: dict[str, object]) -> No
         ),
     ],
 )
-def test_scenario_v12_rejects_invalid_interceptor_bounds(
+def test_scenario_v13_rejects_invalid_interceptor_bounds(
     event: dict[str, object], field_name: str
 ) -> None:
     payload = _scenario_payload_with_event(event)

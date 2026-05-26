@@ -10,7 +10,7 @@ import enum
 from datetime import date
 from typing import Annotated, Final, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from chaos_librarian.contract.profiles import (
     FUZZ_LANES_BY_PROFILE,
@@ -81,6 +81,17 @@ class VideoSource(enum.StrEnum):
     COLOR_BARS = "color_bars"
     SOLID_COLOR = "solid_color"
     NOISE = "noise"  # reserved; validate rejects it until materialize supports it
+
+
+class VideoVfrCadence(enum.StrEnum):
+    """Supported variable-frame-rate cadence transitions."""
+
+    TWENTY_FOUR_TO_THIRTY = "24_to_30"
+    THIRTY_TO_SIXTY = "30_to_60"
+    TWENTY_FOUR_THIRTY_SIXTY = "24_30_60"
+
+
+_YAML_NUMERIC_VFR_24_30_60: Final = 243060
 
 
 class SubtitleMode(enum.StrEnum):
@@ -190,6 +201,18 @@ class VideoTrack(BaseModel):
     source: VideoSource
     codec: str
     resolution: str
+    vfr_cadence: VideoVfrCadence | None = None
+
+    @field_validator("vfr_cadence", mode="before")
+    @classmethod
+    def _coerce_yaml_numeric_vfr_cadence(cls, value: object) -> object:
+        if (
+            isinstance(value, int)
+            and not isinstance(value, bool)
+            and value == _YAML_NUMERIC_VFR_24_30_60
+        ):
+            return VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY.value
+        return value
 
 
 class AudioTrack(BaseModel):
@@ -688,7 +711,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[12]
+    schema_version: Literal[13]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

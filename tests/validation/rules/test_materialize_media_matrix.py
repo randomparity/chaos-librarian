@@ -9,7 +9,7 @@ from chaos_librarian.validation import codes, prepare_run_input, run_validation
 
 def _write_track_scenario(path: Path, *, container: str, codec: str) -> None:
     path.write_text(
-        f"""schema_version: 12
+        f"""schema_version: 13
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -65,9 +65,11 @@ def _write_movie_scenario(
     video_source: str = "color_bars",
     video_codec: str = "h264",
     video_resolution: str = "sd",
+    vfr_cadence: str | None = None,
 ) -> None:
+    vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
     path.write_text(
-        f"""schema_version: 12
+        f"""schema_version: 13
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -93,6 +95,7 @@ movies:
                 source: {video_source}
                 codec: {video_codec}
                 resolution: {video_resolution}
+{vfr_line.rstrip()}
               audio:
                 - source: sine
                   codec: {audio_codec}
@@ -161,7 +164,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 12
+        """schema_version: 13
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -198,6 +201,16 @@ timeline: []
 """,
         encoding="utf-8",
     )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+def test_vfr_video_cadence_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "vfr.yaml"
+    _write_movie_scenario(scenario, vfr_cadence="24_to_30")
 
     report = run_validation(prepare_run_input(scenario))
 

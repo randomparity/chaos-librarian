@@ -1883,6 +1883,17 @@
         },
         "source": {
           "$ref": "#/$defs/VideoSource"
+        },
+        "vfr_cadence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoVfrCadence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1892,6 +1903,16 @@
       ],
       "title": "VideoTrack",
       "type": "object"
+    },
+    "VideoVfrCadence": {
+      "description": "Supported variable-frame-rate cadence transitions.",
+      "enum": [
+        "24_to_30",
+        "30_to_60",
+        "24_30_60"
+      ],
+      "title": "VideoVfrCadence",
+      "type": "string"
     },
     "WriteInvalidDurationMetadataEvent": {
       "additionalProperties": false,
@@ -2006,7 +2027,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 12,
+      "const": 13,
       "title": "Schema Version",
       "type": "integer"
     },

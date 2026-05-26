@@ -15,10 +15,12 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceProviderCapability,
     ContentTrackKind,
 )
-from chaos_librarian.contract.scenario import AudioSource, VideoSource
+from chaos_librarian.contract.scenario import AudioSource, VideoSource, VideoVfrCadence
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import (
+    VFR_BASE_FPS,
     FFmpegInput,
+    apply_vfr_cadence,
     recipe_channel_tones,
     recipe_color_bars,
     recipe_mandelbrot,
@@ -48,6 +50,9 @@ AUDIO_RECIPES: Final[dict[AudioSource, AudioRecipe]] = {
     AudioSource.SILENCE: recipe_silence,
     AudioSource.CHANNEL_TONES: recipe_channel_tones,
 }
+VFR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:vfr:{cadence.value}" for cadence in VideoVfrCadence
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,7 @@ class VideoSourceRequest:
     width: int
     height: int
     fps: int
+    vfr_cadence: VideoVfrCadence | None = None
     track_index: None = None
 
 
@@ -161,12 +167,20 @@ class _BuiltinLavfiProvider:
         if source not in VIDEO_RECIPES:
             raise _unsupported_source("video.source", VIDEO_RECIPES)
         recipe = VIDEO_RECIPES[source]
-        return recipe(
+        fps = VFR_BASE_FPS if request.vfr_cadence is not None else request.fps
+        ffmpeg_input = recipe(
             width=request.width,
             height=request.height,
-            fps=request.fps,
+            fps=fps,
             duration_s=request.duration_s,
             seed=request.seed,
+        )
+        if request.vfr_cadence is None:
+            return ffmpeg_input
+        return apply_vfr_cadence(
+            ffmpeg_input,
+            cadence=request.vfr_cadence,
+            duration_s=request.duration_s,
         )
 
     def resolve_audio_input(
@@ -190,6 +204,7 @@ class _BuiltinLavfiProvider:
             sources=[
                 *(f"audio:{source.value}" for source in self.audio_source_keys),
                 *(f"video:{source.value}" for source in self.video_source_keys),
+                *VFR_CAPABILITY_SOURCES,
             ],
         )
 
@@ -328,6 +343,7 @@ def _request_payload(
                 "width": request.width,
                 "height": request.height,
                 "fps": request.fps,
+                "vfr_cadence": (None if request.vfr_cadence is None else request.vfr_cadence.value),
                 "channels": None,
             }
         )

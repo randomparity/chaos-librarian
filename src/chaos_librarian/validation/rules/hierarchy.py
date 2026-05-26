@@ -1,4 +1,4 @@
-"""Domain hierarchy semantic validation for Scenario v12."""
+"""Domain hierarchy semantic validation for the current Scenario contract."""
 
 from __future__ import annotations
 

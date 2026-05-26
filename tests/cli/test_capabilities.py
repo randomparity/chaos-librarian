@@ -53,7 +53,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
                     requires_cache=False,
                     required_tool="ffmpeg",
                     reason=None if all_ok else "required tool unavailable: ffmpeg",
-                    sources=("video:color_bars",),
+                    sources=("video:color_bars", "video:vfr:24_to_30"),
                 )
             ]
         ),
@@ -126,3 +126,4 @@ def test_capabilities_human_output_formats_content_sources(monkeypatch):
     assert "requires_cache:   False" in result.stdout
     assert "required_tool:    ffmpeg" in result.stdout
     assert "sources:          video:color_bars" in result.stdout
+    assert "video:vfr:24_to_30" in result.stdout

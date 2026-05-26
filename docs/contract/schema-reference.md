@@ -46,7 +46,7 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 12 |
+| scenario | 13 |
 | manifest | 7 |
 | journal | 1 |
 | replay bundle | 7 |
@@ -67,6 +67,10 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 2 |
 | divergence | 1 |
+
+Scenario v13 adds optional VFR video cadence selection on video tracks
+(`vfr_cadence`) with supported cadences `24_to_30`, `30_to_60`, and
+`24_30_60`.
 
 Scenario v12 adds explicit movie, TV, and music hierarchies. Manifest v7,
 replay-bundle v7, asset-report v7, variant-report v2, and observed-state v2

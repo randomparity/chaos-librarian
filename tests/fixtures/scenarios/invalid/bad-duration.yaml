@@ -1,5 +1,5 @@
 # expected: E_DURATION_SYNTAX
-schema_version: 12
+schema_version: 13
 scenario_id: bad
 seed: 1
 duration_scale: short
