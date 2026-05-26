@@ -25,4 +25,9 @@ VIDEO_ENCODER_BY_CODEC: Final[dict[str, str]] = {
     "h265": "libx265",
     "hevc": "libx265",
 }
+AUDIO_ENCODER_BY_CODEC: Final[dict[str, str]] = {
+    "aac": "aac",
+    "flac": "flac",
+    "mp3": "libmp3lame",
+}
 HEVC_VIDEO_CODECS: Final[frozenset[str]] = frozenset({"h265", "hevc"})

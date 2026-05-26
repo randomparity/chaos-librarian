@@ -254,6 +254,54 @@ def test_materialize_one_asset_writes_declared_sidecar_next_to_rendered_media(
     assert result.sidecar_hashes.keys() == {("../../../escape", "eng")}
 
 
+def test_materialize_one_asset_writes_audio_only_track(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = _track_audio_asset()
+    output_path = tmp_path / "run" / "library" / "r" / "Artist" / "Album" / "01 - Song.flac"
+
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        Path(argv[-1]).write_bytes(b"audio")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda _path: ProbedMedia(
+            container="flac",
+            duration_seconds=1,
+            size_bytes=output_path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.AUDIO, codec="flac")],
+        ),
+    )
+
+    result = materialize_one_asset(
+        asset,
+        1,
+        tmp_path / "run",
+        _caps(),
+        0,
+        rendered_relative_path="r/Artist/Album/01 - Song.flac",
+    )
+
+    assert output_path.exists()
+    assert result.materialized_asset.location_path == "library/r/Artist/Album/01 - Song.flac"
+    assert [source.track_kind for source in result.content_sources] == [ContentTrackKind.AUDIO]
+    assert result.sidecar_hashes == {}
+
+
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
@@ -300,6 +348,56 @@ timeline: []
         source_label="test:sidecar-materialize.yaml",
     ).scenario
     return scenario.movies[0].variants[0].bundle.assets[0]
+
+
+def _track_audio_asset():
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=b"""\
+schema_version: 12
+scenario_id: audio-track-materialize
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+movies: []
+series: []
+artists:
+  - id: artist_safe
+    name: Artist
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_safe
+        title: Album
+        discs:
+          - id: disc_safe
+            disc_number: 1
+            tracks:
+              - id: track_safe
+                track_number: 1
+                title: Song
+                variants:
+                  - id: variant_safe
+                    label: flac
+                    bundle:
+                      id: bundle_safe
+                      assets:
+                        - id: track_asset
+                          role: main
+                          container: flac
+                          duration_seconds: 1
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+timeline: []
+""",
+        source_label="test:audio-track-materialize.yaml",
+    ).scenario
+    return scenario.artists[0].albums[0].discs[0].tracks[0].variants[0].bundle.assets[0]
 
 
 def _caps() -> Capabilities:

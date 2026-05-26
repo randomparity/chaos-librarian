@@ -40,7 +40,6 @@ from chaos_librarian.materializer.content_sources import (
 from chaos_librarian.materializer.errors import (
     ProbeParseError,
     ToolFailedError,
-    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.manifest_build import augment_manifest
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
@@ -183,30 +182,26 @@ def materialize_one_asset(
     ``ManifestSidecar.content_hash``. Returning content-source evidence
     lets materialize/run/replay persist the Phase-A source-resolution audit.
     """
-    if asset.video is None:
-        raise UnsupportedMaterializationError(
-            "every asset must declare a video track.",
-            field="video",
-            asset_id=asset.id,
-            payload={},
-        )
     library_dir = out_dir / "library"
     output_path = library_dir / rendered_relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    width, height = RESOLUTION_PIXELS[asset.video.resolution]
-    video_resolution = resolve_video_source(
-        source=asset.video.source,
-        request=VideoSourceRequest(
-            asset_id=asset.id,
-            seed=seed,
-            duration_s=asset.duration_seconds,
-            width=width,
-            height=height,
-            fps=FPS_DEFAULT,
-        ),
-    )
-    video_input = video_resolution.ffmpeg_input
-    content_sources: list[ContentSourceEvidence] = [video_resolution.evidence]
+    video_input = None
+    content_sources: list[ContentSourceEvidence] = []
+    if asset.video is not None:
+        width, height = RESOLUTION_PIXELS[asset.video.resolution]
+        video_resolution = resolve_video_source(
+            source=asset.video.source,
+            request=VideoSourceRequest(
+                asset_id=asset.id,
+                seed=seed,
+                duration_s=asset.duration_seconds,
+                width=width,
+                height=height,
+                fps=FPS_DEFAULT,
+            ),
+        )
+        video_input = video_resolution.ffmpeg_input
+        content_sources.append(video_resolution.evidence)
     audio_inputs: list[FFmpegInput] = []
     for index, audio in enumerate(asset.audio):
         audio_resolution = resolve_audio_source(

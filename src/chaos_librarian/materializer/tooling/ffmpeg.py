@@ -25,10 +25,13 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
+    AUDIO_ENCODER_BY_CODEC,
     SUPPORTED_AUDIO_CODECS,
+    SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
     SUPPORTED_CONTAINERS,
     SUPPORTED_RESOLUTIONS,
     SUPPORTED_VIDEO_CODECS,
+    SUPPORTED_VIDEO_CONTAINERS,
     VIDEO_ENCODER_BY_CODEC,
 )
 
@@ -48,7 +51,13 @@ _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
 )
 BITEXACT_FLAGS: Final[tuple[str, ...]] = _BITEXACT_OUTPUT_FLAGS
 
-_CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {".mkv": "mkv", ".mp4": "mp4"}
+_CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {
+    ".flac": "flac",
+    ".m4a": "m4a",
+    ".mkv": "mkv",
+    ".mp3": "mp3",
+    ".mp4": "mp4",
+}
 
 
 def _require(value: object, supported: Iterable[object], field: str) -> None:
@@ -91,6 +100,13 @@ def _validate_audio(audios: Sequence[AudioTrack]) -> None:
         _require(audio.codec, SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
 
 
+def _validate_audio_only(container: str, audios: Sequence[AudioTrack]) -> None:
+    """Reject audio-only output outside the container-specific codec matrix."""
+    supported_codecs = SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER[container]
+    for index, audio in enumerate(audios):
+        _require(audio.codec, supported_codecs, f"audio[{index}].codec")
+
+
 def _input_args(ffmpeg_input: FFmpegInput, *, field: str) -> list[str]:
     """Argv slice for one resolved input.
 
@@ -123,18 +139,64 @@ def _audio_input_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
     return args
 
 
-def _map_args(audio_inputs: Sequence[FFmpegInput]) -> list[str]:
+def _map_args(audio_inputs: Sequence[FFmpegInput], *, first_audio_input_index: int) -> list[str]:
     """Argv slice selecting only the resolved video and audio streams."""
-    args = ["-map", "0:v:0"]
-    for index, _audio_input in enumerate(audio_inputs, start=1):
+    args: list[str] = []
+    if first_audio_input_index > 0:
+        args.extend(["-map", "0:v:0"])
+    for index, _audio_input in enumerate(audio_inputs, start=first_audio_input_index):
         args.extend(["-map", f"{index}:a:0"])
     return args
 
 
-def build_command(
+def _build_video_command(
     *,
+    container: str,
     video: VideoTrack,
     video_input: FFmpegInput,
+    audios: Sequence[AudioTrack],
+    audio_inputs: Sequence[FFmpegInput],
+    output_path: Path,
+) -> list[str]:
+    _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
+    _validate_video(video)
+    _validate_audio(audios)
+    argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
+    argv.extend(_video_input_args(video_input))
+    argv.extend(_audio_input_args(audio_inputs))
+    argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
+    argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
+    argv.extend(["-c:a", "aac"])
+    argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.append("-shortest")
+    argv.append(str(output_path))
+    return argv
+
+
+def _build_audio_only_command(
+    *,
+    container: str,
+    audios: Sequence[AudioTrack],
+    audio_inputs: Sequence[FFmpegInput],
+    output_path: Path,
+) -> list[str]:
+    _require(container, SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER, "container")
+    _validate_audio_only(container, audios)
+    argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
+    argv.extend(_audio_input_args(audio_inputs))
+    argv.extend(_map_args(audio_inputs, first_audio_input_index=0))
+    if audios:
+        argv.extend(["-c:a", AUDIO_ENCODER_BY_CODEC[audios[0].codec]])
+    argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.append("-shortest")
+    argv.append(str(output_path))
+    return argv
+
+
+def build_command(
+    *,
+    video: VideoTrack | None,
+    video_input: FFmpegInput | None,
     audios: Sequence[AudioTrack],
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
@@ -149,19 +211,34 @@ def build_command(
             video codec/resolution, audio codec) tuple falls outside the
             supported matrix, or an FFmpegInput is missing its input.
     """
-    _resolve_container(output_path)
-    _validate_video(video)
-    _validate_audio(audios)
-    argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
-    argv.extend(_video_input_args(video_input))
-    argv.extend(_audio_input_args(audio_inputs))
-    argv.extend(_map_args(audio_inputs))
-    argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
-    argv.extend(["-c:a", "aac"])
-    argv.extend(_BITEXACT_OUTPUT_FLAGS)
-    argv.append("-shortest")
-    argv.append(str(output_path))
-    return argv
+    container = _resolve_container(output_path)
+    if video is None:
+        if video_input is not None:
+            raise UnsupportedMaterializationError(
+                "audio-only assets must not pass a video input",
+                field="video_input",
+                payload={},
+            )
+        return _build_audio_only_command(
+            container=container,
+            audios=audios,
+            audio_inputs=audio_inputs,
+            output_path=output_path,
+        )
+    if video_input is None:
+        raise UnsupportedMaterializationError(
+            "video assets must pass a video input",
+            field="video_input",
+            payload={},
+        )
+    return _build_video_command(
+        container=container,
+        video=video,
+        video_input=video_input,
+        audios=audios,
+        audio_inputs=audio_inputs,
+        output_path=output_path,
+    )
 
 
 def run_ffmpeg(
