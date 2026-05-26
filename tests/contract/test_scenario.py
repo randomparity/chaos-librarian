@@ -481,7 +481,7 @@ def test_corrupt_container_header_rejects_4097_bytes() -> None:
         },
     ],
 )
-def test_scenario_v10_accepts_interceptor_events(event: dict[str, object]) -> None:
+def test_scenario_v11_accepts_interceptor_events(event: dict[str, object]) -> None:
     payload = _scenario_payload_with_event(
         event,
         profiles=["filesystem-artifacts", "negative-oracle"],
