@@ -28,8 +28,9 @@ from chaos_librarian.generation_lanes import (
     coverage_for_payload,
     lane_config_for,
 )
-from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
@@ -191,8 +192,14 @@ def test_seed_manifest_materialize_gates_pass_preflight() -> None:
         scenario = _parse_generated(generate_scenario_yaml(profile=profile, lane=lane, seed=seed))
 
         preflight_timeline(scenario)
-        for asset in iter_assets(scenario):
-            preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+        for context in iter_asset_contexts(scenario):
+            preflight_asset(
+                parent_kind=context.parent_kind,
+                video=context.asset.video,
+                audios=context.asset.audio,
+                subtitles=context.asset.subtitles,
+                container=context.asset.container,
+            )
 
 
 def test_sidecar_subtitle_lane_embeds_before_extracting() -> None:

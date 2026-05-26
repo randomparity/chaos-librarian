@@ -53,8 +53,14 @@ def test_duplicate_variant_expansion_pack_defines_expected_cases() -> None:
     )
 
     preflight_timeline(scenario)
-    for asset in _assets(scenario):
-        preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+    for context in iter_asset_contexts(scenario):
+        preflight_asset(
+            parent_kind=context.parent_kind,
+            video=context.asset.video,
+            audios=context.asset.audio,
+            subtitles=context.asset.subtitles,
+            container=context.asset.container,
+        )
 
 
 def test_duplicate_variant_expansion_pack_oracle_evidence(

@@ -210,8 +210,8 @@ def preflight_asset(
     `field="container"`;
   - require the single audio codec in that container's supported set with
     `field="audio[0].codec"`;
-  - call `build_command(video=None, video_input=None, ...)` after building the
-    audio input to keep recipe/source validation aligned with synthesis.
+  - call `_preflight_audio_inputs(audios)` so source recipe resolution is still
+    checked before run-dir allocation.
 - For `ParentKind.MOVIE` and `ParentKind.EPISODE`, keep existing video behavior:
   require `video`, preflight subtitles, resolve video/audio inputs, then call
   `build_command(video=video, video_input=video_input, ...)`.
@@ -255,6 +255,10 @@ preflight_asset(
     container="mkv",
 )
 ```
+
+Update any other tests that call `preflight_asset(...)` directly. Use
+`iter_asset_contexts(scenario)` when the test has a full `Scenario`, so the
+test passes the same `parent_kind` the orchestrators pass.
 
 - [ ] **Step 5: Verify and commit**
 
@@ -487,6 +491,10 @@ def build_command(
 - Use `AUDIO_ENCODER_BY_CODEC[audios[0].codec]` for `-c:a` when only one audio
   stream is present. Keep existing `aac` encoding for video assets.
 - Keep `BITEXACT_FLAGS` and `-shortest` in both branches.
+- After this change, `preflight_asset(parent_kind=ParentKind.TRACK, ...)` may
+  dry-build with `build_command(video=None, video_input=None, ...)` if source
+  and muxing validation need to share one path. Do not add that call before
+  this task because Task 1 deliberately leaves `build_command()` video-only.
 
 - [ ] **Step 5: Implement audio-only synthesis**
 
