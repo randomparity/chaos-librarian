@@ -16,6 +16,7 @@ Emits:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
@@ -41,8 +42,8 @@ if TYPE_CHECKING:
 
 __all__ = ["rule_sidecar_target"]
 
-_Projection = dict[tuple[str, str], tuple[str, str | None]]
-"""``(asset_id, path) -> (kind, language)``.
+_Projection = dict[tuple[str, str], "_SidecarProjectionRow"]
+"""``(asset_id, path) -> _SidecarProjectionRow``.
 
 ``language`` is ``None`` for poster/NFO rows. Subtitle rows carry it so
 ``_handle_create_sidecar`` can mirror the engine's ``(asset, language)``
@@ -53,6 +54,13 @@ a different subtitle path must invalidate the declared row in the
 projection too. Without this, embed/remove referencing the declared path
 validates clean but crashes the engine.
 """
+
+
+@dataclass(frozen=True, slots=True)
+class _SidecarProjectionRow:
+    kind: str
+    language: str | None
+    renderer_derived: bool
 
 
 def rule_sidecar_target(
@@ -140,10 +148,16 @@ def _handle_create_sidecar(
         for existing_key in [
             key
             for key, value in projection.items()
-            if key[0] == target and value[0] == SidecarKind.SUBTITLE.value and value[1] == language
+            if key[0] == target
+            and value.kind == SidecarKind.SUBTITLE.value
+            and value.language == language
         ]:
             del projection[existing_key]
-    projection[(target, to)] = (kind, language)
+    projection[(target, to)] = _SidecarProjectionRow(
+        kind=kind,
+        language=language,
+        renderer_derived=False,
+    )
 
 
 def _handle_extract_subtitle(
@@ -169,7 +183,11 @@ def _handle_extract_subtitle(
     else:
         raw_language = event.get("language")
         language = raw_language if isinstance(raw_language, str) else None
-        projection[(target, to)] = (SidecarKind.SUBTITLE.value, language)
+        projection[(target, to)] = _SidecarProjectionRow(
+            kind=SidecarKind.SUBTITLE.value,
+            language=language,
+            renderer_derived=False,
+        )
 
 
 def _handle_embed_subtitle(
@@ -194,12 +212,12 @@ def _handle_embed_subtitle(
             loc=("timeline", idx, "sidecar_path"),
         )
         return
-    kind, _language = entry
-    if kind != SidecarKind.SUBTITLE.value:
+    if entry.kind != SidecarKind.SUBTITLE.value:
         reporter.error(
             code=E_SIDECAR_KIND_MISMATCH,
             message=(
-                f"embed_subtitle references {kind!r} sidecar {sidecar_path!r}; subtitle expected"
+                f"embed_subtitle references {entry.kind!r} sidecar "
+                f"{sidecar_path!r}; subtitle expected"
             ),
             loc=("timeline", idx, "sidecar_path"),
         )
@@ -256,7 +274,11 @@ def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
     """Seed (asset_id, rendered_path) -> kind for every declared subtitle."""
     projection: _Projection = {}
     for sidecar in iter_declared_sidecars(raw):
-        projection[(sidecar.asset_id, sidecar.path)] = (sidecar.kind, sidecar.language)
+        projection[(sidecar.asset_id, sidecar.path)] = _SidecarProjectionRow(
+            kind=sidecar.kind,
+            language=sidecar.language,
+            renderer_derived=True,
+        )
     return projection
 
 
@@ -269,14 +291,15 @@ def _project_declared_sidecars_for_hierarchy_mutation(
             continue
         for key, value in list(projection.items()):
             key_asset_id, sidecar_path = key
-            kind, language = value
-            if key_asset_id != asset_id or kind != SidecarKind.SUBTITLE.value:
+            if key_asset_id != asset_id:
                 continue
-            if language is None:
+            if value.kind != SidecarKind.SUBTITLE.value or not value.renderer_derived:
+                continue
+            if value.language is None:
                 continue
             try:
-                old_sidecar_path = render_declared_sidecar_path(old_media_path, language)
-                new_sidecar_path = render_declared_sidecar_path(new_media_path, language)
+                old_sidecar_path = render_declared_sidecar_path(old_media_path, value.language)
+                new_sidecar_path = render_declared_sidecar_path(new_media_path, value.language)
             except ValueError:
                 continue
             if sidecar_path == old_sidecar_path:

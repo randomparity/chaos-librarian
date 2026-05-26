@@ -645,6 +645,42 @@ class TestHierarchySidecarLifecycleProjection:
 
         assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
 
+    def test_update_explicit_sidecar_after_hierarchy_rerender_uses_old_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "create",
+                    "at": "1s",
+                    "action": "create_sidecar",
+                    "target": "asset_episode",
+                    "to": SERIES_SIDECAR_PATH,
+                    "language": "eng",
+                    "kind": "subtitle",
+                },
+                {
+                    "id": "renumber",
+                    "at": "2s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "update",
+                    "at": "3s",
+                    "action": "update_sidecar",
+                    "target": "asset_episode",
+                    "sidecar_path": SERIES_SIDECAR_PATH,
+                },
+            ],
+        )
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        assert not any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
 
 class TestSprint10CorruptionLifecycle:
     """Corruption mutates asset bytes and requires a placed, non-copying target."""

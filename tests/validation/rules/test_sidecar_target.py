@@ -205,6 +205,40 @@ def test_hierarchy_rerender_rejects_stale_declared_sidecar_path(series_scenario)
     assert any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
 
 
+def test_hierarchy_rerender_keeps_explicit_sidecar_at_old_rendered_path(series_scenario):
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "create",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_episode",
+                "to": SERIES_SIDECAR_PATH,
+                "language": "eng",
+                "kind": "subtitle",
+            },
+            {
+                "id": "renumber",
+                "at": "2s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+            {
+                "id": "update",
+                "at": "3s",
+                "action": "update_sidecar",
+                "target": "asset_episode",
+                "sidecar_path": SERIES_SIDECAR_PATH,
+            },
+        ]
+    )
+
+    issues = _run(raw)
+
+    assert not any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
+
+
 def test_embed_subtitle_against_poster_sidecar():
     raw = _minimal(
         [

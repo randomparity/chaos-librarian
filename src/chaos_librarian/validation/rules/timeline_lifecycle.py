@@ -111,10 +111,17 @@ class _LifecycleState:
     placed: set[str]
     pending_slow_copies: dict[str, str]  # start_event_id -> asset_id
     assets_with_pending_copy: set[str]
-    sidecars_by_path: dict[tuple[str, str], tuple[str, str | None]] = field(default_factory=dict)
-    """(asset_id, path) -> (kind, language). Seeded from declared subtitles; updated
+    sidecars_by_path: dict[tuple[str, str], _SidecarProjectionRow] = field(default_factory=dict)
+    """(asset_id, path) -> projection row. Seeded from declared subtitles; updated
     by create_sidecar / extract_subtitle (insert) and
     remove_sidecar / embed_subtitle (delete)."""
+
+
+@dataclass(frozen=True, slots=True)
+class _SidecarProjectionRow:
+    kind: str
+    language: str | None
+    renderer_derived: bool
 
 
 def rule_timeline_lifecycle(
@@ -329,21 +336,22 @@ def _lifecycle_check_hierarchy_action(
 
 def _project_declared_sidecars_for_hierarchy_mutation(
     mutation: HierarchyMutation,
-    sidecars_by_path: dict[tuple[str, str], tuple[str, str | None]],
+    sidecars_by_path: dict[tuple[str, str], _SidecarProjectionRow],
 ) -> None:
     for asset_id, (old_media_path, new_media_path) in mutation.path_changes.items():
         if old_media_path is None or new_media_path is None:
             continue
         for key, value in list(sidecars_by_path.items()):
             key_asset_id, sidecar_path = key
-            kind, language = value
-            if key_asset_id != asset_id or kind != SidecarKind.SUBTITLE.value:
+            if key_asset_id != asset_id:
                 continue
-            if language is None:
+            if value.kind != SidecarKind.SUBTITLE.value or not value.renderer_derived:
+                continue
+            if value.language is None:
                 continue
             try:
-                old_sidecar_path = render_declared_sidecar_path(old_media_path, language)
-                new_sidecar_path = render_declared_sidecar_path(new_media_path, language)
+                old_sidecar_path = render_declared_sidecar_path(old_media_path, value.language)
+                new_sidecar_path = render_declared_sidecar_path(new_media_path, value.language)
             except ValueError:
                 continue
             if sidecar_path == old_sidecar_path:
@@ -362,10 +370,34 @@ def _apply_create_sidecar(
     kind = event.get("kind", SidecarKind.SUBTITLE.value)
     language = event.get("language")
     if isinstance(to, str) and isinstance(kind, str):
-        state.sidecars_by_path[(target, to)] = (
-            kind,
-            language if isinstance(language, str) else None,
+        row = _SidecarProjectionRow(
+            kind=kind,
+            language=language if isinstance(language, str) else None,
+            renderer_derived=False,
         )
+        if row.kind == SidecarKind.SUBTITLE.value and row.language is not None:
+            _drop_sidecars_for_language(
+                target=target,
+                language=row.language,
+                sidecars_by_path=state.sidecars_by_path,
+            )
+        state.sidecars_by_path[(target, to)] = row
+
+
+def _drop_sidecars_for_language(
+    *,
+    target: str,
+    language: str,
+    sidecars_by_path: dict[tuple[str, str], _SidecarProjectionRow],
+) -> None:
+    for key in [
+        key
+        for key, value in sidecars_by_path.items()
+        if key[0] == target
+        and value.kind == SidecarKind.SUBTITLE.value
+        and value.language == language
+    ]:
+        del sidecars_by_path[key]
 
 
 def _apply_extract_subtitle(
@@ -378,9 +410,10 @@ def _apply_extract_subtitle(
     to = event.get("to")
     language = event.get("language")
     if isinstance(to, str):
-        state.sidecars_by_path[(target, to)] = (
-            SidecarKind.SUBTITLE.value,
-            language if isinstance(language, str) else None,
+        state.sidecars_by_path[(target, to)] = _SidecarProjectionRow(
+            kind=SidecarKind.SUBTITLE.value,
+            language=language if isinstance(language, str) else None,
+            renderer_derived=False,
         )
 
 
@@ -447,9 +480,13 @@ def _apply_update_sidecar(
 
 def _seed_sidecars_by_path(
     raw: Mapping[str, object],
-) -> dict[tuple[str, str], tuple[str, str | None]]:
-    """Seed (asset_id, rendered_path) -> (kind, language) for declared sidecars."""
+) -> dict[tuple[str, str], _SidecarProjectionRow]:
+    """Seed (asset_id, rendered_path) -> projection row for declared sidecars."""
     return {
-        (sidecar.asset_id, sidecar.path): (sidecar.kind, sidecar.language)
+        (sidecar.asset_id, sidecar.path): _SidecarProjectionRow(
+            kind=sidecar.kind,
+            language=sidecar.language,
+            renderer_derived=True,
+        )
         for sidecar in iter_declared_sidecars(raw)
     }
