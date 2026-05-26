@@ -23,6 +23,7 @@ def _atomic(
     action: TimelineActionName,
     logical_time_ns: int,
     target: str,
+    target_ids: list[str] | None = None,
     **state_delta: object,
 ) -> dict[str, Any]:
     """Build a dict shaped like an AtomicJournalEntry for projection tests."""
@@ -33,7 +34,7 @@ def _atomic(
         "run_id": "1d4f7e6c-4e2e-4f1c-9a4c-7d2a9c8e0f01",
         "logical_time_ns": logical_time_ns,
         "action": action.value,
-        "target_ids": [target],
+        "target_ids": target_ids or [target],
         "input_version_ids": [],
         "output_version_ids": [],
         "location_ids": [],
@@ -259,3 +260,45 @@ def test_path_history_includes_archive_file_and_move_between_roots() -> None:
     assert moved.from_path == "archive/blazar.mkv"
     assert moved.to_path == "movies-hd/asset_hd_main.mkv"
     assert moved.temp_path is None
+
+
+def test_path_history_projects_hierarchy_path_moves() -> None:
+    """WHY: hierarchy journal entries carry per-asset path moves inside state_delta."""
+    journal = [
+        _validated_entry(
+            _atomic(
+                event_id="ev_renumber_episode",
+                action=TimelineActionName.RENUMBER_EPISODE,
+                logical_time_ns=1_000_000_000,
+                target="episode_1",
+                target_ids=["episode_1", "asset_hd_main", "asset_other"],
+                metadata={"episode_number": {"before": 1, "after": 2}},
+                path_moves=[
+                    {
+                        "asset_id": "asset_hd_main",
+                        "location_id": "location_0001",
+                        "from_path": "library/tv/Show/S01E01.mkv",
+                        "to_path": "library/tv/Show/S01E02.mkv",
+                    },
+                    {
+                        "asset_id": "asset_other",
+                        "location_id": "location_0002",
+                        "from_path": "library/tv/Show/S01E01-extra.mkv",
+                        "to_path": "library/tv/Show/S01E02-extra.mkv",
+                    },
+                ],
+                sidecar_moves=[],
+                skipped_deleted_asset_ids=[],
+            )
+        )
+    ]
+
+    history = derive_path_history("asset_hd_main", journal)
+
+    assert len(history) == 1
+    (entry,) = history
+    assert entry.event_id == "ev_renumber_episode"
+    assert entry.action == TimelineActionName.RENUMBER_EPISODE
+    assert entry.from_path == "library/tv/Show/S01E01.mkv"
+    assert entry.to_path == "library/tv/Show/S01E02.mkv"
+    assert entry.temp_path is None

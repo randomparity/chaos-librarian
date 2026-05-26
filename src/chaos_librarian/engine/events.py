@@ -41,6 +41,8 @@ from chaos_librarian.contract.scenario import (
     ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    MoveEpisodeToSeasonEvent,
+    MoveTrackToDiscEvent,
     NetworkLagCommitEvent,
     NetworkLagStartEvent,
     ReencodeAudioEvent,
@@ -48,6 +50,9 @@ from chaos_librarian.contract.scenario import (
     RemoveSidecarEvent,
     RemuxContainerEvent,
     RenameFileEvent,
+    RenameSeasonEvent,
+    RenumberDiscEvent,
+    RenumberEpisodeEvent,
     SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
@@ -63,7 +68,7 @@ from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.path_rendering import replace_root_prefix
+from chaos_librarian.path_rendering import render_declared_sidecar_path, replace_root_prefix
 
 _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
@@ -182,6 +187,21 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "from_path",
             "to_path",
         }
+    ),
+    TimelineActionName.RENUMBER_EPISODE: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.MOVE_EPISODE_TO_SEASON: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.RENAME_SEASON: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.RENUMBER_DISC: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.MOVE_TRACK_TO_DISC: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
     ),
 }
 """Per-action contract for emitted ``state_delta`` keys.
@@ -471,6 +491,7 @@ def _handle_create_sidecar(
         ]
         for sid in collisions:
             del state.sidecars[sid]
+            state.discard_renderer_sidecar(sid)
     sidecar_id = ids.next_sidecar_id()
     state.sidecars[sidecar_id] = ManifestSidecar(
         id=sidecar_id,
@@ -751,6 +772,7 @@ def _handle_embed_subtitle(
         ),
     )
     del state.sidecars[sidecar_id]
+    state.discard_renderer_sidecar(sidecar_id)
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     entry = _new_atomic_entry(
@@ -822,6 +844,7 @@ def _handle_remove_sidecar(
     sidecar_id = state.sidecar_id_for_path(event.target, event.sidecar_path)
     sidecar = state.sidecars[sidecar_id]
     del state.sidecars[sidecar_id]
+    state.discard_renderer_sidecar(sidecar_id)
     entry = _new_atomic_entry(
         resolved=resolved,
         ctx=ctx,
@@ -1208,6 +1231,245 @@ def _network_lag_temp_path(event_id: str) -> str:
     return f".chaos-librarian/network-lag/{event_id}"
 
 
+def _handle_renumber_episode(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, RenumberEpisodeEvent)
+    asset_ids = state.asset_ids_for_episode(event.target)
+    previous = state.episodes[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    updates: dict[str, object] = {"episode_number": event.episode_number}
+    if event.absolute_number is not None:
+        updates["absolute_number"] = event.absolute_number
+    state.episodes[event.target] = previous.model_copy(update=updates)
+    metadata = _metadata_delta(previous, state.episodes[event.target], tuple(updates))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.RENUMBER_EPISODE,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_move_episode_to_season(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, MoveEpisodeToSeasonEvent)
+    asset_ids = state.asset_ids_for_episode(event.target)
+    previous = state.episodes[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    updates: dict[str, object] = {
+        "season_id": event.to_season,
+        "episode_number": event.episode_number,
+    }
+    if event.absolute_number is not None:
+        updates["absolute_number"] = event.absolute_number
+    state.episodes[event.target] = previous.model_copy(update=updates)
+    metadata = _metadata_delta(previous, state.episodes[event.target], tuple(updates))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.MOVE_EPISODE_TO_SEASON,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_rename_season(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, RenameSeasonEvent)
+    asset_ids = state.asset_ids_for_season(event.target)
+    previous = state.seasons[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    state.seasons[event.target] = previous.model_copy(update={"title": event.title})
+    metadata = _metadata_delta(previous, state.seasons[event.target], ("title",))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.RENAME_SEASON,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_renumber_disc(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, RenumberDiscEvent)
+    asset_ids = state.asset_ids_for_disc(event.target)
+    previous = state.discs[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    state.discs[event.target] = previous.model_copy(update={"disc_number": event.disc_number})
+    metadata = _metadata_delta(previous, state.discs[event.target], ("disc_number",))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.RENUMBER_DISC,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_move_track_to_disc(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, MoveTrackToDiscEvent)
+    asset_ids = state.asset_ids_for_track(event.target)
+    previous = state.tracks[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    state.tracks[event.target] = previous.model_copy(
+        update={"disc_id": event.to_disc, "track_number": event.track_number}
+    )
+    metadata = _metadata_delta(previous, state.tracks[event.target], ("disc_id", "track_number"))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.MOVE_TRACK_TO_DISC,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _capture_rendered_paths(
+    state: WorldState,
+    asset_ids: list[str],
+) -> dict[str, tuple[str, str]]:
+    paths: dict[str, tuple[str, str]] = {}
+    for asset_id in asset_ids:
+        if not state.has_location(asset_id) or not state.renderer_manages_asset(asset_id):
+            continue
+        location_id = state.location_id_for_asset(asset_id)
+        paths[asset_id] = (location_id, state.locations[location_id].path)
+    return paths
+
+
+def _metadata_delta(
+    before: object,
+    after: object,
+    fields: tuple[str, ...],
+) -> dict[str, dict[str, object]]:
+    return {
+        field: {"before": getattr(before, field), "after": getattr(after, field)}
+        for field in fields
+        if getattr(before, field) != getattr(after, field)
+    }
+
+
+def _hierarchy_entry(
+    *,
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ctx: EngineEventContext,
+    action: TimelineActionName,
+    hierarchy_target_id: str,
+    asset_ids: list[str],
+    before_paths: dict[str, tuple[str, str]],
+    metadata: dict[str, dict[str, object]],
+) -> AtomicJournalEntry:
+    path_moves: list[dict[str, str]] = []
+    sidecar_moves: list[dict[str, str]] = []
+    skipped_deleted_asset_ids: list[str] = []
+    for asset_id in asset_ids:
+        if not state.has_location(asset_id):
+            skipped_deleted_asset_ids.append(asset_id)
+            continue
+        before = before_paths.get(asset_id)
+        if before is None:
+            continue
+        location_id, from_path = before
+        to_path = state.render_path_for_asset(asset_id)
+        if from_path == to_path:
+            continue
+        state.locations[location_id] = state.locations[location_id].model_copy(
+            update={"path": to_path}
+        )
+        path_moves.append(
+            {
+                "asset_id": asset_id,
+                "location_id": location_id,
+                "from_path": from_path,
+                "to_path": to_path,
+            }
+        )
+        for sidecar in state.renderer_derived_sidecars_for_asset(asset_id):
+            if sidecar.language is None:
+                raise ChaosLibrarianValueError(
+                    f"renderer-derived sidecar {sidecar.id!r} has no language"
+                )
+            sidecar_to_path = render_declared_sidecar_path(to_path, sidecar.language)
+            if sidecar.path == sidecar_to_path:
+                continue
+            state.sidecars[sidecar.id] = sidecar.model_copy(update={"path": sidecar_to_path})
+            sidecar_moves.append(
+                {
+                    "sidecar_id": sidecar.id,
+                    "asset_id": asset_id,
+                    "from_path": sidecar.path,
+                    "to_path": sidecar_to_path,
+                }
+            )
+    return _new_atomic_entry(
+        resolved=resolved,
+        ctx=ctx,
+        action=action,
+        target_ids=[hierarchy_target_id, *asset_ids],
+        location_ids=[move["location_id"] for move in path_moves],
+        state_delta={
+            "metadata": metadata,
+            "path_moves": path_moves,
+            "sidecar_moves": sidecar_moves,
+            "skipped_deleted_asset_ids": skipped_deleted_asset_ids,
+        },
+    )
+
+
 _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.MOVE_ASSET: _handle_move_asset,
     TimelineActionName.RENAME_FILE: _handle_rename_file,
@@ -1234,4 +1496,9 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.WRONG_ORACLE_HASH: _handle_wrong_oracle_hash,
     TimelineActionName.NETWORK_LAG_START: _handle_network_lag_start,
     TimelineActionName.NETWORK_LAG_COMMIT: _handle_network_lag_commit,
+    TimelineActionName.RENUMBER_EPISODE: _handle_renumber_episode,
+    TimelineActionName.MOVE_EPISODE_TO_SEASON: _handle_move_episode_to_season,
+    TimelineActionName.RENAME_SEASON: _handle_rename_season,
+    TimelineActionName.RENUMBER_DISC: _handle_renumber_disc,
+    TimelineActionName.MOVE_TRACK_TO_DISC: _handle_move_track_to_disc,
 }
