@@ -1,6 +1,6 @@
 {
   "additionalProperties": false,
-  "description": "Per-work report \u2014 variants + transitive asset ids.",
+  "description": "Per-series report \u2014 seasons, episodes, and transitive asset ids.",
   "properties": {
     "asset_ids": {
       "items": {
@@ -9,34 +9,42 @@
       "title": "Asset Ids",
       "type": "array"
     },
+    "episode_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Episode Ids",
+      "type": "array"
+    },
     "schema_version": {
       "const": 1,
       "title": "Schema Version",
       "type": "integer"
     },
-    "title": {
-      "title": "Title",
-      "type": "string"
-    },
-    "variant_ids": {
+    "season_ids": {
       "items": {
         "type": "string"
       },
-      "title": "Variant Ids",
+      "title": "Season Ids",
       "type": "array"
     },
-    "work_id": {
-      "title": "Work Id",
+    "series_id": {
+      "title": "Series Id",
+      "type": "string"
+    },
+    "title": {
+      "title": "Title",
       "type": "string"
     }
   },
   "required": [
     "schema_version",
-    "work_id",
+    "series_id",
     "title",
-    "variant_ids",
+    "season_ids",
+    "episode_ids",
     "asset_ids"
   ],
-  "title": "WorkReport",
+  "title": "SeriesReport",
   "type": "object"
 }

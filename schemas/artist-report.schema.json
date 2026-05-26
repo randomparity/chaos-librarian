@@ -1,0 +1,50 @@
+{
+  "additionalProperties": false,
+  "description": "Per-artist report \u2014 albums, tracks, and transitive asset ids.",
+  "properties": {
+    "album_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Album Ids",
+      "type": "array"
+    },
+    "artist_id": {
+      "title": "Artist Id",
+      "type": "string"
+    },
+    "asset_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Asset Ids",
+      "type": "array"
+    },
+    "name": {
+      "title": "Name",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "track_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Track Ids",
+      "type": "array"
+    }
+  },
+  "required": [
+    "schema_version",
+    "artist_id",
+    "name",
+    "album_ids",
+    "track_ids",
+    "asset_ids"
+  ],
+  "title": "ArtistReport",
+  "type": "object"
+}

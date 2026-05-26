@@ -9,6 +9,8 @@ from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )
 
+EXTRACT_OUTPUT_PATH = "library/r0/T - l.eng.srt"
+
 
 def _run(raw):
     collector = IssueCollector()
@@ -18,15 +20,16 @@ def _run(raw):
 
 def _scenario(timeline, *, asset_subtitles=None):
     return {
-        "schema_version": 11,
+        "schema_version": 12,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",
         "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
-        "works": [
+        "movies": [
             {
-                "id": "w0",
+                "id": "movie_t",
                 "title": "T",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": "v0",
@@ -59,6 +62,8 @@ def _scenario(timeline, *, asset_subtitles=None):
                 ],
             }
         ],
+        "series": [],
+        "artists": [],
         "timeline": timeline,
     }
 
@@ -71,7 +76,7 @@ def test_extract_subtitle_on_asset_without_subtitle_track():
                 "at": "1s",
                 "action": "extract_subtitle",
                 "target": "a0",
-                "to": "a0.eng.srt",
+                "to": EXTRACT_OUTPUT_PATH,
                 "language": "eng",
             },
         ]
@@ -88,7 +93,7 @@ def test_extract_subtitle_valid_with_declared_embedded_track():
                 "at": "1s",
                 "action": "extract_subtitle",
                 "target": "a0",
-                "to": "a0.eng.srt",
+                "to": EXTRACT_OUTPUT_PATH,
                 "language": "eng",
             },
         ],
@@ -111,7 +116,7 @@ def test_extract_subtitle_valid_with_declared_sidecar():
                 "at": "1s",
                 "action": "extract_subtitle",
                 "target": "a0",
-                "to": "a0.eng.srt",
+                "to": EXTRACT_OUTPUT_PATH,
                 "language": "eng",
             },
         ],

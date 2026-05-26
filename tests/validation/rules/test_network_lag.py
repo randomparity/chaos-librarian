@@ -110,11 +110,12 @@ def _lag_commit(
     }
 
 
-def _two_asset_works() -> list[dict[str, object]]:
+def _two_asset_movies() -> list[dict[str, object]]:
     return [
         {
-            "id": "w",
+            "id": "m",
             "title": "t",
+            "layout": "movie_flat",
             "variants": [
                 {
                     "id": "v",
@@ -228,7 +229,7 @@ def test_network_lag_start_must_immediately_follow_after_event(
 ) -> None:
     raw = minimal_scenario(
         profiles=["network-fs-lag"],
-        works=_two_asset_works(),
+        movies=_two_asset_movies(),
         timeline=[
             _rename_event(),
             _rename_event(event_id="rename_b", target="b"),
@@ -260,7 +261,7 @@ def test_network_lag_start_rejects_future_after_event(minimal_scenario, empty_in
 def test_network_lag_start_target_must_match_after_event(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(
         profiles=["network-fs-lag"],
-        works=_two_asset_works(),
+        movies=_two_asset_movies(),
         timeline=[
             _rename_event(target="a"),
             _lag_start(target="b"),
@@ -278,7 +279,7 @@ def test_network_lag_start_target_must_match_slow_copy_commit_target(
 ) -> None:
     raw = minimal_scenario(
         profiles=["network-fs-lag"],
-        works=_two_asset_works(),
+        movies=_two_asset_movies(),
         timeline=[
             _slow_copy_start_event(at="1s"),
             _slow_copy_commit_event(at="4s"),

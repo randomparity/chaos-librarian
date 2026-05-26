@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: sc_archive_file_explicit_root
 seed: 42
 duration_scale: short
@@ -9,9 +9,10 @@ library:
     - id: cold-storage
       path: library/cold-storage
   archive_root: cold-storage
-works:
-  - id: work_001
+movies:
+  - id: movie_001
     title: Test Movie For Archive Explicit Root
+    layout: movie_flat
     variants:
       - id: variant_001
         label: hd
@@ -31,6 +32,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: en
+series: []
+artists: []
 timeline:
   - id: ev_archive_001
     at: 0ns

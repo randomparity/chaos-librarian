@@ -10,14 +10,10 @@ from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName, generation_budget_for
 from chaos_librarian.validation.codes import E_PROFILE_BUDGET_EXCEEDED
 from chaos_librarian.validation.rules._common import (
-    NS_ASSET_ID,
-    NS_BUNDLE_ID,
-    NS_VARIANT_ID,
     Reporter,
     _as_list,
+    _as_mapping,
     _iter_timeline_events,
-    iter_declared_sidecars,
-    iter_global_namespaces,
 )
 
 if TYPE_CHECKING:
@@ -28,7 +24,14 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class _StaticBudget:
     assets: int
-    works: int
+    movies: int
+    series: int
+    seasons: int
+    episodes: int
+    artists: int
+    albums: int
+    discs: int
+    tracks: int
     variants: int
     bundles: int
     sidecars: int
@@ -39,7 +42,14 @@ def _fuzz_budget(profile: FuzzProfileName) -> _StaticBudget:
     budget = generation_budget_for(profile)
     return _StaticBudget(
         assets=budget.assets,
-        works=budget.works,
+        movies=budget.movies,
+        series=budget.series,
+        seasons=budget.seasons,
+        episodes=budget.episodes,
+        artists=budget.artists,
+        albums=budget.albums,
+        discs=budget.discs,
+        tracks=budget.tracks,
         variants=budget.variants,
         bundles=budget.bundles,
         sidecars=budget.sidecars,
@@ -50,7 +60,14 @@ def _fuzz_budget(profile: FuzzProfileName) -> _StaticBudget:
 _STATIC_PROFILE_BUDGETS: Final[dict[str, _StaticBudget]] = {
     ProfileName.PERFORMANCE_SMOKE.value: _StaticBudget(
         assets=40,
-        works=40,
+        movies=40,
+        series=40,
+        seasons=40,
+        episodes=40,
+        artists=40,
+        albums=40,
+        discs=40,
+        tracks=40,
         variants=60,
         bundles=8,
         sidecars=120,
@@ -58,7 +75,14 @@ _STATIC_PROFILE_BUDGETS: Final[dict[str, _StaticBudget]] = {
     ),
     ProfileName.PERFORMANCE_SCALE.value: _StaticBudget(
         assets=250,
-        works=250,
+        movies=250,
+        series=250,
+        seasons=250,
+        episodes=250,
+        artists=250,
+        albums=250,
+        discs=250,
+        tracks=250,
         variants=400,
         bundles=50,
         sidecars=750,
@@ -66,7 +90,14 @@ _STATIC_PROFILE_BUDGETS: Final[dict[str, _StaticBudget]] = {
     ),
     ProfileName.PERFORMANCE_STRESS.value: _StaticBudget(
         assets=1_000,
-        works=1_000,
+        movies=1_000,
+        series=1_000,
+        seasons=1_000,
+        episodes=1_000,
+        artists=1_000,
+        albums=1_000,
+        discs=1_000,
+        tracks=1_000,
         variants=1_800,
         bundles=200,
         sidecars=3_000,
@@ -102,23 +133,78 @@ def rule_profile_budgets(
 
 
 def _static_counts(raw: Mapping[str, object]) -> _StaticBudget:
-    namespaces = list(iter_global_namespaces(raw))
     return _StaticBudget(
-        assets=sum(1 for namespace, _, _ in namespaces if namespace == NS_ASSET_ID),
-        works=_count_works(raw),
-        variants=sum(1 for namespace, _, _ in namespaces if namespace == NS_VARIANT_ID),
-        bundles=sum(1 for namespace, _, _ in namespaces if namespace == NS_BUNDLE_ID),
+        assets=sum(1 for _ in _iter_asset_mappings(raw)),
+        movies=len(_as_list(raw.get("movies")) or []),
+        series=len(_as_list(raw.get("series")) or []),
+        seasons=sum(1 for _ in _iter_season_mappings(raw)),
+        episodes=sum(1 for _ in _iter_episode_mappings(raw)),
+        artists=len(_as_list(raw.get("artists")) or []),
+        albums=sum(1 for _ in _iter_album_mappings(raw)),
+        discs=sum(1 for _ in _iter_disc_mappings(raw)),
+        tracks=sum(1 for _ in _iter_track_mappings(raw)),
+        variants=sum(1 for _ in _iter_variant_mappings(raw)),
+        bundles=sum(1 for _ in _iter_bundle_mappings(raw)),
         sidecars=_count_declared_and_timeline_sidecars(raw),
         timeline_events=sum(1 for _ in _iter_timeline_events(raw)),
     )
 
 
-def _count_works(raw: Mapping[str, object]) -> int:
-    return len(_as_list(raw.get("works")) or [])
+def _iter_mapping_items(node: object):
+    for item in _as_list(node) or []:
+        mapping = _as_mapping(item)
+        if mapping is not None:
+            yield mapping
+
+
+def _iter_season_mappings(raw: Mapping[str, object]):
+    for series in _iter_mapping_items(raw.get("series")):
+        yield from _iter_mapping_items(series.get("seasons"))
+
+
+def _iter_episode_mappings(raw: Mapping[str, object]):
+    for season in _iter_season_mappings(raw):
+        yield from _iter_mapping_items(season.get("episodes"))
+
+
+def _iter_album_mappings(raw: Mapping[str, object]):
+    for artist in _iter_mapping_items(raw.get("artists")):
+        yield from _iter_mapping_items(artist.get("albums"))
+
+
+def _iter_disc_mappings(raw: Mapping[str, object]):
+    for album in _iter_album_mappings(raw):
+        yield from _iter_mapping_items(album.get("discs"))
+
+
+def _iter_track_mappings(raw: Mapping[str, object]):
+    for disc in _iter_disc_mappings(raw):
+        yield from _iter_mapping_items(disc.get("tracks"))
+
+
+def _iter_variant_mappings(raw: Mapping[str, object]):
+    for movie in _iter_mapping_items(raw.get("movies")):
+        yield from _iter_mapping_items(movie.get("variants"))
+    for episode in _iter_episode_mappings(raw):
+        yield from _iter_mapping_items(episode.get("variants"))
+    for track in _iter_track_mappings(raw):
+        yield from _iter_mapping_items(track.get("variants"))
+
+
+def _iter_bundle_mappings(raw: Mapping[str, object]):
+    for variant in _iter_variant_mappings(raw):
+        bundle = _as_mapping(variant.get("bundle"))
+        if bundle is not None:
+            yield bundle
+
+
+def _iter_asset_mappings(raw: Mapping[str, object]):
+    for bundle in _iter_bundle_mappings(raw):
+        yield from _iter_mapping_items(bundle.get("assets"))
 
 
 def _count_declared_and_timeline_sidecars(raw: Mapping[str, object]) -> int:
-    declared = sum(1 for _ in iter_declared_sidecars(raw))
+    declared = sum(1 for asset in _iter_asset_mappings(raw) for _ in _declared_sidecars(asset))
     timeline = 0
     for _, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -130,6 +216,12 @@ def _count_declared_and_timeline_sidecars(raw: Mapping[str, object]) -> int:
     return declared + timeline
 
 
+def _declared_sidecars(asset: Mapping[str, object]):
+    for sub in _iter_mapping_items(asset.get("subtitles")):
+        if sub.get("mode") == "sidecar":
+            yield sub
+
+
 def _check_budget(
     *,
     profile: str,
@@ -139,7 +231,14 @@ def _check_budget(
 ) -> None:
     for field_name, label in (
         ("assets", "assets"),
-        ("works", "works"),
+        ("movies", "movies"),
+        ("series", "series"),
+        ("seasons", "seasons"),
+        ("episodes", "episodes"),
+        ("artists", "artists"),
+        ("albums", "albums"),
+        ("discs", "discs"),
+        ("tracks", "tracks"),
         ("variants", "variants"),
         ("bundles", "bundles"),
         ("sidecars", "sidecars"),

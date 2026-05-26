@@ -1,4 +1,4 @@
-"""Tests for the four report schemas.
+"""Tests for the hierarchy report schemas.
 
 Reports are an adapter-facing contract; every field is part of the
 public surface and must round-trip through Pydantic with no
@@ -13,23 +13,39 @@ import json
 import pytest
 from pydantic import ValidationError
 
+import chaos_librarian.contract.reports as reports_module
 from chaos_librarian.contract import (
+    ALBUM_REPORT_SCHEMA_VERSION,
+    ARTIST_REPORT_SCHEMA_VERSION,
     ASSET_REPORT_SCHEMA_VERSION,
     BUNDLE_REPORT_SCHEMA_VERSION,
+    DISC_REPORT_SCHEMA_VERSION,
+    EPISODE_REPORT_SCHEMA_VERSION,
+    MOVIE_REPORT_SCHEMA_VERSION,
+    SEASON_REPORT_SCHEMA_VERSION,
+    SERIES_REPORT_SCHEMA_VERSION,
+    TRACK_REPORT_SCHEMA_VERSION,
     VARIANT_REPORT_SCHEMA_VERSION,
-    WORK_REPORT_SCHEMA_VERSION,
 )
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.profiles import CorruptionRecord, ProfileName
 from chaos_librarian.contract.reports import (
+    AlbumReport,
+    ArtistReport,
     AssetHistoryEntry,
     AssetReport,
     AssetSnapshot,
     BundleReport,
+    DiscReport,
+    EpisodeReport,
+    MovieReport,
     PathHistoryEntry,
+    SeasonReport,
+    SeriesReport,
+    TrackReport,
     VariantReport,
     VersionHistoryEntry,
-    WorkReport,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
 
@@ -45,11 +61,28 @@ def _corruption_record() -> CorruptionRecord:
     )
 
 
+def _asset_report_topology_payload() -> dict[str, object]:
+    return {
+        "parent_kind": "episode",
+        "parent_id": "episode_01",
+        "movie_id": None,
+        "series_id": "series_starline",
+        "season_id": "season_01",
+        "episode_id": "episode_01",
+        "artist_id": None,
+        "album_id": None,
+        "disc_id": None,
+        "track_id": None,
+        "variant_id": "variant_episode",
+        "bundle_id": "bundle_episode",
+    }
+
+
 class TestAssetReport:
     """AssetReport carries initial/current snapshots + history.
 
     WHY: this is what adapter authors read to learn what happened to one
-    asset across the timeline. Sprint 4 freezes the shape.
+    asset across the timeline and how it sits in the media hierarchy.
     """
 
     def _snapshot(self) -> AssetSnapshot:
@@ -67,32 +100,53 @@ class TestAssetReport:
             state_delta={"from": "movies-hd/asset.mkv", "to": "movies-hd/Blazar.mkv"},
         )
 
-    def test_round_trip(self) -> None:
-        report = AssetReport(
-            schema_version=6,
+    def _report(self, current: AssetSnapshot | None) -> AssetReport:
+        return AssetReport(
+            schema_version=7,
             asset_id="asset_hd_main",
+            parent_kind=ParentKind.MOVIE,
+            parent_id="movie_blazar",
+            movie_id="movie_blazar",
+            series_id=None,
+            season_id=None,
+            episode_id=None,
+            artist_id=None,
+            album_id=None,
+            disc_id=None,
+            track_id=None,
+            variant_id="variant_hd",
+            bundle_id="bundle_hd",
             initial=self._snapshot(),
             history=[self._history_entry()],
-            current=self._snapshot(),
+            current=current,
         )
+
+    def test_round_trip(self) -> None:
+        report = self._report(current=self._snapshot())
         loaded = AssetReport.model_validate_json(report.model_dump_json())
         assert loaded == report
 
     def test_current_may_be_none(self) -> None:
-        report = AssetReport(
-            schema_version=6,
-            asset_id="asset_hd_main",
-            initial=self._snapshot(),
-            history=[self._history_entry()],
-            current=None,
-        )
+        report = self._report(current=None)
         parsed = json.loads(report.model_dump_json(exclude_none=False))
         assert parsed["current"] is None
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 6,
+            "schema_version": 7,
             "asset_id": "asset_hd_main",
+            "parent_kind": "movie",
+            "parent_id": "movie_blazar",
+            "movie_id": "movie_blazar",
+            "series_id": None,
+            "season_id": None,
+            "episode_id": None,
+            "artist_id": None,
+            "album_id": None,
+            "disc_id": None,
+            "track_id": None,
+            "variant_id": "variant_hd",
+            "bundle_id": "bundle_hd",
             "initial": self._snapshot().model_dump(),
             "history": [],
             "current": None,
@@ -101,34 +155,103 @@ class TestAssetReport:
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_six(self) -> None:
+    def test_schema_version_constant_is_seven(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 6
+        assert ASSET_REPORT_SCHEMA_VERSION == 7
 
 
 class TestOtherReports:
-    """Work / variant / bundle reports list members + cross-references.
+    """Domain, variant, and bundle reports list members + cross-references.
 
-    WHY: the three reports are the navigation surface adapters use to
-    walk from a work down to its assets, or from a bundle up to its
+    WHY: these reports are the navigation surface adapters use to walk
+    from hierarchy entities down to assets, or from a bundle up to its
     variant.
     """
 
-    def test_work_report_round_trip(self) -> None:
-        wr = WorkReport(
-            schema_version=1,
-            work_id="work_blazar",
-            title="Synthetic Blazar",
-            variant_ids=["variant_hd"],
-            asset_ids=["asset_hd_main"],
-        )
-        assert WorkReport.model_validate_json(wr.model_dump_json()) == wr
+    def test_domain_reports_round_trip(self) -> None:
+        reports = [
+            MovieReport(
+                schema_version=1,
+                movie_id="movie_orbit",
+                title="Orbit",
+                variant_ids=["variant_movie"],
+                asset_ids=["asset_movie"],
+            ),
+            SeriesReport(
+                schema_version=1,
+                series_id="series_starline",
+                title="Starline",
+                season_ids=["season_01"],
+                episode_ids=["episode_01"],
+                asset_ids=["asset_episode"],
+            ),
+            SeasonReport(
+                schema_version=1,
+                season_id="season_01",
+                series_id="series_starline",
+                season_number=1,
+                title="Season 1",
+                episode_ids=["episode_01"],
+                asset_ids=["asset_episode"],
+            ),
+            EpisodeReport(
+                schema_version=1,
+                episode_id="episode_01",
+                season_id="season_01",
+                episode_number=1,
+                title="Pilot",
+                aired_on=None,
+                absolute_number=None,
+                variant_ids=["variant_episode"],
+                asset_ids=["asset_episode"],
+            ),
+            ArtistReport(
+                schema_version=1,
+                artist_id="artist_north",
+                name="North Index",
+                album_ids=["album_winter"],
+                track_ids=["track_opening"],
+                asset_ids=["asset_track"],
+            ),
+            AlbumReport(
+                schema_version=1,
+                album_id="album_winter",
+                artist_id="artist_north",
+                title="Winter Index",
+                release_year=2024,
+                disc_ids=["disc_01"],
+                track_ids=["track_opening"],
+                asset_ids=["asset_track"],
+            ),
+            DiscReport(
+                schema_version=1,
+                disc_id="disc_01",
+                album_id="album_winter",
+                disc_number=1,
+                track_ids=["track_opening"],
+                asset_ids=["asset_track"],
+            ),
+            TrackReport(
+                schema_version=1,
+                track_id="track_opening",
+                disc_id="disc_01",
+                track_number=1,
+                title="Opening",
+                performers=["North Index"],
+                variant_ids=["variant_track"],
+                asset_ids=["asset_track"],
+            ),
+        ]
+
+        for report in reports:
+            assert type(report).model_validate_json(report.model_dump_json()) == report
 
     def test_variant_report_round_trip(self) -> None:
         vr = VariantReport(
-            schema_version=1,
+            schema_version=2,
             variant_id="variant_hd",
-            work_id="work_blazar",
+            parent_kind=ParentKind.MOVIE,
+            parent_id="movie_blazar",
             label="hd",
             bundle_id="bundle_hd",
             asset_ids=["asset_hd_main"],
@@ -145,10 +268,17 @@ class TestOtherReports:
         )
         assert BundleReport.model_validate_json(br.model_dump_json()) == br
 
-    def test_constants_are_one(self) -> None:
-        assert WORK_REPORT_SCHEMA_VERSION == 1
-        assert VARIANT_REPORT_SCHEMA_VERSION == 1
+    def test_constants_match_report_contract(self) -> None:
+        assert MOVIE_REPORT_SCHEMA_VERSION == 1
+        assert SERIES_REPORT_SCHEMA_VERSION == 1
+        assert SEASON_REPORT_SCHEMA_VERSION == 1
+        assert EPISODE_REPORT_SCHEMA_VERSION == 1
+        assert ARTIST_REPORT_SCHEMA_VERSION == 1
+        assert ALBUM_REPORT_SCHEMA_VERSION == 1
+        assert DISC_REPORT_SCHEMA_VERSION == 1
+        assert TRACK_REPORT_SCHEMA_VERSION == 1
         assert BUNDLE_REPORT_SCHEMA_VERSION == 1
+        assert VARIANT_REPORT_SCHEMA_VERSION == 2
 
 
 def test_asset_snapshot_carries_content_hash_and_probed():
@@ -198,17 +328,64 @@ def test_asset_snapshot_round_trips_corruption_metadata() -> None:
     assert loaded.corruption.event_id == "corrupt_header_001"
 
 
-def test_asset_report_schema_version_is_six() -> None:
-    assert ASSET_REPORT_SCHEMA_VERSION == 6
+def test_asset_report_schema_version_is_seven() -> None:
+    assert ASSET_REPORT_SCHEMA_VERSION == 7
 
 
-def test_other_report_schema_versions_stay_at_one():
-    """WHY: only AssetReport bumps; Work/Variant/Bundle carry id lists, not
-    embedded snapshots. If one of them silently bumps to 2, voom-v2 will
-    fail at the discriminator."""
-    assert WORK_REPORT_SCHEMA_VERSION == 1
-    assert VARIANT_REPORT_SCHEMA_VERSION == 1
+def test_domain_report_constants_start_at_one() -> None:
+    assert MOVIE_REPORT_SCHEMA_VERSION == 1
+    assert SERIES_REPORT_SCHEMA_VERSION == 1
+    assert SEASON_REPORT_SCHEMA_VERSION == 1
+    assert EPISODE_REPORT_SCHEMA_VERSION == 1
+    assert ARTIST_REPORT_SCHEMA_VERSION == 1
+    assert ALBUM_REPORT_SCHEMA_VERSION == 1
+    assert DISC_REPORT_SCHEMA_VERSION == 1
+    assert TRACK_REPORT_SCHEMA_VERSION == 1
+    assert VARIANT_REPORT_SCHEMA_VERSION == 2
+    assert ASSET_REPORT_SCHEMA_VERSION == 7
     assert BUNDLE_REPORT_SCHEMA_VERSION == 1
+
+
+def test_variant_report_uses_parent_kind_and_parent_id() -> None:
+    report = VariantReport(
+        schema_version=2,
+        variant_id="variant_movie",
+        parent_kind=ParentKind.MOVIE,
+        parent_id="movie_orbit",
+        label="1080p",
+        bundle_id="bundle_movie",
+        asset_ids=["asset_movie"],
+    )
+
+    assert VariantReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_asset_report_v7_carries_topology_fields() -> None:
+    snapshot = AssetSnapshot(location_path=None, version_id="version_0001", version_index=0)
+    report = AssetReport(
+        schema_version=7,
+        asset_id="asset_episode",
+        parent_kind=ParentKind.EPISODE,
+        parent_id="episode_01",
+        movie_id=None,
+        series_id="series_starline",
+        season_id="season_01",
+        episode_id="episode_01",
+        artist_id=None,
+        album_id=None,
+        disc_id=None,
+        track_id=None,
+        variant_id="variant_episode",
+        bundle_id="bundle_episode",
+        initial=snapshot,
+        current=snapshot,
+    )
+
+    assert AssetReport.model_validate_json(report.model_dump_json()) == report
+
+
+def test_work_report_is_removed() -> None:
+    assert not hasattr(reports_module, "WorkReport")
 
 
 def test_path_history_entry_round_trip() -> None:
@@ -229,8 +406,9 @@ def test_path_history_entry_round_trip() -> None:
 
 def test_asset_report_path_history_defaults_to_empty_list() -> None:
     payload = {
-        "schema_version": 6,
+        "schema_version": 7,
         "asset_id": "asset_hd_main",
+        **_asset_report_topology_payload(),
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
             "version_id": "version_0001",
@@ -247,10 +425,11 @@ def test_asset_report_path_history_defaults_to_empty_list() -> None:
     assert report.path_history == []
 
 
-def test_asset_report_v6_round_trip_with_path_history() -> None:
+def test_asset_report_v7_round_trip_with_path_history() -> None:
     payload = {
-        "schema_version": 6,
+        "schema_version": 7,
         "asset_id": "asset_hd_main",
+        **_asset_report_topology_payload(),
         "initial": {
             "location_path": "movies-hd/asset_hd_main.mkv",
             "version_id": "version_0001",
@@ -300,17 +479,29 @@ def test_version_history_entry_extract_no_versions():
     assert entry.output_version_id is None
 
 
-def test_asset_report_v6_default_version_history_empty():
+def test_asset_report_v7_default_version_history_empty():
     snapshot = AssetSnapshot(
         location_path="movies/x.mkv",
         version_id="v0",
         version_index=0,
     )
     report = AssetReport(
-        schema_version=6,
+        schema_version=7,
         asset_id="asset_main",
+        parent_kind=ParentKind.TRACK,
+        parent_id="track_main",
+        movie_id=None,
+        series_id=None,
+        season_id=None,
+        episode_id=None,
+        artist_id="artist_main",
+        album_id="album_main",
+        disc_id="disc_main",
+        track_id="track_main",
+        variant_id="variant_main",
+        bundle_id="bundle_main",
         initial=snapshot,
         current=snapshot,
     )
     assert report.version_history == []
-    assert report.schema_version == 6
+    assert report.schema_version == 7

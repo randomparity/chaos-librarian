@@ -14,8 +14,9 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import resolve_seed
 from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.preflight import iter_assets
 from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.path_rendering import RenderableAssetContext, render_asset_path
+from chaos_librarian.topology import AssetContext, iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -51,17 +52,54 @@ def _materialized_hashes(scenario: Scenario, out_dir: Path) -> dict[str, str]:
     root_path = scenario.library.roots[0].path
     caps = _capabilities()
     hashes: dict[str, str] = {}
-    for invocation_index, asset in enumerate(iter_assets(scenario)):
+    for invocation_index, context in enumerate(iter_asset_contexts(scenario)):
+        asset = context.asset
         result = materialize_one_asset(
             asset,
             seed,
             out_dir,
             caps,
             invocation_index,
-            root_path=root_path,
+            rendered_relative_path=render_asset_path(_renderable_context(context, root_path)),
         )
         hashes[asset.id] = result.materialized_asset.content_hash
     return hashes
+
+
+def _renderable_context(context: AssetContext, root_path: str) -> RenderableAssetContext:
+    if context.movie is not None:
+        layout = context.movie.layout
+        naming = None
+    elif context.series is not None:
+        layout = context.series.layout
+        naming = context.series.episode_naming
+    elif context.artist is not None:
+        layout = context.artist.layout
+        naming = context.artist.track_naming
+    else:
+        raise AssertionError(f"asset {context.asset.id} has no hierarchy parent")
+    return RenderableAssetContext(
+        parent_kind=context.parent_kind,
+        root_path=root_path,
+        layout=layout,
+        naming=naming,
+        movie_title=context.movie.title if context.movie is not None else None,
+        series_title=None,
+        season_number=None,
+        episode_number=None,
+        episode_title=None,
+        aired_on=None,
+        absolute_number=None,
+        artist_name=context.artist.name if context.artist is not None else None,
+        album_title=context.album.title if context.album is not None else None,
+        disc_number=context.disc.disc_number if context.disc is not None else None,
+        track_number=context.track.track_number if context.track is not None else None,
+        track_title=context.track.title if context.track is not None else None,
+        variant_label=context.variant.label,
+        asset_role=context.asset.role,
+        asset_container=context.asset.container,
+        bundle_asset_count=context.bundle_asset_count,
+    )
 
 
 def _capabilities() -> Capabilities:

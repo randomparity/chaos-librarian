@@ -23,10 +23,17 @@ from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.observed_state import ObservedState
 from chaos_librarian.contract.replay_bundle import ReplayBundle  # Annotated union
 from chaos_librarian.contract.reports import (
+    AlbumReport,
+    ArtistReport,
     AssetReport,
     BundleReport,
+    DiscReport,
+    EpisodeReport,
+    MovieReport,
+    SeasonReport,
+    SeriesReport,
+    TrackReport,
     VariantReport,
-    WorkReport,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.scenario import Scenario
@@ -44,7 +51,14 @@ MODELS: Final[list[tuple[str, object]]] = [
     ("materialization.schema.json", MaterializationReport),
     ("run-sentinel.schema.json", RunSentinel),
     ("asset-report.schema.json", AssetReport),
-    ("work-report.schema.json", WorkReport),
+    ("movie-report.schema.json", MovieReport),
+    ("series-report.schema.json", SeriesReport),
+    ("season-report.schema.json", SeasonReport),
+    ("episode-report.schema.json", EpisodeReport),
+    ("artist-report.schema.json", ArtistReport),
+    ("album-report.schema.json", AlbumReport),
+    ("disc-report.schema.json", DiscReport),
+    ("track-report.schema.json", TrackReport),
     ("variant-report.schema.json", VariantReport),
     ("bundle-report.schema.json", BundleReport),
     ("capabilities.schema.json", Capabilities),

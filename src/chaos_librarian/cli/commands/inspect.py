@@ -103,7 +103,14 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
         "applied_steps": applied_steps,
         "steps_remaining": steps_remaining,
         "counts": {
-            "works": len(manifest_current.works),
+            "movies": len(manifest_current.movies),
+            "series": len(manifest_current.series),
+            "seasons": len(manifest_current.seasons),
+            "episodes": len(manifest_current.episodes),
+            "artists": len(manifest_current.artists),
+            "albums": len(manifest_current.albums),
+            "discs": len(manifest_current.discs),
+            "tracks": len(manifest_current.tracks),
             "variants": len(manifest_current.variants),
             "bundles": len(manifest_current.bundles),
             "assets": len(manifest_current.assets),
@@ -129,7 +136,12 @@ def _render_inspect_human(summary: dict[str, object]) -> None:
     typer.echo(f"steps_remaining:  {summary['steps_remaining']}")
     counts = cast("dict[str, int]", summary["counts"])
     typer.echo(
-        f"counts:           works={counts['works']} variants={counts['variants']} "
+        f"counts:           movies={counts['movies']} series={counts['series']} "
+        f"seasons={counts['seasons']} episodes={counts['episodes']}"
+    )
+    typer.echo(
+        f"                  artists={counts['artists']} albums={counts['albums']} "
+        f"discs={counts['discs']} tracks={counts['tracks']} variants={counts['variants']} "
         f"bundles={counts['bundles']} assets={counts['assets']} sidecars={counts['sidecars']}"
     )
     sentinel = cast("dict[str, object]", summary["sentinel"])

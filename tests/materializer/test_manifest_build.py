@@ -11,14 +11,15 @@ stamps those rows by ``sidecar_id`` after phase B returns.
 from __future__ import annotations
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
     ManifestBundle,
+    ManifestMovie,
     ManifestSidecar,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
 )
 from chaos_librarian.contract.scenario import SidecarKind
@@ -45,8 +46,22 @@ def _build_manifest_with_sidecar(
     """
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="W")],
-        variants=[ManifestVariant(id="v0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="v0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="m0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="v0")],
         assets=[
             ManifestAsset(
@@ -146,8 +161,22 @@ def _minimal_manifest_with_one_version(version_id: str) -> Manifest:
     """Build a minimal Manifest carrying a single ``ManifestVersion`` row."""
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="W")],
-        variants=[ManifestVariant(id="v0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="v0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="m0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="v0")],
         assets=[
             ManifestAsset(
@@ -170,8 +199,22 @@ def _minimal_manifest_with_one_sidecar(
     """Build a minimal Manifest carrying a single subtitle ``ManifestSidecar`` row."""
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="W")],
-        variants=[ManifestVariant(id="v0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="v0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="m0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="v0")],
         assets=[
             ManifestAsset(
@@ -200,8 +243,22 @@ def _minimal_manifest_with_poster(sidecar_id: str, asset_id: str, path: str) -> 
     """Build a minimal Manifest carrying a single poster ``ManifestSidecar`` row."""
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="W")],
-        variants=[ManifestVariant(id="v0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="v0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="m0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="v0")],
         assets=[
             ManifestAsset(

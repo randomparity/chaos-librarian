@@ -1,9 +1,11 @@
 # expected: E_FIELD_MISSING
-schema_version: 11
+schema_version: 12
 seed: 1
 duration_scale: short
 library:
   roots: []
-works: []
+movies: []
+series: []
+artists: []
 timeline: []
 # scenario_id intentionally missing

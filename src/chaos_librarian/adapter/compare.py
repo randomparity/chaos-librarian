@@ -10,6 +10,7 @@ from chaos_librarian.adapter.index import (
     ObservedIndex,
     OracleAssetView,
     OracleIndex,
+    format_topology_key,
     topology_key,
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
@@ -190,24 +191,58 @@ def _compare_topology(
     if oracle_topology is None or observed_topology is None:
         return []
     oracle_key = topology_key(
-        oracle_topology.work_title,
-        oracle_topology.variant_label,
-        len(oracle_topology.bundle_asset_ids),
+        parent_kind=oracle_topology.parent_kind,
+        variant_label=oracle_topology.variant_label,
+        bundle_member_count=len(oracle_topology.bundle_asset_ids),
+        movie_title=oracle_topology.movie_title,
+        series_title=oracle_topology.series_title,
+        season_number=oracle_topology.season_number,
+        episode_number=oracle_topology.episode_number,
+        episode_title=oracle_topology.episode_title,
+        artist_name=oracle_topology.artist_name,
+        album_title=oracle_topology.album_title,
+        disc_number=oracle_topology.disc_number,
+        track_number=oracle_topology.track_number,
+        track_title=oracle_topology.track_title,
     )
     observed_key = topology_key(
-        observed_topology.work_title,
-        observed_topology.variant_label,
-        len(observed_topology.bundle_asset_refs),
+        parent_kind=observed_topology.parent_kind,
+        variant_label=observed_topology.variant_label,
+        bundle_member_count=len(observed_topology.bundle_asset_refs),
+        movie_title=observed_topology.movie_title,
+        series_title=observed_topology.series_title,
+        season_number=observed_topology.season_number,
+        episode_number=observed_topology.episode_number,
+        episode_title=observed_topology.episode_title,
+        artist_name=observed_topology.artist_name,
+        album_title=observed_topology.album_title,
+        disc_number=observed_topology.disc_number,
+        track_number=observed_topology.track_number,
+        track_title=observed_topology.track_title,
     )
     if oracle_key is None or observed_key is None or oracle_key == observed_key:
         return []
+    oracle_domain_key = format_topology_key(oracle_key)
+    observed_domain_key = format_topology_key(observed_key)
     return [
         _finding(
             DivergenceCode.TOPOLOGY_MISMATCH,
             "Topology relationship structure differs for matched asset.",
             match=match,
-            expected={"topology": oracle_key},
-            observed={"topology": observed_key},
+            expected={
+                "parent_kind": oracle_topology.parent_kind.value,
+                "domain_key": oracle_domain_key,
+                "bundle_member_count": len(oracle_topology.bundle_asset_ids),
+            },
+            observed={
+                "parent_kind": (
+                    observed_topology.parent_kind.value
+                    if observed_topology.parent_kind is not None
+                    else None
+                ),
+                "domain_key": observed_domain_key,
+                "bundle_member_count": len(observed_topology.bundle_asset_refs),
+            },
         )
     ]
 

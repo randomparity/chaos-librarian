@@ -19,20 +19,23 @@ from chaos_librarian.contract.observed_state import (
     ObservedPathHistoryEntry,
 )
 from chaos_librarian.contract.reports import PathHistoryEntry
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 from chaos_librarian.errors import ChaosLibrarianValueError
 
-IDENTITY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.MOVE_ASSET,
-        TimelineActionName.RENAME_FILE,
-        TimelineActionName.DELETE_FILE,
-        TimelineActionName.ADD_FILE,
-        TimelineActionName.SLOW_COPY_START,
-        TimelineActionName.SLOW_COPY_COMMIT,
-        TimelineActionName.ARCHIVE_FILE,
-        TimelineActionName.MOVE_BETWEEN_ROOTS,
-    }
+IDENTITY_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    frozenset(
+        {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.DELETE_FILE,
+            TimelineActionName.ADD_FILE,
+            TimelineActionName.SLOW_COPY_START,
+            TimelineActionName.SLOW_COPY_COMMIT,
+            TimelineActionName.ARCHIVE_FILE,
+            TimelineActionName.MOVE_BETWEEN_ROOTS,
+        }
+    )
+    | HIERARCHY_TIMELINE_ACTIONS
 )
 
 _Source = Literal["path_history", "global"]

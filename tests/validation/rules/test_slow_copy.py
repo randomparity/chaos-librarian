@@ -175,19 +175,19 @@ def _scenario_with_movies_hd(
 ) -> dict[str, object]:
     """Build a Rule 5c scenario whose primary root is ``library/movies-hd``.
 
-    Rule 5c needs the primary root's ``path`` to format the asset's initial
-    path via ``INITIAL_PATH_TEMPLATE``. The default ``minimal_scenario``
-    fixture uses ``path: r`` which doesn't match the plan's test inputs,
-    so we override ``library`` and ``works`` to keep the rule's
-    asset_id → container index aligned with the timeline targets.
+    Rule 5c joins each slow-copy target against the hierarchy-rendered
+    initial path. The default ``minimal_scenario`` fixture uses ``path: r``,
+    so this helper overrides the movie hierarchy to keep the rendered path
+    aligned with the timeline targets.
     """
     return minimal_scenario(
         timeline=timeline,
         library={"roots": [{"id": "movies-hd", "path": "library/movies-hd"}]},
-        works=[
+        movies=[
             {
-                "id": "w",
+                "id": "movie_t",
                 "title": "t",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": "v",
@@ -229,8 +229,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "movies-hd/final.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/final.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -255,8 +255,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "library/movies-hd/asset_hd_main.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/t - l.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -268,7 +268,7 @@ class TestRule5cSlowCopyPathCollision:
         assert collisions, (
             f"expected E_SLOW_COPY_PATH_COLLISION in {[i.code for i in collector.issues]}"
         )
-        assert "initial path" in collisions[0].message.lower()
+        assert "current path" in collisions[0].message.lower()
 
     def test_slow_copy_path_collision_allows_distinct_paths(
         self, minimal_scenario, empty_index
@@ -281,8 +281,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "movies-hd/temp.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/temp.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -309,11 +309,127 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "library/./movies-hd/asset_hd_main.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/./movies-hd/t - l.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_rejects_temp_equals_hierarchy_mutated_current_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "copy",
+                    "at": "2s",
+                    "action": "slow_copy_start",
+                    "target": "asset_episode",
+                    "to": "TV/Starline/Season 01/final.mkv",
+                    "temp_path": ("TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.mkv"),
+                    "duration": "1s",
+                },
+                {"id": "commit", "at": "3s", "action": "slow_copy_commit", "for": "copy"},
+            ]
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+
+        assert any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_allows_temp_equal_stale_pre_hierarchy_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "copy",
+                    "at": "2s",
+                    "action": "slow_copy_start",
+                    "target": "asset_episode",
+                    "to": "TV/Starline/Season 01/final.mkv",
+                    "temp_path": ("TV/Starline/Season 01/Starline - S01E01 - Pilot - HD.mkv"),
+                    "duration": "1s",
+                },
+                {"id": "commit", "at": "3s", "action": "slow_copy_commit", "for": "copy"},
+            ]
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+
+        assert not any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_allows_temp_equal_to_stale_initial_path_after_move(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "move",
+                    "at": "0ns",
+                    "action": "move_asset",
+                    "target": "asset_hd_main",
+                    "to": "library/movies-hd/current.mkv",
+                },
+                {
+                    "id": "scs",
+                    "at": "1ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/t - l.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "2ns", "action": "slow_copy_commit", "for": "scs"},
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_rejects_temp_equal_to_current_path_after_move(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        raw = _scenario_with_movies_hd(
+            minimal_scenario,
+            timeline=[
+                {
+                    "id": "move",
+                    "at": "0ns",
+                    "action": "move_asset",
+                    "target": "asset_hd_main",
+                    "to": "library/movies-hd/current.mkv",
+                },
+                {
+                    "id": "scs",
+                    "at": "1ns",
+                    "action": "slow_copy_start",
+                    "target": "asset_hd_main",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/current.mkv",
+                    "duration": "1ns",
+                },
+                {"id": "scc", "at": "2ns", "action": "slow_copy_commit", "for": "scs"},
             ],
         )
         collector = IssueCollector()

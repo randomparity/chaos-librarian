@@ -89,6 +89,8 @@ ExecutionTraceEntry = Annotated[
 class _ReplayBundleBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    # v7: scenario contract bumped to v12 for movie, TV, and music hierarchies.
+    #
     # v6: materialize/run bundles carry content-source evidence.
     #
     # v5: scenario contract bumped to v4 (archive_file / move_between_roots /
@@ -97,7 +99,7 @@ class _ReplayBundleBase(BaseModel):
     # replay bundle against a v3 scenario model fails at re-validation.
     # The version bump lets consumers detect the incompatibility cleanly
     # instead of running into the embedded validation error later.
-    schema_version: Literal[6]
+    schema_version: Literal[7]
     chaos_librarian_version: str
     scenario: str  # verbatim YAML
     run_id: uuid.UUID

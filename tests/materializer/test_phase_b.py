@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.journal import AtomicJournalEntry
 from chaos_librarian.contract.manifest import (
     Manifest,
@@ -178,18 +179,12 @@ def test_augment_phase_b_outputs_stamps_all_phase_b_evidence(tmp_path: Path) -> 
     state.corruption_ctx.post_phase_b_versions["version_corrupt"] = (HASH_C, None)
     state.oracle_hash_ctx.post_phase_b_oracle_hashes["version_oracle"] = (HASH_D, None)
     state.media_ctx.post_phase_b_sidecars["sidecar_updated"] = (HASH_D, "new.srt")
-    manifest = Manifest(
-        schema_version=6,
-        works=[],
-        variants=[],
-        bundles=[],
-        assets=[],
+    manifest = _manifest_with_rows(
         versions=[
             ManifestVersion(id="version_media", asset_id="asset_main", index=1),
             ManifestVersion(id="version_corrupt", asset_id="asset_main", index=2),
             ManifestVersion(id="version_oracle", asset_id="asset_main", index=3),
         ],
-        locations=[],
         sidecars=[
             ManifestSidecar(
                 id="sidecar_timeline",
@@ -248,12 +243,7 @@ def test_make_phase_b_state_oracle_lookup_uses_current_phase_b_probe_order(
     media_probe = _probed("media")
     corruption_probe = _probed("corruption")
     oracle_probe = _probed("oracle")
-    manifest = Manifest(
-        schema_version=6,
-        works=[],
-        variants=[],
-        bundles=[],
-        assets=[],
+    manifest = _manifest_with_rows(
         versions=[
             ManifestVersion(
                 id="version_manifest",
@@ -262,8 +252,6 @@ def test_make_phase_b_state_oracle_lookup_uses_current_phase_b_probe_order(
                 probed=manifest_probe,
             ),
         ],
-        locations=[],
-        sidecars=[],
     )
     state = phase_b.make_phase_b_state(
         library_root=tmp_path,
@@ -353,27 +341,46 @@ def _state(tmp_path: Path) -> phase_b.PhaseBState:
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "phase-b-test",
             "seed": 7,
             "duration_scale": "short",
             "library": {"roots": [{"id": "movies-hd", "path": "movies-hd"}]},
-            "works": [],
+            "movies": [],
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
     )
 
 
 def _manifest_with_version(version_id: str) -> Manifest:
+    return _manifest_with_rows(
+        versions=[ManifestVersion(id=version_id, asset_id="asset_main", index=1)]
+    )
+
+
+def _manifest_with_rows(
+    *,
+    versions: list[ManifestVersion],
+    sidecars: list[ManifestSidecar] | None = None,
+) -> Manifest:
     return Manifest(
-        schema_version=6,
-        works=[],
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        movies=[],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
         variants=[],
         bundles=[],
         assets=[],
-        versions=[ManifestVersion(id=version_id, asset_id="asset_main", index=1)],
+        versions=versions,
         locations=[],
-        sidecars=[],
+        sidecars=sidecars or [],
     )
 
 

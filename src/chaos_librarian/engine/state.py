@@ -8,8 +8,7 @@ plan-only run.
 
 The initial-location convention is implemented in ``build_initial_state``:
 every declared asset gets ``version_NNNN`` and ``location_NNNN`` at the
-synthesized path ``<roots[0].path>/<asset.id>.<container>``. See
-docs/contract/manifest-initial-state.md.
+rendered hierarchy path under ``scenario.library.roots[0].path``.
 """
 
 from __future__ import annotations
@@ -17,27 +16,58 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
+    ManifestAlbum,
+    ManifestArtist,
     ManifestAsset,
     ManifestBundle,
+    ManifestDisc,
+    ManifestEpisode,
     ManifestLocation,
+    ManifestMovie,
+    ManifestSeason,
+    ManifestSeries,
     ManifestSidecar,
+    ManifestTrack,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
 )
-from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Scenario, SidecarKind, SubtitleMode
+from chaos_librarian.contract.scenario import (
+    ArtistLayout,
+    EpisodeNaming,
+    MovieLayout,
+    Scenario,
+    SeriesLayout,
+    SidecarKind,
+    SubtitleMode,
+    TrackNaming,
+    Variant,
+)
 from chaos_librarian.determinism import IdAllocator
 from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.path_rendering import (
+    RenderableAssetContext,
+    render_asset_path,
+    render_declared_sidecar_path,
+    replace_root_prefix,
+)
+from chaos_librarian.topology import AssetContext, iter_asset_contexts
 
 
 @dataclass
 class WorldState:
     """Mutable mirror of ``Manifest`` indexed by id."""
 
-    works: dict[str, ManifestWork] = field(default_factory=dict)
+    movies: dict[str, ManifestMovie] = field(default_factory=dict)
+    series: dict[str, ManifestSeries] = field(default_factory=dict)
+    seasons: dict[str, ManifestSeason] = field(default_factory=dict)
+    episodes: dict[str, ManifestEpisode] = field(default_factory=dict)
+    artists: dict[str, ManifestArtist] = field(default_factory=dict)
+    albums: dict[str, ManifestAlbum] = field(default_factory=dict)
+    discs: dict[str, ManifestDisc] = field(default_factory=dict)
+    tracks: dict[str, ManifestTrack] = field(default_factory=dict)
     variants: dict[str, ManifestVariant] = field(default_factory=dict)
     bundles: dict[str, ManifestBundle] = field(default_factory=dict)
     assets: dict[str, ManifestAsset] = field(default_factory=dict)
@@ -58,12 +88,14 @@ class WorldState:
     previous_event_delta: tuple[str, dict[str, object]] | None = None
     pending_network_lags: dict[str, dict[str, object]] = field(default_factory=dict)
 
-    # Sprint 6 additions: populated once in ``build_initial_state`` from
-    # ``scenario.library`` so the archive_file / move_between_roots handlers
-    # can resolve a root id or compute an asset's archive destination
-    # without re-deriving the convention each call.
+    # Populated once in ``build_initial_state`` from ``scenario.library`` so
+    # archive_file / move_between_roots handlers can resolve root paths and
+    # preserve rendered suffixes while moving assets across roots.
     _root_paths: dict[str, str] = field(default_factory=dict)
-    _archive_path_template: str = ""
+    _archive_base_path: str = ""
+    _primary_root_path: str = ""
+    _renderer_managed_asset_ids: set[str] = field(default_factory=set)
+    _renderer_derived_sidecar_ids: set[str] = field(default_factory=set)
 
     def root_path_for(self, root_id: str) -> str:
         """Return the declared path of the library root with this id.
@@ -76,15 +108,27 @@ class WorldState:
     def archive_path_for(self, asset_id: str) -> str:
         """Return the archive destination for ``asset_id``.
 
-        Formats ``_archive_path_template`` with the asset's container.
-        Validation (``rules/target_unknown.rule_root_unknown``) has
-        already proven the archive root resolves, so the template is
-        populated and the format call cannot KeyError.
+        Preserves the asset's current rendered path suffix and replaces
+        only its current declared root prefix with the configured archive
+        base. Validation has already proven the archive root resolves.
         """
-        asset = self.assets[asset_id]
-        return self._archive_path_template.format(
-            asset_id=asset_id,
-            container=asset.container,
+        loc_id = self.location_id_for_asset(asset_id)
+        current_path = self.locations[loc_id].path
+        current_root = self._current_root_for_path(current_path)
+        return replace_root_prefix(
+            current_path,
+            from_root=current_root,
+            to_root=self._archive_base_path,
+        )
+
+    def _current_root_for_path(self, path: str) -> str:
+        root_paths: list[str] = list(self._root_paths.values())
+        root_paths.sort(key=len, reverse=True)
+        for root_path in root_paths:
+            if path == root_path or path.startswith(f"{root_path}/"):
+                return root_path
+        raise ChaosLibrarianValueError(
+            f"current path {path!r} does not start with a declared library root"
         )
 
     def location_id_for_asset(self, asset_id: str) -> str:
@@ -128,17 +172,181 @@ class WorldState:
         """Remove the asset's current location (delete_file)."""
         loc_id = self._asset_to_location.pop(asset_id)
         self.locations.pop(loc_id)
+        self._renderer_managed_asset_ids.discard(asset_id)
 
     def bind_version(self, asset_id: str, version: ManifestVersion) -> None:
         """Register a new version for ``asset_id``."""
         self.versions[version.id] = version
         self._asset_to_version[asset_id] = version.id
 
+    def renderer_manages_asset(self, asset_id: str) -> bool:
+        """Return True if hierarchy actions should rerender this asset."""
+        return asset_id in self._renderer_managed_asset_ids
+
+    def renderer_derived_sidecars_for_asset(self, asset_id: str) -> list[ManifestSidecar]:
+        """Return renderer-derived declared sidecars for ``asset_id`` in manifest order."""
+        return [
+            sidecar
+            for sidecar_id, sidecar in self.sidecars.items()
+            if sidecar.asset_id == asset_id and sidecar_id in self._renderer_derived_sidecar_ids
+        ]
+
+    def discard_renderer_sidecar(self, sidecar_id: str) -> None:
+        """Mark a removed sidecar as no longer renderer-derived."""
+        self._renderer_derived_sidecar_ids.discard(sidecar_id)
+
+    def asset_ids_for_episode(self, episode_id: str) -> list[str]:
+        """Return asset ids under ``episode_id`` in manifest order."""
+        return self._asset_ids_for_parent(ParentKind.EPISODE, episode_id)
+
+    def asset_ids_for_season(self, season_id: str) -> list[str]:
+        """Return asset ids under ``season_id`` in manifest order."""
+        episode_ids = {
+            episode_id
+            for episode_id, episode in self.episodes.items()
+            if episode.season_id == season_id
+        }
+        parent_refs = {(ParentKind.EPISODE, episode_id) for episode_id in episode_ids}
+        return [asset_id for asset_id in self.assets if self._asset_parent(asset_id) in parent_refs]
+
+    def asset_ids_for_disc(self, disc_id: str) -> list[str]:
+        """Return asset ids under ``disc_id`` in manifest order."""
+        track_ids = {
+            track_id for track_id, track in self.tracks.items() if track.disc_id == disc_id
+        }
+        parent_refs = {(ParentKind.TRACK, track_id) for track_id in track_ids}
+        return [asset_id for asset_id in self.assets if self._asset_parent(asset_id) in parent_refs]
+
+    def asset_ids_for_track(self, track_id: str) -> list[str]:
+        """Return asset ids under ``track_id`` in manifest order."""
+        return self._asset_ids_for_parent(ParentKind.TRACK, track_id)
+
+    def render_path_for_asset(self, asset_id: str) -> str:
+        """Render ``asset_id`` from current mutable metadata."""
+        return render_asset_path(self.renderable_context_for_asset(asset_id))
+
+    def _render_root_path_for_asset(self, asset_id: str) -> str:
+        if not self.has_location(asset_id):
+            return self._primary_root_path
+        loc_id = self.location_id_for_asset(asset_id)
+        try:
+            return self._current_root_for_path(self.locations[loc_id].path)
+        except ChaosLibrarianValueError:
+            return self._primary_root_path
+
+    def renderable_context_for_asset(self, asset_id: str) -> RenderableAssetContext:
+        """Build a renderer context from normalized current WorldState metadata."""
+        asset = self.assets[asset_id]
+        bundle = self.bundles[asset.bundle_id]
+        variant = self.variants[bundle.variant_id]
+        root_path = self._render_root_path_for_asset(asset_id)
+        bundle_asset_count = sum(
+            1 for candidate in self.assets.values() if candidate.bundle_id == bundle.id
+        )
+        if variant.parent_kind is ParentKind.MOVIE:
+            movie = self.movies[variant.parent_id]
+            return RenderableAssetContext(
+                parent_kind=ParentKind.MOVIE,
+                root_path=root_path,
+                layout=MovieLayout(movie.layout),
+                naming=None,
+                movie_title=movie.title,
+                series_title=None,
+                season_number=None,
+                episode_number=None,
+                episode_title=None,
+                aired_on=None,
+                absolute_number=None,
+                artist_name=None,
+                album_title=None,
+                disc_number=None,
+                track_number=None,
+                track_title=None,
+                variant_label=variant.label,
+                asset_role=asset.role,
+                asset_container=asset.container,
+                bundle_asset_count=bundle_asset_count,
+            )
+        if variant.parent_kind is ParentKind.EPISODE:
+            episode = self.episodes[variant.parent_id]
+            season = self.seasons[episode.season_id]
+            series = self.series[season.series_id]
+            return RenderableAssetContext(
+                parent_kind=ParentKind.EPISODE,
+                root_path=root_path,
+                layout=SeriesLayout(series.layout),
+                naming=EpisodeNaming(series.episode_naming),
+                movie_title=None,
+                series_title=series.title,
+                season_number=season.season_number,
+                episode_number=episode.episode_number,
+                episode_title=episode.title,
+                aired_on=episode.aired_on,
+                absolute_number=episode.absolute_number,
+                artist_name=None,
+                album_title=None,
+                disc_number=None,
+                track_number=None,
+                track_title=None,
+                variant_label=variant.label,
+                asset_role=asset.role,
+                asset_container=asset.container,
+                bundle_asset_count=bundle_asset_count,
+            )
+        if variant.parent_kind is ParentKind.TRACK:
+            track = self.tracks[variant.parent_id]
+            disc = self.discs[track.disc_id]
+            album = self.albums[disc.album_id]
+            artist = self.artists[album.artist_id]
+            return RenderableAssetContext(
+                parent_kind=ParentKind.TRACK,
+                root_path=root_path,
+                layout=ArtistLayout(artist.layout),
+                naming=TrackNaming(artist.track_naming),
+                movie_title=None,
+                series_title=None,
+                season_number=None,
+                episode_number=None,
+                episode_title=None,
+                aired_on=None,
+                absolute_number=None,
+                artist_name=artist.name,
+                album_title=album.title,
+                disc_number=disc.disc_number,
+                track_number=track.track_number,
+                track_title=track.title,
+                variant_label=variant.label,
+                asset_role=asset.role,
+                asset_container=asset.container,
+                bundle_asset_count=bundle_asset_count,
+            )
+        raise ChaosLibrarianValueError(f"asset {asset_id!r} has unsupported parent kind")
+
+    def _asset_ids_for_parent(self, parent_kind: ParentKind, parent_id: str) -> list[str]:
+        return [
+            asset_id
+            for asset_id in self.assets
+            if self._asset_parent(asset_id) == (parent_kind, parent_id)
+        ]
+
+    def _asset_parent(self, asset_id: str) -> tuple[ParentKind, str]:
+        asset = self.assets[asset_id]
+        bundle = self.bundles[asset.bundle_id]
+        variant = self.variants[bundle.variant_id]
+        return (variant.parent_kind, variant.parent_id)
+
     def to_manifest(self) -> Manifest:
         """Serialize back to the immutable Pydantic Manifest."""
         return Manifest(
             schema_version=MANIFEST_SCHEMA_VERSION,
-            works=list(self.works.values()),
+            movies=list(self.movies.values()),
+            series=list(self.series.values()),
+            seasons=list(self.seasons.values()),
+            episodes=list(self.episodes.values()),
+            artists=list(self.artists.values()),
+            albums=list(self.albums.values()),
+            discs=list(self.discs.values()),
+            tracks=list(self.tracks.values()),
             variants=list(self.variants.values()),
             bundles=list(self.bundles.values()),
             assets=list(self.assets.values()),
@@ -153,12 +361,12 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
 
     Each declared asset receives:
     - one ``ManifestVersion`` with id ``version_NNNN`` and ``index=0``
-    - one ``ManifestLocation`` with id ``location_NNNN`` at path
-      ``<roots[0].path>/<asset.id>.<container>``
+    - one ``ManifestLocation`` with id ``location_NNNN`` at the rendered
+      hierarchy path under ``scenario.library.roots[0].path``
     - one ``ManifestSidecar`` per declared subtitle with ``mode=sidecar``,
-      id ``sidecar_<asset.id>_<language>`` at path
-      ``<asset.id>.<language>.srt``. Embedded subtitles are skipped.
-      This mirrors the validator's ``_seed_projection_from_declared``
+      id ``sidecar_<asset.id>_<language>`` next to the rendered media
+      path. Embedded subtitles are skipped. This mirrors the validator's
+      ``_seed_projection_from_declared``
       projection so Sprint 7 handlers (``embed_subtitle``,
       ``update_sidecar``, ``remove_sidecar``, ``extract_subtitle``) can
       resolve a declared sidecar via ``sidecar_id_for_path`` instead of
@@ -175,64 +383,189 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
     primary_root = scenario.library.roots[0]
     state = WorldState()
     state._root_paths = {root.id: root.path for root in scenario.library.roots}
+    state._primary_root_path = primary_root.path
     archive_root = scenario.library.archive_root
     if archive_root is None or archive_root == "archive":
         archive_base = f"{primary_root.path}/archive"
     else:
         archive_base = state._root_paths[archive_root]
-    state._archive_path_template = f"{archive_base}/{{asset_id}}.{{container}}"
+    state._archive_base_path = archive_base
 
-    for work in scenario.works:
-        state.works[work.id] = ManifestWork(id=work.id, title=work.title)
-        for variant in work.variants:
-            state.variants[variant.id] = ManifestVariant(
-                id=variant.id, work_id=work.id, label=variant.label
-            )
-            bundle = variant.bundle
-            state.bundles[bundle.id] = ManifestBundle(id=bundle.id, variant_id=variant.id)
-            for asset in bundle.assets:
-                state.assets[asset.id] = ManifestAsset(
-                    id=asset.id,
-                    bundle_id=bundle.id,
-                    role=asset.role,
-                    container=asset.container,
-                    duration_seconds=asset.duration_seconds,
-                )
-                version_id = ids.next_version_id()
-                state.bind_version(
-                    asset.id,
-                    ManifestVersion(id=version_id, asset_id=asset.id, index=0),
-                )
-                location_id = ids.next_location_id()
-                state.bind_location(
-                    asset.id,
-                    ManifestLocation(
-                        id=location_id,
-                        asset_id=asset.id,
-                        path=INITIAL_PATH_TEMPLATE.format(
-                            root_path=primary_root.path,
-                            asset_id=asset.id,
-                            container=asset.container,
-                        ),
-                    ),
-                )
-                # Seed declared sidecar-mode subtitles into state.sidecars
-                # so Sprint 7 handlers (embed_subtitle, update_sidecar,
-                # remove_sidecar) can resolve the (asset_id, path) lookup
-                # the validator's projection already accepts. Id/path
-                # conventions mirror manifest_build.augment_manifest so the
-                # phase-A content_hash stamp finds the pre-existing row
-                # (no duplicate appended).
-                for sub in asset.subtitles:
-                    if sub.mode is not SubtitleMode.SIDECAR:
-                        continue
-                    sidecar_id = f"sidecar_{asset.id}_{sub.language}"
-                    state.sidecars[sidecar_id] = ManifestSidecar(
-                        id=sidecar_id,
-                        asset_id=asset.id,
-                        kind=SidecarKind.SUBTITLE.value,
-                        path=f"{asset.id}.{sub.language}.srt",
-                        language=sub.language,
-                    )
+    _seed_domain_rows(state, scenario)
+    for context in iter_asset_contexts(scenario):
+        _seed_asset_context(state, context, ids, primary_root.path)
 
     return state
+
+
+def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
+    for movie in scenario.movies:
+        state.movies[movie.id] = ManifestMovie(
+            id=movie.id,
+            title=movie.title,
+            layout=movie.layout.value,
+        )
+        for variant in movie.variants:
+            _seed_variant_bundle_rows(state, variant, ParentKind.MOVIE, movie.id)
+    for series in scenario.series:
+        state.series[series.id] = ManifestSeries(
+            id=series.id,
+            title=series.title,
+            layout=series.layout.value,
+            episode_naming=series.episode_naming.value,
+        )
+        for season in series.seasons:
+            state.seasons[season.id] = ManifestSeason(
+                id=season.id,
+                series_id=series.id,
+                season_number=season.season_number,
+                title=season.title,
+            )
+            for episode in season.episodes:
+                state.episodes[episode.id] = ManifestEpisode(
+                    id=episode.id,
+                    season_id=season.id,
+                    episode_number=episode.episode_number,
+                    title=episode.title,
+                    aired_on=episode.aired_on,
+                    absolute_number=episode.absolute_number,
+                )
+                for variant in episode.variants:
+                    _seed_variant_bundle_rows(state, variant, ParentKind.EPISODE, episode.id)
+    for artist in scenario.artists:
+        state.artists[artist.id] = ManifestArtist(
+            id=artist.id,
+            name=artist.name,
+            layout=artist.layout.value,
+            track_naming=artist.track_naming.value,
+        )
+        for album in artist.albums:
+            state.albums[album.id] = ManifestAlbum(
+                id=album.id,
+                artist_id=artist.id,
+                title=album.title,
+                release_year=album.release_year,
+            )
+            for disc in album.discs:
+                state.discs[disc.id] = ManifestDisc(
+                    id=disc.id,
+                    album_id=album.id,
+                    disc_number=disc.disc_number,
+                )
+                for track in disc.tracks:
+                    state.tracks[track.id] = ManifestTrack(
+                        id=track.id,
+                        disc_id=disc.id,
+                        track_number=track.track_number,
+                        title=track.title,
+                        performers=list(track.performers),
+                    )
+                    for variant in track.variants:
+                        _seed_variant_bundle_rows(state, variant, ParentKind.TRACK, track.id)
+
+
+def _seed_variant_bundle_rows(
+    state: WorldState,
+    variant: Variant,
+    parent_kind: ParentKind,
+    parent_id: str,
+) -> None:
+    state.variants[variant.id] = ManifestVariant(
+        id=variant.id,
+        parent_kind=parent_kind,
+        parent_id=parent_id,
+        label=variant.label,
+    )
+    state.bundles[variant.bundle.id] = ManifestBundle(
+        id=variant.bundle.id,
+        variant_id=variant.id,
+    )
+
+
+def _seed_asset_context(
+    state: WorldState,
+    context: AssetContext,
+    ids: IdAllocator,
+    primary_root_path: str,
+) -> None:
+    bundle = context.bundle
+    asset = context.asset
+    state.assets[asset.id] = ManifestAsset(
+        id=asset.id,
+        bundle_id=bundle.id,
+        role=asset.role,
+        container=asset.container,
+        duration_seconds=asset.duration_seconds,
+    )
+    state.bind_version(
+        asset.id,
+        ManifestVersion(id=ids.next_version_id(), asset_id=asset.id, index=0),
+    )
+    media_path = render_asset_path(_renderable_asset_context(context, primary_root_path))
+    state.bind_location(
+        asset.id,
+        ManifestLocation(
+            id=ids.next_location_id(),
+            asset_id=asset.id,
+            path=media_path,
+        ),
+    )
+    state._renderer_managed_asset_ids.add(asset.id)
+    for subtitle in asset.subtitles:
+        if subtitle.mode is not SubtitleMode.SIDECAR:
+            continue
+        sidecar_id = f"sidecar_{asset.id}_{subtitle.language}"
+        state.sidecars[sidecar_id] = ManifestSidecar(
+            id=sidecar_id,
+            asset_id=asset.id,
+            kind=SidecarKind.SUBTITLE.value,
+            path=render_declared_sidecar_path(media_path, subtitle.language),
+            language=subtitle.language,
+        )
+        state._renderer_derived_sidecar_ids.add(sidecar_id)
+
+
+def _renderable_asset_context(
+    context: AssetContext,
+    root_path: str,
+) -> RenderableAssetContext:
+    return RenderableAssetContext(
+        parent_kind=context.parent_kind,
+        root_path=root_path,
+        layout=_layout_for_context(context),
+        naming=_naming_for_context(context),
+        movie_title=context.movie.title if context.movie is not None else None,
+        series_title=context.series.title if context.series is not None else None,
+        season_number=context.season.season_number if context.season is not None else None,
+        episode_number=(context.episode.episode_number if context.episode is not None else None),
+        episode_title=context.episode.title if context.episode is not None else None,
+        aired_on=context.episode.aired_on if context.episode is not None else None,
+        absolute_number=(context.episode.absolute_number if context.episode is not None else None),
+        artist_name=context.artist.name if context.artist is not None else None,
+        album_title=context.album.title if context.album is not None else None,
+        disc_number=context.disc.disc_number if context.disc is not None else None,
+        track_number=context.track.track_number if context.track is not None else None,
+        track_title=context.track.title if context.track is not None else None,
+        variant_label=context.variant.label,
+        asset_role=context.asset.role,
+        asset_container=context.asset.container,
+        bundle_asset_count=context.bundle_asset_count,
+    )
+
+
+def _layout_for_context(context: AssetContext) -> MovieLayout | SeriesLayout | ArtistLayout:
+    if context.movie is not None:
+        return context.movie.layout
+    if context.series is not None:
+        return context.series.layout
+    if context.artist is not None:
+        return context.artist.layout
+    raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
+
+
+def _naming_for_context(context: AssetContext) -> EpisodeNaming | TrackNaming | None:
+    if context.series is not None:
+        return context.series.episode_naming
+    if context.artist is not None:
+        return context.artist.track_naming
+    return None

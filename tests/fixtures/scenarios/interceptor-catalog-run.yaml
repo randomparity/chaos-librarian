@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: interceptor-catalog-run
 seed: 117
 duration_scale: short
@@ -8,9 +8,10 @@ library:
   roots:
     - id: movies_hd
       path: movies-hd
-works:
-  - id: work_broken
+movies:
+  - id: movie_broken
     title: Interceptor Catalog Run
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -29,6 +30,8 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: rename_001
     at: 1s

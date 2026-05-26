@@ -26,6 +26,8 @@ E_DURATION_SYNTAX: Final = "E_DURATION_SYNTAX"
 E_ID_DUPLICATE: Final = "E_ID_DUPLICATE"
 E_TARGET_UNKNOWN: Final = "E_TARGET_UNKNOWN"
 E_ROOT_UNKNOWN: Final = "E_ROOT_UNKNOWN"
+E_HIERARCHY_INVALID: Final = "E_HIERARCHY_INVALID"
+E_PATH_COLLISION: Final = "E_PATH_COLLISION"
 E_SLOW_COPY_UNPAIRED: Final = "E_SLOW_COPY_UNPAIRED"
 E_SLOW_COPY_TIMING: Final = "E_SLOW_COPY_TIMING"
 E_SLOW_COPY_PATH_COLLISION: Final = "E_SLOW_COPY_PATH_COLLISION"
@@ -61,7 +63,8 @@ PYDANTIC_TO_CODE: Final[dict[str, str]] = {
     "bool_type": E_FIELD_TYPE,
     "list_type": E_FIELD_TYPE,
     # ``tuple_type`` covers the Scenario subtree's tuple-backed collection
-    # fields (``library.roots``, ``works``, ``timeline``, etc.). Without this
+    # fields (``library.roots``, ``movies``, ``series``, ``artists``,
+    # ``timeline``, etc.). Without this
     # entry Pydantic's ``tuple_type`` error would degrade to E_FIELD_SHAPE
     # instead of the stable E_FIELD_TYPE contract.
     "tuple_type": E_FIELD_TYPE,

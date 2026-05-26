@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 11
+schema_version: 12
 scenario_id: materialize-video-source-noise
 seed: 1
 duration_scale: short
@@ -7,9 +7,10 @@ library:
   roots:
     - id: root_main
       path: library
-works:
-  - id: work_movie
+movies:
+  - id: movie_movie
     title: Unsupported Video Source
+    layout: movie_flat
     variants:
       - id: variant_noise
         label: noise
@@ -29,4 +30,6 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline: []

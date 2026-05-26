@@ -1,12 +1,13 @@
 # expected: E_SIDECAR_TARGET_UNKNOWN
-schema_version: 11
+schema_version: 12
 scenario_id: sc_inv_dedup_001
 seed: 1
 duration_scale: short
 library: {roots: [{id: r0, path: library/movies}]}
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -21,6 +22,8 @@ works:
               audio: [{codec: aac, channels: stereo, language: eng}]
               subtitles:
                 - {codec: srt, language: eng, mode: sidecar}
+series: []
+artists: []
 timeline:
   - id: ev_cs
     at: 1s
@@ -33,4 +36,4 @@ timeline:
     at: 2s
     action: embed_subtitle
     target: a0
-    sidecar_path: a0.eng.srt
+    sidecar_path: library/movies/T - hd.eng.srt

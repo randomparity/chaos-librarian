@@ -41,7 +41,14 @@ outputs.
 The `reports/` tree contains per-entity projections:
 
 - `reports/assets`
-- `reports/works`
+- `reports/movies`
+- `reports/series`
+- `reports/seasons`
+- `reports/episodes`
+- `reports/artists`
+- `reports/albums`
+- `reports/discs`
+- `reports/tracks`
 - `reports/variants`
 - `reports/bundles`
 

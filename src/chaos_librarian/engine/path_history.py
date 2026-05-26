@@ -7,28 +7,31 @@ mode-agnostic — both plan-only and materialize call it.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-from typing import Final
+from collections.abc import Iterable, Mapping
+from typing import Final, cast
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.reports import PathHistoryEntry
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
 __all__ = ["derive_path_history"]
 
 
-_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.MOVE_ASSET,
-        TimelineActionName.RENAME_FILE,
-        TimelineActionName.DELETE_FILE,
-        TimelineActionName.ADD_FILE,
-        TimelineActionName.CREATE_SIDECAR,
-        TimelineActionName.SLOW_COPY_START,
-        TimelineActionName.SLOW_COPY_COMMIT,
-        TimelineActionName.ARCHIVE_FILE,
-        TimelineActionName.MOVE_BETWEEN_ROOTS,
-    }
+_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    frozenset(
+        {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.DELETE_FILE,
+            TimelineActionName.ADD_FILE,
+            TimelineActionName.CREATE_SIDECAR,
+            TimelineActionName.SLOW_COPY_START,
+            TimelineActionName.SLOW_COPY_COMMIT,
+            TimelineActionName.ARCHIVE_FILE,
+            TimelineActionName.MOVE_BETWEEN_ROOTS,
+        }
+    )
+    | HIERARCHY_TIMELINE_ACTIONS
 )
 """Actions whose journal entries describe an on-disk change.
 
@@ -53,6 +56,9 @@ def derive_path_history(asset_id: str, journal: Iterable[JournalEntry]) -> list[
         if asset_id not in entry.target_ids:
             continue
         delta = entry.state_delta
+        if action in HIERARCHY_TIMELINE_ACTIONS:
+            history.extend(_hierarchy_path_entries(asset_id, entry))
+            continue
         history.append(
             PathHistoryEntry(
                 event_id=entry.event_id,
@@ -70,6 +76,33 @@ def derive_path_history(asset_id: str, journal: Iterable[JournalEntry]) -> list[
                     or _maybe_str(delta.get("sidecar_path"))
                 ),
                 temp_path=_maybe_str(delta.get("temp_path")),
+            )
+        )
+    return history
+
+
+def _hierarchy_path_entries(
+    asset_id: str,
+    entry: JournalEntry,
+) -> list[PathHistoryEntry]:
+    path_moves = entry.state_delta.get("path_moves")
+    if not isinstance(path_moves, list):
+        return []
+    history: list[PathHistoryEntry] = []
+    for move in path_moves:
+        if not isinstance(move, Mapping):
+            continue
+        move = cast(Mapping[str, object], move)
+        if move.get("asset_id") != asset_id:
+            continue
+        history.append(
+            PathHistoryEntry(
+                event_id=entry.event_id,
+                action=TimelineActionName(entry.action),
+                logical_time_ns=entry.logical_time_ns,
+                from_path=_maybe_str(move.get("from_path")),
+                to_path=_maybe_str(move.get("to_path")),
+                temp_path=None,
             )
         )
     return history

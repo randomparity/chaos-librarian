@@ -104,12 +104,12 @@ def _fake_materialize_one_asset(
     caps,
     invocation_index: int,
     *,
-    root_path: str,
+    rendered_relative_path: str,
     skip_languages=frozenset(),
 ):
     del resolved_seed, caps, skip_languages
     data = f"{asset.id}-bytes".encode()
-    path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
+    path = out_dir / "library" / rendered_relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
@@ -129,7 +129,7 @@ def _fake_materialize_one_asset(
         ),
         materialized_asset=MaterializedAsset(
             asset_id=asset.id,
-            location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
+            location_path=str(Path("library") / rendered_relative_path),
             content_hash=content_hash,
             size_bytes=len(data),
             duration_seconds=asset.duration_seconds,
@@ -175,7 +175,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 11
+            schema_version: 12
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -183,9 +183,10 @@ def _write_scenario(
               roots:
                 - id: movies_hd
                   path: movies-hd
-            works:
-              - id: work_001
+            movies:
+              - id: movie_001
                 title: Synthetic Test
+                layout: movie_flat
                 variants:
                   - id: variant_001
                     label: hd
@@ -204,6 +205,8 @@ def _write_scenario(
                             - codec: aac
                               channels: stereo
                               language: eng
+            series: []
+            artists: []
             timeline:
             {timeline}
             """
@@ -228,7 +231,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 11
+            schema_version: 12
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -238,9 +241,10 @@ def _write_malformed_scenario(
               roots:
                 - id: movies_hd
                   path: movies-hd
-            works:
-              - id: work_001
+            movies:
+              - id: movie_001
                 title: Broken Header
+                layout: movie_flat
                 variants:
                   - id: variant_001
                     label: hd
@@ -259,6 +263,8 @@ def _write_malformed_scenario(
                             - codec: aac
                               channels: stereo
                               language: eng
+            series: []
+            artists: []
             timeline:
               - id: corrupt_header_001
                 at: {event_at}
@@ -435,7 +441,7 @@ def test_delayed_rename_keeps_old_path_visible_until_lag_commit(
         profiles="  - network-fs-lag",
     )
     out_dir = tmp_path / "run"
-    old_path = out_dir / "library" / "movies-hd" / "asset_main.mkv"
+    old_path = out_dir / "library" / "movies-hd" / "Synthetic Test - hd.mkv"
     new_path = out_dir / "library" / "movies-hd" / "renamed.mkv"
     observations: list[tuple[bool, bool]] = []
 
@@ -605,7 +611,65 @@ def test_held_handle_records_unenforced_local_audit(fake_clock: FakeClock, tmp_p
 def test_interceptor_catalog_run_records_network_lag_evidence(
     fake_clock: FakeClock, tmp_path: Path
 ) -> None:
-    scenario = _FIXTURE_DIR / "interceptor-catalog-run.yaml"
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: rename_001
+                at: 1s
+                action: rename_file
+                target: asset_main
+                to: movies-hd/catalog-renamed.mkv
+              - id: delayed_rename_start
+                at: 1s
+                action: network_lag_start
+                effect: delayed_rename
+                target: asset_main
+                after: rename_001
+                duration: 1s
+              - id: delayed_rename_commit
+                at: 2s
+                action: network_lag_commit
+                for: delayed_rename_start
+              - id: rename_for_held
+                at: 3s
+                action: rename_file
+                target: asset_main
+                to: movies-hd/catalog-held.mkv
+              - id: held_handle_start
+                at: 3s
+                action: network_lag_start
+                effect: held_handle
+                target: asset_main
+                after: rename_for_held
+                duration: 1s
+              - id: held_handle_commit
+                at: 4s
+                action: network_lag_commit
+                for: held_handle_start
+              - id: delete_for_visibility
+                at: 5s
+                action: delete_file
+                target: asset_main
+              - id: restore_for_visibility
+                at: 6s
+                action: add_file
+                target: asset_main
+                to: movies-hd/catalog-restored.mkv
+              - id: delayed_visibility_start
+                at: 6s
+                action: network_lag_start
+                effect: delayed_visibility
+                target: asset_main
+                after: restore_for_visibility
+                duration: 1s
+              - id: delayed_visibility_commit
+                at: 7s
+                action: network_lag_commit
+                for: delayed_visibility_start
+        """,
+        scenario_id="interceptor-catalog-run",
+        profiles="  - network-fs-lag",
+    )
 
     artifacts = wall_clock.run_wall_clock_scenario(
         scenario,
@@ -639,12 +703,24 @@ def test_active_slow_copy_grows_during_idle_waits(
 
     monkeypatch.setattr(wall_clock, "_grow_active_slow_copies", spy)
 
-    wall_clock.run_wall_clock_scenario(
-        _FIXTURE_DIR / "slow-copy-materialize.yaml",
-        tmp_path / "run",
-        duration="5s",
-        speed="1x",
+    scenario = _write_scenario(
+        tmp_path,
+        """
+              - id: copy_start_001
+                at: 1s
+                action: slow_copy_start
+                target: asset_main
+                to: movies-hd/Nova.mkv
+                temp_path: movies-hd/Nova.mkv.part
+                duration: 3s
+              - id: copy_commit_001
+                at: 4s
+                action: slow_copy_commit
+                for: copy_start_001
+        """,
+        scenario_id="slow-copy-materialize",
     )
+    wall_clock.run_wall_clock_scenario(scenario, tmp_path / "run", duration="5s", speed="1x")
 
     source_size = len(b"asset_main-bytes")
     partial_sizes = {size for size in observed_sizes if 0 < size < source_size}
@@ -941,8 +1017,8 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             event_id=entry.event_id,
             action=TimelineActionName.WRONG_ORACLE_HASH,
             target_asset_id=entry.target_ids[0],
-            input_path="movies-hd/asset_main.mkv",
-            output_path="movies-hd/asset_main.mkv",
+            input_path="movies-hd/Synthetic Test - hd.mkv",
+            output_path="movies-hd/Synthetic Test - hd.mkv",
             input_version_id=entry.input_version_ids[0],
             output_version_id=output_version_id,
             actual_content_hash=_INPUT_HASH,
@@ -959,8 +1035,8 @@ def _corruption_action(*, output_version_id: str) -> CorruptionAction:
         event_id="corrupt_header_001",
         action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
         target_asset_id="asset_main",
-        input_path="movies-hd/asset_main.mkv",
-        output_path="movies-hd/asset_main.mkv",
+        input_path="movies-hd/Broken Header - hd.mkv",
+        output_path="movies-hd/Broken Header - hd.mkv",
         input_version_id="version_0001",
         output_version_id=output_version_id,
         input_content_hash=_INPUT_HASH,

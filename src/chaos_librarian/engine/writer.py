@@ -9,7 +9,8 @@ atomically renames it onto ``<out_dir>``:
 4. ``manifest.current.json``
 5. ``journal.jsonl``
 6. ``validation.json``
-7. ``reports/{assets,works,variants,bundles}/<id>.json`` (Sprint 4)
+7. ``reports/{assets,movies,series,seasons,episodes,artists,albums,discs,tracks,
+   variants,bundles}/<id>.json``
 8. ``.chaos-librarian-run`` (sentinel, written LAST inside staging)
 
 The single ``Path.replace`` makes publication atomic on POSIX and macOS:
@@ -46,6 +47,20 @@ from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.engine.reports import ReportSet
+
+REPORT_DIRS = (
+    "assets",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
+    "variants",
+    "bundles",
+)
 
 
 def write_fixture(
@@ -154,18 +169,10 @@ def _emit_jsonl(entries: Iterable[JournalEntry], target: Path) -> None:
 def _stage_reports(staging: Path, reports: ReportSet) -> None:
     """Stage every per-entity report under ``staging/reports/<kind>/<id>.json``."""
     reports_root = staging / "reports"
-    (reports_root / "assets").mkdir(parents=True)
-    (reports_root / "works").mkdir()
-    (reports_root / "variants").mkdir()
-    (reports_root / "bundles").mkdir()
-    for asset_report in reports.assets:
-        _emit_json(asset_report, reports_root / "assets" / f"{asset_report.asset_id}.json")
-    for work_report in reports.works:
-        _emit_json(work_report, reports_root / "works" / f"{work_report.work_id}.json")
-    for variant_report in reports.variants:
-        _emit_json(variant_report, reports_root / "variants" / f"{variant_report.variant_id}.json")
-    for bundle_report in reports.bundles:
-        _emit_json(bundle_report, reports_root / "bundles" / f"{bundle_report.bundle_id}.json")
+    for name in REPORT_DIRS:
+        (reports_root / name).mkdir(parents=True, exist_ok=True)
+    for directory, report_id, report in _iter_report_files(reports):
+        _emit_json(report, reports_root / directory / f"{report_id}.json")
 
 
 def append_step(
@@ -199,26 +206,36 @@ def append_step(
 
 
 def _replace_atomic_reports(reports_root: Path, reports: ReportSet) -> None:
-    for asset_report in reports.assets:
+    for directory, report_id, report in _iter_report_files(reports):
         replace_atomic_text(
-            reports_root / "assets" / f"{asset_report.asset_id}.json",
-            canonical_json(asset_report),
+            reports_root / directory / f"{report_id}.json",
+            canonical_json(report),
         )
-    for work_report in reports.works:
-        replace_atomic_text(
-            reports_root / "works" / f"{work_report.work_id}.json",
-            canonical_json(work_report),
-        )
-    for variant_report in reports.variants:
-        replace_atomic_text(
-            reports_root / "variants" / f"{variant_report.variant_id}.json",
-            canonical_json(variant_report),
-        )
-    for bundle_report in reports.bundles:
-        replace_atomic_text(
-            reports_root / "bundles" / f"{bundle_report.bundle_id}.json",
-            canonical_json(bundle_report),
-        )
+
+
+def _iter_report_files(reports: ReportSet) -> Iterable[tuple[str, str, BaseModel]]:
+    for report in reports.assets:
+        yield "assets", report.asset_id, report
+    for report in reports.movies:
+        yield "movies", report.movie_id, report
+    for report in reports.series:
+        yield "series", report.series_id, report
+    for report in reports.seasons:
+        yield "seasons", report.season_id, report
+    for report in reports.episodes:
+        yield "episodes", report.episode_id, report
+    for report in reports.artists:
+        yield "artists", report.artist_id, report
+    for report in reports.albums:
+        yield "albums", report.album_id, report
+    for report in reports.discs:
+        yield "discs", report.disc_id, report
+    for report in reports.tracks:
+        yield "tracks", report.track_id, report
+    for report in reports.variants:
+        yield "variants", report.variant_id, report
+    for report in reports.bundles:
+        yield "bundles", report.bundle_id, report
 
 
 def _append_journal_lines(target: Path, entries: Iterable[JournalEntry]) -> None:

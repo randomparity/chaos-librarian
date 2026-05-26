@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
 SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
@@ -63,6 +63,8 @@ _FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
+_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS
+
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.NETWORK_LAG_START,
@@ -76,4 +78,5 @@ SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
     | _CORRUPTION_ACTIONS
     | _ORACLE_HASH_ACTIONS
     | _FILESYSTEM_ARTIFACT_ACTIONS
+    | _HIERARCHY_ACTIONS
 )

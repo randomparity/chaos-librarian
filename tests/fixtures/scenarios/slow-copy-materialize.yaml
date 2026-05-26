@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: slow-copy-materialize
 seed: 7
 duration_scale: short
@@ -10,9 +10,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
-  - id: work_nova
+movies:
+  - id: movie_nova
     title: Synthetic Nova
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -32,6 +33,8 @@ works:
                   channels: stereo
                   language: eng
 
+series: []
+artists: []
 timeline:
   - id: copy_start_001
     at: 1s

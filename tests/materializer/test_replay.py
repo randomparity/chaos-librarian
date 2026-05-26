@@ -58,7 +58,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 11
+schema_version: 12
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -68,9 +68,10 @@ library:
   roots:
     - id: movies_hd
       path: movies-hd
-works:
-  - id: work_001
+movies:
+  - id: movie_001
     title: {title}
+    layout: movie_flat
     variants:
       - id: variant_001
         label: hd
@@ -89,12 +90,14 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
 {timeline}""".encode()
 
 
 _SCENARIO = b"""\
-schema_version: 11
+schema_version: 12
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -104,9 +107,10 @@ library:
   roots:
     - id: movies_hd
       path: movies-hd
-works:
-  - id: work_001
+movies:
+  - id: movie_001
     title: Broken Header
+    layout: movie_flat
     variants:
       - id: variant_001
         label: hd
@@ -125,6 +129,8 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: corrupt_header_001
     at: 0ns
@@ -331,7 +337,7 @@ def test_run_replay_reproduces_network_lag_evidence(
     assert action.commit_event_id == "lag_commit_001"
     assert action.effect.value == "delayed_rename"
     assert action.after_event_id == "rename_001"
-    assert action.from_path == "movies-hd/asset_main.mkv"
+    assert action.from_path == "movies-hd/Network Lag Replay - hd.mkv"
     assert action.to_path == "movies-hd/renamed.mkv"
     assert action.provider == "stdlib-local"
     assert action.enforced is True
@@ -447,12 +453,12 @@ def _fake_materialize_one_asset(
     caps,
     invocation_index: int,
     *,
-    root_path: str,
+    rendered_relative_path: str,
     skip_languages=frozenset(),
 ):
     del resolved_seed, caps, skip_languages
     data = f"{asset.id}-bytes".encode()
-    path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
+    path = out_dir / "library" / rendered_relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     probed = ProbedMedia(
@@ -471,7 +477,7 @@ def _fake_materialize_one_asset(
         ),
         materialized_asset=MaterializedAsset(
             asset_id=asset.id,
-            location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
+            location_path=str(Path("library") / rendered_relative_path),
             content_hash="sha256:" + hashlib.sha256(data).hexdigest(),
             size_bytes=len(data),
             duration_seconds=asset.duration_seconds,
@@ -531,8 +537,8 @@ def _patch_successful_truncate(monkeypatch: pytest.MonkeyPatch) -> None:
             event_id="truncate_001",
             action=TimelineActionName.TRUNCATE_FILE,
             target_asset_id="asset_main",
-            input_path="movies-hd/asset_main.mkv",
-            output_path="movies-hd/asset_main.mkv",
+            input_path="movies-hd/Truncated File - hd.mkv",
+            output_path="movies-hd/Truncated File - hd.mkv",
             input_version_id="version_0001",
             output_version_id=output_version_id,
             input_content_hash=_INPUT_HASH,
@@ -583,8 +589,8 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             event_id=entry.event_id,
             action=TimelineActionName.WRONG_ORACLE_HASH,
             target_asset_id=entry.target_ids[0],
-            input_path="movies-hd/asset_main.mkv",
-            output_path="movies-hd/asset_main.mkv",
+            input_path="movies-hd/Wrong Oracle Failure - hd.mkv",
+            output_path="movies-hd/Wrong Oracle Failure - hd.mkv",
             input_version_id=entry.input_version_ids[0],
             output_version_id=output_version_id,
             actual_content_hash=_INPUT_HASH,
@@ -601,8 +607,8 @@ def _corruption_action(*, output_version_id: str) -> CorruptionAction:
         event_id="corrupt_header_001",
         action=TimelineActionName.CORRUPT_CONTAINER_HEADER,
         target_asset_id="asset_main",
-        input_path="movies-hd/asset_main.mkv",
-        output_path="movies-hd/asset_main.mkv",
+        input_path="movies-hd/Broken Header - hd.mkv",
+        output_path="movies-hd/Broken Header - hd.mkv",
         input_version_id="version_0001",
         output_version_id=output_version_id,
         input_content_hash=_INPUT_HASH,

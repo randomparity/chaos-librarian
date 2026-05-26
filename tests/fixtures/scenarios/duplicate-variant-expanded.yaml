@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: duplicate-variant-expanded
 seed: 73
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_main
       path: movies-main
 
-works:
-  - id: work_echo
-    title: Synthetic Echo
+movies:
+  - id: movie_echo_a
+    title: Synthetic Echo A
+    layout: movie_flat
     variants:
       - id: variant_echo_hd_a
         label: hd
@@ -30,6 +31,11 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+
+  - id: movie_echo_b
+    title: Synthetic Echo B
+    layout: movie_flat
+    variants:
       - id: variant_echo_hd_b
         label: hd
         bundle:
@@ -48,6 +54,11 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+
+  - id: movie_echo_sd
+    title: Synthetic Echo SD
+    layout: movie_flat
+    variants:
       - id: variant_echo_sd
         label: sd
         bundle:
@@ -67,8 +78,9 @@ works:
                   channels: stereo
                   language: eng
 
-  - id: work_pair
+  - id: movie_pair
     title: Synthetic Pair
+    layout: movie_flat
     variants:
       - id: variant_pair_hd
         label: hd
@@ -76,7 +88,7 @@ works:
           id: bundle_pair_hd
           assets:
             - id: asset_pair_disc_a
-              role: primary_video
+              role: disc_a
               container: mkv
               duration_seconds: 2
               video:
@@ -89,7 +101,7 @@ works:
                   channels: stereo
                   language: eng
             - id: asset_pair_disc_b
-              role: primary_video
+              role: disc_b
               container: mkv
               duration_seconds: 2
               video:
@@ -102,8 +114,9 @@ works:
                   channels: stereo
                   language: eng
 
-  - id: work_ladder
+  - id: movie_ladder
     title: Synthetic Ladder
+    layout: movie_flat
     variants:
       - id: variant_ladder_1080p
         label: 1080p
@@ -141,5 +154,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+
+series: []
+artists: []
 
 timeline: []

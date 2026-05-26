@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: identity-move-rename
 seed: 42
 duration_scale: short
@@ -10,9 +10,10 @@ library:
     - id: movies_4k
       path: movies-4k
 
-works:
-  - id: work_blazar
+movies:
+  - id: movie_blazar
     title: Synthetic Blazar
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -31,6 +32,8 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 
 timeline:
   - id: move_001

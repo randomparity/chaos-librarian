@@ -55,8 +55,8 @@ class TestFormatJSONPath:
 
     def test_deep_nested(self) -> None:
         assert (
-            codes.format_jsonpath(("works", 0, "variants", 1, "bundle", "assets", 2, "id"))
-            == "$.works[0].variants[1].bundle.assets[2].id"
+            codes.format_jsonpath(("movies", 0, "variants", 1, "bundle", "assets", 2, "id"))
+            == "$.movies[0].variants[1].bundle.assets[2].id"
         )
 
     def test_discriminator_tag_stripped(self) -> None:

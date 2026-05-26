@@ -88,12 +88,12 @@ def _fake_materialize_one_asset(
     caps,
     invocation_index: int,
     *,
-    root_path: str,
+    rendered_relative_path: str,
     skip_languages=frozenset(),
 ):
     del resolved_seed, caps, skip_languages
     data = b"wall-clock-active-library"
-    path = out_dir / "library" / root_path / f"{asset.id}.{asset.container}"
+    path = out_dir / "library" / rendered_relative_path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(data)
     content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
@@ -113,7 +113,7 @@ def _fake_materialize_one_asset(
         ),
         materialized_asset=MaterializedAsset(
             asset_id=asset.id,
-            location_path=str(Path("library") / root_path / f"{asset.id}.{asset.container}"),
+            location_path=str(Path("library") / rendered_relative_path),
             content_hash=content_hash,
             size_bytes=len(data),
             duration_seconds=asset.duration_seconds,

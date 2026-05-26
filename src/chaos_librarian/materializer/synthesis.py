@@ -18,9 +18,17 @@ from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
-from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
-from chaos_librarian.contract.scenario import Asset, Scenario
+from chaos_librarian.contract.scenario import (
+    ArtistLayout,
+    Asset,
+    EpisodeNaming,
+    MovieLayout,
+    Scenario,
+    SeriesLayout,
+    TrackNaming,
+)
 from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
@@ -40,6 +48,12 @@ from chaos_librarian.materializer.preflight import iter_assets
 from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
+from chaos_librarian.path_rendering import (
+    RenderableAssetContext,
+    render_asset_path,
+    render_declared_sidecar_path,
+)
+from chaos_librarian.topology import AssetContext, iter_asset_contexts
 
 __all__ = [
     "MaterializeAssetResult",
@@ -76,6 +90,13 @@ class PhaseAResult:
 MaterializeAsset = Callable[..., MaterializeAssetResult]
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedMediaInputs:
+    video_input: FFmpegInput | None
+    audio_inputs: tuple[FFmpegInput, ...]
+    content_sources: tuple[ContentSourceEvidence, ...]
+
+
 def materialize_assets_phase_a(
     *,
     scenario: Scenario,
@@ -92,7 +113,8 @@ def materialize_assets_phase_a(
     primary_root_path = scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(scenario)
     start_index = len(phase_a.invocations)
-    for invocation_index, asset in enumerate(iter_assets(scenario), start=start_index):
+    for invocation_index, context in enumerate(iter_asset_contexts(scenario), start=start_index):
+        asset = context.asset
         skip_languages = skip_by_asset.get(asset.id, frozenset())
         asset_result = materialize(
             asset,
@@ -100,7 +122,9 @@ def materialize_assets_phase_a(
             out_dir,
             caps,
             invocation_index,
-            root_path=primary_root_path,
+            rendered_relative_path=render_asset_path(
+                _renderable_asset_context(context, primary_root_path)
+            ),
             skip_languages=skip_languages,
         )
         phase_a.invocations.append(asset_result.invocation)
@@ -151,70 +175,30 @@ def materialize_one_asset(
     caps: Capabilities,
     invocation_index: int,
     *,
-    root_path: str,
+    rendered_relative_path: str,
     skip_languages: frozenset[str] = frozenset(),
 ) -> MaterializeAssetResult:
     """Synthesize one asset, returning everything ``augment_manifest`` needs.
 
-    ``root_path`` is the primary library root's relative path (from
-    ``scenario.library.roots[0].path``); synthesis writes the asset to
-    ``<out_dir>/library/<root_path>/<asset_id>.<container>`` so the
-    on-disk layout matches the engine-emitted ``INITIAL_PATH_TEMPLATE``
-    that phase B walks.
+    ``rendered_relative_path`` is the renderer-produced media path relative
+    to ``library/``. Synthesis writes the asset to
+    ``<out_dir>/library/<rendered_relative_path>`` so the on-disk layout
+    matches the engine and validation hierarchy renderer.
 
     Returning probed lets the orchestrator avoid re-probing; returning
     sidecar_hashes lets ``augment_manifest`` populate
     ``ManifestSidecar.content_hash``. Returning content-source evidence
     lets materialize/run/replay persist the Phase-A source-resolution audit.
     """
-    if asset.video is None:
-        raise UnsupportedMaterializationError(
-            "every asset must declare a video track.",
-            field="video",
-            asset_id=asset.id,
-            payload={},
-        )
     library_dir = out_dir / "library"
-    relative_initial = INITIAL_PATH_TEMPLATE.format(
-        root_path=root_path,
-        asset_id=asset.id,
-        container=asset.container,
-    )
-    output_path = library_dir / relative_initial
+    output_path = library_dir / rendered_relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    width, height = RESOLUTION_PIXELS[asset.video.resolution]
-    video_resolution = resolve_video_source(
-        source=asset.video.source,
-        request=VideoSourceRequest(
-            asset_id=asset.id,
-            seed=seed,
-            duration_s=asset.duration_seconds,
-            width=width,
-            height=height,
-            fps=FPS_DEFAULT,
-        ),
-    )
-    video_input = video_resolution.ffmpeg_input
-    content_sources: list[ContentSourceEvidence] = [video_resolution.evidence]
-    audio_inputs: list[FFmpegInput] = []
-    for index, audio in enumerate(asset.audio):
-        audio_resolution = resolve_audio_source(
-            source=audio.source,
-            request=AudioSourceRequest(
-                asset_id=asset.id,
-                track_index=index,
-                seed=seed,
-                duration_s=asset.duration_seconds,
-                channels=audio.channels.value,
-            ),
-        )
-        audio_inputs.append(audio_resolution.ffmpeg_input)
-        content_sources.append(audio_resolution.evidence)
+    resolved_inputs = _resolve_media_inputs(asset, seed)
     argv = build_command(
         video=asset.video,
-        video_input=video_input,
+        video_input=resolved_inputs.video_input,
         audios=asset.audio,
-        audio_inputs=audio_inputs,
+        audio_inputs=resolved_inputs.audio_inputs,
         output_path=output_path,
     )
     invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
@@ -228,13 +212,19 @@ def materialize_one_asset(
                 "exit_code": invocation.exit_code,
             },
             invocation=invocation,
-            content_sources=tuple(content_sources),
+            content_sources=resolved_inputs.content_sources,
         )
-    sidecar_hashes = write_sidecars(asset, library_dir, seed, skip_languages=skip_languages)
+    sidecar_hashes = write_sidecars(
+        asset,
+        library_dir,
+        seed,
+        rendered_relative_path=rendered_relative_path,
+        skip_languages=skip_languages,
+    )
     try:
         probed = probe_file(output_path)
     except ProbeParseError as exc:
-        exc.content_sources = tuple(content_sources)
+        exc.content_sources = resolved_inputs.content_sources
         raise
     with output_path.open("rb") as fh:
         content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
@@ -251,8 +241,104 @@ def materialize_one_asset(
         materialized_asset=materialized_asset,
         probed=probed,
         sidecar_hashes=sidecar_hashes,
+        content_sources=resolved_inputs.content_sources,
+    )
+
+
+def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
+    """Resolve source recipes into FFmpeg inputs and content-source evidence."""
+    video_input = None
+    content_sources: list[ContentSourceEvidence] = []
+    video = asset.video
+    if video is not None:
+        width, height = RESOLUTION_PIXELS[video.resolution]
+        video_resolution = resolve_video_source(
+            source=video.source,
+            request=VideoSourceRequest(
+                asset_id=asset.id,
+                seed=seed,
+                duration_s=asset.duration_seconds,
+                width=width,
+                height=height,
+                fps=FPS_DEFAULT,
+            ),
+        )
+        video_input = video_resolution.ffmpeg_input
+        content_sources.append(video_resolution.evidence)
+    elif asset.subtitles:
+        raise UnsupportedMaterializationError(
+            "audio-only assets must not declare subtitles.",
+            field="subtitles",
+            asset_id=asset.id,
+            payload={},
+        )
+
+    audio_inputs: list[FFmpegInput] = []
+    for index, audio in enumerate(asset.audio):
+        audio_resolution = resolve_audio_source(
+            source=audio.source,
+            request=AudioSourceRequest(
+                asset_id=asset.id,
+                track_index=index,
+                seed=seed,
+                duration_s=asset.duration_seconds,
+                channels=audio.channels.value,
+            ),
+        )
+        audio_inputs.append(audio_resolution.ffmpeg_input)
+        content_sources.append(audio_resolution.evidence)
+
+    return _ResolvedMediaInputs(
+        video_input=video_input,
+        audio_inputs=tuple(audio_inputs),
         content_sources=tuple(content_sources),
     )
+
+
+def _renderable_asset_context(
+    context: AssetContext,
+    root_path: str,
+) -> RenderableAssetContext:
+    return RenderableAssetContext(
+        parent_kind=context.parent_kind,
+        root_path=root_path,
+        layout=_layout_for_context(context),
+        naming=_naming_for_context(context),
+        movie_title=context.movie.title if context.movie is not None else None,
+        series_title=context.series.title if context.series is not None else None,
+        season_number=context.season.season_number if context.season is not None else None,
+        episode_number=context.episode.episode_number if context.episode is not None else None,
+        episode_title=context.episode.title if context.episode is not None else None,
+        aired_on=context.episode.aired_on if context.episode is not None else None,
+        absolute_number=context.episode.absolute_number if context.episode is not None else None,
+        artist_name=context.artist.name if context.artist is not None else None,
+        album_title=context.album.title if context.album is not None else None,
+        disc_number=context.disc.disc_number if context.disc is not None else None,
+        track_number=context.track.track_number if context.track is not None else None,
+        track_title=context.track.title if context.track is not None else None,
+        variant_label=context.variant.label,
+        asset_role=context.asset.role,
+        asset_container=context.asset.container,
+        bundle_asset_count=context.bundle_asset_count,
+    )
+
+
+def _layout_for_context(context: AssetContext) -> MovieLayout | SeriesLayout | ArtistLayout:
+    if context.movie is not None:
+        return context.movie.layout
+    if context.series is not None:
+        return context.series.layout
+    if context.artist is not None:
+        return context.artist.layout
+    raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
+
+
+def _naming_for_context(context: AssetContext) -> EpisodeNaming | TrackNaming | None:
+    if context.series is not None:
+        return context.series.episode_naming
+    if context.artist is not None:
+        return context.artist.track_naming
+    return None
 
 
 def write_sidecars(
@@ -260,6 +346,7 @@ def write_sidecars(
     library_dir: Path,
     seed: int,
     *,
+    rendered_relative_path: str,
     skip_languages: frozenset[str] = frozenset(),
 ) -> dict[tuple[str, str], str]:
     """Write each declared SRT sidecar and return its sha256 hash.
@@ -284,7 +371,11 @@ def write_sidecars(
     for sub in asset.subtitles:
         if sub.language in skip_languages:
             continue
-        sidecar_path = library_dir / f"{asset.id}.{sub.language}.srt"
+        sidecar_path = library_dir / render_declared_sidecar_path(
+            rendered_relative_path,
+            sub.language,
+        )
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
         body = srt_payload(language=sub.language, duration_s=asset.duration_seconds, seed=seed)
         sidecar_path.write_text(body)
         sidecar_hashes[(asset.id, sub.language)] = (

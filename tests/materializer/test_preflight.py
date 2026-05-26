@@ -38,7 +38,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",
@@ -48,10 +48,11 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
                     {"id": "cold-storage", "path": "library/cold-storage"},
                 ],
             },
-            "works": [
+            "movies": [
                 {
-                    "id": "work_001",
-                    "title": "Test Work",
+                    "id": "movie_001",
+                    "title": "Test Movie",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "variant_001",
@@ -71,6 +72,8 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": timeline,
         }
     )
@@ -182,6 +185,23 @@ def test_preflight_accepts_touch_mtime_for_filesystem_dispatch() -> None:
 def test_preflight_accepts_wrong_oracle_hash() -> None:
     scenario = _scenario_with_timeline([("wrong_oracle_hash", "asset_hd_main", {})])
 
+    preflight_timeline(scenario)
+
+
+@pytest.mark.parametrize(
+    ("action_name", "extra_fields"),
+    [
+        ("renumber_episode", {"episode_number": 2}),
+        ("move_episode_to_season", {"to_season": "season_2", "episode_number": 1}),
+        ("rename_season", {"title": "Renamed"}),
+        ("renumber_disc", {"disc_number": 2}),
+        ("move_track_to_disc", {"to_disc": "disc_2", "track_number": 3}),
+    ],
+)
+def test_preflight_timeline_accepts_hierarchy_actions(
+    action_name: str, extra_fields: dict[str, object]
+) -> None:
+    scenario = _scenario_with_timeline([(action_name, "hierarchy_target", extra_fields)])
     preflight_timeline(scenario)
 
 

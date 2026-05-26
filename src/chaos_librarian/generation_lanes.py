@@ -15,7 +15,9 @@ class LaneConfig:
     profile: FuzzProfileName
     lane: FuzzLaneName
     profiles: tuple[ProfileName, ...]
-    works: int
+    movies: int
+    series: int
+    artists: int
     timeline_events: int
     required_cells: frozenset[str]
 
@@ -43,7 +45,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_SMOKE,
         lane=FuzzLaneName.SMOKE,
         profiles=(ProfileName.FUZZ_SMOKE,),
-        works=3,
+        movies=3,
+        series=0,
+        artists=0,
         timeline_events=12,
         required_cells=frozenset(
             {
@@ -59,7 +63,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.CORE_FS,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
+        series=0,
+        artists=0,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -78,7 +84,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.MEDIA_REWRITE,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
+        series=0,
+        artists=0,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -93,7 +101,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.SIDECAR_SUBTITLE,
         profiles=(ProfileName.FUZZ_REGRESSION,),
-        works=10,
+        movies=10,
+        series=0,
+        artists=0,
         timeline_events=32,
         required_cells=frozenset(
             {
@@ -111,7 +121,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.MALFORMED,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.MALFORMED_MEDIA),
-        works=10,
+        movies=10,
+        series=0,
+        artists=0,
         timeline_events=24,
         required_cells=frozenset(
             {
@@ -126,7 +138,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.NEGATIVE_ORACLE,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NEGATIVE_ORACLE),
-        works=8,
+        movies=8,
+        series=0,
+        artists=0,
         timeline_events=16,
         required_cells=frozenset({_action_cell(TimelineActionName.WRONG_ORACLE_HASH)}),
     ),
@@ -134,7 +148,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.FILESYSTEM_ARTIFACT,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.FILESYSTEM_ARTIFACTS),
-        works=8,
+        movies=8,
+        series=0,
+        artists=0,
         timeline_events=16,
         required_cells=frozenset({_action_cell(TimelineActionName.TOUCH_MTIME)}),
     ),
@@ -142,7 +158,9 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.NETWORK_LAG,
         profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NETWORK_FS_LAG),
-        works=8,
+        movies=8,
+        series=0,
+        artists=0,
         timeline_events=18,
         required_cells=frozenset(
             {
@@ -151,6 +169,40 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
                 "network-lag:delayed_visibility",
                 "network-lag:delayed_rename",
                 "network-lag:held_handle",
+            }
+        ),
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY): LaneConfig(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        profiles=(ProfileName.FUZZ_REGRESSION,),
+        movies=0,
+        series=1,
+        artists=0,
+        timeline_events=18,
+        required_cells=frozenset(
+            {
+                _action_cell(TimelineActionName.RENUMBER_EPISODE),
+                _action_cell(TimelineActionName.MOVE_EPISODE_TO_SEASON),
+                _action_cell(TimelineActionName.RENAME_FILE),
+                _action_cell(TimelineActionName.REENCODE_VIDEO),
+            }
+        ),
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY): LaneConfig(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        profiles=(ProfileName.FUZZ_REGRESSION,),
+        movies=0,
+        series=0,
+        artists=1,
+        timeline_events=18,
+        required_cells=frozenset(
+            {
+                _action_cell(TimelineActionName.RENUMBER_DISC),
+                _action_cell(TimelineActionName.MOVE_TRACK_TO_DISC),
+                _action_cell(TimelineActionName.RENAME_FILE),
+                _action_cell(TimelineActionName.REENCODE_AUDIO),
             }
         ),
     ),

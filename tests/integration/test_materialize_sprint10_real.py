@@ -209,7 +209,7 @@ def _write_interceptor_scenario(tmp_path: Path, *, scenario_id: str, timeline: s
     timeline_yaml = "\n".join(f"  {line}" for line in dedent(timeline).strip().splitlines())
     body = dedent(
         f"""
-        schema_version: 11
+        schema_version: 12
         scenario_id: {scenario_id}
         seed: 117
         duration_scale: short
@@ -219,9 +219,10 @@ def _write_interceptor_scenario(tmp_path: Path, *, scenario_id: str, timeline: s
           roots:
             - id: movies_hd
               path: movies-hd
-        works:
-          - id: work_broken
+        movies:
+          - id: movie_broken
             title: Interceptor Real
+            layout: movie_flat
             variants:
               - id: variant_hd
                 label: hd
@@ -240,6 +241,8 @@ def _write_interceptor_scenario(tmp_path: Path, *, scenario_id: str, timeline: s
                         - codec: aac
                           channels: stereo
                           language: eng
+        series: []
+        artists: []
         timeline:
         """
     ).lstrip()

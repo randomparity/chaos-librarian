@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: fuzz-smoke-smoke-seed-123
 seed: 123
 duration_scale: short
@@ -8,10 +8,17 @@ generation:
   generator: chaos-librarian
   profile: fuzz-smoke
   lane: smoke
-  profile_version: 2
+  profile_version: 3
   seed: 123
   budgets:
-    works: 3
+    movies: 3
+    series: 0
+    seasons: 0
+    episodes: 0
+    artists: 0
+    albums: 0
+    discs: 0
+    tracks: 0
     variants: 4
     bundles: 4
     assets: 4
@@ -21,9 +28,10 @@ library:
   roots:
   - id: movies-hd
     path: movies-hd
-works:
-- id: work_001
-  title: fuzz-smoke smoke Work 123-001
+movies:
+- id: movie_001
+  title: fuzz-smoke smoke Movie 123-001
+  layout: movie_flat
   variants:
   - id: variant_001
     label: smoke
@@ -43,8 +51,9 @@ works:
           codec: aac
           channels: mono
           language: eng
-- id: work_002
-  title: fuzz-smoke smoke Work 123-002
+- id: movie_002
+  title: fuzz-smoke smoke Movie 123-002
+  layout: movie_flat
   variants:
   - id: variant_002
     label: smoke
@@ -64,8 +73,9 @@ works:
           codec: aac
           channels: stereo
           language: eng
-- id: work_003
-  title: fuzz-smoke smoke Work 123-003
+- id: movie_003
+  title: fuzz-smoke smoke Movie 123-003
+  layout: movie_flat
   variants:
   - id: variant_003
     label: smoke
@@ -90,6 +100,8 @@ works:
           codec: srt
           language: eng
           mode: sidecar
+series: []
+artists: []
 timeline:
 - id: fuzz_0001_move
   at: 1ns

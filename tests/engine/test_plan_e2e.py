@@ -147,7 +147,19 @@ class TestStepVsPlanByteIdentical:
         # Codex round 4 finding 1 — version-evolution and bundle-sidecars
         # in the pack scenarios are the load-bearing cases.
         assert (plan_dir / "replay.json").read_bytes() == (step_dir / "replay.json").read_bytes()
-        for sub in ("assets", "works", "variants", "bundles"):
+        for sub in (
+            "assets",
+            "movies",
+            "series",
+            "seasons",
+            "episodes",
+            "artists",
+            "albums",
+            "discs",
+            "tracks",
+            "variants",
+            "bundles",
+        ):
             plan_files = sorted((plan_dir / "reports" / sub).iterdir())
             step_files = sorted((step_dir / "reports" / sub).iterdir())
             assert [p.name for p in plan_files] == [p.name for p in step_files]

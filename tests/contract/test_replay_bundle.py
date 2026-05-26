@@ -130,7 +130,11 @@ def test_plan_only_bundle_roundtrip_byte_identical() -> None:
         journal_digest="e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
         execution_trace=[
             RngTraceEntry(kind=ExecutionTraceKind.RNG, stream="ids", value="1"),
-            AllocTraceEntry(kind=ExecutionTraceKind.ALLOC, stream="work_id", value="w1"),
+            AllocTraceEntry(
+                kind=ExecutionTraceKind.ALLOC,
+                stream="movie_id",
+                value="movie_orbit",
+            ),
         ],
     )
     blob_a = json.dumps(json.loads(b.model_dump_json()), sort_keys=True)
@@ -312,7 +316,7 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
         "chaos_librarian_version": "0.1.0",
-        "scenario": "schema_version: 11\nscenario_id: x\n",
+        "scenario": "schema_version: 12\nscenario_id: x\n",
         "run_id": "00000000-0000-4000-8000-000000000000",
         "resolved_seed": 1,
         "applied_events": 0,
@@ -380,8 +384,8 @@ def test_materialize_bundle_toolchain_rejects_unknown_tool():
         MaterializeReplayBundle.model_validate(payload)
 
 
-def test_replay_bundle_schema_version_is_six():
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 6
+def test_replay_bundle_schema_version_is_seven():
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 7
 
 
 def test_materialize_bundle_carries_content_source_evidence() -> None:

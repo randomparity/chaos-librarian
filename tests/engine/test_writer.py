@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.adapter.fixture import load_fixture
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplayBundle
@@ -19,22 +18,196 @@ from chaos_librarian.engine import PlanArtifacts, run_plan, step_fixture
 from chaos_librarian.engine import writer as writer_mod
 from chaos_librarian.engine.reports import ReportSet
 from chaos_librarian.engine.writer import append_step, write_fixture
-from chaos_librarian.validation import RunInput, prepare_run_input, run_validation
+from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
-FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
+_REPORT_DIRS = [
+    "assets",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
+    "variants",
+    "bundles",
+]
+
+_IDENTITY_MOVE_RENAME = b"""\
+schema_version: 12
+scenario_id: identity-move-rename
+seed: 42
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+    - id: movies_4k
+      path: movies-4k
+
+movies:
+  - id: movie_blazar
+    title: Synthetic Blazar
+    layout: movie_flat
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_hd_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 12
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+
+timeline:
+  - id: move_001
+    at: 2s
+    action: move_asset
+    target: asset_hd_main
+    to: movies-hd/Synthetic Blazar (HD).mkv
+  - id: rename_001
+    at: 4s
+    action: rename_file
+    target: asset_hd_main
+    to: movies-hd/Blazar.mkv
+"""
+
+_ACTIVE_LIBRARY_CHURN = b"""\
+schema_version: 12
+scenario_id: active-library-churn
+seed: 17
+duration_scale: short
+
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+
+movies:
+  - id: movie_pulsar
+    title: Synthetic Pulsar
+    layout: movie_flat
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 2
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+
+timeline:
+  - id: move_001
+    at: 1ns
+    action: move_asset
+    target: asset_main
+    to: movies-hd/Pulsar.mkv
+  - id: copy_start_001
+    at: 2ns
+    action: slow_copy_start
+    target: asset_main
+    to: movies-hd/Pulsar Copy.mkv
+    temp_path: movies-hd/Pulsar Copy.mkv.part
+    duration: 4ns
+  - id: copy_commit_001
+    at: 6ns
+    action: slow_copy_commit
+    for: copy_start_001
+  - id: sidecar_create_001
+    at: 7ns
+    action: create_sidecar
+    target: asset_main
+    to: movies-hd/Pulsar.nfo
+    kind: nfo
+  - id: sidecar_update_001
+    at: 8ns
+    action: update_sidecar
+    target: asset_main
+    sidecar_path: movies-hd/Pulsar.nfo
+  - id: metadata_001
+    at: 9ns
+    action: edit_metadata
+    target: asset_main
+    fields:
+      title: Synthetic Pulsar Updated
+  - id: delete_001
+    at: 10ns
+    action: delete_file
+    target: asset_main
+  - id: add_001
+    at: 11ns
+    action: add_file
+    target: asset_main
+    to: movies-hd/Pulsar Restored.mkv
+"""
 
 
-def _prepare(scenario_name: str) -> tuple[RunInput, ValidationReport]:
-    run_input = prepare_run_input(FIXTURE_DIR / scenario_name)
-    return run_input, run_validation(run_input)
+def _prepare(raw_bytes: bytes) -> tuple[RunInput, ValidationReport]:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=raw_bytes,
+        source_label="test:engine-writer",
+    )
+    return run_input, _validation_report(run_input.scenario.scenario_id)
 
 
-def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
-    empty_manifest = Manifest(
+def _validation_report(scenario_id: str) -> ValidationReport:
+    return ValidationReport(schema_version=1, scenario_id=scenario_id, ok=True, issues=[])
+
+
+def _empty_report_set() -> ReportSet:
+    return ReportSet(
+        assets=(),
+        movies=(),
+        series=(),
+        seasons=(),
+        episodes=(),
+        artists=(),
+        albums=(),
+        discs=(),
+        tracks=(),
+        variants=(),
+        bundles=(),
+    )
+
+
+def _empty_manifest() -> Manifest:
+    return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[],
+        movies=[],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
         variants=[],
         bundles=[],
         assets=[],
@@ -42,10 +215,14 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         locations=[],
         sidecars=[],
     )
+
+
+def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
+    empty_manifest = _empty_manifest()
     bundle = PlanOnlyReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
-        scenario="schema_version: 1\n",
+        scenario="schema_version: 12\n",
         run_id=_RUN_ID,
         resolved_seed=1,
         applied_events=0,
@@ -64,25 +241,27 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         current_manifest=empty_manifest,
         journal=(),
         replay_bundle=bundle,
-        validation_report=ValidationReport(schema_version=1, scenario_id="t", ok=True, issues=[]),
+        validation_report=_validation_report("t"),
         sentinel=sentinel,
-        reports=ReportSet(assets=(), works=(), variants=(), bundles=()),
+        reports=_empty_report_set(),
     )
-    return artifacts, b"schema_version: 1\n"
+    return artifacts, b"schema_version: 12\n"
 
 
 class TestWriteFixtureFileSet:
     """write_fixture writes the contracted artifacts at the run directory.
 
     WHY: any extra entry becomes part of the contract; any missing entry
-    breaks the fixture-layout doc. The set (seven files plus the
-    ``reports/`` tree added in Sprint 4) is the contract.
+    breaks the fixture-layout doc. The set plus the ``reports/`` tree is
+    the contract.
     """
 
     def test_creates_expected_files(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(out, artifacts, scenario_bytes)
+
         files = sorted(p.name for p in out.iterdir())
         assert files == [
             ".chaos-librarian-run",
@@ -98,13 +277,17 @@ class TestWriteFixtureFileSet:
     def test_scenario_yaml_is_verbatim(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(out, artifacts, scenario_bytes)
+
         assert (out / "scenario.yaml").read_bytes() == scenario_bytes
 
     def test_sentinel_round_trips_via_pydantic(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(out, artifacts, scenario_bytes)
+
         loaded = RunSentinel.model_validate_json((out / ".chaos-librarian-run").read_text())
         assert loaded.run_id == _RUN_ID
         assert loaded.created_at is None
@@ -112,9 +295,10 @@ class TestWriteFixtureFileSet:
     def test_journal_is_jsonl_with_trailing_newline(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(out, artifacts, scenario_bytes)
+
         text = (out / "journal.jsonl").read_text()
-        # Empty journal: empty file. Non-empty journals end in "\n".
         assert text == ""
 
 
@@ -122,30 +306,28 @@ class TestWriteFixtureRefusesExistingDir:
     """write_fixture refuses a pre-existing target directory.
 
     WHY: ``--out`` callback also refuses; this is defense in depth. A
-    scenario where the callback is bypassed (programmatic call from a
-    library) still must not clobber.
+    scenario where the callback is bypassed still must not clobber.
     """
 
     def test_existing_dir_raises(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         out.mkdir()
         artifacts, scenario_bytes = _empty_artifacts()
+
         with pytest.raises(FileExistsError):
             write_fixture(out, artifacts, scenario_bytes)
 
 
 class TestWriteFixtureDeterministicBytes:
-    """Two writes of the same artifacts produce byte-identical files.
-
-    WHY: this is the headline Sprint 3 invariant. The artifacts dataclass
-    is frozen, so equal inputs must yield equal bytes on disk.
-    """
+    """Two writes of the same artifacts produce byte-identical files."""
 
     def test_byte_equal(self, tmp_path: Path) -> None:
         a, b = tmp_path / "a", tmp_path / "b"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(a, artifacts, scenario_bytes)
         write_fixture(b, artifacts, scenario_bytes)
+
         for name in [
             ".chaos-librarian-run",
             "manifest.current.json",
@@ -159,27 +341,21 @@ class TestWriteFixtureDeterministicBytes:
 
 
 class TestPlanOnlyExcludesVolatileFields:
-    """The plan-only replay bundle on disk omits ``created_at``.
-
-    WHY: the bundle's plan-only variant has no created_at field; exclude_none
-    keeps materialize fields from leaking when a future code path sets None.
-    """
+    """The plan-only replay bundle on disk omits ``created_at``."""
 
     def test_replay_json_has_no_created_at(self, tmp_path: Path) -> None:
         out = tmp_path / "run-001"
         artifacts, scenario_bytes = _empty_artifacts()
+
         write_fixture(out, artifacts, scenario_bytes)
+
         payload = json.loads((out / "replay.json").read_text())
         assert "created_at" not in payload
         assert "toolchain" not in payload
 
 
 class TestWriteFixtureIsTransactional:
-    """A mid-write failure leaves no fixture at all.
-
-    WHY: future tools treat the sentinel as the trust boundary. A partial
-    write that landed a sentinel would lie about the contents.
-    """
+    """A mid-write failure leaves no fixture at all."""
 
     def test_failure_leaves_no_out_dir(self, tmp_path: Path, monkeypatch) -> None:
         out = tmp_path / "run-001"
@@ -219,35 +395,50 @@ class TestWriterEmitsReports:
     """write_fixture stages reports/ subdirs before the atomic rename.
 
     WHY: reports are part of every plan-only fixture; adapter consumers
-    rely on them. The subdir layout (assets/works/variants/bundles) is
-    public contract.
+    rely on them. The domain subdir layout is public contract.
     """
 
     def test_reports_subdirs_exist(self, tmp_path: Path) -> None:
-        run_input, report = _prepare("identity-move-rename.yaml")
+        run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
         artifacts = run_plan(run_input=run_input, validation_report=report)
         out = tmp_path / "run"
+
         write_fixture(out, artifacts, run_input.raw_bytes)
-        assert (out / "reports" / "assets").is_dir()
-        assert (out / "reports" / "works").is_dir()
-        assert (out / "reports" / "variants").is_dir()
-        assert (out / "reports" / "bundles").is_dir()
+
+        for report_dir in _REPORT_DIRS:
+            assert (out / "reports" / report_dir).is_dir()
+        assert not (out / "reports" / "works").exists()
 
     def test_asset_report_file_per_id(self, tmp_path: Path) -> None:
-        run_input, report = _prepare("identity-move-rename.yaml")
+        run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
         artifacts = run_plan(run_input=run_input, validation_report=report)
         out = tmp_path / "run"
+
         write_fixture(out, artifacts, run_input.raw_bytes)
+
         assert (out / "reports" / "assets" / "asset_hd_main.json").exists()
 
+    def test_domain_report_file_per_id(self, tmp_path: Path) -> None:
+        run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
+        artifacts = run_plan(run_input=run_input, validation_report=report)
+        out = tmp_path / "run"
+
+        write_fixture(out, artifacts, run_input.raw_bytes)
+
+        assert (out / "reports" / "movies" / "movie_blazar.json").exists()
+        assert (out / "reports" / "variants" / "variant_hd.json").exists()
+        assert (out / "reports" / "bundles" / "bundle_hd.json").exists()
+
     def test_two_writes_byte_identical(self, tmp_path: Path) -> None:
-        run_input, report = _prepare("identity-move-rename.yaml")
+        run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
         artifacts = run_plan(run_input=run_input, validation_report=report)
         a = tmp_path / "a"
         b = tmp_path / "b"
+
         write_fixture(a, artifacts, run_input.raw_bytes)
         write_fixture(b, artifacts, run_input.raw_bytes)
-        for report_dir in ["assets", "works", "variants", "bundles"]:
+
+        for report_dir in _REPORT_DIRS:
             a_files = sorted((a / "reports" / report_dir).iterdir())
             b_files = sorted((b / "reports" / report_dir).iterdir())
             assert [p.name for p in a_files] == [p.name for p in b_files]
@@ -256,14 +447,10 @@ class TestWriterEmitsReports:
 
 
 class TestAppendStep:
-    """append_step updates manifest.current/replay.json/reports atomically.
-
-    WHY: step mode mutates a fixture in-place; the updated files must
-    appear consistently or not at all.
-    """
+    """append_step updates manifest.current/replay.json/reports atomically."""
 
     def test_journal_grows(self, tmp_path: Path) -> None:
-        run_input, report = _prepare("identity-move-rename.yaml")
+        run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
         artifacts = run_plan(
             run_input=run_input,
             validation_report=report,
@@ -271,9 +458,8 @@ class TestAppendStep:
         )
         out = tmp_path / "run"
         write_fixture(out, artifacts, run_input.raw_bytes)
-        # Journal starts empty
         assert (out / "journal.jsonl").read_text() == ""
-        # Re-plan with the first event applied
+
         artifacts_after = run_plan(
             run_input=run_input,
             validation_report=report,
@@ -287,11 +473,11 @@ class TestAppendStep:
             new_report_set=artifacts_after.reports,
             new_replay_bundle=artifacts_after.replay_bundle,
         )
-        # One line now present in the journal
+
         assert sum(1 for _ in (out / "journal.jsonl").read_text().splitlines()) == 1
 
     def test_deleted_asset_report_keeps_required_current_null(self, tmp_path: Path) -> None:
-        run_input, report = _prepare("active-library-churn.yaml")
+        run_input, report = _prepare(_ACTIVE_LIBRARY_CHURN)
         artifacts = run_plan(
             run_input=run_input,
             validation_report=report,
@@ -315,4 +501,3 @@ class TestAppendStep:
         assert "current" in payload
         assert payload["current"] is None
         AssetReport.model_validate_json(report_json)
-        load_fixture(out)

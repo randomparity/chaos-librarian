@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Literal
+
+from pydantic import BaseModel
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import (
@@ -147,8 +150,35 @@ def build_reports(plan_artifacts: PlanArtifacts) -> MaterializeReports:
         journal=plan_artifacts.journal,
     )
     return MaterializeReports(
-        assets={r.asset_id: r for r in reports.assets},
-        works={r.work_id: r for r in reports.works},
-        variants={r.variant_id: r for r in reports.variants},
-        bundles={r.bundle_id: r for r in reports.bundles},
+        assets=_required_report_map(reports, "assets", "asset_id"),
+        movies=_required_report_map(reports, "movies", "movie_id"),
+        series=_required_report_map(reports, "series", "series_id"),
+        seasons=_required_report_map(reports, "seasons", "season_id"),
+        episodes=_required_report_map(reports, "episodes", "episode_id"),
+        artists=_required_report_map(reports, "artists", "artist_id"),
+        albums=_required_report_map(reports, "albums", "album_id"),
+        discs=_required_report_map(reports, "discs", "disc_id"),
+        tracks=_required_report_map(reports, "tracks", "track_id"),
+        variants=_required_report_map(reports, "variants", "variant_id"),
+        bundles=_required_report_map(reports, "bundles", "bundle_id"),
     )
+
+
+def _required_report_map[T: BaseModel](
+    report_set: object,
+    name: str,
+    id_field: str,
+) -> dict[str, T]:
+    if not hasattr(report_set, name):
+        raise ValueError(f"report set is missing required {name} reports")
+    return _report_map(getattr(report_set, name), id_field)
+
+
+def _report_map[T: BaseModel](reports: Iterable[T], id_field: str) -> dict[str, T]:
+    mapped: dict[str, T] = {}
+    for report in reports:
+        report_id = getattr(report, id_field)
+        if not isinstance(report_id, str):
+            raise TypeError(f"{id_field} must be a string")
+        mapped[report_id] = report
+    return mapped

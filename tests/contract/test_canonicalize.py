@@ -13,15 +13,16 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceEvidence,
     ContentTrackKind,
 )
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
     ManifestBundle,
     ManifestLocation,
+    ManifestMovie,
     ManifestSidecar,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -51,8 +52,22 @@ def _manifest(
 ) -> Manifest:
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="Title")],
-        variants=[ManifestVariant(id="va0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="movie_0", title="Title", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="va0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie_0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="va0")],
         assets=[
             ManifestAsset(
@@ -85,7 +100,7 @@ def _manifest(
 
 def test_canonicalize_strips_content_hash_and_probed():
     """WHY: cross-toolchain hash comparison is meaningless; only the
-    structural shape (works/variants/bundles/assets/versions/locations/
+    structural shape (movies/variants/bundles/assets/versions/locations/
     sidecars + their ids and paths) is comparable."""
     left = _manifest(
         content_hash="sha256:" + "0" * 64,
@@ -106,7 +121,7 @@ def test_canonicalize_preserves_structural_fields():
     """WHY: a too-aggressive strip would make every manifest compare equal."""
     m = _manifest(content_hash=None, probed=None)
     out = canonicalize(m)
-    assert [w["id"] for w in out["works"]] == ["w0"]
+    assert [movie["id"] for movie in out["movies"]] == ["movie_0"]
     assert out["assets"][0]["container"] == "mkv"
     assert out["locations"][0]["path"] == "library/w0/va0/main.mkv"
     assert out["sidecars"][0]["path"] == "library/w0/va0/main.eng.srt"

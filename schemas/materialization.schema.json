@@ -881,7 +881,12 @@
         "touch_mtime",
         "wrong_oracle_hash",
         "network_lag_start",
-        "network_lag_commit"
+        "network_lag_commit",
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_season",
+        "renumber_disc",
+        "move_track_to_disc"
       ],
       "title": "TimelineActionName",
       "type": "string"

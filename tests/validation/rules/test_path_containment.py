@@ -210,6 +210,97 @@ class TestRule6PathContainment:
         ]
         assert not timeline_issues
 
+    def test_move_between_roots_uses_current_path_projection(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """A second move_between_roots must validate against the moved path.
+
+        WHY: the engine applies replace_root_prefix to the current location,
+        not the initial path. A round trip from r -> cold -> r is valid and
+        must not report containment on the second event.
+        """
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "r", "path": "r"},
+                    {"id": "cold", "path": "cold"},
+                ],
+            },
+            timeline=[
+                {
+                    "id": "ev_to_cold",
+                    "at": "0ns",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "r",
+                    "to_root_id": "cold",
+                },
+                {
+                    "id": "ev_to_r",
+                    "at": "1s",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "cold",
+                    "to_root_id": "r",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert not timeline_issues
+
+    def test_move_between_roots_uses_slow_copy_commit_path_projection(
+        self, minimal_scenario, empty_index
+    ) -> None:
+        """A move after slow_copy_commit must validate against the committed path."""
+        raw = minimal_scenario(
+            library={
+                "roots": [
+                    {"id": "r", "path": "r"},
+                    {"id": "scratch", "path": "scratch"},
+                    {"id": "cold", "path": "cold"},
+                ],
+            },
+            timeline=[
+                {
+                    "id": "copy_start",
+                    "at": "0ns",
+                    "action": "slow_copy_start",
+                    "target": "a",
+                    "to": "scratch/copied.mkv",
+                    "temp_path": "scratch/copied.part",
+                    "duration": "1s",
+                },
+                {
+                    "id": "copy_commit",
+                    "at": "1s",
+                    "action": "slow_copy_commit",
+                    "for": "copy_start",
+                },
+                {
+                    "id": "move_cold",
+                    "at": "2s",
+                    "action": "move_between_roots",
+                    "target": "a",
+                    "from_root_id": "scratch",
+                    "to_root_id": "cold",
+                },
+            ],
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        timeline_issues = [
+            i
+            for i in collector.issues
+            if i.code == codes.E_PATH_CONTAINMENT and "timeline" in (i.path or "")
+        ]
+        assert not timeline_issues
+
     def test_extract_subtitle_to_escaping_path_rejected(
         self, minimal_scenario, empty_index
     ) -> None:

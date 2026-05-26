@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from chaos_librarian.validation import codes
 from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.semantic import run_semantic_pass
@@ -16,9 +18,17 @@ def _asset(asset_id: str) -> dict[str, object]:
     }
 
 
+def _first_movie_bundle(raw: dict[str, object]) -> dict[str, object]:
+    movies = cast("list[dict[str, object]]", raw["movies"])
+    movie = movies[0]
+    variants = cast("list[dict[str, object]]", movie["variants"])
+    variant = variants[0]
+    return cast("dict[str, object]", variant["bundle"])
+
+
 def test_performance_smoke_asset_ceiling_emits(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(profiles=["performance-smoke"])
-    bundle = raw["works"][0]["variants"][0]["bundle"]
+    bundle = _first_movie_bundle(raw)
     bundle["assets"] = [_asset(f"a{i}") for i in range(41)]
     collector = IssueCollector()
 
@@ -80,7 +90,7 @@ def test_performance_smoke_within_static_ceiling_passes(minimal_scenario, empty_
 
 def test_fuzz_smoke_asset_ceiling_emits(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(profiles=["fuzz-smoke"])
-    bundle = raw["works"][0]["variants"][0]["bundle"]
+    bundle = _first_movie_bundle(raw)
     bundle["assets"] = [_asset(f"a{i}") for i in range(5)]
     collector = IssueCollector()
 
@@ -134,7 +144,7 @@ def test_fuzz_regression_accepts_fuzz_smoke_sized_case(minimal_scenario, empty_i
             for i in range(13)
         ],
     )
-    bundle = raw["works"][0]["variants"][0]["bundle"]
+    bundle = _first_movie_bundle(raw)
     bundle["assets"] = [_asset(f"a{i}") for i in range(5)]
     collector = IssueCollector()
 

@@ -50,7 +50,7 @@ from chaos_librarian.materializer.phase_b import (
     phase_b_failure_outcome,
     phase_b_failure_record,
 )
-from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.materializer.synthesis import (
     PhaseAResult,
     materialize_assets_phase_a,
@@ -60,6 +60,7 @@ from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
 )
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
 
 __all__ = ["replay_run_bundle"]
@@ -129,8 +130,15 @@ def _materialize_verified_run_prefix(
     preflight_timeline(scenario, allow_network_lag=True)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
-    for asset in iter_assets(scenario):
-        preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+    for context in iter_asset_contexts(scenario):
+        asset = context.asset
+        preflight_asset(
+            parent_kind=context.parent_kind,
+            video=asset.video,
+            audios=asset.audio,
+            subtitles=asset.subtitles,
+            container=asset.container,
+        )
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)

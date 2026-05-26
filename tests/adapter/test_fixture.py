@@ -10,15 +10,14 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, TypeAdapter
 
+from chaos_librarian.adapter import fixture as fixture_module
 from chaos_librarian.adapter.errors import E_ADAPTER_FIXTURE_INVALID, AdapterInputError
 from chaos_librarian.adapter.fixture import load_fixture
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.replay_bundle import ReplayBundle
 from chaos_librarian.contract.reports import AssetReport
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.engine import SentinelInvalidError
-from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.engine.writer import canonical_json
+from chaos_librarian.errors import ChaosLibrarianError
 from tests.support.adapter import scenario_bytes as _scenario_bytes
 from tests.support.adapter import write_plan_fixture as _write_plan_fixture
 
@@ -27,7 +26,11 @@ _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
 
 
 def _rewrite_json_model(path: Path, model: BaseModel) -> None:
-    path.write_text(canonical_json(model))
+    path.write_text(_canonical_json(model))
+
+
+def _canonical_json(model: BaseModel) -> str:
+    return model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n"
 
 
 def _load_replay(run_dir: Path) -> ReplayBundle:
@@ -47,13 +50,37 @@ def _journal(run_dir: Path) -> list[JournalEntry]:
 
 
 def _write_journal(run_dir: Path, entries: list[JournalEntry]) -> None:
-    (run_dir / "journal.jsonl").write_bytes(serialize_journal_bytes(entries))
+    (run_dir / "journal.jsonl").write_bytes(_serialize_journal_bytes(entries))
 
 
-def _assert_fixture_invalid(run_dir: Path) -> None:
+def _serialize_journal_bytes(entries: list[JournalEntry]) -> bytes:
+    chunks: list[bytes] = []
+    for entry in entries:
+        chunks.append(entry.model_dump_json(by_alias=True, exclude_none=True).encode())
+        chunks.append(b"\n")
+    return b"".join(chunks)
+
+
+def _fixture_invalid_error(run_dir: Path) -> AdapterInputError:
     with pytest.raises(AdapterInputError) as exc_info:
         load_fixture(run_dir)
     assert exc_info.value.error_code == E_ADAPTER_FIXTURE_INVALID
+    return exc_info.value
+
+
+def _assert_fixture_invalid(run_dir: Path) -> None:
+    _fixture_invalid_error(run_dir)
+
+
+class _IncompleteReportSet:
+    assets = ()
+    variants = ()
+    bundles = ()
+
+
+def test_derived_report_set_requires_hierarchy_report_families() -> None:
+    with pytest.raises(ValueError, match="movies"):
+        fixture_module._reports_from_report_set(_IncompleteReportSet())
 
 
 def test_load_fixture_reads_required_artifacts(tmp_path: Path) -> None:
@@ -89,8 +116,9 @@ def test_load_fixture_rejects_missing_sentinel(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
     (run_dir / ".chaos-librarian-run").unlink()
 
-    with pytest.raises(SentinelInvalidError):
+    with pytest.raises(ChaosLibrarianError) as exc_info:
         load_fixture(run_dir)
+    assert exc_info.value.__class__.__name__ == "SentinelInvalidError"
 
 
 def test_load_fixture_rejects_malformed_replay_json(tmp_path: Path) -> None:
@@ -171,7 +199,7 @@ def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path:
     _write_journal(run_dir, entries)
     replay = _load_replay(run_dir)
     digest_entries = [entry.model_copy(update={"wall_clock_time": None}) for entry in entries]
-    digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
+    digest = hashlib.sha256(_serialize_journal_bytes(digest_entries)).hexdigest()
     replay_payload = replay.model_dump(mode="json")
     replay_payload.update(
         {
@@ -217,19 +245,46 @@ def test_load_fixture_rejects_missing_asset_report_when_reports_present(tmp_path
     _assert_fixture_invalid(run_dir)
 
 
-def test_load_fixture_rejects_missing_work_report_when_reports_present(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "directory_name",
+    [
+        "assets",
+        "movies",
+        "series",
+        "seasons",
+        "episodes",
+        "artists",
+        "albums",
+        "discs",
+        "tracks",
+        "variants",
+        "bundles",
+    ],
+)
+def test_load_fixture_rejects_missing_report_family(
+    tmp_path: Path,
+    directory_name: str,
+) -> None:
     run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "works").glob("*.json")).unlink()
-    _assert_fixture_invalid(run_dir)
+    reports_dir = run_dir / "reports" / directory_name
+    reports = sorted(reports_dir.glob("*.json"))
+    for report in reports:
+        report.unlink()
+    reports_dir.rmdir()
+
+    error = _fixture_invalid_error(run_dir)
+
+    assert error.details["missing"] == [directory_name]
+    assert error.details["extra"] == []
 
 
-def test_load_fixture_rejects_missing_variant_report_when_reports_present(tmp_path: Path) -> None:
+def test_load_fixture_rejects_old_work_report_directory(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "variants").glob("*.json")).unlink()
-    _assert_fixture_invalid(run_dir)
+    works_dir = run_dir / "reports" / "works"
+    works_dir.mkdir()
+    (works_dir / "work-a.json").write_text("{}")
 
+    error = _fixture_invalid_error(run_dir)
 
-def test_load_fixture_rejects_missing_bundle_report_when_reports_present(tmp_path: Path) -> None:
-    run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "bundles").glob("*.json")).unlink()
-    _assert_fixture_invalid(run_dir)
+    assert error.details["missing"] == []
+    assert error.details["extra"] == ["works"]

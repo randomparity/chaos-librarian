@@ -128,6 +128,28 @@ def test_generate_rejects_lane_profile_mismatch(tmp_path: Path) -> None:
     assert not out.exists()
 
 
+def test_generate_accepts_topology_lanes(tmp_path: Path) -> None:
+    for lane in ("tv-topology", "music-topology"):
+        out = tmp_path / f"{lane}.yaml"
+        result = runner.invoke(
+            app,
+            [
+                "generate",
+                "--profile",
+                "fuzz-regression",
+                "--lane",
+                lane,
+                "--seed",
+                "463",
+                "--out",
+                str(out),
+            ],
+        )
+
+        assert result.exit_code == 0, result.stdout + result.stderr
+        assert _load_generated(out).generation is not None
+
+
 def test_generate_rejects_existing_out(tmp_path: Path) -> None:
     out = tmp_path / "generated.yaml"
     out.write_text("existing", encoding="utf-8")

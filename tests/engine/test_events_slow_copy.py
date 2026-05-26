@@ -24,7 +24,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "sc",
             "seed": 7,
             "duration_scale": "short",
@@ -34,10 +34,11 @@ def _scenario() -> Scenario:
                     {"id": "movies_hd", "path": "movies-hd"},
                 ]
             },
-            "works": [
+            "movies": [
                 {
-                    "id": "w0",
+                    "id": "movie_0",
                     "title": "T",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "v0",
@@ -57,6 +58,8 @@ def _scenario() -> Scenario:
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": [
                 {
                     "id": "copy_start_001",
@@ -98,7 +101,7 @@ class TestSlowCopyStart:
         assert entry.state_delta == {
             "final_path": "movies-hd/Nova.mkv",
             "temp_path": "movies-hd/Nova.mkv.part",
-            "initial_path_at_start": "staging/a0.mkv",
+            "initial_path_at_start": "staging/T - hd.mkv",
         }
         loc = state.locations[state.location_id_for_asset("a0")]
         assert loc.temp_path == "movies-hd/Nova.mkv.part"

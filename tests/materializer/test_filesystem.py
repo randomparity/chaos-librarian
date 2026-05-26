@@ -22,7 +22,7 @@ from chaos_librarian.materializer.phase_b.filesystem import (
     apply_filesystem_action,
     make_filesystem_phase_b_context,
 )
-from tests.engine.conftest import _build_minimal_scenario
+from chaos_librarian.topology import iter_asset_contexts
 from tests.materializer.conftest import (
     _atomic_entry,
     _committed_entry,
@@ -32,23 +32,69 @@ from tests.materializer.conftest import (
 
 def _scenario() -> Scenario:
     """Build the minimal Scenario every phase-B test shares."""
-    return _build_minimal_scenario(
+    return _movie_scenario(
         roots=[
             ("movies-hd", "library/movies-hd"),
             ("cold-storage", "library/cold-storage"),
         ],
-        works=[("work_001", "asset_hd_main", "mkv")],
+        assets=[("asset_hd_main", "mkv")],
         archive_root="archive",
     )
 
 
-def _scenario_assets(scenario: Scenario) -> dict[str, Asset]:
-    return {
-        asset.id: asset
-        for work in scenario.works
-        for variant in work.variants
-        for asset in variant.bundle.assets
+def _movie_scenario(
+    *,
+    roots: list[tuple[str, str]],
+    assets: list[tuple[str, str]],
+    archive_root: str | None = None,
+) -> Scenario:
+    library: dict[str, object] = {
+        "roots": [{"id": root_id, "path": path} for root_id, path in roots],
     }
+    if archive_root is not None:
+        library["archive_root"] = archive_root
+    movies = [
+        {
+            "id": f"movie_{index:03d}",
+            "title": f"Movie {index}",
+            "layout": "movie_flat",
+            "variants": [
+                {
+                    "id": f"variant_{index:03d}",
+                    "label": "default",
+                    "bundle": {
+                        "id": f"bundle_{index:03d}",
+                        "assets": [
+                            {
+                                "id": asset_id,
+                                "role": "primary_video",
+                                "container": container,
+                                "duration_seconds": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        for index, (asset_id, container) in enumerate(assets, start=1)
+    ]
+    return Scenario.model_validate(
+        {
+            "schema_version": 12,
+            "scenario_id": "materializer-filesystem-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": library,
+            "movies": movies,
+            "series": [],
+            "artists": [],
+            "timeline": [],
+        }
+    )
+
+
+def _scenario_assets(scenario: Scenario) -> dict[str, Asset]:
+    return {context.asset.id: context.asset for context in iter_asset_contexts(scenario)}
 
 
 def _apply_entries(
@@ -331,6 +377,45 @@ def test_apply_slow_copy_start_writes_full_bytes_to_temp_path(tmp_path: Path) ->
     assert actions[0].action is TimelineActionName.SLOW_COPY_START
     assert actions[0].temp_path == "movies-hd/asset_hd_main.mkv.partial"
     assert actions[0].to_path == "movies-hd/final.mkv"
+
+
+def test_apply_slow_copy_start_does_not_read_source_into_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    (library / "movies-hd" / "asset_hd_main.mkv").write_bytes(b"slow-copy bytes")
+    journal = [
+        _started_entry(
+            event_id="sc_start",
+            target="asset_hd_main",
+            temp_path="movies-hd/asset_hd_main.mkv.partial",
+            state_delta={
+                "initial_path_at_start": "movies-hd/asset_hd_main.mkv",
+                "temp_path": "movies-hd/asset_hd_main.mkv.partial",
+                "final_path": "movies-hd/final.mkv",
+            },
+        )
+    ]
+
+    def fail_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"slow copy should stream from source path: {self}")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+    actions, _ = _apply_entries(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+
+    staged = library / "movies-hd" / "asset_hd_main.mkv.partial"
+    with staged.open("rb") as handle:
+        assert handle.read() == b"slow-copy bytes"
+    assert len(actions) == 1
+    assert actions[0].action is TimelineActionName.SLOW_COPY_START
 
 
 def test_apply_slow_copy_commit_renames_temp_to_final(tmp_path: Path) -> None:

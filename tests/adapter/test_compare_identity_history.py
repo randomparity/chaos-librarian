@@ -44,7 +44,14 @@ def _fixture_with_history(*entries: PathHistoryEntry):
     )
     reports = OracleReports(
         assets={"asset-a": asset_report},
-        works=fixture.reports.works,
+        movies=fixture.reports.movies,
+        series=fixture.reports.series,
+        seasons=fixture.reports.seasons,
+        episodes=fixture.reports.episodes,
+        artists=fixture.reports.artists,
+        albums=fixture.reports.albums,
+        discs=fixture.reports.discs,
+        tracks=fixture.reports.tracks,
         variants=fixture.reports.variants,
         bundles=fixture.reports.bundles,
     )
@@ -164,6 +171,26 @@ def test_identity_history_clean_move_between_roots() -> None:
             "move_between_roots",
             from_path="library/old.mkv",
             to_path="other/old.mkv",
+        )
+    )
+
+    assert _compare(fixture, observed).ok is True
+
+
+def test_identity_history_clean_hierarchy_path_move() -> None:
+    fixture = _fixture_with_history(
+        _oracle_entry(
+            "renumber-1",
+            TimelineActionName.RENUMBER_EPISODE,
+            from_path="tv/Show/Season 01/Show - S01E01.mkv",
+            to_path="tv/Show/Season 01/Show - S01E02.mkv",
+        )
+    )
+    observed = _observed_with_history(
+        _history_entry(
+            "renumber_episode",
+            from_path="tv/Show/Season 01/Show - S01E01.mkv",
+            to_path="tv/Show/Season 01/Show - S01E02.mkv",
         )
     )
 

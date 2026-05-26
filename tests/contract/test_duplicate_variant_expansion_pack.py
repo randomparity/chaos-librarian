@@ -8,9 +8,16 @@ import pytest
 
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
 from chaos_librarian.adapter.fixture import OracleFixture, load_fixture
-from chaos_librarian.adapter.index import OracleIndex
+from chaos_librarian.adapter.index import (
+    OracleIndex,
+    TopologyKey,
+    format_topology_key,
+    topology_key,
+)
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes
 from tests.support.adapter import (
     observed_from_fixture as _observed_from_fixture,
@@ -28,14 +35,20 @@ def test_duplicate_variant_expansion_pack_defines_expected_cases() -> None:
     scenario = _scenario()
 
     assert scenario.scenario_id == "duplicate-variant-expanded"
-    assert [work.id for work in scenario.works] == [
-        "work_echo",
-        "work_pair",
-        "work_ladder",
+    assert [movie.id for movie in scenario.movies] == [
+        "movie_echo_a",
+        "movie_echo_b",
+        "movie_echo_sd",
+        "movie_pair",
+        "movie_ladder",
     ]
-    assert _variant_labels(scenario, "work_echo") == ("hd", "hd", "sd")
-    assert _variant_labels(scenario, "work_pair") == ("hd",)
-    assert _variant_labels(scenario, "work_ladder") == ("1080p", "sd")
+    assert scenario.series == ()
+    assert scenario.artists == ()
+    assert _variant_labels(scenario, "movie_echo_a") == ("hd",)
+    assert _variant_labels(scenario, "movie_echo_b") == ("hd",)
+    assert _variant_labels(scenario, "movie_echo_sd") == ("sd",)
+    assert _variant_labels(scenario, "movie_pair") == ("hd",)
+    assert _variant_labels(scenario, "movie_ladder") == ("1080p", "sd")
     assert _asset_recipe(scenario, "asset_echo_hd_a") == _asset_recipe(
         scenario,
         "asset_echo_hd_b",
@@ -46,8 +59,14 @@ def test_duplicate_variant_expansion_pack_defines_expected_cases() -> None:
     )
 
     preflight_timeline(scenario)
-    for asset in _assets(scenario):
-        preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+    for context in iter_asset_contexts(scenario):
+        preflight_asset(
+            parent_kind=context.parent_kind,
+            video=context.asset.video,
+            audios=context.asset.audio,
+            subtitles=context.asset.subtitles,
+            container=context.asset.container,
+        )
 
 
 def test_duplicate_variant_expansion_pack_oracle_evidence(
@@ -55,20 +74,18 @@ def test_duplicate_variant_expansion_pack_oracle_evidence(
 ) -> None:
     """WHY: the fixture must expose the ambiguous topology cases adapters document."""
     oracle_index = OracleIndex.from_fixture(oracle_fixture)
+    pair_key = _movie_topology_key("Synthetic Pair", "hd", 2)
+    ladder_1080p_key = _movie_topology_key("Synthetic Ladder", "1080p", 1)
+    ladder_sd_key = _movie_topology_key("Synthetic Ladder", "sd", 1)
 
     assert all(len(asset_ids) == 1 for asset_ids in oracle_index.current_path_to_asset_ids.values())
-    assert oracle_index.topology_key_to_asset_ids["Synthetic Echo|hd|1"] == (
-        "asset_echo_hd_a",
-        "asset_echo_hd_b",
-    )
-    assert oracle_index.topology_key_to_asset_ids["Synthetic Pair|hd|2"] == (
+    assert format_topology_key(pair_key) == "movie:Synthetic Pair|hd|2"
+    assert oracle_index.topology_key_to_asset_ids[pair_key] == (
         "asset_pair_disc_a",
         "asset_pair_disc_b",
     )
-    assert oracle_index.topology_key_to_asset_ids["Synthetic Ladder|1080p|1"] == (
-        "asset_ladder_1080p",
-    )
-    assert oracle_index.topology_key_to_asset_ids["Synthetic Ladder|sd|1"] == ("asset_ladder_sd",)
+    assert oracle_index.topology_key_to_asset_ids[ladder_1080p_key] == ("asset_ladder_1080p",)
+    assert oracle_index.topology_key_to_asset_ids[ladder_sd_key] == ("asset_ladder_sd",)
 
 
 def test_duplicate_variant_path_and_topology_recipe_compares_clean(
@@ -100,8 +117,7 @@ def test_duplicate_variant_pathless_topology_export_reports_ambiguity(
         for finding in report.findings
         if finding.code == "D_MATCH_AMBIGUOUS"
     } == {
-        "Synthetic Echo|hd|1",
-        "Synthetic Pair|hd|2",
+        "movie:Synthetic Pair|hd|2",
     }
 
 
@@ -122,6 +138,8 @@ def test_duplicate_variant_pathless_topology_export_reports_deleted_unique_match
         for finding in report.findings
         if finding.code == "D_DELETION_MISMATCH"
     } == {
+        "asset_echo_hd_a",
+        "asset_echo_hd_b",
         "asset_echo_sd",
         "asset_ladder_1080p",
         "asset_ladder_sd",
@@ -146,18 +164,19 @@ def _plan_fixture(tmp_path: Path) -> OracleFixture:
     return load_fixture(run_dir)
 
 
-def _variant_labels(scenario: Scenario, work_id: str) -> tuple[str, ...]:
-    work = next(work for work in scenario.works if work.id == work_id)
-    return tuple(variant.label for variant in work.variants)
+def _variant_labels(scenario: Scenario, parent_id: str) -> tuple[str, ...]:
+    labels: list[str] = []
+    seen_variant_ids: set[str] = set()
+    for context in iter_asset_contexts(scenario):
+        if context.parent_id != parent_id or context.variant.id in seen_variant_ids:
+            continue
+        seen_variant_ids.add(context.variant.id)
+        labels.append(context.variant.label)
+    return tuple(labels)
 
 
 def _assets(scenario: Scenario) -> tuple[Asset, ...]:
-    return tuple(
-        asset
-        for work in scenario.works
-        for variant in work.variants
-        for asset in variant.bundle.assets
-    )
+    return tuple(context.asset for context in iter_asset_contexts(scenario))
 
 
 def _asset_recipe(scenario: Scenario, asset_id: str) -> tuple[object, ...]:
@@ -172,3 +191,14 @@ def _asset_recipe(scenario: Scenario, asset_id: str) -> tuple[object, ...]:
         tuple((audio.source, audio.codec, audio.channels, audio.language) for audio in asset.audio),
         tuple(asset.subtitles),
     )
+
+
+def _movie_topology_key(title: str, label: str, bundle_member_count: int) -> TopologyKey:
+    key = topology_key(
+        parent_kind=ParentKind.MOVIE,
+        variant_label=label,
+        bundle_member_count=bundle_member_count,
+        movie_title=title,
+    )
+    assert key is not None
+    return key

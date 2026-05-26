@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass, field
 
-from chaos_librarian.adapter.index import ObservedIndex, OracleIndex
+from chaos_librarian.adapter.index import ObservedIndex, OracleIndex, format_topology_key
 from chaos_librarian.contract.divergence import (
     DivergenceCode,
     DivergenceFinding,
@@ -40,24 +40,28 @@ def match_assets(oracle_index: OracleIndex, observed_index: ObservedIndex) -> Ma
         oracle_index.current_path_to_asset_ids,
         observed_index.current_path_to_refs,
         evidence_kind="current_path",
+        evidence_value=_string_evidence,
     )
     _apply_level(
         state,
         oracle_index.historical_path_to_asset_ids,
         observed_index.historical_path_to_refs,
         evidence_kind="historical_path",
+        evidence_value=_string_evidence,
     )
     _apply_level(
         state,
         oracle_index.hash_to_asset_ids,
         observed_index.hash_to_refs,
         evidence_kind="content_hash",
+        evidence_value=_string_evidence,
     )
     _apply_level(
         state,
         oracle_index.topology_key_to_asset_ids,
         observed_index.topology_key_to_refs,
         evidence_kind="topology",
+        evidence_value=format_topology_key,
     )
     _add_unmatched_findings(state, oracle_index, observed_index)
     return state.result(oracle_index, observed_index)
@@ -93,14 +97,18 @@ class _MatchState:
         )
 
 
-def _apply_level(
+def _apply_level[K: Hashable](
     state: _MatchState,
-    oracle_lookup: Mapping[str, tuple[str, ...]],
-    observed_lookup: Mapping[str, tuple[str, ...]],
+    oracle_lookup: Mapping[K, tuple[str, ...]],
+    observed_lookup: Mapping[K, tuple[str, ...]],
     *,
     evidence_kind: MatchEvidenceKind,
+    evidence_value: Callable[[K], str],
 ) -> None:
-    for key in sorted(set(oracle_lookup) & set(observed_lookup)):
+    for key in sorted(
+        set(oracle_lookup) & set(observed_lookup),
+        key=lambda key: (evidence_value(key), repr(key)),
+    ):
         oracle_ids = _eligible(oracle_lookup[key], state.matched_oracle, state.ambiguous_oracle)
         observed_refs = _eligible(
             observed_lookup[key],
@@ -109,10 +117,15 @@ def _apply_level(
         )
         if not oracle_ids or not observed_refs:
             continue
+        value = evidence_value(key)
         if len(oracle_ids) == 1 and len(observed_refs) == 1:
-            _record_match(state, oracle_ids[0], observed_refs[0], evidence_kind, key)
+            _record_match(state, oracle_ids[0], observed_refs[0], evidence_kind, value)
             continue
-        _record_ambiguity(state, oracle_ids, observed_refs, evidence_kind, key)
+        _record_ambiguity(state, oracle_ids, observed_refs, evidence_kind, value)
+
+
+def _string_evidence(value: str) -> str:
+    return value
 
 
 def _eligible(values: tuple[str, ...], matched: set[str], ambiguous: set[str]) -> tuple[str, ...]:

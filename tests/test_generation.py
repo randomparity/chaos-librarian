@@ -28,8 +28,9 @@ from chaos_librarian.generation_lanes import (
     coverage_for_payload,
     lane_config_for,
 )
-from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
@@ -121,6 +122,8 @@ def test_lane_config_rejects_profile_mismatch() -> None:
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE, 460),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT, 461),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG, 462),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY, 463),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY, 464),
     ],
 )
 def test_generated_lane_meets_required_coverage(
@@ -159,6 +162,124 @@ def test_generated_gated_lanes_include_required_profiles(
     assert tuple(profiles) == required_profiles
 
 
+def test_tv_topology_lane_emits_explicit_series_hierarchy() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        seed=463,
+    )
+
+    assert payload["movies"] == []
+    series = cast(list[dict[str, object]], payload["series"])
+    assert len(series) == 1
+    assert series[0]["id"] == "series_001"
+    assert series[0]["layout"] == "season_folders"
+    assert series[0]["episode_naming"] == "sxxexx_title"
+    seasons = cast(list[dict[str, object]], series[0]["seasons"])
+    assert [season["id"] for season in seasons] == ["season_001", "season_002"]
+    episodes = [
+        episode
+        for season in seasons
+        for episode in cast(list[dict[str, object]], season["episodes"])
+    ]
+    assert [episode["id"] for episode in episodes] == ["episode_001", "episode_002"]
+
+    actions = {event["action"] for event in cast(list[dict[str, object]], payload["timeline"])}
+    assert {
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_file",
+        "reencode_video",
+    } <= actions
+
+
+def test_music_topology_lane_emits_explicit_artist_hierarchy_and_audio_only_track() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        seed=464,
+    )
+
+    assert payload["movies"] == []
+    assert payload["series"] == []
+    artists = cast(list[dict[str, object]], payload["artists"])
+    assert len(artists) == 1
+    assert artists[0]["id"] == "artist_001"
+    assert artists[0]["layout"] == "artist_album_disc"
+    assert artists[0]["track_naming"] == "disc_track_number_title"
+    albums = cast(list[dict[str, object]], artists[0]["albums"])
+    discs = cast(list[dict[str, object]], albums[0]["discs"])
+    assert [disc["id"] for disc in discs] == ["disc_001", "disc_002"]
+    tracks = [track for disc in discs for track in cast(list[dict[str, object]], disc["tracks"])]
+    assert [track["id"] for track in tracks] == ["track_001", "track_002"]
+
+    variants = cast(list[dict[str, object]], tracks[0]["variants"])
+    bundle = cast(dict[str, object], variants[0]["bundle"])
+    assets = cast(list[dict[str, object]], bundle["assets"])
+    first_asset = assets[0]
+    assert first_asset["role"] == "primary_audio"
+    assert first_asset["container"] == "flac"
+    assert "video" not in first_asset
+    assert cast(list[dict[str, object]], first_asset["audio"])[0]["codec"] == "flac"
+
+    actions = {event["action"] for event in cast(list[dict[str, object]], payload["timeline"])}
+    assert {"renumber_disc", "move_track_to_disc", "rename_file", "reencode_audio"} <= actions
+
+
+def test_music_topology_reencode_targets_materializable_audio_asset() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        seed=464,
+    )
+    artists = cast(list[dict[str, object]], payload["artists"])
+    albums = cast(list[dict[str, object]], artists[0]["albums"])
+    discs = cast(list[dict[str, object]], albums[0]["discs"])
+    tracks = [track for disc in discs for track in cast(list[dict[str, object]], disc["tracks"])]
+    first_variant = cast(list[dict[str, object]], tracks[0]["variants"])[0]
+    first_bundle = cast(dict[str, object], first_variant["bundle"])
+    first_asset = cast(list[dict[str, object]], first_bundle["assets"])[0]
+    second_variant = cast(list[dict[str, object]], tracks[1]["variants"])[0]
+    second_bundle = cast(dict[str, object], second_variant["bundle"])
+    second_asset = cast(list[dict[str, object]], second_bundle["assets"])[0]
+    reencode_event = next(
+        event
+        for event in cast(list[dict[str, object]], payload["timeline"])
+        if event["action"] == "reencode_audio"
+    )
+
+    assert first_asset["id"] == "track_asset_001"
+    assert first_asset["container"] == "flac"
+    assert "video" not in first_asset
+    assert cast(list[dict[str, object]], first_asset["audio"])[0]["codec"] == "flac"
+    assert second_variant["label"] == "m4a"
+    assert second_asset["id"] == "track_asset_002"
+    assert second_asset["container"] == "m4a"
+    assert cast(list[dict[str, object]], second_asset["audio"])[0]["codec"] == "aac"
+    assert reencode_event["target"] == second_asset["id"]
+
+
+def test_tv_topology_move_episode_crosses_season_folders() -> None:
+    data = generate_scenario_yaml(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        seed=463,
+    )
+    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    validation_report = run_validation(run_input)
+    assert validation_report.ok
+    artifacts = run_plan(run_input=run_input, validation_report=validation_report)
+    move_entry = next(
+        entry for entry in artifacts.journal if entry.action == "move_episode_to_season"
+    )
+
+    path_moves = cast(list[dict[str, object]], move_entry.state_delta["path_moves"])
+    assert any(
+        "Season 01" in str(move["from_path"]) and "Season 02" in str(move["to_path"])
+        for move in path_moves
+    )
+
+
 def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:
     manifest_path = Path(__file__).resolve().parent / "fixtures" / "fuzz-seeds.yaml"
     yaml = YAML(typ="safe")
@@ -191,8 +312,14 @@ def test_seed_manifest_materialize_gates_pass_preflight() -> None:
         scenario = _parse_generated(generate_scenario_yaml(profile=profile, lane=lane, seed=seed))
 
         preflight_timeline(scenario)
-        for asset in iter_assets(scenario):
-            preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+        for context in iter_asset_contexts(scenario):
+            preflight_asset(
+                parent_kind=context.parent_kind,
+                video=context.asset.video,
+                audios=context.asset.audio,
+                subtitles=context.asset.subtitles,
+                container=context.asset.container,
+            )
 
 
 def test_sidecar_subtitle_lane_embeds_before_extracting() -> None:
@@ -258,7 +385,7 @@ def test_malformed_lane_skips_media_fill_when_all_assets_corrupted(
     monkeypatch.setitem(
         generation_lanes.LANE_CONFIGS,
         key,
-        replace(config, works=4, timeline_events=8),
+        replace(config, movies=4, timeline_events=8),
     )
 
     payload = _generated_payload(
@@ -363,7 +490,7 @@ def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPa
 def test_generate_rejects_budget_overflow(monkeypatch: pytest.MonkeyPatch) -> None:
     key = (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE)
     config = generation_lanes.LANE_CONFIGS[key]
-    monkeypatch.setitem(generation_lanes.LANE_CONFIGS, key, replace(config, works=4))
+    monkeypatch.setitem(generation_lanes.LANE_CONFIGS, key, replace(config, movies=4))
 
     with pytest.raises(
         GeneratedScenarioValidationError,

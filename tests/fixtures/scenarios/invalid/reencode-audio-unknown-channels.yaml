@@ -1,5 +1,5 @@
 # expected: E_FIELD_LITERAL
-schema_version: 11
+schema_version: 12
 scenario_id: invalid_reencode_audio_unknown_channels
 seed: 42
 duration_scale: short
@@ -7,9 +7,10 @@ library:
   roots:
     - id: movies
       path: library/movies
-works:
+movies:
   - id: w0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -22,6 +23,8 @@ works:
               duration_seconds: 1
               video: {source: color_bars, codec: h264, resolution: hd}
               audio: [{codec: aac, channels: stereo, language: eng}]
+series: []
+artists: []
 timeline:
   - id: ev_ra
     at: 1s

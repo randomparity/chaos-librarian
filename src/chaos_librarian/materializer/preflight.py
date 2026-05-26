@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Sequence
 from pathlib import Path
 
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     Asset,
     AudioTrack,
@@ -47,6 +48,8 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.tooling.ffmpeg import build_command
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
+from chaos_librarian.media_matrix import SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER
+from chaos_librarian.topology import iter_asset_contexts
 
 __all__ = [
     "AUDIO_RECIPES",
@@ -64,24 +67,38 @@ __all__ = [
 
 def iter_assets(scenario: Scenario) -> Iterator[Asset]:
     """Iterate all assets in scenario order."""
-    for work in scenario.works:
-        for variant in work.variants:
-            yield from variant.bundle.assets
+    for context in iter_asset_contexts(scenario):
+        yield context.asset
 
 
 def preflight_asset(
+    *,
+    parent_kind: ParentKind,
     video: VideoTrack | None,
     audios: Sequence[AudioTrack],
     subtitles: Sequence[SubtitleTrack],
     container: str,
 ) -> None:
-    """Run build_command in a dry mode — raises UnsupportedMaterializationError fast.
+    """Reject unsupported media shapes before run-dir allocation.
+
+    Movie and episode assets resolve video/audio sources, then dry-build the
+    video-backed FFmpeg command through ``build_command``. Track assets enforce
+    the audio-only policy and resolve audio inputs.
 
     Subtitle checks are inline: only ``codec=srt, source=generated_srt,
     mode=sidecar`` is supported. Without these gates, ``mode=embedded`` or
     ``codec=ass`` would fall through and the materialize "success" would
     silently drop the requested subtitles.
     """
+    if parent_kind is ParentKind.TRACK:
+        _preflight_track_asset(
+            video=video,
+            audios=audios,
+            subtitles=subtitles,
+            container=container,
+        )
+        return
+
     if video is None:
         raise UnsupportedMaterializationError(
             "every asset must declare a video track.",
@@ -109,6 +126,49 @@ def preflight_asset(
         audio_inputs=audio_inputs,
         output_path=Path(f"preflight.{container}"),
     )
+
+
+def _preflight_track_asset(
+    *,
+    video: VideoTrack | None,
+    audios: Sequence[AudioTrack],
+    subtitles: Sequence[SubtitleTrack],
+    container: str,
+) -> None:
+    """Reject track assets outside the audio-only materializer matrix."""
+    if video is not None:
+        raise UnsupportedMaterializationError(
+            "track assets must not declare a video track.",
+            field="video",
+            payload={},
+        )
+    if subtitles:
+        raise UnsupportedMaterializationError(
+            "track assets must not declare subtitles.",
+            field="subtitles",
+            payload={},
+        )
+    if len(audios) != 1:
+        raise UnsupportedMaterializationError(
+            "track assets must declare exactly one audio stream.",
+            field="audio",
+            payload={"count": len(audios)},
+        )
+    supported_codecs = SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER.get(container)
+    if supported_codecs is None:
+        raise UnsupportedMaterializationError(
+            f"audio-only container {container!r} is not supported",
+            field="container",
+            payload={"supported": sorted(SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER)},
+        )
+    audio = audios[0]
+    if audio.codec not in supported_codecs:
+        raise UnsupportedMaterializationError(
+            f"audio codec {audio.codec!r} is not supported for {container!r}",
+            field="audio[0].codec",
+            payload={"supported": sorted(supported_codecs)},
+        )
+    _preflight_audio_inputs(audios)
 
 
 def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:

@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: reencode-video-rejected
 seed: 11
 duration_scale: short
@@ -8,9 +8,10 @@ library:
     - id: movies_hd
       path: movies-hd
 
-works:
-  - id: work_quasar
+movies:
+  - id: movie_quasar
     title: Synthetic Quasar
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -30,6 +31,8 @@ works:
                   channels: stereo
                   language: eng
 
+series: []
+artists: []
 timeline:
   - id: reencode_001
     at: 2s

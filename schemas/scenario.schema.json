@@ -35,6 +35,45 @@
       "title": "AddFileEvent",
       "type": "object"
     },
+    "Album": {
+      "additionalProperties": false,
+      "properties": {
+        "discs": {
+          "items": {
+            "$ref": "#/$defs/Disc"
+          },
+          "title": "Discs",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "release_year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Release Year"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "discs"
+      ],
+      "title": "Album",
+      "type": "object"
+    },
     "ArchiveFileEvent": {
       "additionalProperties": false,
       "properties": {
@@ -64,6 +103,49 @@
       ],
       "title": "ArchiveFileEvent",
       "type": "object"
+    },
+    "Artist": {
+      "additionalProperties": false,
+      "properties": {
+        "albums": {
+          "items": {
+            "$ref": "#/$defs/Album"
+          },
+          "title": "Albums",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/ArtistLayout"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "track_naming": {
+          "$ref": "#/$defs/TrackNaming"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "layout",
+        "track_naming",
+        "albums"
+      ],
+      "title": "Artist",
+      "type": "object"
+    },
+    "ArtistLayout": {
+      "enum": [
+        "artist_album_disc",
+        "artist_album_flat"
+      ],
+      "title": "ArtistLayout",
+      "type": "string"
     },
     "Asset": {
       "additionalProperties": false,
@@ -355,6 +437,34 @@
       "title": "DeleteFileEvent",
       "type": "object"
     },
+    "Disc": {
+      "additionalProperties": false,
+      "properties": {
+        "disc_number": {
+          "minimum": 1,
+          "title": "Disc Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "tracks": {
+          "items": {
+            "$ref": "#/$defs/Track"
+          },
+          "title": "Tracks",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "disc_number",
+        "tracks"
+      ],
+      "title": "Disc",
+      "type": "object"
+    },
     "DurationScale": {
       "description": "Scenario duration scale family.",
       "enum": [
@@ -438,6 +548,75 @@
       "title": "EmbedSubtitleEvent",
       "type": "object"
     },
+    "Episode": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Absolute Number"
+        },
+        "aired_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aired On"
+        },
+        "episode_number": {
+          "minimum": 1,
+          "title": "Episode Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "episode_number",
+        "title",
+        "variants"
+      ],
+      "title": "Episode",
+      "type": "object"
+    },
+    "EpisodeNaming": {
+      "enum": [
+        "sxxexx_title",
+        "one_xx_title",
+        "absolute_3_digit_title",
+        "date_title"
+      ],
+      "title": "EpisodeNaming",
+      "type": "string"
+    },
     "ExtractSubtitleEvent": {
       "additionalProperties": false,
       "properties": {
@@ -487,7 +666,9 @@
         "malformed",
         "negative-oracle",
         "filesystem-artifact",
-        "network-lag"
+        "network-lag",
+        "tv-topology",
+        "music-topology"
       ],
       "title": "FuzzLaneName",
       "type": "string"
@@ -503,6 +684,16 @@
     "GenerationBudget": {
       "additionalProperties": false,
       "properties": {
+        "albums": {
+          "minimum": 0,
+          "title": "Albums",
+          "type": "integer"
+        },
+        "artists": {
+          "minimum": 0,
+          "title": "Artists",
+          "type": "integer"
+        },
         "assets": {
           "minimum": 0,
           "title": "Assets",
@@ -511,6 +702,31 @@
         "bundles": {
           "minimum": 0,
           "title": "Bundles",
+          "type": "integer"
+        },
+        "discs": {
+          "minimum": 0,
+          "title": "Discs",
+          "type": "integer"
+        },
+        "episodes": {
+          "minimum": 0,
+          "title": "Episodes",
+          "type": "integer"
+        },
+        "movies": {
+          "minimum": 0,
+          "title": "Movies",
+          "type": "integer"
+        },
+        "seasons": {
+          "minimum": 0,
+          "title": "Seasons",
+          "type": "integer"
+        },
+        "series": {
+          "minimum": 0,
+          "title": "Series",
           "type": "integer"
         },
         "sidecars": {
@@ -523,19 +739,26 @@
           "title": "Timeline Events",
           "type": "integer"
         },
+        "tracks": {
+          "minimum": 0,
+          "title": "Tracks",
+          "type": "integer"
+        },
         "variants": {
           "minimum": 0,
           "title": "Variants",
           "type": "integer"
-        },
-        "works": {
-          "minimum": 0,
-          "title": "Works",
-          "type": "integer"
         }
       },
       "required": [
-        "works",
+        "movies",
+        "series",
+        "seasons",
+        "episodes",
+        "artists",
+        "albums",
+        "discs",
+        "tracks",
         "variants",
         "bundles",
         "assets",
@@ -667,6 +890,140 @@
       ],
       "title": "MoveBetweenRootsEvent",
       "type": "object"
+    },
+    "MoveEpisodeToSeasonEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Absolute Number"
+        },
+        "action": {
+          "const": "move_episode_to_season",
+          "default": "move_episode_to_season",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "episode_number": {
+          "minimum": 1,
+          "title": "Episode Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to_season": {
+          "title": "To Season",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to_season",
+        "episode_number"
+      ],
+      "title": "MoveEpisodeToSeasonEvent",
+      "type": "object"
+    },
+    "MoveTrackToDiscEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "move_track_to_disc",
+          "default": "move_track_to_disc",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "to_disc": {
+          "title": "To Disc",
+          "type": "string"
+        },
+        "track_number": {
+          "minimum": 1,
+          "title": "Track Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "to_disc",
+        "track_number"
+      ],
+      "title": "MoveTrackToDiscEvent",
+      "type": "object"
+    },
+    "Movie": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/MovieLayout"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout",
+        "variants"
+      ],
+      "title": "Movie",
+      "type": "object"
+    },
+    "MovieLayout": {
+      "enum": [
+        "movie_flat",
+        "movie_folder"
+      ],
+      "title": "MovieLayout",
+      "type": "string"
     },
     "NetworkLagCommitEvent": {
       "additionalProperties": false,
@@ -960,6 +1317,126 @@
       "title": "RenameFileEvent",
       "type": "object"
     },
+    "RenameSeasonEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "rename_season",
+          "default": "rename_season",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "title"
+      ],
+      "title": "RenameSeasonEvent",
+      "type": "object"
+    },
+    "RenumberDiscEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "renumber_disc",
+          "default": "renumber_disc",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "disc_number": {
+          "minimum": 1,
+          "title": "Disc Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "disc_number"
+      ],
+      "title": "RenumberDiscEvent",
+      "type": "object"
+    },
+    "RenumberEpisodeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_number": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Absolute Number"
+        },
+        "action": {
+          "const": "renumber_episode",
+          "default": "renumber_episode",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "episode_number": {
+          "minimum": 1,
+          "title": "Episode Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "episode_number"
+      ],
+      "title": "RenumberEpisodeEvent",
+      "type": "object"
+    },
     "ScenarioGeneration": {
       "additionalProperties": false,
       "properties": {
@@ -979,7 +1456,7 @@
           "$ref": "#/$defs/FuzzProfileName"
         },
         "profile_version": {
-          "const": 2,
+          "const": 3,
           "title": "Profile Version",
           "type": "integer"
         },
@@ -998,6 +1475,82 @@
       ],
       "title": "ScenarioGeneration",
       "type": "object"
+    },
+    "Season": {
+      "additionalProperties": false,
+      "properties": {
+        "episodes": {
+          "items": {
+            "$ref": "#/$defs/Episode"
+          },
+          "title": "Episodes",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "season_number": {
+          "minimum": 0,
+          "title": "Season Number",
+          "type": "integer"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "season_number",
+        "title",
+        "episodes"
+      ],
+      "title": "Season",
+      "type": "object"
+    },
+    "Series": {
+      "additionalProperties": false,
+      "properties": {
+        "episode_naming": {
+          "$ref": "#/$defs/EpisodeNaming"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/SeriesLayout"
+        },
+        "seasons": {
+          "items": {
+            "$ref": "#/$defs/Season"
+          },
+          "title": "Seasons",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout",
+        "episode_naming",
+        "seasons"
+      ],
+      "title": "Series",
+      "type": "object"
+    },
+    "SeriesLayout": {
+      "enum": [
+        "season_folders",
+        "series_flat"
+      ],
+      "title": "SeriesLayout",
+      "type": "string"
     },
     "SidecarKind": {
       "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster and NFO forbid it.",
@@ -1164,6 +1717,54 @@
       "title": "TouchMtimeEvent",
       "type": "object"
     },
+    "Track": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "performers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Performers",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "track_number": {
+          "minimum": 1,
+          "title": "Track Number",
+          "type": "integer"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "track_number",
+        "title",
+        "variants"
+      ],
+      "title": "Track",
+      "type": "object"
+    },
+    "TrackNaming": {
+      "enum": [
+        "track_number_title",
+        "disc_track_number_title"
+      ],
+      "title": "TrackNaming",
+      "type": "string"
+    },
     "TruncateFileEvent": {
       "additionalProperties": false,
       "properties": {
@@ -1292,33 +1893,6 @@
       "title": "VideoTrack",
       "type": "object"
     },
-    "Work": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        },
-        "variants": {
-          "items": {
-            "$ref": "#/$defs/Variant"
-          },
-          "title": "Variants",
-          "type": "array"
-        }
-      },
-      "required": [
-        "id",
-        "title",
-        "variants"
-      ],
-      "title": "Work",
-      "type": "object"
-    },
     "WriteInvalidDurationMetadataEvent": {
       "additionalProperties": false,
       "properties": {
@@ -1389,6 +1963,13 @@
   },
   "additionalProperties": false,
   "properties": {
+    "artists": {
+      "items": {
+        "$ref": "#/$defs/Artist"
+      },
+      "title": "Artists",
+      "type": "array"
+    },
     "duration_scale": {
       "$ref": "#/$defs/DurationScale"
     },
@@ -1406,6 +1987,13 @@
     "library": {
       "$ref": "#/$defs/Library"
     },
+    "movies": {
+      "items": {
+        "$ref": "#/$defs/Movie"
+      },
+      "title": "Movies",
+      "type": "array"
+    },
     "profiles": {
       "items": {
         "$ref": "#/$defs/ProfileName"
@@ -1418,7 +2006,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 11,
+      "const": 12,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -1433,6 +2021,13 @@
         }
       ],
       "title": "Seed"
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/Series"
+      },
+      "title": "Series",
+      "type": "array"
     },
     "timeline": {
       "items": {
@@ -1449,6 +2044,8 @@
             "extract_subtitle": "#/$defs/ExtractSubtitleEvent",
             "move_asset": "#/$defs/MoveAssetEvent",
             "move_between_roots": "#/$defs/MoveBetweenRootsEvent",
+            "move_episode_to_season": "#/$defs/MoveEpisodeToSeasonEvent",
+            "move_track_to_disc": "#/$defs/MoveTrackToDiscEvent",
             "network_lag_commit": "#/$defs/NetworkLagCommitEvent",
             "network_lag_start": "#/$defs/NetworkLagStartEvent",
             "reencode_audio": "#/$defs/ReencodeAudioEvent",
@@ -1456,6 +2053,9 @@
             "remove_sidecar": "#/$defs/RemoveSidecarEvent",
             "remux_container": "#/$defs/RemuxContainerEvent",
             "rename_file": "#/$defs/RenameFileEvent",
+            "rename_season": "#/$defs/RenameSeasonEvent",
+            "renumber_disc": "#/$defs/RenumberDiscEvent",
+            "renumber_episode": "#/$defs/RenumberEpisodeEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
             "slow_copy_start": "#/$defs/SlowCopyStartEvent",
             "touch_mtime": "#/$defs/TouchMtimeEvent",
@@ -1541,17 +2141,25 @@
           },
           {
             "$ref": "#/$defs/NetworkLagCommitEvent"
+          },
+          {
+            "$ref": "#/$defs/RenumberEpisodeEvent"
+          },
+          {
+            "$ref": "#/$defs/MoveEpisodeToSeasonEvent"
+          },
+          {
+            "$ref": "#/$defs/RenameSeasonEvent"
+          },
+          {
+            "$ref": "#/$defs/RenumberDiscEvent"
+          },
+          {
+            "$ref": "#/$defs/MoveTrackToDiscEvent"
           }
         ]
       },
       "title": "Timeline",
-      "type": "array"
-    },
-    "works": {
-      "items": {
-        "$ref": "#/$defs/Work"
-      },
-      "title": "Works",
       "type": "array"
     }
   },
@@ -1561,7 +2169,9 @@
     "seed",
     "duration_scale",
     "library",
-    "works",
+    "movies",
+    "series",
+    "artists",
     "timeline"
   ],
   "title": "Scenario",

@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: voom-ci-static-library-baseline
 seed: 9701
 duration_scale: short
@@ -6,9 +6,10 @@ library:
   roots:
     - id: root_movies
       path: movies
-works:
-  - id: work_baseline_movie
+movies:
+  - id: movie_baseline_movie
     title: VOOM CI Baseline Movie
+    layout: movie_flat
     variants:
       - id: variant_h264_mp4
         label: h264-mp4
@@ -69,4 +70,6 @@ works:
                   codec: srt
                   language: eng
                   mode: sidecar
+series: []
+artists: []
 timeline: []

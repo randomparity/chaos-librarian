@@ -12,7 +12,16 @@ import pytest
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import ToolInvocation
-from chaos_librarian.contract.scenario import Asset, SidecarKind, TimelineActionName
+from chaos_librarian.contract.scenario import (
+    Asset,
+    AudioChannelLayout,
+    AudioSource,
+    AudioTrack,
+    SidecarKind,
+    TimelineActionName,
+    VideoSource,
+    VideoTrack,
+)
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b import media as media_module
 from chaos_librarian.materializer.phase_b.media import (
@@ -92,7 +101,23 @@ def _atomic_entry(
 def media_ctx(tmp_path):
     return MediaPhaseBContext(
         library_root=tmp_path,
-        scenario_assets={},
+        scenario_assets={
+            "a0": Asset(
+                id="a0",
+                role="main",
+                container="mkv",
+                duration_seconds=1.0,
+                video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+                audio=(
+                    AudioTrack(
+                        source=AudioSource.SINE,
+                        codec="aac",
+                        channels=AudioChannelLayout.STEREO,
+                        language="eng",
+                    ),
+                ),
+            )
+        },
         resolved_seed=42,
         ffmpeg_version="7.0",
         ffprobe_version="7.0",
@@ -334,6 +359,72 @@ class TestApplyReencodeAudio:
         apply_media_action(media_ctx, entry)
         argv = captured_argv[0]
         assert argv[argv.index("-ac") + 1] == "6"
+
+    def test_apply_reencode_audio_uses_track_asset_codec(self, monkeypatch, tmp_path):
+        (tmp_path / "x.flac").write_bytes(b"y" * 50)
+        captured_argv: list[list[str]] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv.append(list(argv))
+            Path(argv[-1]).write_bytes(b"x" * 100)
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version=ffmpeg_version,
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1000,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.probe_file",
+            lambda p, **k: ProbedMedia(
+                container="flac", duration_seconds=1.0, size_bytes=100, streams=[]
+            ),
+        )
+        media_ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={
+                "asset_track": Asset(
+                    id="asset_track",
+                    role="primary_audio",
+                    container="flac",
+                    duration_seconds=1.0,
+                    audio=(
+                        AudioTrack(
+                            source=AudioSource.SINE,
+                            codec="flac",
+                            channels=AudioChannelLayout.STEREO,
+                            language="eng",
+                        ),
+                    ),
+                )
+            },
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_ra_track",
+            action=TimelineActionName.REENCODE_AUDIO,
+            target="asset_track",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "from_channels": "stereo",
+                "to_channels": "mono",
+                "input_path": "x.flac",
+                "output_path": "x.flac",
+            },
+        )
+
+        apply_media_action(media_ctx, entry)
+
+        argv = captured_argv[0]
+        assert argv[argv.index("-c:a") + 1] == "flac"
 
     def test_apply_reencode_audio_unknown_channel_layout_raises(
         self, media_ctx, monkeypatch, tmp_path

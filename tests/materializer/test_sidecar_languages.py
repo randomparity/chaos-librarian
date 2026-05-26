@@ -12,15 +12,50 @@ from chaos_librarian.materializer import replay as replay_module
 from chaos_librarian.materializer import run as run_module
 from chaos_librarian.materializer import wall_clock as wall_clock_module
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
-from tests.engine.conftest import _build_minimal_scenario
 
 
 def _scenario_with_timeline(*events: CreateSidecarEvent) -> Scenario:
-    scenario = _build_minimal_scenario(
-        roots=[("movies-hd", "library/movies-hd")],
-        works=[("work_001", "asset_hd_main", "mkv")],
-    )
+    scenario = _movie_scenario()
     return scenario.model_copy(update={"timeline": events})
+
+
+def _movie_scenario() -> Scenario:
+    return Scenario.model_validate(
+        {
+            "schema_version": 12,
+            "scenario_id": "materializer-sidecar-language-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "movies-hd", "path": "library/movies-hd"}]},
+            "movies": [
+                {
+                    "id": "movie_001",
+                    "title": "Movie 1",
+                    "layout": "movie_flat",
+                    "variants": [
+                        {
+                            "id": "variant_001",
+                            "label": "default",
+                            "bundle": {
+                                "id": "bundle_001",
+                                "assets": [
+                                    {
+                                        "id": "asset_hd_main",
+                                        "role": "primary_video",
+                                        "container": "mkv",
+                                        "duration_seconds": 1,
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+            "series": [],
+            "artists": [],
+            "timeline": [],
+        }
+    )
 
 
 def test_timeline_sidecar_languages_rejects_subtitle_without_language() -> None:

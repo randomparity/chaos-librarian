@@ -26,6 +26,8 @@ from chaos_librarian.contract.scenario import (
     ExtractSubtitleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
+    MoveEpisodeToSeasonEvent,
+    MoveTrackToDiscEvent,
     NetworkLagCommitEvent,
     NetworkLagEffect,
     NetworkLagStartEvent,
@@ -34,6 +36,9 @@ from chaos_librarian.contract.scenario import (
     RemoveSidecarEvent,
     RemuxContainerEvent,
     RenameFileEvent,
+    RenameSeasonEvent,
+    RenumberDiscEvent,
+    RenumberEpisodeEvent,
     Scenario,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
@@ -60,6 +65,11 @@ type _TerminalEvent = (
     | SlowCopyCommitEvent
     | ArchiveFileEvent
     | MoveBetweenRootsEvent
+    | RenumberEpisodeEvent
+    | MoveEpisodeToSeasonEvent
+    | RenameSeasonEvent
+    | RenumberDiscEvent
+    | MoveTrackToDiscEvent
     | ReencodeVideoEvent
     | ReencodeAudioEvent
     | RemuxContainerEvent
@@ -110,15 +120,15 @@ def _engine_event_context(
 def _build_minimal_scenario(
     *,
     roots: list[tuple[str, str]],
-    works: list[tuple[str, str, str]],
+    movies: list[tuple[str, str, str]],
     archive_root: str | None = None,
     with_media_tracks: bool = False,
     with_declared_subtitle: bool = False,
 ) -> Scenario:
     """Build a minimal Scenario for engine-level tests.
 
-    Each ``works`` entry is ``(work_id, asset_id, container)``; the helper
-    synthesizes one variant and one bundle per work, each holding the
+    Each ``movies`` entry is ``(movie_id, asset_id, container)``; the helper
+    synthesizes one variant and one bundle per movie, each holding the
     single declared asset. ``roots`` entries are ``(root_id, root_path)``;
     the first root is the primary one ``build_initial_state`` uses to
     synthesize initial location paths.
@@ -128,7 +138,7 @@ def _build_minimal_scenario(
 
     Args:
         roots: declared library roots, in scenario order.
-        works: one tuple per asset, each producing its own work / variant
+        movies: one tuple per asset, each producing its own movie / variant
             / bundle wrapper.
         archive_root: optional ``library.archive_root`` value. ``None``
             leaves the field at its default; the literal string
@@ -145,7 +155,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=11``.
+        A fully-validated Scenario at ``schema_version=12``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -175,32 +185,35 @@ def _build_minimal_scenario(
             ]
         return asset
 
-    scenario_works = [
+    scenario_movies = [
         {
-            "id": work_id,
-            "title": work_id,
+            "id": movie_id,
+            "title": movie_id,
+            "layout": "movie_flat",
             "variants": [
                 {
-                    "id": f"variant_{work_id}",
+                    "id": f"variant_{movie_id}",
                     "label": "default",
                     "bundle": {
-                        "id": f"bundle_{work_id}",
+                        "id": f"bundle_{movie_id}",
                         "assets": [_asset(asset_id, container)],
                     },
                 }
             ],
         }
-        for work_id, asset_id, container in works
+        for movie_id, asset_id, container in movies
     ]
 
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
             "library": library,
-            "works": scenario_works,
+            "movies": scenario_movies,
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
     )
@@ -288,6 +301,25 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
         target="asset_hd_main",
         from_root_id="movies-hd",
         to_root_id="cold-storage",
+    ),
+    TimelineActionName.RENUMBER_EPISODE: lambda: RenumberEpisodeEvent(
+        id="ev", at="0ns", target="episode_001", episode_number=2
+    ),
+    TimelineActionName.MOVE_EPISODE_TO_SEASON: lambda: MoveEpisodeToSeasonEvent(
+        id="ev",
+        at="0ns",
+        target="episode_001",
+        to_season="season_002",
+        episode_number=1,
+    ),
+    TimelineActionName.RENAME_SEASON: lambda: RenameSeasonEvent(
+        id="ev", at="0ns", target="season_001", title="Renamed"
+    ),
+    TimelineActionName.RENUMBER_DISC: lambda: RenumberDiscEvent(
+        id="ev", at="0ns", target="disc_001", disc_number=2
+    ),
+    TimelineActionName.MOVE_TRACK_TO_DISC: lambda: MoveTrackToDiscEvent(
+        id="ev", at="0ns", target="track_001", to_disc="disc_002", track_number=2
     ),
     TimelineActionName.REENCODE_VIDEO: lambda: ReencodeVideoEvent(
         id="ev", at="0ns", target="asset_hd_main", resolution="sd", codec="h264"
@@ -514,12 +546,28 @@ def _minimal_scenario_for_action(
     Sprint 7 actions need a ``create_sidecar`` pre-applied so
     ``sidecar_id_for_path`` can resolve their target).
     """
+    if action in {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+    }:
+        scenario = _build_minimal_series_scenario()
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        builder = _TERMINAL_EVENT_BUILDERS[action]
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+
+    if action in {TimelineActionName.RENUMBER_DISC, TimelineActionName.MOVE_TRACK_TO_DISC}:
+        scenario = _build_minimal_music_scenario()
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        builder = _TERMINAL_EVENT_BUILDERS[action]
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+
     scenario = _build_minimal_scenario(
         roots=[
             ("movies-hd", "library/movies-hd"),
             ("cold-storage", "library/cold-storage"),
         ],
-        works=[("work_001", "asset_hd_main", "mkv")],
+        movies=[("movie_001", "asset_hd_main", "mkv")],
         archive_root=None,
         with_media_tracks=action in _NEEDS_MEDIA_TRACKS,
         with_declared_subtitle=action in _NEEDS_DECLARED_SUBTITLE,
@@ -541,3 +589,123 @@ def _minimal_scenario_for_action(
         raise AssertionError(f"unhandled action: {action!r}")
     event = builder()
     return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=event)
+
+
+def _build_minimal_series_scenario() -> Scenario:
+    return Scenario.model_validate(
+        {
+            "schema_version": 12,
+            "scenario_id": "engine-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "tv", "path": "library/tv"}]},
+            "movies": [],
+            "series": [
+                {
+                    "id": "series_001",
+                    "title": "Series",
+                    "layout": "season_folders",
+                    "episode_naming": "sxxexx_title",
+                    "seasons": [
+                        {
+                            "id": "season_001",
+                            "season_number": 1,
+                            "title": "One",
+                            "episodes": [
+                                {
+                                    "id": "episode_001",
+                                    "episode_number": 1,
+                                    "title": "Pilot",
+                                    "variants": [
+                                        {
+                                            "id": "variant_episode_001",
+                                            "label": "default",
+                                            "bundle": {
+                                                "id": "bundle_episode_001",
+                                                "assets": [
+                                                    {
+                                                        "id": "asset_hd_main",
+                                                        "role": "primary_video",
+                                                        "container": "mkv",
+                                                        "duration_seconds": 1,
+                                                    }
+                                                ],
+                                            },
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                        {
+                            "id": "season_002",
+                            "season_number": 2,
+                            "title": "Two",
+                            "episodes": [],
+                        },
+                    ],
+                }
+            ],
+            "artists": [],
+            "timeline": [],
+        }
+    )
+
+
+def _build_minimal_music_scenario() -> Scenario:
+    return Scenario.model_validate(
+        {
+            "schema_version": 12,
+            "scenario_id": "engine-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "music", "path": "library/music"}]},
+            "movies": [],
+            "series": [],
+            "artists": [
+                {
+                    "id": "artist_001",
+                    "name": "Artist",
+                    "layout": "artist_album_disc",
+                    "track_naming": "disc_track_number_title",
+                    "albums": [
+                        {
+                            "id": "album_001",
+                            "title": "Album",
+                            "discs": [
+                                {
+                                    "id": "disc_001",
+                                    "disc_number": 1,
+                                    "tracks": [
+                                        {
+                                            "id": "track_001",
+                                            "track_number": 1,
+                                            "title": "Song",
+                                            "variants": [
+                                                {
+                                                    "id": "variant_track_001",
+                                                    "label": "default",
+                                                    "bundle": {
+                                                        "id": "bundle_track_001",
+                                                        "assets": [
+                                                            {
+                                                                "id": "asset_hd_main",
+                                                                "role": "audio",
+                                                                "container": "flac",
+                                                                "duration_seconds": 1,
+                                                            }
+                                                        ],
+                                                    },
+                                                }
+                                            ],
+                                        }
+                                    ],
+                                },
+                                {"id": "disc_002", "disc_number": 2, "tracks": []},
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "timeline": [],
+        }
+    )

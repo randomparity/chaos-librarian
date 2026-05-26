@@ -1,0 +1,57 @@
+schema_version: 12
+scenario_id: music-artist-album-disc
+seed: 10602
+duration_scale: short
+library:
+  roots:
+    - id: music_root
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_glass
+    name: Glass Harbour
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums:
+      - id: album_tides
+        title: Synthetic Tides
+        release_year: 2026
+        discs:
+          - id: disc_tides_1
+            disc_number: 1
+            tracks:
+              - id: track_tides_1
+                track_number: 1
+                title: Low Tide
+                performers: [Glass Harbour]
+                variants:
+                  - id: variant_tides_flac
+                    label: flac
+                    bundle:
+                      id: bundle_tides_flac
+                      assets:
+                        - id: asset_tides_track1
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 5
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+          - id: disc_tides_2
+            disc_number: 2
+            tracks: []
+timeline:
+  - id: ev_renumber_disc
+    at: 1s
+    action: renumber_disc
+    target: disc_tides_1
+    disc_number: 3
+  - id: ev_move_track
+    at: 2s
+    action: move_track_to_disc
+    target: track_tides_1
+    to_disc: disc_tides_2
+    track_number: 1

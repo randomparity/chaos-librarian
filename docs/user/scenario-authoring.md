@@ -2,18 +2,20 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 11`.
+`schema_version: 12`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 11`
+- `schema_version: 12`
 - `scenario_id`
 - `seed`
 - `duration_scale`
 - `library`
-- `works`
+- `movies`
+- `series`
+- `artists`
 - `timeline`
 
 Optional keys:
@@ -29,17 +31,34 @@ Optional keys:
 path resolves under `<run-dir>/library/`; containment validation rejects paths
 that escape that directory after normalization or symlink resolution.
 
-## Work Topology
+## Media Hierarchy
 
-The object hierarchy is:
+Scenario v12 models movies, TV, and music as first-class branches.
+
+Movie topology:
 
 ```text
-works -> variants -> bundle -> assets
+movies -> variants -> bundle -> assets
 ```
 
-Each work owns one or more variants. Each variant owns one bundle. Each bundle
-owns one or more assets. Assets define media containers, duration, role, and
-track sources.
+TV topology:
+
+```text
+series -> seasons -> episodes -> variants -> bundle -> assets
+```
+
+Music topology:
+
+```text
+artists -> albums -> discs -> tracks -> variants -> bundle -> assets
+```
+
+Movies choose a `layout`, such as `movie_flat` or `movie_folder`. Series choose
+a `layout` and `episode_naming`, then group episodes under seasons. Artists
+choose a `layout` and `track_naming`, then group tracks under albums and discs.
+Every playable movie, episode, and track owns one or more variants. Each variant
+owns one bundle, and each bundle owns one or more assets. Assets define media
+containers, duration, role, and track sources.
 
 ## Track Sources
 
@@ -71,7 +90,7 @@ Subtitle source values:
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 11
+schema_version: 12
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -79,9 +98,10 @@ library:
   roots:
     - id: root_main
       path: library
-works:
+movies:
   - id: w_movie
     title: Static Library Smoke Test
+    layout: movie_flat
     variants:
       - id: va_hd
         label: hd
@@ -101,6 +121,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline: []
 ```
 
@@ -151,6 +173,11 @@ timeline:
 | `wrong_oracle_hash` | `target` |
 | `network_lag_start` | `effect`, `target`, `after`, `duration` |
 | `network_lag_commit` | `for` |
+| `renumber_episode` | `target`, `episode_number`; optional `absolute_number` |
+| `move_episode_to_season` | `target`, `to_season`, `episode_number`; optional `absolute_number` |
+| `rename_season` | `target`, `title` |
+| `renumber_disc` | `target`, `disc_number` |
+| `move_track_to_disc` | `target`, `to_disc`, `track_number` |
 
 Timeline events are ordered by logical time and declaration order. Lifecycle
 validation rejects operations that the engine cannot execute, such as adding an

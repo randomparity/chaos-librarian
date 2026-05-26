@@ -5,11 +5,12 @@ from __future__ import annotations
 import enum
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import ProbedMedia
 
 
@@ -24,6 +25,11 @@ class ObservedAction(enum.StrEnum):
     SLOW_COPY_COMMIT = "slow_copy_commit"
     ARCHIVE_FILE = "archive_file"
     MOVE_BETWEEN_ROOTS = "move_between_roots"
+    RENUMBER_EPISODE = "renumber_episode"
+    MOVE_EPISODE_TO_SEASON = "move_episode_to_season"
+    RENAME_SEASON = "rename_season"
+    RENUMBER_DISC = "renumber_disc"
+    MOVE_TRACK_TO_DISC = "move_track_to_disc"
 
 
 _MOVE_ACTIONS = frozenset(
@@ -32,6 +38,11 @@ _MOVE_ACTIONS = frozenset(
         ObservedAction.RENAME_FILE,
         ObservedAction.ARCHIVE_FILE,
         ObservedAction.MOVE_BETWEEN_ROOTS,
+        ObservedAction.RENUMBER_EPISODE,
+        ObservedAction.MOVE_EPISODE_TO_SEASON,
+        ObservedAction.RENAME_SEASON,
+        ObservedAction.RENUMBER_DISC,
+        ObservedAction.MOVE_TRACK_TO_DISC,
     }
 )
 _WINDOWS_DRIVE_PREFIX_LENGTH = 2
@@ -143,7 +154,6 @@ class ObservedAsset(BaseModel):
     current_path: str | None
     content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
     probed: ProbedMedia | None = None
-    work_ref: str | None = None
     variant_ref: str | None = None
     bundle_ref: str | None = None
     sidecars: list[ObservedSidecar] = Field(default_factory=list)
@@ -155,18 +165,80 @@ class ObservedAsset(BaseModel):
         return _validate_observed_path(value, field_name=_field_name(info))
 
 
-class ObservedWork(BaseModel):
+class ObservedMovie(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_ref: str
     title: str | None = None
 
 
+class ObservedSeries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    title: str | None = None
+
+
+class ObservedSeason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    series_ref: str
+    season_number: int | None = None
+    title: str | None = None
+
+
+class ObservedEpisode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    season_ref: str
+    episode_number: int | None = None
+    title: str | None = None
+    aired_on: date | None = None
+    absolute_number: int | None = None
+
+
+class ObservedArtist(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    name: str | None = None
+
+
+class ObservedAlbum(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    artist_ref: str
+    title: str | None = None
+    release_year: int | None = None
+
+
+class ObservedDisc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    album_ref: str
+    disc_number: int | None = None
+
+
+class ObservedTrack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    observed_ref: str
+    disc_ref: str
+    track_number: int | None = None
+    title: str | None = None
+    performers: list[str] = Field(default_factory=list)
+
+
 class ObservedVariant(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_ref: str
-    work_ref: str | None = None
+    parent_kind: ParentKind
+    parent_ref: str
     label: str | None = None
 
 
@@ -229,12 +301,19 @@ class ObservedEvent(BaseModel):
 class ObservedState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[1]
+    schema_version: Literal[2]
     consumer: ObservedConsumer
     run_id: uuid.UUID
     observed_at: datetime
     assets: list[ObservedAsset]
-    works: list[ObservedWork] = Field(default_factory=list)
+    movies: list[ObservedMovie] = Field(default_factory=list)
+    series: list[ObservedSeries] = Field(default_factory=list)
+    seasons: list[ObservedSeason] = Field(default_factory=list)
+    episodes: list[ObservedEpisode] = Field(default_factory=list)
+    artists: list[ObservedArtist] = Field(default_factory=list)
+    albums: list[ObservedAlbum] = Field(default_factory=list)
+    discs: list[ObservedDisc] = Field(default_factory=list)
+    tracks: list[ObservedTrack] = Field(default_factory=list)
     variants: list[ObservedVariant] = Field(default_factory=list)
     bundles: list[ObservedBundle] = Field(default_factory=list)
     events: list[ObservedEvent] = Field(default_factory=list)
@@ -250,23 +329,69 @@ class ObservedState(BaseModel):
 
 def _validate_topology_references(state: ObservedState) -> None:
     _ensure_unique([asset.observed_ref for asset in state.assets], kind="asset observed_ref")
-    _ensure_unique([work.observed_ref for work in state.works], kind="work observed_ref")
     _ensure_unique(
         [variant.observed_ref for variant in state.variants],
         kind="variant observed_ref",
     )
     _ensure_unique([bundle.observed_ref for bundle in state.bundles], kind="bundle observed_ref")
+    _ensure_unique(_domain_refs(state), kind="domain observed_ref")
 
     assets = {asset.observed_ref: asset for asset in state.assets}
-    works = {work.observed_ref: work for work in state.works}
     variants = {variant.observed_ref: variant for variant in state.variants}
     bundles = {bundle.observed_ref: bundle for bundle in state.bundles}
     sidecars = _sidecar_refs_by_asset(state.assets)
 
-    _validate_asset_topology_refs(state.assets, works, variants, bundles)
-    _validate_variant_refs(state.variants, works)
+    parent_refs = _variant_parent_refs_by_kind(state)
+    _validate_domain_parent_refs(state)
+    _validate_asset_topology_refs(state.assets, variants, bundles)
+    _validate_variant_refs(state.variants, parent_refs)
     _validate_bundle_refs(state.bundles, assets, variants, sidecars)
-    _validate_topology_agreement(state.assets, variants, bundles)
+    _validate_topology_agreement(state.assets, bundles)
+
+
+def _domain_refs(state: ObservedState) -> list[str]:
+    return [
+        *(movie.observed_ref for movie in state.movies),
+        *(series.observed_ref for series in state.series),
+        *(season.observed_ref for season in state.seasons),
+        *(episode.observed_ref for episode in state.episodes),
+        *(artist.observed_ref for artist in state.artists),
+        *(album.observed_ref for album in state.albums),
+        *(disc.observed_ref for disc in state.discs),
+        *(track.observed_ref for track in state.tracks),
+    ]
+
+
+def _variant_parent_refs_by_kind(state: ObservedState) -> dict[ParentKind, set[str]]:
+    return {
+        ParentKind.MOVIE: {movie.observed_ref for movie in state.movies},
+        ParentKind.EPISODE: {episode.observed_ref for episode in state.episodes},
+        ParentKind.TRACK: {track.observed_ref for track in state.tracks},
+    }
+
+
+def _validate_domain_parent_refs(state: ObservedState) -> None:
+    series_refs = {series.observed_ref for series in state.series}
+    season_refs = {season.observed_ref for season in state.seasons}
+    artist_refs = {artist.observed_ref for artist in state.artists}
+    album_refs = {album.observed_ref for album in state.albums}
+    disc_refs = {disc.observed_ref for disc in state.discs}
+
+    for season in state.seasons:
+        if season.series_ref not in series_refs:
+            raise ValueError(f"invalid season series_ref: {season.series_ref}")
+    for episode in state.episodes:
+        if episode.season_ref not in season_refs:
+            raise ValueError(f"invalid episode season_ref: {episode.season_ref}")
+    for album in state.albums:
+        if album.artist_ref not in artist_refs:
+            raise ValueError(f"invalid album artist_ref: {album.artist_ref}")
+    for disc in state.discs:
+        if disc.album_ref not in album_refs:
+            raise ValueError(f"invalid disc album_ref: {disc.album_ref}")
+    for track in state.tracks:
+        if track.disc_ref not in disc_refs:
+            raise ValueError(f"invalid track disc_ref: {track.disc_ref}")
 
 
 def _sidecar_refs_by_asset(assets: Sequence[ObservedAsset]) -> dict[str, set[str]]:
@@ -280,13 +405,10 @@ def _sidecar_refs_by_asset(assets: Sequence[ObservedAsset]) -> dict[str, set[str
 
 def _validate_asset_topology_refs(
     assets: Sequence[ObservedAsset],
-    works: dict[str, ObservedWork],
     variants: dict[str, ObservedVariant],
     bundles: dict[str, ObservedBundle],
 ) -> None:
     for asset in assets:
-        if asset.work_ref is not None and asset.work_ref not in works:
-            raise ValueError(f"invalid work_ref: {asset.work_ref}")
         if asset.variant_ref is not None and asset.variant_ref not in variants:
             raise ValueError(f"invalid variant_ref: {asset.variant_ref}")
         if asset.bundle_ref is not None and asset.bundle_ref not in bundles:
@@ -294,11 +416,11 @@ def _validate_asset_topology_refs(
 
 
 def _validate_variant_refs(
-    variants: Sequence[ObservedVariant], works: dict[str, ObservedWork]
+    variants: Sequence[ObservedVariant], parent_refs: dict[ParentKind, set[str]]
 ) -> None:
     for variant in variants:
-        if variant.work_ref is not None and variant.work_ref not in works:
-            raise ValueError(f"invalid variant work_ref: {variant.work_ref}")
+        if variant.parent_ref not in parent_refs[variant.parent_kind]:
+            raise ValueError(f"invalid variant parent_ref: {variant.parent_ref}")
 
 
 def _validate_bundle_refs(
@@ -322,14 +444,9 @@ def _validate_bundle_refs(
 
 def _validate_topology_agreement(
     assets: Sequence[ObservedAsset],
-    variants: dict[str, ObservedVariant],
     bundles: dict[str, ObservedBundle],
 ) -> None:
     for asset in assets:
-        if asset.variant_ref is not None and asset.work_ref is not None:
-            variant = variants[asset.variant_ref]
-            if variant.work_ref is not None and variant.work_ref != asset.work_ref:
-                raise ValueError("asset work_ref contradicts variant work_ref")
         if asset.bundle_ref is not None:
             bundle = bundles[asset.bundle_ref]
             _validate_asset_bundle_agreement(asset, bundle)

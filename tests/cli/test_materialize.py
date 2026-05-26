@@ -52,7 +52,14 @@ def _success() -> MaterializeArtifacts:
     return MaterializeArtifacts(
         current_manifest=Manifest(
             schema_version=MANIFEST_SCHEMA_VERSION,
-            works=[],
+            movies=[],
+            series=[],
+            seasons=[],
+            episodes=[],
+            artists=[],
+            albums=[],
+            discs=[],
+            tracks=[],
             variants=[],
             bundles=[],
             assets=[],

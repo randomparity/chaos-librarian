@@ -123,7 +123,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 11\n"
+        "schema_version: 12\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -131,9 +131,10 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
         "  roots:\n"
         "    - id: movies_hd\n"
         "      path: movies-hd\n"
-        "works:\n"
-        "  - id: work_quasar\n"
+        "movies:\n"
+        "  - id: movie_quasar\n"
         "    title: Synthetic Quasar\n"
+        "    layout: movie_flat\n"
         "    variants:\n"
         "      - id: variant_hd\n"
         "        label: hd\n"
@@ -152,6 +153,8 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
         "                - codec: aac\n"
         "                  channels: stereo\n"
         "                  language: eng\n"
+        "series: []\n"
+        "artists: []\n"
         "timeline:\n"
         "  - id: delete_001\n"
         "    at: 1s\n"
@@ -166,7 +169,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     out = tmp_path / "run-001"
     artifacts = materialize_scenario(scenario_path, out)
     library = out / "library"
-    assert not (library / "movies-hd" / "asset_main.mkv").exists()
+    assert not (library / "movies-hd" / "Synthetic Quasar - hd.mkv").exists()
     assert (library / "movies-hd" / "new.mkv").read_bytes() == b"x"
     assert artifacts.replay_bundle.run_id == artifacts.materialization_report.run_id
 
@@ -214,6 +217,9 @@ def test_materialize_phase_b_oserror_aborts_and_cleans_up(
     assert not (out / "library").exists()  # library/ wiped on cleanup
     report = _load_materialization_report(out)
     assert report.outcome is Outcome.FS_FAILED
+    assert report.outcome is not Outcome.SUCCESS
+    sentinel_payload = json.loads((out / ".chaos-librarian-run").read_text())
+    assert sentinel_payload["state"] == "complete"
     assert any(f.stage is FailureStage.FILESYSTEM for f in report.failures)
 
 
@@ -434,7 +440,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 11
+schema_version: 12
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -442,9 +448,10 @@ library:
   roots:
     - id: r0
       path: library
-works:
-  - id: w0
+movies:
+  - id: movie_static
     title: Static
+    layout: movie_flat
     variants:
       - id: va0
         label: hd
@@ -469,6 +476,8 @@ works:
                   language: eng
                   mode: sidecar
                   source: generated_srt
+series: []
+artists: []
 timeline: []
 """
 

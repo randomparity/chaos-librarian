@@ -11,6 +11,7 @@ from chaos_librarian.adapter.index import (
     OracleTopologyView,
 )
 from chaos_librarian.adapter.matching import match_assets
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.reports import PathHistoryEntry
 from chaos_librarian.contract.scenario import TimelineActionName
 
@@ -49,7 +50,6 @@ def _observed_asset(
         current_path=current_path,
         content_hash=content_hash,
         probed=None,
-        work_ref=None,
         variant_ref=None,
         bundle_ref=None,
         sidecars=(),
@@ -79,25 +79,75 @@ def _history_path(path: str) -> PathHistoryEntry:
     )
 
 
-def _oracle_topology(asset_id: str, *, title: str, label: str) -> OracleTopologyView:
+def _oracle_topology(
+    asset_id: str,
+    *,
+    title: str = "Synthetic",
+    label: str,
+    parent_kind: ParentKind = ParentKind.MOVIE,
+    series_title: str | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+    episode_title: str | None = None,
+    artist_name: str | None = None,
+    album_title: str | None = None,
+    disc_number: int | None = None,
+    track_number: int | None = None,
+    track_title: str | None = None,
+) -> OracleTopologyView:
     return OracleTopologyView(
         asset_id=asset_id,
         bundle_id=f"oracle-bundle-{asset_id}",
         variant_id=f"oracle-variant-{asset_id}",
-        work_id=f"oracle-work-{asset_id}",
-        work_title=title,
+        parent_kind=parent_kind,
+        parent_id=f"oracle-{parent_kind.value}-{asset_id}",
+        movie_title=title if parent_kind is ParentKind.MOVIE else None,
+        series_title=series_title,
+        season_number=season_number,
+        episode_number=episode_number,
+        episode_title=episode_title,
+        artist_name=artist_name,
+        album_title=album_title,
+        disc_number=disc_number,
+        track_number=track_number,
+        track_title=track_title,
         variant_label=label,
         bundle_asset_ids=(asset_id,),
     )
 
 
-def _observed_topology(observed_ref: str, *, title: str, label: str) -> ObservedTopologyView:
+def _observed_topology(
+    observed_ref: str,
+    *,
+    title: str = "Synthetic",
+    label: str,
+    parent_kind: ParentKind = ParentKind.MOVIE,
+    series_title: str | None = None,
+    season_number: int | None = None,
+    episode_number: int | None = None,
+    episode_title: str | None = None,
+    artist_name: str | None = None,
+    album_title: str | None = None,
+    disc_number: int | None = None,
+    track_number: int | None = None,
+    track_title: str | None = None,
+) -> ObservedTopologyView:
     return ObservedTopologyView(
         observed_ref=observed_ref,
         bundle_ref=f"observed-bundle-{observed_ref}",
         variant_ref=f"observed-variant-{observed_ref}",
-        work_ref=f"observed-work-{observed_ref}",
-        work_title=title,
+        parent_kind=parent_kind,
+        parent_ref=f"observed-{parent_kind.value}-{observed_ref}",
+        movie_title=title if parent_kind is ParentKind.MOVIE else None,
+        series_title=series_title,
+        season_number=season_number,
+        episode_number=episode_number,
+        episode_title=episode_title,
+        artist_name=artist_name,
+        album_title=album_title,
+        disc_number=disc_number,
+        track_number=track_number,
+        track_title=track_title,
         variant_label=label,
         bundle_asset_refs=(observed_ref,),
     )
@@ -191,7 +241,131 @@ def test_topology_match_records_match_evidence() -> None:
 
     result = match_assets(oracle, observed)
 
-    assert result.matches[0].evidence[0].value == "Synthetic|4k|1"
+    assert result.matches[0].evidence[0].value == "movie:Synthetic|4k|1"
+
+
+def test_topology_separator_values_do_not_collide_internal_keys() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-title-pipe"), _oracle_asset("oracle-label-pipe")),
+        (_observed_asset("observed-title-pipe"), _observed_asset("observed-label-pipe")),
+        oracle_topology=(
+            _oracle_topology("oracle-title-pipe", title="A|B", label="C"),
+            _oracle_topology("oracle-label-pipe", title="A", label="B|C"),
+        ),
+        observed_topology=(
+            _observed_topology("observed-title-pipe", title="A|B", label="C"),
+            _observed_topology("observed-label-pipe", title="A", label="B|C"),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert sorted((match.oracle_asset_id, match.observed_ref) for match in result.matches) == [
+        ("oracle-label-pipe", "observed-label-pipe"),
+        ("oracle-title-pipe", "observed-title-pipe"),
+    ]
+    assert result.findings == ()
+
+
+def test_topology_match_uses_episode_domain_key() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-a"),),
+        (_observed_asset("observed-a"),),
+        oracle_topology=(
+            _oracle_topology(
+                "oracle-a",
+                label="hd",
+                parent_kind=ParentKind.EPISODE,
+                series_title="Starline",
+                season_number=1,
+                episode_number=2,
+                episode_title="Pilot",
+            ),
+        ),
+        observed_topology=(
+            _observed_topology(
+                "observed-a",
+                label="hd",
+                parent_kind=ParentKind.EPISODE,
+                series_title="Starline",
+                season_number=1,
+                episode_number=2,
+                episode_title="Pilot",
+            ),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert result.matches[0].evidence[0].value == "episode:Starline|1|2|Pilot|hd"
+
+
+def test_topology_match_uses_track_domain_key() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-a"),),
+        (_observed_asset("observed-a"),),
+        oracle_topology=(
+            _oracle_topology(
+                "oracle-a",
+                label="lossless",
+                parent_kind=ParentKind.TRACK,
+                artist_name="North Index",
+                album_title="Winter Index",
+                disc_number=1,
+                track_number=3,
+                track_title="Opening",
+            ),
+        ),
+        observed_topology=(
+            _observed_topology(
+                "observed-a",
+                label="lossless",
+                parent_kind=ParentKind.TRACK,
+                artist_name="North Index",
+                album_title="Winter Index",
+                disc_number=1,
+                track_number=3,
+                track_title="Opening",
+            ),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert result.matches[0].evidence[0].value == (
+        "track:North Index|Winter Index|1|3|Opening|lossless"
+    )
+
+
+def test_topology_does_not_match_across_parent_kind() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-a"),),
+        (_observed_asset("observed-a"),),
+        oracle_topology=(
+            _oracle_topology(
+                "oracle-a",
+                title="Synthetic",
+                label="hd",
+                parent_kind=ParentKind.MOVIE,
+            ),
+        ),
+        observed_topology=(
+            _observed_topology(
+                "observed-a",
+                title="Synthetic",
+                label="hd",
+                parent_kind=ParentKind.EPISODE,
+            ),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert result.matches == ()
+    assert [finding.code for finding in result.findings] == [
+        "D_ASSET_MISSING",
+        "D_ASSET_UNEXPECTED",
+    ]
 
 
 def test_topology_ambiguity_emits_d_match_ambiguous() -> None:

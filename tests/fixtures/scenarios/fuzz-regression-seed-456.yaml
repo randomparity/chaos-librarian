@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: fuzz-regression-core-fs-seed-456
 seed: 456
 duration_scale: short
@@ -8,13 +8,20 @@ generation:
   generator: chaos-librarian
   profile: fuzz-regression
   lane: core-fs
-  profile_version: 2
+  profile_version: 3
   seed: 456
   budgets:
-    works: 12
-    variants: 18
-    bundles: 18
-    assets: 18
+    movies: 12
+    series: 1
+    seasons: 2
+    episodes: 2
+    artists: 1
+    albums: 1
+    discs: 2
+    tracks: 2
+    variants: 22
+    bundles: 22
+    assets: 22
     sidecars: 54
     timeline_events: 80
 library:
@@ -24,9 +31,10 @@ library:
   - id: cold-storage
     path: cold-storage
   archive_root: cold-storage
-works:
-- id: work_001
-  title: fuzz-regression core-fs Work 456-001
+movies:
+- id: movie_001
+  title: fuzz-regression core-fs Movie 456-001
+  layout: movie_flat
   variants:
   - id: variant_001
     label: core-fs
@@ -46,8 +54,9 @@ works:
           codec: aac
           channels: mono
           language: eng
-- id: work_002
-  title: fuzz-regression core-fs Work 456-002
+- id: movie_002
+  title: fuzz-regression core-fs Movie 456-002
+  layout: movie_flat
   variants:
   - id: variant_002
     label: core-fs
@@ -67,8 +76,9 @@ works:
           codec: aac
           channels: stereo
           language: eng
-- id: work_003
-  title: fuzz-regression core-fs Work 456-003
+- id: movie_003
+  title: fuzz-regression core-fs Movie 456-003
+  layout: movie_flat
   variants:
   - id: variant_003
     label: core-fs
@@ -93,8 +103,9 @@ works:
           codec: srt
           language: eng
           mode: sidecar
-- id: work_004
-  title: fuzz-regression core-fs Work 456-004
+- id: movie_004
+  title: fuzz-regression core-fs Movie 456-004
+  layout: movie_flat
   variants:
   - id: variant_004
     label: core-fs
@@ -114,8 +125,9 @@ works:
           codec: aac
           channels: mono
           language: eng
-- id: work_005
-  title: fuzz-regression core-fs Work 456-005
+- id: movie_005
+  title: fuzz-regression core-fs Movie 456-005
+  layout: movie_flat
   variants:
   - id: variant_005
     label: core-fs
@@ -135,8 +147,9 @@ works:
           codec: aac
           channels: stereo
           language: eng
-- id: work_006
-  title: fuzz-regression core-fs Work 456-006
+- id: movie_006
+  title: fuzz-regression core-fs Movie 456-006
+  layout: movie_flat
   variants:
   - id: variant_006
     label: core-fs
@@ -161,8 +174,9 @@ works:
           codec: srt
           language: eng
           mode: sidecar
-- id: work_007
-  title: fuzz-regression core-fs Work 456-007
+- id: movie_007
+  title: fuzz-regression core-fs Movie 456-007
+  layout: movie_flat
   variants:
   - id: variant_007
     label: core-fs
@@ -182,8 +196,9 @@ works:
           codec: aac
           channels: mono
           language: eng
-- id: work_008
-  title: fuzz-regression core-fs Work 456-008
+- id: movie_008
+  title: fuzz-regression core-fs Movie 456-008
+  layout: movie_flat
   variants:
   - id: variant_008
     label: core-fs
@@ -203,8 +218,9 @@ works:
           codec: aac
           channels: stereo
           language: eng
-- id: work_009
-  title: fuzz-regression core-fs Work 456-009
+- id: movie_009
+  title: fuzz-regression core-fs Movie 456-009
+  layout: movie_flat
   variants:
   - id: variant_009
     label: core-fs
@@ -229,8 +245,9 @@ works:
           codec: srt
           language: eng
           mode: sidecar
-- id: work_010
-  title: fuzz-regression core-fs Work 456-010
+- id: movie_010
+  title: fuzz-regression core-fs Movie 456-010
+  layout: movie_flat
   variants:
   - id: variant_010
     label: core-fs
@@ -250,6 +267,8 @@ works:
           codec: aac
           channels: mono
           language: eng
+series: []
+artists: []
 timeline:
 - id: fuzz_0001_move
   at: 1ns

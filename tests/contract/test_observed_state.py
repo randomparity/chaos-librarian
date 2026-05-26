@@ -13,7 +13,7 @@ from chaos_librarian.contract.observed_state import ObservedState
 
 def _minimal_observed_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "consumer": {"name": "voom-v2", "version": "0.9.0"},
         "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
         "observed_at": "2026-05-22T12:00:00Z",
@@ -105,6 +105,32 @@ def test_watcher_observed_state_round_trips_path_history_and_events() -> None:
     assert observed.events[1].related_observed_event_ref == "global-1"
 
 
+@pytest.mark.parametrize(
+    "action",
+    [
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_season",
+        "renumber_disc",
+        "move_track_to_disc",
+    ],
+)
+def test_observed_state_accepts_hierarchy_path_history_actions(action: str) -> None:
+    payload = _minimal_observed_payload()
+    asset = cast("list[dict[str, object]]", payload["assets"])[0]
+    asset["path_history"] = [
+        {
+            "action": action,
+            "from_path": "tv/Show/Season 01/Show - S01E01.mkv",
+            "to_path": "tv/Show/Season 01/Show - S01E02.mkv",
+        }
+    ]
+
+    observed = ObservedState.model_validate(payload)
+
+    assert observed.assets[0].path_history[0].action == action
+
+
 def test_observed_state_rejects_extra_fields() -> None:
     payload = _minimal_observed_payload()
     payload["unexpected"] = True
@@ -146,7 +172,6 @@ def _global_event(ref: str, action: str, **fields: object) -> dict[str, object]:
 def _topology_payload() -> dict[str, object]:
     payload = valid_observed_payload()
     asset = _first_asset(payload)
-    asset["work_ref"] = "work-1"
     asset["variant_ref"] = "variant-1"
     asset["bundle_ref"] = "bundle-1"
     asset["sidecars"] = [
@@ -156,8 +181,53 @@ def _topology_payload() -> dict[str, object]:
             "path": "movies/Synthetic.eng.srt",
         }
     ]
-    payload["works"] = [{"observed_ref": "work-1", "title": "Synthetic"}]
-    payload["variants"] = [{"observed_ref": "variant-1", "work_ref": "work-1", "label": "hd"}]
+    payload["movies"] = [{"observed_ref": "movie-1", "title": "Synthetic"}]
+    payload["series"] = [{"observed_ref": "series-1", "title": "Starline"}]
+    payload["seasons"] = [
+        {
+            "observed_ref": "season-1",
+            "series_ref": "series-1",
+            "season_number": 1,
+            "title": "Season 1",
+        }
+    ]
+    payload["episodes"] = [
+        {
+            "observed_ref": "episode-1",
+            "season_ref": "season-1",
+            "episode_number": 1,
+            "title": "Pilot",
+            "aired_on": None,
+            "absolute_number": None,
+        }
+    ]
+    payload["artists"] = [{"observed_ref": "artist-1", "name": "North Index"}]
+    payload["albums"] = [
+        {
+            "observed_ref": "album-1",
+            "artist_ref": "artist-1",
+            "title": "Winter Index",
+            "release_year": 2024,
+        }
+    ]
+    payload["discs"] = [{"observed_ref": "disc-1", "album_ref": "album-1", "disc_number": 1}]
+    payload["tracks"] = [
+        {
+            "observed_ref": "track-1",
+            "disc_ref": "disc-1",
+            "track_number": 1,
+            "title": "Opening",
+            "performers": ["North Index"],
+        }
+    ]
+    payload["variants"] = [
+        {
+            "observed_ref": "variant-1",
+            "parent_kind": "movie",
+            "parent_ref": "movie-1",
+            "label": "hd",
+        }
+    ]
     payload["bundles"] = [
         {
             "observed_ref": "bundle-1",
@@ -172,6 +242,16 @@ def _topology_payload() -> dict[str, object]:
 def _assert_invalid(payload: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         ObservedState.model_validate(payload)
+
+
+def _assert_extra_forbidden(payload: dict[str, object], loc: tuple[object, ...]) -> None:
+    with pytest.raises(ValidationError) as exc_info:
+        ObservedState.model_validate(payload)
+
+    assert any(
+        error["loc"] == loc and error["type"] == "extra_forbidden"
+        for error in exc_info.value.errors()
+    )
 
 
 def test_observed_state_rejects_absolute_current_path() -> None:
@@ -328,12 +408,106 @@ def test_observed_state_rejects_cross_bundle_sidecar_ref() -> None:
     _assert_invalid(payload)
 
 
-def test_observed_state_rejects_asset_variant_work_contradiction() -> None:
+def test_observed_state_rejects_old_work_ref() -> None:
+    payload = valid_observed_payload()
+    _first_asset(payload)["work_ref"] = "work-1"
+    _assert_extra_forbidden(payload, ("assets", 0, "work_ref"))
+
+
+def test_observed_state_rejects_old_variant_work_ref() -> None:
     payload = _topology_payload()
-    _first_asset(payload)["work_ref"] = "work-2"
-    payload["works"] = [
-        {"observed_ref": "work-1", "title": "Synthetic"},
-        {"observed_ref": "work-2", "title": "Different"},
+    payload["variants"] = [{"observed_ref": "variant-1", "work_ref": "work-1", "label": "hd"}]
+    _assert_extra_forbidden(payload, ("variants", 0, "work_ref"))
+
+
+def test_observed_state_rejects_old_works_field() -> None:
+    payload = valid_observed_payload()
+    payload["works"] = [{"observed_ref": "work-1", "title": "Synthetic"}]
+    _assert_extra_forbidden(payload, ("works",))
+
+
+def test_observed_state_rejects_duplicate_domain_refs_across_domain_rows() -> None:
+    payload = _topology_payload()
+    payload["series"] = [
+        {"observed_ref": "series-1", "title": "Starline"},
+        {"observed_ref": "movie-1", "title": "Duplicate Ref"},
+    ]
+
+    with pytest.raises(ValidationError) as exc_info:
+        ObservedState.model_validate(payload)
+
+    assert any(
+        "duplicate domain observed_ref: movie-1" in error["msg"]
+        for error in exc_info.value.errors()
+    )
+
+
+@pytest.mark.parametrize(
+    ("field_name", "replacement"),
+    [
+        (
+            "seasons",
+            {
+                "observed_ref": "season-1",
+                "series_ref": "missing-series",
+                "season_number": 1,
+                "title": "Season 1",
+            },
+        ),
+        (
+            "episodes",
+            {
+                "observed_ref": "episode-1",
+                "season_ref": "missing-season",
+                "episode_number": 1,
+                "title": "Pilot",
+                "aired_on": None,
+                "absolute_number": None,
+            },
+        ),
+        (
+            "albums",
+            {
+                "observed_ref": "album-1",
+                "artist_ref": "missing-artist",
+                "title": "Winter Index",
+                "release_year": 2024,
+            },
+        ),
+        (
+            "discs",
+            {"observed_ref": "disc-1", "album_ref": "missing-album", "disc_number": 1},
+        ),
+        (
+            "tracks",
+            {
+                "observed_ref": "track-1",
+                "disc_ref": "missing-disc",
+                "track_number": 1,
+                "title": "Opening",
+                "performers": ["North Index"],
+            },
+        ),
+    ],
+)
+def test_observed_state_rejects_dangling_domain_parent_refs(
+    field_name: str,
+    replacement: dict[str, object],
+) -> None:
+    payload = _topology_payload()
+    payload[field_name] = [replacement]
+    _assert_invalid(payload)
+
+
+def test_observed_state_rejects_variant_parent_ref_with_wrong_kind() -> None:
+    payload = _topology_payload()
+    payload["variants"] = [
+        {
+            "observed_ref": "variant-1",
+            "parent_kind": "track",
+            "parent_ref": "movie-1",
+            "label": "hd",
+        }
     ]
     _assert_invalid(payload)
 
@@ -342,8 +516,18 @@ def test_observed_state_rejects_bundle_variant_contradiction() -> None:
     payload = _topology_payload()
     _first_asset(payload)["variant_ref"] = "variant-2"
     payload["variants"] = [
-        {"observed_ref": "variant-1", "work_ref": "work-1", "label": "hd"},
-        {"observed_ref": "variant-2", "work_ref": "work-1", "label": "sd"},
+        {
+            "observed_ref": "variant-1",
+            "parent_kind": "movie",
+            "parent_ref": "movie-1",
+            "label": "hd",
+        },
+        {
+            "observed_ref": "variant-2",
+            "parent_kind": "movie",
+            "parent_ref": "movie-1",
+            "label": "sd",
+        },
     ]
     _assert_invalid(payload)
 

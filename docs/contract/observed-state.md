@@ -9,7 +9,7 @@ Chaos Librarian policy expectations.
 
 Required fields:
 
-- `schema_version`: `1`
+- `schema_version`: `2`
 - `consumer`: `{name, version?}`
 - `run_id`: the fixture run id being compared
 - `observed_at`: when the consumer snapshot was exported
@@ -17,7 +17,9 @@ Required fields:
 
 Optional topology and history fields:
 
-- `works`, `variants`, `bundles`
+- `movies`, `series`, `seasons`, `episodes`
+- `artists`, `albums`, `discs`, `tracks`
+- `variants`, `bundles`
 - `events`
 - per-asset `sidecars`
 - per-asset `path_history`
@@ -32,7 +34,7 @@ Scanner-only minimal asset:
 
 ```json
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
@@ -90,6 +92,9 @@ Or emitted as global events:
 }
 ```
 
+Hierarchy path moves use their hierarchy action names in the same lifecycle
+shape, with `from_path` and `to_path` populated.
+
 ## Probe And Sidecar Normalization
 
 Unknown stream language can appear differently across containers and ffprobe
@@ -136,9 +141,83 @@ sidecar language is represented by the path convention when applicable.
 ## Topology
 
 Topology refs are consumer-owned and only need to be stable inside the payload.
-When supplied, `asset.work_ref`, `asset.variant_ref`, `asset.bundle_ref`,
-`variant.work_ref`, `bundle.variant_ref`, and `bundle.asset_refs` must point to
+Observed-state v2 has these domain row families:
+
+- `movies`
+- `series`
+- `seasons`
+- `episodes`
+- `artists`
+- `albums`
+- `discs`
+- `tracks`
+- `variants`
+- `bundles`
+- `assets`
+- `sidecars`
+
+Rows for seasons, episodes, albums, discs, and tracks point to their immediate
+parent row. Variant rows point to one playable or listenable parent with
+`parent_kind` (`movie`, `episode`, or `track`) and `parent_ref`. Bundle rows can
+point to a variant and list asset refs. Asset rows always carry `observed_ref`
+and `current_path`; they carry `variant_ref` and `bundle_ref` only when the
+consumer can provide those links. When supplied, topology refs must point to
 declared observed objects and agree with each other.
+
+Movie topology:
+
+```json
+{
+  "schema_version": 2,
+  "consumer": {"name": "scanner"},
+  "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
+  "observed_at": "2026-05-22T12:00:00Z",
+  "movies": [{"observed_ref": "movie-1", "title": "Synthetic Quasar"}],
+  "variants": [
+    {
+      "observed_ref": "variant-1",
+      "parent_kind": "movie",
+      "parent_ref": "movie-1",
+      "label": "hd"
+    }
+  ],
+  "bundles": [
+    {
+      "observed_ref": "bundle-1",
+      "variant_ref": "variant-1",
+      "asset_refs": ["asset-1"]
+    }
+  ],
+  "assets": [
+    {
+      "observed_ref": "asset-1",
+      "current_path": "movies/Synthetic Quasar.mkv",
+      "variant_ref": "variant-1",
+      "bundle_ref": "bundle-1"
+    }
+  ]
+}
+```
+
+TV and music topology use the same ref rules with deeper parents:
+
+```json
+{
+  "series": [{"observed_ref": "series-1", "title": "Atlas Station"}],
+  "seasons": [
+    {"observed_ref": "season-1", "series_ref": "series-1", "season_number": 1}
+  ],
+  "episodes": [
+    {"observed_ref": "episode-1", "season_ref": "season-1", "episode_number": 1}
+  ],
+  "artists": [{"observed_ref": "artist-1", "name": "Glass Harbour"}],
+  "albums": [{"observed_ref": "album-1", "artist_ref": "artist-1"}],
+  "discs": [{"observed_ref": "disc-1", "album_ref": "album-1", "disc_number": 1}],
+  "tracks": [
+    {"observed_ref": "track-1", "disc_ref": "disc-1", "track_number": 1}
+  ]
+}
+```
 
 Bundle sidecar refs are scoped by both asset and sidecar:
 

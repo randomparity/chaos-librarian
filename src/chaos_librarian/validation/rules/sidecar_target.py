@@ -16,17 +16,22 @@ Emits:
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.codes import (
     E_SIDECAR_KIND_MISMATCH,
     E_SIDECAR_PATH_COLLISION,
     E_SIDECAR_TARGET_UNKNOWN,
 )
 from chaos_librarian.validation.rules._common import (
+    HierarchyMutation,
     Reporter,
     _iter_timeline_events,
+    build_hierarchy_projection,
+    is_hierarchy_action,
     iter_declared_sidecars,
 )
 
@@ -36,18 +41,25 @@ if TYPE_CHECKING:
 
 __all__ = ["rule_sidecar_target"]
 
-_Projection = dict[tuple[str, str], tuple[str, str | None]]
-"""``(asset_id, path) -> (kind, language)``.
+_Projection = dict[tuple[str, str], "_SidecarProjectionRow"]
+"""``(asset_id, path) -> _SidecarProjectionRow``.
 
 ``language`` is ``None`` for poster/NFO rows. Subtitle rows carry it so
 ``_handle_create_sidecar`` can mirror the engine's ``(asset, language)``
 dedup (#63 finding #2): the engine drops any prior subtitle row matching
 the new event's ``(asset, language)`` regardless of path, so a scenario
-that declares ``a0.eng.srt`` and then ``create_sidecar`` writes
-``movies/a0/en.srt`` must invalidate the declared row in the projection
-too. Without this, embed/remove referencing the declared path validates
-clean but crashes the engine.
+that declares a rendered sidecar path and then ``create_sidecar`` writes
+a different subtitle path must invalidate the declared row in the
+projection too. Without this, embed/remove referencing the declared path
+validates clean but crashes the engine.
 """
+
+
+@dataclass(frozen=True, slots=True)
+class _SidecarProjectionRow:
+    kind: str
+    language: str | None
+    renderer_derived: bool
 
 
 def rule_sidecar_target(
@@ -61,10 +73,19 @@ def rule_sidecar_target(
     """
     reporter = Reporter(collector=collector, line_index=line_index)
     projection = _seed_projection_from_declared(raw)
+    hierarchy_projection = build_hierarchy_projection(raw)
+    pending_slow_copies: dict[str, tuple[str, str]] = {}
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         target = event.get("target")
-        if not isinstance(action, str) or not isinstance(target, str):
+        if not isinstance(action, str):
+            continue
+        if is_hierarchy_action(action):
+            mutation = hierarchy_projection.apply(event)
+            _project_declared_sidecars_for_hierarchy_mutation(mutation, projection)
+            continue
+        hierarchy_projection.project_non_hierarchy_event(event, pending_slow_copies)
+        if not isinstance(target, str):
             continue
         if action == TimelineActionName.CREATE_SIDECAR:
             _handle_create_sidecar(event, target=target, projection=projection)
@@ -115,9 +136,9 @@ def _handle_create_sidecar(
     path. The engine does the same in ``_handle_create_sidecar`` (removes
     every ``ManifestSidecar`` row keyed on ``(asset, "subtitle",
     language)``); validating without that dedup let a scenario like
-    "declared a0.eng.srt + create_sidecar to movies/a0/en.srt + embed
-    a0.eng.srt" pass shape validation only to fail at runtime with a bare
-    ``KeyError`` from the engine.
+    "declared rendered sidecar + create_sidecar to movies/a0/en.srt +
+    embed declared sidecar" pass shape validation only to fail at runtime
+    with a bare ``KeyError`` from the engine.
     """
     to = event.get("to")
     kind = event.get("kind", SidecarKind.SUBTITLE.value)
@@ -129,10 +150,16 @@ def _handle_create_sidecar(
         for existing_key in [
             key
             for key, value in projection.items()
-            if key[0] == target and value[0] == SidecarKind.SUBTITLE.value and value[1] == language
+            if key[0] == target
+            and value.kind == SidecarKind.SUBTITLE.value
+            and value.language == language
         ]:
             del projection[existing_key]
-    projection[(target, to)] = (kind, language)
+    projection[(target, to)] = _SidecarProjectionRow(
+        kind=kind,
+        language=language,
+        renderer_derived=False,
+    )
 
 
 def _handle_extract_subtitle(
@@ -158,7 +185,11 @@ def _handle_extract_subtitle(
     else:
         raw_language = event.get("language")
         language = raw_language if isinstance(raw_language, str) else None
-        projection[(target, to)] = (SidecarKind.SUBTITLE.value, language)
+        projection[(target, to)] = _SidecarProjectionRow(
+            kind=SidecarKind.SUBTITLE.value,
+            language=language,
+            renderer_derived=False,
+        )
 
 
 def _handle_embed_subtitle(
@@ -183,12 +214,12 @@ def _handle_embed_subtitle(
             loc=("timeline", idx, "sidecar_path"),
         )
         return
-    kind, _language = entry
-    if kind != SidecarKind.SUBTITLE.value:
+    if entry.kind != SidecarKind.SUBTITLE.value:
         reporter.error(
             code=E_SIDECAR_KIND_MISMATCH,
             message=(
-                f"embed_subtitle references {kind!r} sidecar {sidecar_path!r}; subtitle expected"
+                f"embed_subtitle references {entry.kind!r} sidecar "
+                f"{sidecar_path!r}; subtitle expected"
             ),
             loc=("timeline", idx, "sidecar_path"),
         )
@@ -242,12 +273,37 @@ def _handle_update_sidecar(
 
 
 def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
-    """Seed (asset_id, path) -> kind for every declared subtitle.
-
-    Declared subtitles use the path convention <asset_id>.<language>.srt
-    (per scenario v5 §"Declared-sidecar path convention").
-    """
+    """Seed (asset_id, rendered_path) -> kind for every declared subtitle."""
     projection: _Projection = {}
     for sidecar in iter_declared_sidecars(raw):
-        projection[(sidecar.asset_id, sidecar.path)] = (sidecar.kind, sidecar.language)
+        projection[(sidecar.asset_id, sidecar.path)] = _SidecarProjectionRow(
+            kind=sidecar.kind,
+            language=sidecar.language,
+            renderer_derived=True,
+        )
     return projection
+
+
+def _project_declared_sidecars_for_hierarchy_mutation(
+    mutation: HierarchyMutation,
+    projection: _Projection,
+) -> None:
+    for asset_id, (old_media_path, new_media_path) in mutation.path_changes.items():
+        if old_media_path is None or new_media_path is None:
+            continue
+        for key, value in list(projection.items()):
+            key_asset_id, sidecar_path = key
+            if key_asset_id != asset_id:
+                continue
+            if value.kind != SidecarKind.SUBTITLE.value or not value.renderer_derived:
+                continue
+            if value.language is None:
+                continue
+            try:
+                old_sidecar_path = render_declared_sidecar_path(old_media_path, value.language)
+                new_sidecar_path = render_declared_sidecar_path(new_media_path, value.language)
+            except ValueError:
+                continue
+            if sidecar_path == old_sidecar_path:
+                del projection[key]
+                projection[(asset_id, new_sidecar_path)] = value

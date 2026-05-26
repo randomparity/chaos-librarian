@@ -81,11 +81,11 @@ class TestRunValidationHappyPath:
     """
 
     def test_minimal_valid_scenario(self, tmp_path: Path) -> None:
-        # Smallest valid Scenario: one work, one variant, one bundle, one asset,
+        # Smallest valid Scenario: one movie, one variant, one bundle, one asset,
         # no timeline events (all rules guard on emptiness and skip).
         path = _write(
             tmp_path,
-            "schema_version: 11\n"
+            "schema_version: 12\n"
             "scenario_id: minimal\n"
             "seed: 1\n"
             "duration_scale: short\n"
@@ -93,9 +93,10 @@ class TestRunValidationHappyPath:
             "  roots:\n"
             "    - id: r\n"
             "      path: r\n"
-            "works:\n"
-            "  - id: w\n"
+            "movies:\n"
+            "  - id: m\n"
             "    title: t\n"
+            "    layout: movie_flat\n"
             "    variants:\n"
             "      - id: v\n"
             "        label: l\n"
@@ -106,6 +107,17 @@ class TestRunValidationHappyPath:
             "              role: primary_video\n"
             "              container: mkv\n"
             "              duration_seconds: 1\n"
+            "              video:\n"
+            "                source: color_bars\n"
+            "                codec: h264\n"
+            "                resolution: sd\n"
+            "              audio:\n"
+            "                - source: sine\n"
+            "                  codec: aac\n"
+            "                  channels: stereo\n"
+            "                  language: eng\n"
+            "series: []\n"
+            "artists: []\n"
             "timeline: []\n",
         )
         report = run_validation(prepare_run_input(path))
@@ -172,13 +184,15 @@ class TestRunValidationReportSorting:
         # A scenario with two field-level errors at different lines.
         path = _write(
             tmp_path,
-            "schema_version: 11\n"
+            "schema_version: 12\n"
             "scenario_id: dup\n"
             "seed: 1\n"
             "duration_scale: short\n"
             "library:\n"
             "  roots: []\n"  # valid: empty roots
-            "works: []\n"
+            "movies: []\n"
+            "series: []\n"
+            "artists: []\n"
             "timeline:\n"
             "  - id: e1\n"
             "    at: not-a-duration\n"  # E_DURATION_SYNTAX at line 10

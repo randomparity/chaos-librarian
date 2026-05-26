@@ -1,16 +1,18 @@
 """Manifest schema: current expected library state.
 
-Describes external library reality (works/variants/bundles/assets/locations
-etc.). Does NOT describe application policy outcomes.
+Describes external library reality (hierarchy rows, variants, bundles,
+assets, locations, etc.). Does NOT describe application policy outcomes.
 """
 
 from __future__ import annotations
 
 import enum
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.profiles import CorruptionRecord
 
 
@@ -55,16 +57,76 @@ class ProbedMedia(BaseModel):
     streams: list[ProbedStream]
 
 
-class ManifestWork(BaseModel):
+class ManifestMovie(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
     title: str
+    layout: str
+
+
+class ManifestSeries(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    title: str
+    layout: str
+    episode_naming: str
+
+
+class ManifestSeason(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    series_id: str
+    season_number: int
+    title: str
+
+
+class ManifestEpisode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    season_id: str
+    episode_number: int
+    title: str
+    aired_on: date | None = None
+    absolute_number: int | None = None
+
+
+class ManifestArtist(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    name: str
+    layout: str
+    track_naming: str
+
+
+class ManifestAlbum(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    artist_id: str
+    title: str
+    release_year: int | None = None
+
+
+class ManifestDisc(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    album_id: str
+    disc_number: int
+
+
+class ManifestTrack(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    disc_id: str
+    track_number: int
+    title: str
+    performers: list[str] = Field(default_factory=list)
 
 
 class ManifestVariant(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
-    work_id: str
+    parent_kind: ParentKind
+    parent_id: str
     label: str
 
 
@@ -122,8 +184,15 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[6]
-    works: list[ManifestWork]
+    schema_version: Literal[7]
+    movies: list[ManifestMovie]
+    series: list[ManifestSeries]
+    seasons: list[ManifestSeason]
+    episodes: list[ManifestEpisode]
+    artists: list[ManifestArtist]
+    albums: list[ManifestAlbum]
+    discs: list[ManifestDisc]
+    tracks: list[ManifestTrack]
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]
     assets: list[ManifestAsset]

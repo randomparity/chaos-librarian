@@ -93,8 +93,8 @@ def test_remux_container_real(tmp_path: Path) -> None:
     artifacts = materialize_scenario(FIXTURE_DIR / "remux-container.yaml", out)
     assert artifacts.materialization_report.outcome is Outcome.SUCCESS
     # File now at .mp4 extension.
-    assert (out / "library" / "movies" / "a0.mp4").exists()
-    assert not (out / "library" / "movies" / "a0.mkv").exists()
+    assert (out / "library" / "movies" / "T - hd.mp4").exists()
+    assert not (out / "library" / "movies" / "T - hd.mkv").exists()
 
 
 def test_edit_metadata_real(tmp_path: Path) -> None:
@@ -111,7 +111,7 @@ def test_edit_metadata_real(tmp_path: Path) -> None:
             "format_tags",
             "-of",
             "default=noprint_wrappers=1",
-            str(out / "library" / "movies" / "a0.mkv"),
+            str(out / "library" / "movies" / "T - hd.mkv"),
         ],
         capture_output=True,
         text=True,
@@ -158,7 +158,7 @@ def test_subtitle_ops_on_mp4_asset_use_mov_text(tmp_path: Path) -> None:
     artifacts = materialize_scenario(FIXTURE_DIR / "subtitle-ops-on-mp4.yaml", out)
     assert artifacts.materialization_report.outcome is Outcome.SUCCESS
     # mp4 file exists with embedded mov_text track.
-    mp4_path = out / "library" / "movies" / "a0.mp4"
+    mp4_path = out / "library" / "movies" / "T - hd.mp4"
     assert mp4_path.exists()
     probe_out = subprocess.run(
         [
@@ -219,14 +219,15 @@ def test_unknown_reencode_audio_channels_fail_validation(tmp_path: Path) -> None
     scenario_yaml = tmp_path / "fail.yaml"
     scenario_yaml.write_text(
         """\
-schema_version: 11
+schema_version: 12
 scenario_id: sc_fail
 seed: 42
 duration_scale: short
 library: {roots: [{id: r0, path: library/movies}]}
-works:
-  - id: w0
+movies:
+  - id: movie_0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd

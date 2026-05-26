@@ -115,6 +115,71 @@
       "title": "CorruptionRecord",
       "type": "object"
     },
+    "ManifestAlbum": {
+      "additionalProperties": false,
+      "properties": {
+        "artist_id": {
+          "title": "Artist Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "release_year": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Release Year"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "artist_id",
+        "title"
+      ],
+      "title": "ManifestAlbum",
+      "type": "object"
+    },
+    "ManifestArtist": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "title": "Layout",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "track_naming": {
+          "title": "Track Naming",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "layout",
+        "track_naming"
+      ],
+      "title": "ManifestArtist",
+      "type": "object"
+    },
     "ManifestAsset": {
       "additionalProperties": false,
       "properties": {
@@ -168,6 +233,84 @@
       "title": "ManifestBundle",
       "type": "object"
     },
+    "ManifestDisc": {
+      "additionalProperties": false,
+      "properties": {
+        "album_id": {
+          "title": "Album Id",
+          "type": "string"
+        },
+        "disc_number": {
+          "title": "Disc Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "album_id",
+        "disc_number"
+      ],
+      "title": "ManifestDisc",
+      "type": "object"
+    },
+    "ManifestEpisode": {
+      "additionalProperties": false,
+      "properties": {
+        "absolute_number": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Absolute Number"
+        },
+        "aired_on": {
+          "anyOf": [
+            {
+              "format": "date",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Aired On"
+        },
+        "episode_number": {
+          "title": "Episode Number",
+          "type": "integer"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "season_id": {
+          "title": "Season Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "season_id",
+        "episode_number",
+        "title"
+      ],
+      "title": "ManifestEpisode",
+      "type": "object"
+    },
     "ManifestLocation": {
       "additionalProperties": false,
       "properties": {
@@ -214,6 +357,88 @@
         "path"
       ],
       "title": "ManifestLocation",
+      "type": "object"
+    },
+    "ManifestMovie": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "title": "Layout",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout"
+      ],
+      "title": "ManifestMovie",
+      "type": "object"
+    },
+    "ManifestSeason": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "season_number": {
+          "title": "Season Number",
+          "type": "integer"
+        },
+        "series_id": {
+          "title": "Series Id",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "series_id",
+        "season_number",
+        "title"
+      ],
+      "title": "ManifestSeason",
+      "type": "object"
+    },
+    "ManifestSeries": {
+      "additionalProperties": false,
+      "properties": {
+        "episode_naming": {
+          "title": "Episode Naming",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "title": "Layout",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout",
+        "episode_naming"
+      ],
+      "title": "ManifestSeries",
       "type": "object"
     },
     "ManifestSidecar": {
@@ -270,6 +495,42 @@
       "title": "ManifestSidecar",
       "type": "object"
     },
+    "ManifestTrack": {
+      "additionalProperties": false,
+      "properties": {
+        "disc_id": {
+          "title": "Disc Id",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "performers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Performers",
+          "type": "array"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "track_number": {
+          "title": "Track Number",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "disc_id",
+        "track_number",
+        "title"
+      ],
+      "title": "ManifestTrack",
+      "type": "object"
+    },
     "ManifestVariant": {
       "additionalProperties": false,
       "properties": {
@@ -281,14 +542,18 @@
           "title": "Label",
           "type": "string"
         },
-        "work_id": {
-          "title": "Work Id",
+        "parent_id": {
+          "title": "Parent Id",
           "type": "string"
+        },
+        "parent_kind": {
+          "$ref": "#/$defs/ParentKind"
         }
       },
       "required": [
         "id",
-        "work_id",
+        "parent_kind",
+        "parent_id",
         "label"
       ],
       "title": "ManifestVariant",
@@ -353,24 +618,15 @@
       "title": "ManifestVersion",
       "type": "object"
     },
-    "ManifestWork": {
-      "additionalProperties": false,
-      "properties": {
-        "id": {
-          "title": "Id",
-          "type": "string"
-        },
-        "title": {
-          "title": "Title",
-          "type": "string"
-        }
-      },
-      "required": [
-        "id",
-        "title"
+    "ParentKind": {
+      "description": "Playable/listenable parent kinds for variants and assets.",
+      "enum": [
+        "movie",
+        "episode",
+        "track"
       ],
-      "title": "ManifestWork",
-      "type": "object"
+      "title": "ParentKind",
+      "type": "string"
     },
     "ProbedMedia": {
       "additionalProperties": false,
@@ -548,6 +804,20 @@
   },
   "additionalProperties": false,
   "properties": {
+    "albums": {
+      "items": {
+        "$ref": "#/$defs/ManifestAlbum"
+      },
+      "title": "Albums",
+      "type": "array"
+    },
+    "artists": {
+      "items": {
+        "$ref": "#/$defs/ManifestArtist"
+      },
+      "title": "Artists",
+      "type": "array"
+    },
     "assets": {
       "items": {
         "$ref": "#/$defs/ManifestAsset"
@@ -562,6 +832,20 @@
       "title": "Bundles",
       "type": "array"
     },
+    "discs": {
+      "items": {
+        "$ref": "#/$defs/ManifestDisc"
+      },
+      "title": "Discs",
+      "type": "array"
+    },
+    "episodes": {
+      "items": {
+        "$ref": "#/$defs/ManifestEpisode"
+      },
+      "title": "Episodes",
+      "type": "array"
+    },
     "locations": {
       "items": {
         "$ref": "#/$defs/ManifestLocation"
@@ -569,16 +853,44 @@
       "title": "Locations",
       "type": "array"
     },
+    "movies": {
+      "items": {
+        "$ref": "#/$defs/ManifestMovie"
+      },
+      "title": "Movies",
+      "type": "array"
+    },
     "schema_version": {
-      "const": 6,
+      "const": 7,
       "title": "Schema Version",
       "type": "integer"
+    },
+    "seasons": {
+      "items": {
+        "$ref": "#/$defs/ManifestSeason"
+      },
+      "title": "Seasons",
+      "type": "array"
+    },
+    "series": {
+      "items": {
+        "$ref": "#/$defs/ManifestSeries"
+      },
+      "title": "Series",
+      "type": "array"
     },
     "sidecars": {
       "items": {
         "$ref": "#/$defs/ManifestSidecar"
       },
       "title": "Sidecars",
+      "type": "array"
+    },
+    "tracks": {
+      "items": {
+        "$ref": "#/$defs/ManifestTrack"
+      },
+      "title": "Tracks",
       "type": "array"
     },
     "variants": {
@@ -594,18 +906,18 @@
       },
       "title": "Versions",
       "type": "array"
-    },
-    "works": {
-      "items": {
-        "$ref": "#/$defs/ManifestWork"
-      },
-      "title": "Works",
-      "type": "array"
     }
   },
   "required": [
     "schema_version",
-    "works",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
     "variants",
     "bundles",
     "assets",

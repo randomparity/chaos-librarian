@@ -18,19 +18,28 @@ arg + dataclass at each call site (issue #12).
 from __future__ import annotations
 
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
 from chaos_librarian.contract.reports import (
+    AlbumReport,
+    ArtistReport,
     AssetReport,
     BundleReport,
+    DiscReport,
+    EpisodeReport,
+    MovieReport,
+    SeasonReport,
+    SeriesReport,
+    TrackReport,
     VariantReport,
-    WorkReport,
 )
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
@@ -52,6 +61,20 @@ __all__ = [
     "finalize_materialize_run",
     "publish_wall_clock_baseline",
 ]
+
+REPORT_DIRS = (
+    "assets",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
+    "variants",
+    "bundles",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,7 +114,14 @@ class MaterializeReports:
     """Per-entity report dicts written only on the success path."""
 
     assets: dict[str, AssetReport]
-    works: dict[str, WorkReport]
+    movies: dict[str, MovieReport]
+    series: dict[str, SeriesReport]
+    seasons: dict[str, SeasonReport]
+    episodes: dict[str, EpisodeReport]
+    artists: dict[str, ArtistReport]
+    albums: dict[str, AlbumReport]
+    discs: dict[str, DiscReport]
+    tracks: dict[str, TrackReport]
     variants: dict[str, VariantReport]
     bundles: dict[str, BundleReport]
 
@@ -213,13 +243,28 @@ def _write_shared_metadata(out_dir: Path, metadata: MaterializeMetadata) -> None
 
 def _write_reports(out_dir: Path, reports: MaterializeReports) -> None:
     reports_dir = out_dir / "reports"
-    for sub in ("assets", "works", "variants", "bundles"):
+    for sub in REPORT_DIRS:
         (reports_dir / sub).mkdir(parents=True, exist_ok=True)
-    for asset_id, report in reports.assets.items():
-        replace_atomic_text(reports_dir / "assets" / f"{asset_id}.json", canonical_json(report))
-    for work_id, report in reports.works.items():
-        replace_atomic_text(reports_dir / "works" / f"{work_id}.json", canonical_json(report))
-    for variant_id, report in reports.variants.items():
-        replace_atomic_text(reports_dir / "variants" / f"{variant_id}.json", canonical_json(report))
-    for bundle_id, report in reports.bundles.items():
-        replace_atomic_text(reports_dir / "bundles" / f"{bundle_id}.json", canonical_json(report))
+    _write_report_map(reports_dir / "assets", reports.assets, "asset_id")
+    _write_report_map(reports_dir / "movies", reports.movies, "movie_id")
+    _write_report_map(reports_dir / "series", reports.series, "series_id")
+    _write_report_map(reports_dir / "seasons", reports.seasons, "season_id")
+    _write_report_map(reports_dir / "episodes", reports.episodes, "episode_id")
+    _write_report_map(reports_dir / "artists", reports.artists, "artist_id")
+    _write_report_map(reports_dir / "albums", reports.albums, "album_id")
+    _write_report_map(reports_dir / "discs", reports.discs, "disc_id")
+    _write_report_map(reports_dir / "tracks", reports.tracks, "track_id")
+    _write_report_map(reports_dir / "variants", reports.variants, "variant_id")
+    _write_report_map(reports_dir / "bundles", reports.bundles, "bundle_id")
+
+
+def _write_report_map(
+    directory: Path,
+    reports: Mapping[str, BaseModel],
+    id_field: str,
+) -> None:
+    for report in reports.values():
+        report_id = getattr(report, id_field)
+        if not isinstance(report_id, str):
+            raise TypeError(f"{id_field} must be a string")
+        replace_atomic_text(directory / f"{report_id}.json", canonical_json(report))

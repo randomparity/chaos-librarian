@@ -1,4 +1,4 @@
-"""Per-rule tests for ``rule_asset_id_container_safe`` (E_PATH_CONTAINMENT on asset fields)."""
+"""Per-rule tests for rendered asset path safety."""
 
 from __future__ import annotations
 
@@ -8,51 +8,69 @@ from chaos_librarian.validation.semantic import run_semantic_pass
 
 
 class TestRuleAssetPathSafety:
-    """Asset id and container must be safe single path components.
+    """Rendered asset and declared sidecar paths must be safe.
 
-    WHY: ``build_initial_state`` synthesizes the initial location path as
-    ``f"{root.path}/{asset.id}.{asset.container}"``. A traversal sequence
-    in either field would produce an initial manifest path outside the
-    library root before the engine has a chance to resolve anything. The
-    rule lives at validate time so the engine can keep treating its inputs
-    as trusted. Reuses ``E_PATH_CONTAINMENT`` — same containment guarantee,
-    same code so the public taxonomy stays stable. Closes Codex
-    adversarial-review finding 3.
+    WHY: ``build_initial_state`` uses the shared renderer. Validation must
+    reject the same display-derived path failures before the engine can
+    crash while building initial state.
     """
 
-    def test_asset_id_with_traversal_flagged(
+    def test_asset_id_with_traversal_is_not_treated_as_path_component(
         self, minimal_scenario, empty_index, as_list, as_dict
     ) -> None:
         raw = minimal_scenario()
-        assets = as_list(
-            as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])["assets"]
-        )
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        assets = as_list(as_dict(variant["bundle"])["assets"])
         as_dict(assets[0])["id"] = "../../escape"
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
-        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
-        assert any("asset.id" in i.message and "../../escape" in i.message for i in issues)
+        assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
 
     def test_asset_container_with_separator_flagged(
         self, minimal_scenario, empty_index, as_list, as_dict
     ) -> None:
         raw = minimal_scenario()
-        assets = as_list(
-            as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])["assets"]
-        )
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        assets = as_list(as_dict(variant["bundle"])["assets"])
         as_dict(assets[0])["container"] = "../foo"
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
-        assert any("asset.container" in i.message and "../foo" in i.message for i in issues)
+        assert any("asset_container" in i.message for i in issues)
+
+    def test_unsafe_variant_label_reports_variant_label_path(
+        self, minimal_scenario, empty_index, as_list, as_dict
+    ) -> None:
+        raw = minimal_scenario()
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        variant["label"] = "."
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
+        assert any(i.path == "$.movies[0].variants[0].label" for i in issues)
+
+    def test_unsafe_multi_asset_role_reports_asset_role_path(
+        self, minimal_scenario, empty_index, as_list, as_dict
+    ) -> None:
+        raw = minimal_scenario()
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        bundle = as_dict(variant["bundle"])
+        assets = as_list(bundle["assets"])
+        second_asset = dict(assets[0])
+        second_asset["id"] = "asset_two"
+        second_asset["role"] = "."
+        assets.append(second_asset)
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
+        assert any(i.path == "$.movies[0].variants[0].bundle.assets[1].role" for i in issues)
 
     def test_safe_asset_passes(self, minimal_scenario, empty_index) -> None:
         raw = minimal_scenario()
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
-        # The minimal scenario uses id="a", container="mkv" — both safe.
-        # If a future minimal-scenario change introduces an unsafe value
-        # here, this assertion catches it.
-        assert not any(
-            i.code == codes.E_PATH_CONTAINMENT and "asset." in i.message for i in collector.issues
-        )
+        assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)

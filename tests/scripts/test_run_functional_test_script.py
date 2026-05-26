@@ -140,13 +140,33 @@ def test_wall_clock_failure_prints_child_output_without_library_timeout(
             def write_plan_artifacts(out_dir: Path) -> None:
                 out_dir.mkdir(parents=True, exist_ok=True)
                 manifest = {{
-                    "assets": [],
-                    "bundles": [],
-                    "locations": [],
+                    "assets": [{{"id": "asset-a", "bundle_id": "bundle-a"}}],
+                    "bundles": [{{"id": "bundle-a", "variant_id": "variant-a"}}],
+                    "locations": [{{"asset_id": "asset-a", "path": "movies/Synthetic - hd.mkv"}}],
+                    "movies": [{{"id": "movie-a", "title": "Synthetic", "layout": "movie_flat"}}],
+                    "series": [],
+                    "seasons": [],
+                    "episodes": [],
+                    "artists": [],
+                    "albums": [],
+                    "discs": [],
+                    "tracks": [],
                     "sidecars": [],
-                    "variants": [],
-                    "versions": [],
-                    "works": [],
+                    "variants": [
+                        {{
+                            "id": "variant-a",
+                            "parent_kind": "movie",
+                            "parent_id": "movie-a",
+                            "label": "hd",
+                        }}
+                    ],
+                    "versions": [
+                        {{
+                            "asset_id": "asset-a",
+                            "content_hash": "sha256:" + "0" * 64,
+                            "probed": None,
+                        }}
+                    ],
                 }}
                 replay = {{"run_id": "00000000-0000-0000-0000-000000000000"}}
                 (out_dir / "manifest.current.json").write_text(
@@ -181,7 +201,30 @@ def test_wall_clock_failure_prints_child_output_without_library_timeout(
                         }}
                     )
                 )
-            elif command in {{"validate", "step", "inspect", "compare"}}:
+            elif command == "compare":
+                observed = json.loads(Path(args[4]).read_text(encoding="utf-8"))
+                if observed.get("schema_version") != 2:
+                    print("observed schema_version is not v2", file=sys.stderr)
+                    raise SystemExit(42)
+                if "works" in observed:
+                    print("observed still contains works", file=sys.stderr)
+                    raise SystemExit(42)
+                asset = observed["assets"][0]
+                if "work_ref" in asset:
+                    print("observed asset still contains work_ref", file=sys.stderr)
+                    raise SystemExit(42)
+                variant = observed["variants"][0]
+                if "work_ref" in variant:
+                    print("observed variant still contains work_ref", file=sys.stderr)
+                    raise SystemExit(42)
+                if variant["parent_kind"] != "movie" or variant["parent_ref"] != "movie-a":
+                    print("observed variant parent ref is wrong", file=sys.stderr)
+                    raise SystemExit(42)
+                if observed["movies"][0]["observed_ref"] != "movie-a":
+                    print("observed movie row missing", file=sys.stderr)
+                    raise SystemExit(42)
+                print(json.dumps({{"ok": True, "command": command}}))
+            elif command in {{"validate", "step", "inspect"}}:
                 print(json.dumps({{"ok": True, "command": command}}))
             elif command == "plan":
                 write_plan_artifacts(Path(option_value(args, "--out")))

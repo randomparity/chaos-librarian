@@ -10,13 +10,14 @@ tag was a substring of another (e.g. ``"en"`` matching
 from __future__ import annotations
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
     ManifestBundle,
+    ManifestMovie,
     ManifestSidecar,
     ManifestVariant,
-    ManifestWork,
 )
 from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.manifest_build import find_sidecar_for
@@ -26,8 +27,22 @@ def _manifest_with_sidecars(*sidecars: ManifestSidecar) -> Manifest:
     """A minimal Manifest carrying just the sidecars under test."""
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w0", title="W")],
-        variants=[ManifestVariant(id="v0", work_id="w0", label="hd")],
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="v0",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="m0",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="b0", variant_id="v0")],
         assets=[
             ManifestAsset(

@@ -54,6 +54,7 @@ from chaos_librarian.materializer.tooling.capabilities import (
     detect_capabilities,
 )
 from chaos_librarian.media_matrix import HEVC_VIDEO_CODECS
+from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input
 
@@ -118,8 +119,15 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         run_id_override=run_id,
         steps_limit=None,
     )
-    for asset in iter_assets(scenario):
-        preflight_asset(asset.video, asset.audio, asset.subtitles, asset.container)
+    for context in iter_asset_contexts(scenario):
+        asset = context.asset
+        preflight_asset(
+            parent_kind=context.parent_kind,
+            video=asset.video,
+            audios=asset.audio,
+            subtitles=asset.subtitles,
+            container=asset.container,
+        )
     ctx = RunContext(
         run_input=run_input,
         out_dir=out_dir,

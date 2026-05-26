@@ -34,6 +34,8 @@ class FuzzLaneName(enum.StrEnum):
     NEGATIVE_ORACLE = "negative-oracle"
     FILESYSTEM_ARTIFACT = "filesystem-artifact"
     NETWORK_LAG = "network-lag"
+    TV_TOPOLOGY = "tv-topology"
+    MUSIC_TOPOLOGY = "music-topology"
 
 
 FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
@@ -47,6 +49,8 @@ FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
             FuzzLaneName.NEGATIVE_ORACLE,
             FuzzLaneName.FILESYSTEM_ARTIFACT,
             FuzzLaneName.NETWORK_LAG,
+            FuzzLaneName.TV_TOPOLOGY,
+            FuzzLaneName.MUSIC_TOPOLOGY,
         }
     ),
 }
