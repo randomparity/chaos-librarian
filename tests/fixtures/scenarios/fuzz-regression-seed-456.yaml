@@ -1,5 +1,5 @@
-schema_version: 10
-scenario_id: fuzz-regression-seed-456
+schema_version: 11
+scenario_id: fuzz-regression-core-fs-seed-456
 seed: 456
 duration_scale: short
 profiles:
@@ -7,7 +7,8 @@ profiles:
 generation:
   generator: chaos-librarian
   profile: fuzz-regression
-  profile_version: 1
+  lane: core-fs
+  profile_version: 2
   seed: 456
   budgets:
     works: 12

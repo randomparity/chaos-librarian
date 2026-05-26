@@ -222,8 +222,8 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
-def test_scenario_schema_version_is_ten() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 10
+def test_scenario_schema_version_is_eleven() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 11
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -262,7 +262,8 @@ def _generated_scenario_payload() -> dict[str, object]:
     payload["generation"] = {
         "generator": "chaos-librarian",
         "profile": "fuzz-smoke",
-        "profile_version": 1,
+        "lane": "smoke",
+        "profile_version": 2,
         "seed": 1,
         "budgets": {
             "works": 3,
@@ -282,8 +283,34 @@ def test_scenario_accepts_fuzz_generation_metadata() -> None:
     assert scenario.generation is not None
     assert scenario.generation.generator == "chaos-librarian"
     assert scenario.generation.profile.value == "fuzz-smoke"
+    assert scenario.generation.lane.value == "smoke"
     assert scenario.generation.seed == 1
     assert scenario.generation.budgets.timeline_events == 12
+
+
+def test_scenario_accepts_fuzz_lane_metadata() -> None:
+    scenario = Scenario.model_validate(_generated_scenario_payload())
+
+    assert scenario.generation is not None
+    assert scenario.generation.lane.value == "smoke"
+
+
+def test_generation_lane_must_match_profile() -> None:
+    payload = _generated_scenario_payload()
+    generation = cast(dict[str, object], payload["generation"])
+    generation["lane"] = "media-rewrite"
+
+    with pytest.raises(ValidationError, match=r"generation\.lane"):
+        Scenario.model_validate(payload)
+
+
+def test_generation_lane_is_required() -> None:
+    payload = _generated_scenario_payload()
+    generation = cast(dict[str, object], payload["generation"])
+    del generation["lane"]
+
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
 
 
 def test_generation_profile_must_be_top_level_profile() -> None:
@@ -313,7 +340,7 @@ def test_generation_seed_must_match_scenario_seed() -> None:
 def test_generation_profile_version_must_be_supported() -> None:
     payload = _generated_scenario_payload()
     generation = cast(dict[str, object], payload["generation"])
-    generation["profile_version"] = 2
+    generation["profile_version"] = 1
 
     with pytest.raises(ValidationError):
         Scenario.model_validate(payload)

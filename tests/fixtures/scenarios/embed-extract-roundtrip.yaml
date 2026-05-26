@@ -1,4 +1,4 @@
-schema_version: 10
+schema_version: 11
 scenario_id: sc_ee_001
 seed: 42
 duration_scale: short

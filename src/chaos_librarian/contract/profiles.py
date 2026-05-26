@@ -24,6 +24,17 @@ class FuzzProfileName(enum.StrEnum):
     FUZZ_REGRESSION = "fuzz-regression"
 
 
+class FuzzLaneName(enum.StrEnum):
+    SMOKE = "smoke"
+    CORE_FS = "core-fs"
+    MEDIA_REWRITE = "media-rewrite"
+    SIDECAR_SUBTITLE = "sidecar-subtitle"
+    MALFORMED = "malformed"
+    NEGATIVE_ORACLE = "negative-oracle"
+    FILESYSTEM_ARTIFACT = "filesystem-artifact"
+    NETWORK_LAG = "network-lag"
+
+
 class CorruptionProbeOutcome(enum.StrEnum):
     FAILED_EXPECTED = "failed_expected"
     STILL_PROBEABLE = "still_probeable"

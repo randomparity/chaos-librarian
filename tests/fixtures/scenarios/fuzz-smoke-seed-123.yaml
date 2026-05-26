@@ -1,4 +1,4 @@
-schema_version: 10
+schema_version: 11
 scenario_id: fuzz-smoke-seed-123
 seed: 123
 duration_scale: short
@@ -7,7 +7,8 @@ profiles:
 generation:
   generator: chaos-librarian
   profile: fuzz-smoke
-  profile_version: 1
+  lane: smoke
+  profile_version: 2
   seed: 123
   budgets:
     works: 3

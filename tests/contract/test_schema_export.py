@@ -63,5 +63,5 @@ def test_scenario_schema_freezes_generation_profile_version() -> None:
         "profile_version"
     ]
 
-    assert profile_version["const"] == 1
+    assert profile_version["const"] == 2
     assert "minimum" not in profile_version

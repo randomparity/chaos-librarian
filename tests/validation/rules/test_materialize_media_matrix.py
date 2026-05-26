@@ -45,7 +45,7 @@ def test_unsupported_video_source_names_field() -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 10
+        """schema_version: 11
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
