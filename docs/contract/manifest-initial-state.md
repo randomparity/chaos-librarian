@@ -16,6 +16,25 @@ container. The initial manifest uses this convention:
   The concrete path shape is determined by the owning movie, episode, or track
   layout and naming policy.
 
+Rendered media paths use normalized display text from the domain hierarchy,
+the variant label, and the asset container:
+
+- `movie_flat`: `<root>/<movie title> - <variant label>.<container>`
+- `movie_folder`: `<root>/<movie title>/<movie title> - <variant label>.<container>`
+- `season_folders`:
+  `<root>/<series title>/Season NN/<episode stem> - <variant label>.<container>`
+- `series_flat`:
+  `<root>/<series title>/<episode stem> - <variant label>.<container>`
+- `artist_album_disc`:
+  `<root>/<artist name>/<album title>/Disc NN/<track stem> - <variant label>.<container>`
+- `artist_album_flat`:
+  `<root>/<artist name>/<album title>/<track stem> - <variant label>.<container>`
+
+Episode stems are selected by `episode_naming`: `S01E02`, `1x02`,
+three-digit absolute number, or ISO air date forms. Track stems are selected by
+`track_naming`: `02 - Title` or `01-02 - Title`. Multi-asset bundles add the
+asset role before the extension.
+
 - Declared subtitle tracks with `mode: sidecar` create initial sidecars.
   Additional sidecars are created by explicit `create_sidecar` timeline events.
 

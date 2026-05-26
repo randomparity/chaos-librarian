@@ -71,10 +71,12 @@ Current checked-in contract versions:
 Scenario v12 adds explicit movie, TV, and music hierarchies. Manifest v7,
 replay-bundle v7, asset-report v7, variant-report v2, and observed-state v2
 carry the matching domain topology. New hierarchy report schemas start at
-version `1` because they are new artifacts.
+version `1` because they are new artifacts. Scenario v12 also bumps the fuzz
+generation profile version to `3` because generated metadata budgets now use
+domain counts.
 
-Scenario v11 added public fuzz lane metadata on `generation.lane` and freezes
-the fuzz generation profile version at `2`.
+Scenario v11 added public fuzz lane metadata on `generation.lane` and froze the
+previous fuzz generation profile version at `2`.
 
 Scenario v10 adds deterministic fuzz profile generation metadata plus the
 `fuzz-smoke` and `fuzz-regression` profile labels. Generated scenarios still
