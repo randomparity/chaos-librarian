@@ -107,6 +107,22 @@ def _validate_audio_only(container: str, audios: Sequence[AudioTrack]) -> None:
         _require(audio.codec, supported_codecs, f"audio[{index}].codec")
 
 
+def _require_audio_only_track_counts(
+    audios: Sequence[AudioTrack],
+    audio_inputs: Sequence[FFmpegInput],
+) -> None:
+    """Audio-only assets are currently single-stream track assets."""
+    if len(audios) != 1 or len(audio_inputs) != 1:
+        raise UnsupportedMaterializationError(
+            "audio-only assets must declare exactly one resolved audio stream",
+            field="audio",
+            payload={
+                "audio_count": len(audios),
+                "audio_input_count": len(audio_inputs),
+            },
+        )
+
+
 def _input_args(ffmpeg_input: FFmpegInput, *, field: str) -> list[str]:
     """Argv slice for one resolved input.
 
@@ -181,12 +197,12 @@ def _build_audio_only_command(
     output_path: Path,
 ) -> list[str]:
     _require(container, SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER, "container")
+    _require_audio_only_track_counts(audios, audio_inputs)
     _validate_audio_only(container, audios)
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=0))
-    if audios:
-        argv.extend(["-c:a", AUDIO_ENCODER_BY_CODEC[audios[0].codec]])
+    argv.extend(["-c:a", AUDIO_ENCODER_BY_CODEC[audios[0].codec]])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")
     argv.append(str(output_path))

@@ -83,8 +83,7 @@ def preflight_asset(
 
     Movie and episode assets resolve video/audio sources, then dry-build the
     video-backed FFmpeg command through ``build_command``. Track assets enforce
-    the audio-only policy and resolve audio inputs; audio-only muxing dry-build
-    is introduced when ``build_command`` supports optional video.
+    the audio-only policy and resolve audio inputs.
 
     Subtitle checks are inline: only ``codec=srt, source=generated_srt,
     mode=sidecar`` is supported. Without these gates, ``mode=embedded`` or

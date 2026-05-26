@@ -223,6 +223,43 @@ def test_audio_only_command_rejects_wrong_codec_for_container(tmp_path: Path) ->
     assert exc.value.field == "audio[0].codec"
 
 
+@pytest.mark.parametrize(
+    ("audios", "audio_inputs"),
+    [
+        ([], []),
+        (
+            [_audio(codec="flac"), _audio(codec="flac")],
+            [
+                recipe_sine(channels="stereo", duration_s=1.0, seed=1),
+                recipe_sine(channels="stereo", duration_s=1.0, seed=2),
+            ],
+        ),
+        (
+            [_audio(codec="flac")],
+            [
+                recipe_sine(channels="stereo", duration_s=1.0, seed=1),
+                recipe_sine(channels="stereo", duration_s=1.0, seed=2),
+            ],
+        ),
+    ],
+)
+def test_audio_only_command_rejects_audio_count_mismatch(
+    audios: list[AudioTrack],
+    audio_inputs: list[FFmpegInput],
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=None,
+            video_input=None,
+            audios=audios,
+            audio_inputs=audio_inputs,
+            output_path=tmp_path / "asset.flac",
+        )
+
+    assert exc.value.field == "audio"
+
+
 def test_build_command_does_not_own_source_support_after_resolution(tmp_path: Path) -> None:
     """WHY: source support belongs to content providers after recipe resolution;
     build_command only receives the resolved FFmpegInput."""

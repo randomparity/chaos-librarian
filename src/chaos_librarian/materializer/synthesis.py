@@ -40,6 +40,7 @@ from chaos_librarian.materializer.content_sources import (
 from chaos_librarian.materializer.errors import (
     ProbeParseError,
     ToolFailedError,
+    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.manifest_build import augment_manifest
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
@@ -202,6 +203,13 @@ def materialize_one_asset(
         )
         video_input = video_resolution.ffmpeg_input
         content_sources.append(video_resolution.evidence)
+    elif asset.subtitles:
+        raise UnsupportedMaterializationError(
+            "audio-only assets must not declare subtitles.",
+            field="subtitles",
+            asset_id=asset.id,
+            payload={},
+        )
     audio_inputs: list[FFmpegInput] = []
     for index, audio in enumerate(asset.audio):
         audio_resolution = resolve_audio_source(

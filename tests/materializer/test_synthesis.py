@@ -16,8 +16,17 @@ from chaos_librarian.contract.content_sources import (
 )
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
+from chaos_librarian.contract.scenario import (
+    Asset,
+    AudioChannelLayout,
+    AudioSource,
+    AudioTrack,
+    SubtitleMode,
+    SubtitleTrack,
+)
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer import synthesis as synthesis_mod
+from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.synthesis import (
     MaterializeAssetResult,
     materialize_assets_phase_a,
@@ -300,6 +309,40 @@ def test_materialize_one_asset_writes_audio_only_track(
     assert result.materialized_asset.location_path == "library/r/Artist/Album/01 - Song.flac"
     assert [source.track_kind for source in result.content_sources] == [ContentTrackKind.AUDIO]
     assert result.sidecar_hashes == {}
+
+
+def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        id="track_asset",
+        role="main",
+        container="flac",
+        duration_seconds=1,
+        audio=(
+            AudioTrack(
+                source=AudioSource.SINE,
+                codec="flac",
+                channels=AudioChannelLayout.STEREO,
+                language="eng",
+            ),
+        ),
+        subtitles=(SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR),),
+    )
+
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        materialize_one_asset(
+            asset,
+            1,
+            tmp_path / "run",
+            _caps(),
+            0,
+            rendered_relative_path="r/Artist/Album/01 - Song.flac",
+        )
+
+    assert exc_info.value.field == "subtitles"
+    sidecar_path = tmp_path / "run" / "library" / "r" / "Artist" / "Album" / "01 - Song.eng.srt"
+    assert not sidecar_path.exists()
 
 
 def _asset_with_declared_sidecar(asset_id: str):
