@@ -371,13 +371,24 @@ def _hierarchy_temp_path(
     reserved_paths: set[Path],
 ) -> Path:
     candidate = source.with_name(f".chaos-hierarchy-{event_token}-{index}.tmp")
-    if candidate not in reserved_paths:
+    if not _path_conflicts_with_reserved(candidate, reserved_paths):
         return candidate
     for attempt in range(1, _HIERARCHY_TEMP_PATH_ATTEMPTS):
         candidate = source.with_name(f".chaos-hierarchy-{event_token}-{index}-{attempt}.tmp")
-        if candidate not in reserved_paths:
+        if not _path_conflicts_with_reserved(candidate, reserved_paths):
             return candidate
     raise ValueError("could not allocate hierarchy temporary path")
+
+
+def _path_conflicts_with_reserved(candidate: Path, reserved_paths: set[Path]) -> bool:
+    for reserved_path in reserved_paths:
+        if candidate == reserved_path:
+            return True
+        if candidate in reserved_path.parents:
+            return True
+        if reserved_path in candidate.parents:
+            return True
+    return False
 
 
 def _prepare_hierarchy_destinations(planned: list[_PlannedHierarchyMove]) -> None:

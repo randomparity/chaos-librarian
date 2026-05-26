@@ -162,6 +162,51 @@ def test_hierarchy_move_temp_name_is_reserved_against_destinations(
     assert second_destination.read_bytes() == b"second"
 
 
+def test_hierarchy_move_temp_name_is_reserved_against_destination_parents(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "library"
+    (library / "music").mkdir(parents=True)
+    first = library / "music" / "01 - First.flac"
+    second = library / "music" / "02 - Second.flac"
+    event_id = "renumber_disc_001"
+    first_destination = library / "music" / _temp_name(event_id, 1) / "01 - First.flac"
+    second_destination = library / "music" / "03 - Third.flac"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    entry = _atomic_entry(
+        event_id=event_id,
+        action=TimelineActionName.RENUMBER_DISC,
+        target="disc_1",
+        state_delta={
+            "metadata": {"disc_number": {"before": 1, "after": 2}},
+            "path_moves": [
+                {
+                    "asset_id": "asset_first",
+                    "location_id": "location_0001",
+                    "from_path": "music/01 - First.flac",
+                    "to_path": f"music/{_temp_name(event_id, 1)}/01 - First.flac",
+                },
+                {
+                    "asset_id": "asset_second",
+                    "location_id": "location_0002",
+                    "from_path": "music/02 - Second.flac",
+                    "to_path": "music/03 - Third.flac",
+                },
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    _apply(library, entry)
+
+    assert not first.exists()
+    assert not second.exists()
+    assert first_destination.read_bytes() == b"first"
+    assert second_destination.read_bytes() == b"second"
+
+
 def test_hierarchy_move_blocked_destination_parent_preserves_source(
     tmp_path: Path,
 ) -> None:
