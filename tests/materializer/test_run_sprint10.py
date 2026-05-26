@@ -91,6 +91,8 @@ movies:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: corrupt_header_001
     at: 1s
@@ -354,6 +356,8 @@ movies:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: wrong_hash_001
     at: 1s
