@@ -1,4 +1,4 @@
-schema_version: 14
+schema_version: 15
 scenario_id: voom-ci-h264-transcode-candidate
 seed: 9702
 duration_scale: short

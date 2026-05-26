@@ -1,39 +1,37 @@
-# expected: E_PROFILE_REQUIRED
 schema_version: 15
-scenario_id: wrong-oracle-hash-missing-profile
-seed: 42
+scenario_id: color-signaling-video
+seed: 131
 duration_scale: short
 library:
   roots:
-    - id: movies_hd
-      path: movies-hd
+    - id: root_main
+      path: movies
 movies:
-  - id: movie_001
-    title: Wrong Oracle Hash
+  - id: movie_color_signaling
+    title: Color Signaling Fixture
     layout: movie_flat
     variants:
-      - id: variant_hd
-        label: hd
+      - id: variant_color_signaling
+        label: sd
         bundle:
-          id: bundle_hd
+          id: bundle_color_signaling
           assets:
-            - id: asset_main
+            - id: asset_color_signaling_main
               role: primary_video
               container: mkv
-              duration_seconds: 1
+              duration_seconds: 2.0
               video:
                 source: color_bars
                 codec: h264
                 resolution: sd
+                color_space: bt601
+                color_range: limited
               audio:
                 - source: sine
                   codec: aac
                   channels: stereo
                   language: eng
+              subtitles: []
 series: []
 artists: []
-timeline:
-  - id: wrong_hash_001
-    at: 1s
-    action: wrong_oracle_hash
-    target: asset_main
+timeline: []

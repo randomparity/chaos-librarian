@@ -52,7 +52,7 @@ class TestShapePassUnknownField:
 
     def test_unknown_top_level_field(self) -> None:
         raw = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -77,7 +77,7 @@ class TestShapePassLiteralValue:
 
     def test_wrong_duration_scale(self) -> None:
         raw = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "extremely_long",  # not in Literal
@@ -91,6 +91,58 @@ class TestShapePassLiteralValue:
         run_shape_pass(_run_input_from_dict(raw), collector)
         assert any(i.code == codes.E_FIELD_LITERAL for i in collector.issues)
 
+    def test_unknown_video_color_space(self) -> None:
+        raw = {
+            "schema_version": 15,
+            "scenario_id": "t",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "root_main", "path": "library"}]},
+            "movies": [
+                {
+                    "id": "movie_color",
+                    "title": "Color",
+                    "layout": "movie_flat",
+                    "variants": [
+                        {
+                            "id": "variant_main",
+                            "label": "main",
+                            "bundle": {
+                                "id": "bundle_main",
+                                "assets": [
+                                    {
+                                        "id": "asset_main",
+                                        "role": "main",
+                                        "container": "mkv",
+                                        "duration_seconds": 1.0,
+                                        "video": {
+                                            "source": "color_bars",
+                                            "codec": "h264",
+                                            "resolution": "sd",
+                                            "color_space": "ntsc_j",
+                                        },
+                                        "audio": [],
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+            "series": [],
+            "artists": [],
+            "timeline": [],
+        }
+        collector = IssueCollector()
+        run_shape_pass(_run_input_from_dict(raw), collector)
+
+        assert any(
+            issue.code == codes.E_FIELD_LITERAL
+            and issue.path is not None
+            and issue.path.endswith(".video.color_space")
+            for issue in collector.issues
+        )
+
 
 class TestShapePassDiscriminatorTag:
     """Pydantic 'union_tag_invalid' → E_TIMELINE_ACTION_UNKNOWN.
@@ -102,7 +154,7 @@ class TestShapePassDiscriminatorTag:
 
     def test_unknown_action(self) -> None:
         raw = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -129,7 +181,7 @@ class TestShapePassJSONPathStripping:
 
     def test_for_alias_under_slow_copy_commit(self) -> None:
         raw = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -183,7 +235,7 @@ class TestShapePassTupleType:
         bad_value: object,
     ) -> None:
         raw: dict[str, Any] = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -213,7 +265,7 @@ class TestShapePassNoErrorsForValidScenario:
 
     def test_valid_scenario_produces_no_issues(self) -> None:
         raw = {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",

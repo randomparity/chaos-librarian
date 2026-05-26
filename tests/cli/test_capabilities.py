@@ -57,6 +57,8 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
                         "video:color_bars",
                         "video:vfr:24_to_30",
                         "video:interlaced:top_field_first",
+                        "video:color_space:bt709",
+                        "video:color_range:full",
                     ),
                 )
             ]
@@ -132,3 +134,5 @@ def test_capabilities_human_output_formats_content_sources(monkeypatch):
     assert "sources:          video:color_bars" in result.stdout
     assert "video:vfr:24_to_30" in result.stdout
     assert "video:interlaced:top_field_first" in result.stdout
+    assert "video:color_space:bt709" in result.stdout
+    assert "video:color_range:full" in result.stdout

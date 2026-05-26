@@ -209,7 +209,7 @@ def _write_interceptor_scenario(tmp_path: Path, *, scenario_id: str, timeline: s
     timeline_yaml = "\n".join(f"  {line}" for line in dedent(timeline).strip().splitlines())
     body = dedent(
         f"""
-        schema_version: 14
+        schema_version: 15
         scenario_id: {scenario_id}
         seed: 117
         duration_scale: short

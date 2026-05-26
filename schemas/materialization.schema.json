@@ -34,6 +34,28 @@
           "default": null,
           "title": "Cache Key"
         },
+        "color_range": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoColorRange"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "color_space": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoColorSpace"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "content_hash": {
           "anyOf": [
             {
@@ -972,6 +994,25 @@
       },
       "title": "ToolchainInfo",
       "type": "object"
+    },
+    "VideoColorRange": {
+      "description": "Supported video color-range signaling values.",
+      "enum": [
+        "limited",
+        "full"
+      ],
+      "title": "VideoColorRange",
+      "type": "string"
+    },
+    "VideoColorSpace": {
+      "description": "Supported SDR video color-space signaling values.",
+      "enum": [
+        "bt601",
+        "bt709",
+        "bt2020"
+      ],
+      "title": "VideoColorSpace",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -1091,7 +1132,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 9,
+      "const": 10,
       "title": "Schema Version",
       "type": "integer"
     },

@@ -1,5 +1,5 @@
 # expected: E_PROFILE_REQUIRED
-schema_version: 14
+schema_version: 15
 scenario_id: touch-mtime-missing-profile
 seed: 42
 duration_scale: short

@@ -1,4 +1,4 @@
-schema_version: 14
+schema_version: 15
 scenario_id: reencode-video-rejected
 seed: 11
 duration_scale: short

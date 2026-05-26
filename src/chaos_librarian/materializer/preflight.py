@@ -119,6 +119,8 @@ def preflight_asset(
             fps=FPS_DEFAULT,
             vfr_cadence=video.vfr_cadence,
             field_order=video.field_order,
+            color_space=video.color_space,
+            color_range=video.color_range,
         ),
     )
     build_command(

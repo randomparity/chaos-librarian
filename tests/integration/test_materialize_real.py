@@ -209,6 +209,42 @@ def test_materialize_interlaced_video_reports_field_order(
     assert _video_field_order(media_path) == expected_probe
 
 
+@pytest.mark.parametrize(
+    ("color_space", "color_range", "expected_space", "expected_range"),
+    [
+        ("bt601", "limited", "smpte170m", "tv"),
+        ("bt601", "full", "smpte170m", "pc"),
+        ("bt709", "limited", "bt709", "tv"),
+        ("bt709", "full", "bt709", "pc"),
+        ("bt2020", "limited", "bt2020nc", "tv"),
+        ("bt2020", "full", "bt2020nc", "pc"),
+    ],
+)
+def test_materialize_color_signaling_reports_metadata(
+    color_space: str,
+    color_range: str,
+    expected_space: str,
+    expected_range: str,
+    tmp_path: Path,
+) -> None:
+    """WHY: #131 needs scanner-visible SDR color signaling. ffprobe stream
+    metadata proves both color_space and color_range survive encoding."""
+    scenario_path = _color_signaling_scenario_for(color_space, color_range, tmp_path)
+    out = tmp_path / "color-signaling"
+    result = runner.invoke(
+        app,
+        ["materialize", str(scenario_path), "--out", str(out), "--json"],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    media_path = next((out / "library").rglob("*.mkv"))
+
+    metadata = _video_color_metadata(media_path)
+    _assert_color_evidence(out / "materialization.json", color_space, color_range)
+    _assert_color_evidence(out / "replay.json", color_space, color_range)
+
+    assert metadata == {"color_space": expected_space, "color_range": expected_range}
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -281,6 +317,47 @@ def _video_field_order(path: Path) -> str:
     return streams[0]["field_order"]
 
 
+def _video_color_metadata(path: Path) -> dict[str, str]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_space,color_range",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    streams = payload["streams"]
+    assert len(streams) == 1
+    stream = streams[0]
+    return {
+        "color_space": stream["color_space"],
+        "color_range": stream["color_range"],
+    }
+
+
+def _assert_color_evidence(path: Path, color_space: str, color_range: str) -> None:
+    payload = json.loads(path.read_text())
+    video_sources = [
+        source for source in payload["content_sources"] if source["track_kind"] == "video"
+    ]
+    assert len(video_sources) == 1
+    assert video_sources[0]["color_space"] == color_space
+    assert video_sources[0]["color_range"] == color_range
+
+
 def _vfr_scenario_for(cadence: str, tmp_path: Path) -> Path:
     scenario = (FIXTURE_DIR / "vfr-video.yaml").read_text()
     scenario = scenario.replace("scenario_id: vfr-video", f"scenario_id: vfr-video-{cadence}")
@@ -301,6 +378,19 @@ def _interlaced_scenario_for(field_order: str, tmp_path: Path) -> Path:
         f"field_order: {field_order}",
     )
     scenario_path = tmp_path / f"interlaced-{field_order}.yaml"
+    scenario_path.write_text(scenario)
+    return scenario_path
+
+
+def _color_signaling_scenario_for(color_space: str, color_range: str, tmp_path: Path) -> Path:
+    scenario = (FIXTURE_DIR / "color-signaling-video.yaml").read_text()
+    scenario = scenario.replace(
+        "scenario_id: color-signaling-video",
+        f"scenario_id: color-signaling-video-{color_space}-{color_range}",
+    )
+    scenario = scenario.replace("color_space: bt601", f"color_space: {color_space}")
+    scenario = scenario.replace("color_range: limited", f"color_range: {color_range}")
+    scenario_path = tmp_path / f"color-signaling-{color_space}-{color_range}.yaml"
     scenario_path.write_text(scenario)
     return scenario_path
 

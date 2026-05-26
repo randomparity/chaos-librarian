@@ -52,7 +52,7 @@ def _variant_payload(
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "topology",
             "seed": 1,
             "duration_scale": "short",
@@ -147,7 +147,7 @@ def _scenario() -> Scenario:
 def _multi_asset_bundle_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 14,
+            "schema_version": 15,
             "scenario_id": "multi-asset-bundle",
             "seed": 1,
             "duration_scale": "short",

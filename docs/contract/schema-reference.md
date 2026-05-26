@@ -46,12 +46,12 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 14 |
+| scenario | 15 |
 | manifest | 7 |
 | journal | 1 |
-| replay bundle | 7 |
+| replay bundle | 8 |
 | validation | 1 |
-| materialization | 9 |
+| materialization | 10 |
 | run sentinel | 2 |
 | capabilities | 3 |
 | asset report | 7 |
@@ -67,6 +67,11 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 2 |
 | divergence | 1 |
+
+Scenario v15 adds optional SDR video color-space and color-range signaling on
+video tracks (`color_space`, `color_range`) with `bt601`, `bt709`, `bt2020`,
+`limited`, and `full`. Materialization v10 and replay-bundle v8 add the
+selected `color_space` and `color_range` to video content-source evidence.
 
 Scenario v14 adds optional interlaced video field-order selection on video
 tracks (`field_order`) with `top_field_first` and `bottom_field_first`.

@@ -11,6 +11,7 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceProviderCapability,
     ContentTrackKind,
 )
+from chaos_librarian.contract.scenario import VideoColorRange, VideoColorSpace
 
 
 def test_content_source_evidence_round_trips_builtin_video() -> None:
@@ -21,6 +22,8 @@ def test_content_source_evidence_round_trips_builtin_video() -> None:
         source="color_bars",
         provider="builtin-lavfi",
         recipe_digest="sha256:" + "0" * 64,
+        color_space=VideoColorSpace.BT709,
+        color_range=VideoColorRange.FULL,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
         cache_key=None,
         content_hash=None,
@@ -31,6 +34,8 @@ def test_content_source_evidence_round_trips_builtin_video() -> None:
     loaded = ContentSourceEvidence.model_validate_json(evidence.model_dump_json())
 
     assert loaded == evidence
+    assert loaded.color_space is VideoColorSpace.BT709
+    assert loaded.color_range is VideoColorRange.FULL
 
 
 def test_content_source_evidence_round_trips_cached_audio() -> None:
