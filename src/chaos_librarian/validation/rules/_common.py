@@ -277,15 +277,13 @@ def primary_root_path(raw: _RawMapping) -> str | None:
 def iter_global_namespaces(
     raw: _RawMapping,
 ) -> Iterator[tuple[str, str, _Loc]]:
-    """Yield ``(namespace, id_value, loc)`` for every variant/bundle/asset id.
+    """Yield ``(namespace, id_value, loc)`` for every hierarchy and tail id.
 
-    Walks Scenario v12 movie, series, and artist hierarchy tails and skips
-    malformed sub-trees whose shape Pydantic would have rejected.
+    Walks Scenario v12 movie, series, and artist hierarchy tails in declaration
+    order and skips malformed sub-trees whose shape Pydantic would have rejected.
+    Root and timeline ids are intentionally handled by ``id_duplicate.py``.
     """
-    tail_namespaces = {NS_VARIANT_ID, NS_BUNDLE_ID, NS_ASSET_ID}
-    for namespace, value, loc in iter_entity_ids(raw):
-        if namespace in tail_namespaces:
-            yield namespace, value, loc
+    yield from iter_entity_ids(raw)
 
 
 def iter_asset_ids(raw: _RawMapping) -> Iterator[str]:

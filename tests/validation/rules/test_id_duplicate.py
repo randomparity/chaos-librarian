@@ -26,7 +26,7 @@ class TestRule1IdDuplicateGlobalAssets:
     ) -> None:
         raw = minimal_scenario()
         # Add a second variant whose bundle contains an asset with the same id.
-        variants = as_list(as_list(raw["works"])[0]["variants"])
+        variants = as_list(as_list(raw["movies"])[0]["variants"])
         variants.append(
             {
                 "id": "v2",
@@ -35,7 +35,7 @@ class TestRule1IdDuplicateGlobalAssets:
                     "id": "b2",
                     "assets": [
                         {
-                            "id": "a",  # duplicate of works[0].variants[0].bundle.assets[0].id
+                            "id": "a",  # duplicate of movies[0]...assets[0].id
                             "role": "primary_video",
                             "container": "mkv",
                             "duration_seconds": 1,
@@ -56,7 +56,7 @@ class TestRule1IdDuplicateGlobalAssets:
     ) -> None:
         """Per-bundle duplicates still fire — global uniqueness subsumes scoped."""
         raw = minimal_scenario()
-        bundle = as_dict(as_list(as_list(raw["works"])[0]["variants"])[0]["bundle"])
+        bundle = as_dict(as_list(as_list(raw["movies"])[0]["variants"])[0]["bundle"])
         assets = as_list(bundle["assets"])
         assets.append(
             {
@@ -72,24 +72,25 @@ class TestRule1IdDuplicateGlobalAssets:
 
 
 class TestRule1IdDuplicateGlobalVariants:
-    """Duplicate variant IDs across different works are an error.
+    """Duplicate variant IDs across different movies are an error.
 
     WHY: variants are oracle keys in the manifest (one ManifestVariant per
     id); collisions would make plan/materialize ambiguous.
     """
 
-    def test_duplicate_variant_id_across_works(
+    def test_duplicate_variant_id_across_movies(
         self, minimal_scenario, empty_index, as_list
     ) -> None:
         raw = minimal_scenario()
-        works = as_list(raw["works"])
-        works.append(
+        movies = as_list(raw["movies"])
+        movies.append(
             {
-                "id": "w2",
+                "id": "movie_two",
                 "title": "t2",
+                "layout": "movie_flat",
                 "variants": [
                     {
-                        "id": "v",  # collides with works[0].variants[0].id
+                        "id": "v",  # collides with movies[0].variants[0].id
                         "label": "l",
                         "bundle": {"id": "b3", "assets": []},
                     }
@@ -114,7 +115,7 @@ class TestRule1IdDuplicateGlobalBundles:
         self, minimal_scenario, empty_index, as_list
     ) -> None:
         raw = minimal_scenario()
-        variants = as_list(as_list(raw["works"])[0]["variants"])
+        variants = as_list(as_list(raw["movies"])[0]["variants"])
         variants.append(
             {
                 "id": "v2",
@@ -130,7 +131,7 @@ class TestRule1IdDuplicateGlobalBundles:
 
 
 class TestRule1IdDuplicateTopLevel:
-    """Duplicate root_id, work_id, timeline_id at the top level are errors.
+    """Duplicate root_id, movie_id, timeline_id at the top level are errors.
 
     WHY: these are flat namespaces; collisions would ambiguate references
     in subsequent semantic passes.
@@ -146,16 +147,16 @@ class TestRule1IdDuplicateTopLevel:
             i.code == codes.E_ID_DUPLICATE and "root_id" in i.message for i in collector.issues
         )
 
-    def test_duplicate_work_id(self, minimal_scenario, empty_index, as_list) -> None:
+    def test_duplicate_movie_id(self, minimal_scenario, empty_index, as_list) -> None:
         raw = minimal_scenario()
-        works = as_list(raw["works"])
-        works.append(
-            {"id": "w", "title": "t2", "variants": []},
+        movies = as_list(raw["movies"])
+        movies.append(
+            {"id": "movie_t", "title": "t2", "layout": "movie_flat", "variants": []},
         )
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         assert any(
-            i.code == codes.E_ID_DUPLICATE and "work_id" in i.message for i in collector.issues
+            i.code == codes.E_ID_DUPLICATE and "movie_id" in i.message for i in collector.issues
         )
 
     def test_duplicate_timeline_id(self, minimal_scenario, empty_index) -> None:
@@ -169,6 +170,75 @@ class TestRule1IdDuplicateTopLevel:
         run_semantic_pass(raw, empty_index, collector)
         assert any(
             i.code == codes.E_ID_DUPLICATE and "timeline_id" in i.message for i in collector.issues
+        )
+
+
+class TestRule1IdDuplicateHierarchyEntities:
+    """Duplicate hierarchy entity IDs are global collisions.
+
+    WHY: hierarchy actions and reports address these entities by flat IDs,
+    so cross-tree duplicates would make target resolution ambiguous.
+    """
+
+    def test_duplicate_series_id(self, series_scenario, empty_index, as_list) -> None:
+        raw = series_scenario()
+        series = as_list(raw["series"])
+        series.append(
+            {
+                "id": "series_starline",
+                "title": "Starline Again",
+                "layout": "season_folders",
+                "episode_naming": "sxxexx_title",
+                "seasons": [],
+            }
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_ID_DUPLICATE and "series_id" in i.message for i in collector.issues
+        )
+
+    def test_duplicate_season_id(self, series_scenario, empty_index, as_list) -> None:
+        raw = series_scenario()
+        series = as_list(raw["series"])[0]
+        seasons = as_list(series["seasons"])
+        seasons.append(
+            {"id": "season_one", "season_number": 2, "title": "Season 2", "episodes": []}
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_ID_DUPLICATE and "season_id" in i.message for i in collector.issues
+        )
+
+    def test_duplicate_artist_id(self, music_scenario, empty_index, as_list) -> None:
+        raw = music_scenario()
+        artists = as_list(raw["artists"])
+        artists.append(
+            {
+                "id": "artist_north",
+                "name": "North Index Again",
+                "layout": "artist_album_disc",
+                "track_naming": "track_number_title",
+                "albums": [],
+            }
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_ID_DUPLICATE and "artist_id" in i.message for i in collector.issues
+        )
+
+    def test_duplicate_disc_id(self, music_scenario, empty_index, as_list) -> None:
+        raw = music_scenario()
+        artist = as_list(raw["artists"])[0]
+        album = as_list(artist["albums"])[0]
+        discs = as_list(album["discs"])
+        discs.append({"id": "disc_one", "disc_number": 2, "tracks": []})
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_ID_DUPLICATE and "disc_id" in i.message for i in collector.issues
         )
 
 

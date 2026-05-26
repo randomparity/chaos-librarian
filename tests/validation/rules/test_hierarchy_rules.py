@@ -71,6 +71,58 @@ def test_track_asset_target_is_found_by_raw_hierarchy_walker(music_scenario, emp
     assert not any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
 
 
+def test_duplicate_id_across_root_and_movie_is_rejected(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    _items(raw["movies"])[0]["id"] = "r"
+
+    issues = _issues_for(raw, empty_index)
+
+    dup = [issue for issue in issues if issue.code == codes.E_ID_DUPLICATE]
+    assert len(dup) == 1
+    assert "movie_id" in dup[0].message
+    assert "'r'" in dup[0].message
+
+
+def test_duplicate_id_across_episode_and_asset_is_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario()
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    _items(season["episodes"])[0]["id"] = "asset_episode"
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_ID_DUPLICATE
+        and "episode_id" in issue.message
+        and "'asset_episode'" in issue.message
+        for issue in issues
+    )
+
+
+def test_duplicate_id_across_album_and_timeline_event_is_rejected(
+    music_scenario, empty_index
+) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "album_winter",
+                "at": "1s",
+                "action": "delete_file",
+                "target": "asset_track",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_ID_DUPLICATE
+        and "timeline_id" in issue.message
+        and "'album_winter'" in issue.message
+        for issue in issues
+    )
+
+
 def test_date_named_episode_without_aired_on_is_not_renderable(series_scenario) -> None:
     raw = series_scenario(episode_naming="date_title")
     series = _items(raw["series"])[0]

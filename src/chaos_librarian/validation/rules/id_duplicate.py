@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.validation.codes import E_ID_DUPLICATE, format_jsonpath
 from chaos_librarian.validation.rules._common import (
-    NS_ASSET_ID,
-    NS_BUNDLE_ID,
-    NS_VARIANT_ID,
     Reporter,
     _as_mapping,
     _list_at_path,
@@ -24,12 +21,10 @@ if TYPE_CHECKING:
 __all__ = ["rule_id_duplicate"]
 
 
-# Top-level namespace labels used only by ``_check_top_level_dups`` below.
-# Global namespaces (variant/bundle/asset) live in ``_common`` because
-# ``iter_global_namespaces`` yields them and other rule modules consume
-# them via the walker.
+# Top-level namespace labels used by the raw top-level ID walker.
+# Hierarchy and tail namespaces live in ``_common`` because
+# ``iter_global_namespaces`` yields them and other rule modules consume them.
 NS_ROOT_ID: Final = "root_id"
-NS_WORK_ID: Final = "work_id"
 NS_TIMELINE_ID: Final = "timeline_id"
 
 
@@ -38,48 +33,56 @@ def rule_id_duplicate(
     line_index: LineIndex,
     collector: IssueCollector,
 ) -> None:
-    """Reject duplicate IDs per the namespace table in the Sprint 1 spec.
+    """Reject duplicate IDs across the scenario-global ID pool.
 
-    Global namespaces (across the whole scenario): variant_id, bundle_id,
-    asset_id. Top-level namespaces: root_id, work_id, timeline_id.
+    Root, hierarchy, variant, bundle, asset, and timeline ids must all be
+    unique because downstream target resolution and oracle state are flat by id.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    for namespace, path_parts in (
-        (NS_ROOT_ID, ("library", "roots")),
-        (NS_WORK_ID, ("works",)),
-        (NS_TIMELINE_ID, ("timeline",)),
+
+    seen: dict[str, tuple[str, _Loc]] = {}
+    for namespace, value, loc in _iter_top_level_ids(
+        raw=raw, namespace=NS_ROOT_ID, path_parts=("library", "roots")
     ):
-        _check_top_level_dups(
-            raw=raw, namespace=namespace, path_parts=path_parts, reporter=reporter
+        _record_or_report(
+            namespace=namespace,
+            value=value,
+            loc=loc,
+            seen=seen,
+            reporter=reporter,
         )
 
-    seen: dict[str, dict[str, _Loc]] = {
-        NS_VARIANT_ID: {},
-        NS_BUNDLE_ID: {},
-        NS_ASSET_ID: {},
-    }
     for namespace, value, loc in iter_global_namespaces(raw):
         _record_or_report(
             namespace=namespace,
             value=value,
             loc=loc,
-            seen=seen[namespace],
+            seen=seen,
+            reporter=reporter,
+        )
+
+    for namespace, value, loc in _iter_top_level_ids(
+        raw=raw, namespace=NS_TIMELINE_ID, path_parts=("timeline",)
+    ):
+        _record_or_report(
+            namespace=namespace,
+            value=value,
+            loc=loc,
+            seen=seen,
             reporter=reporter,
         )
 
 
-def _check_top_level_dups(
+def _iter_top_level_ids(
     *,
     raw: Mapping[str, object],
     namespace: str,
     path_parts: tuple[str, ...],
-    reporter: Reporter,
-) -> None:
-    """Top-level duplicate-id check: walk one list field and report collisions."""
+) -> Iterator[tuple[str, str, _Loc]]:
+    """Yield ids from one top-level list field with raw locations."""
     items = _list_at_path(raw, path_parts)
     if items is None:
         return
-    seen: dict[str, _Loc] = {}
     for idx, item_obj in enumerate(items):
         item = _as_mapping(item_obj)
         if item is None:
@@ -87,14 +90,7 @@ def _check_top_level_dups(
         item_id = item.get("id")
         if not isinstance(item_id, str):
             continue
-        loc = (*path_parts, idx, "id")
-        _record_or_report(
-            namespace=namespace,
-            value=item_id,
-            loc=loc,
-            seen=seen,
-            reporter=reporter,
-        )
+        yield namespace, item_id, (*path_parts, idx, "id")
 
 
 def _record_or_report(
@@ -102,15 +98,19 @@ def _record_or_report(
     namespace: str,
     value: str,
     loc: _Loc,
-    seen: dict[str, _Loc],
+    seen: dict[str, tuple[str, _Loc]],
     reporter: Reporter,
 ) -> None:
     if value in seen:
-        first_path = format_jsonpath(seen[value])
+        first_namespace, first_loc = seen[value]
+        first_path = format_jsonpath(first_loc)
         reporter.error(
             code=E_ID_DUPLICATE,
-            message=f"duplicate {namespace} {value!r} (first defined at {first_path})",
+            message=(
+                f"duplicate {namespace} {value!r} "
+                f"(first defined as {first_namespace} at {first_path})"
+            ),
             loc=loc,
         )
     else:
-        seen[value] = loc
+        seen[value] = (namespace, loc)
