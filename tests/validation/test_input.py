@@ -72,7 +72,7 @@ class TestRunInputScenarioCache:
     """
 
     _VALID_BYTES = (
-        b"schema_version: 11\n"
+        b"schema_version: 12\n"
         b"scenario_id: s1\n"
         b"seed: 1\n"
         b"duration_scale: short\n"
@@ -80,7 +80,9 @@ class TestRunInputScenarioCache:
         b"  roots:\n"
         b"    - id: r\n"
         b"      path: r\n"
-        b"works: []\n"
+        b"movies: []\n"
+        b"series: []\n"
+        b"artists: []\n"
         b"timeline: []\n"
     )
 
@@ -147,7 +149,7 @@ class TestRunInputScenarioCache:
 
         WHY: top-level ``frozen=True`` alone would let
         ``scenario.library.roots[0].path = "tampered"`` or
-        ``scenario.works.append(...)`` slip through and desync engine output
+        ``scenario.movies.append(...)`` slip through and desync engine output
         from ``raw_bytes``. The contract makes every sub-model
         ``frozen=True`` and every collection field ``tuple[X, ...]`` so
         both forms of nested mutation raise.
@@ -163,9 +165,11 @@ class TestRunInputScenarioCache:
         # ``isinstance(..., tuple)`` is the structural assertion; the
         # follow-up ``hasattr`` check confirms list mutators are absent.
         assert isinstance(run_input.scenario.library.roots, tuple)
-        assert isinstance(run_input.scenario.works, tuple)
+        assert isinstance(run_input.scenario.movies, tuple)
+        assert isinstance(run_input.scenario.series, tuple)
+        assert isinstance(run_input.scenario.artists, tuple)
         assert isinstance(run_input.scenario.timeline, tuple)
-        assert not hasattr(run_input.scenario.works, "append")
+        assert not hasattr(run_input.scenario.movies, "append")
 
     def test_validation_invalidates_stale_cache_after_raw_data_mutation(
         self,
@@ -186,8 +190,8 @@ class TestRunInputScenarioCache:
         # Step 1: pre-populate the cache via direct property access.
         assert isinstance(run_input.scenario, Scenario)
 
-        # Step 2: mutate raw_data to a shape-invalid value (works must be a list).
-        run_input.raw_data["works"] = {}
+        # Step 2: mutate raw_data to a shape-invalid value (movies must be a list).
+        run_input.raw_data["movies"] = {}
 
         # Step 3: validation must catch the mutation, not return the stale parse.
         report = run_validation(run_input)
@@ -209,7 +213,7 @@ class TestRunInputScenarioCache:
         """
         path = tmp_path / "s.yaml"
         path.write_text(
-            "schema_version: 11\n"
+            "schema_version: 12\n"
             "scenario_id: dedup\n"
             "seed: 1\n"
             "duration_scale: short\n"
@@ -217,7 +221,9 @@ class TestRunInputScenarioCache:
             "  roots:\n"
             "    - id: r\n"
             "      path: r\n"
-            "works: []\n"
+            "movies: []\n"
+            "series: []\n"
+            "artists: []\n"
             "timeline: []\n",
         )
 
