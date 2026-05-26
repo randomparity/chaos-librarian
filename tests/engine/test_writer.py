@@ -407,6 +407,7 @@ class TestWriterEmitsReports:
 
         for report_dir in _REPORT_DIRS:
             assert (out / "reports" / report_dir).is_dir()
+        assert not (out / "reports" / "works").exists()
 
     def test_asset_report_file_per_id(self, tmp_path: Path) -> None:
         run_input, report = _prepare(_IDENTITY_MOVE_RENAME)
