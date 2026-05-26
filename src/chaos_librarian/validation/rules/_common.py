@@ -860,6 +860,12 @@ def _episode_renderable_context(
         return None
     if tail is None:
         return None
+    aired_on = _date_field(raw_context.episode, "aired_on")
+    absolute_number = _int_field(raw_context.episode, "absolute_number")
+    if (naming is EpisodeNaming.DATE_TITLE and aired_on is None) or (
+        naming is EpisodeNaming.ABSOLUTE_3_DIGIT_TITLE and absolute_number is None
+    ):
+        return None
     return RenderableAssetContext(
         parent_kind=parent_kind,
         root_path=root_path,
@@ -870,8 +876,8 @@ def _episode_renderable_context(
         season_number=season_number,
         episode_number=episode_number,
         episode_title=episode_title,
-        aired_on=_date_field(raw_context.episode, "aired_on"),
-        absolute_number=_int_field(raw_context.episode, "absolute_number"),
+        aired_on=aired_on,
+        absolute_number=absolute_number,
         artist_name=None,
         album_title=None,
         disc_number=None,
