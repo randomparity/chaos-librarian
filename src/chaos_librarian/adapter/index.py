@@ -410,9 +410,10 @@ def _manifest_sidecars_by_asset(
 
 
 def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
-    bundles = {bundle.id: bundle for bundle in fixture.initial_manifest.bundles}
-    variants = {variant.id: variant for variant in fixture.initial_manifest.variants}
-    manifest = fixture.initial_manifest
+    manifest = fixture.current_manifest
+    bundles = {bundle.id: bundle for bundle in manifest.bundles}
+    variants = {variant.id: variant for variant in manifest.variants}
+    current_assets = {asset.id: asset for asset in manifest.assets}
     domain_lookups = _OracleDomainLookups(
         movies={movie.id: movie for movie in manifest.movies},
         series={series.id: series for series in manifest.series},
@@ -424,10 +425,13 @@ def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
         tracks={track.id: track for track in manifest.tracks},
     )
     bundle_members: dict[str, list[str]] = {}
-    for asset in fixture.initial_manifest.assets:
+    for asset in manifest.assets:
         bundle_members.setdefault(asset.bundle_id, []).append(asset.id)
     views: list[OracleTopologyView] = []
-    for asset in fixture.initial_manifest.assets:
+    for initial_asset in fixture.initial_manifest.assets:
+        asset = current_assets.get(initial_asset.id)
+        if asset is None:
+            continue
         bundle = bundles[asset.bundle_id]
         variant = variants[bundle.variant_id]
         domain_fields = _oracle_domain_fields(
