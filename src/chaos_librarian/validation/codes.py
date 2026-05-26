@@ -63,7 +63,8 @@ PYDANTIC_TO_CODE: Final[dict[str, str]] = {
     "bool_type": E_FIELD_TYPE,
     "list_type": E_FIELD_TYPE,
     # ``tuple_type`` covers the Scenario subtree's tuple-backed collection
-    # fields (``library.roots``, ``works``, ``timeline``, etc.). Without this
+    # fields (``library.roots``, ``movies``, ``series``, ``artists``,
+    # ``timeline``, etc.). Without this
     # entry Pydantic's ``tuple_type`` error would degrade to E_FIELD_SHAPE
     # instead of the stable E_FIELD_TYPE contract.
     "tuple_type": E_FIELD_TYPE,
