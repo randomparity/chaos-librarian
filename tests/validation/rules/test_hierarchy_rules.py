@@ -71,6 +71,89 @@ def test_track_asset_target_is_found_by_raw_hierarchy_walker(music_scenario, emp
     assert not any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
 
 
+def test_renumber_episode_requires_episode_target(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "season_one",
+                "episode_number": 2,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
+
+
+def test_move_episode_to_season_requires_known_destination_season(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_episode_to_season",
+                "target": "episode_one",
+                "to_season": "season_missing",
+                "episode_number": 2,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_TARGET_UNKNOWN and issue.path == "$.timeline[0].to_season"
+        for issue in issues
+    )
+
+
+def test_move_track_to_disc_requires_track_target(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_track_to_disc",
+                "target": "disc_one",
+                "to_disc": "disc_one",
+                "track_number": 2,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
+
+
+def test_move_track_to_disc_requires_known_destination_disc(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_track_to_disc",
+                "target": "track_one",
+                "to_disc": "disc_missing",
+                "track_number": 2,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_TARGET_UNKNOWN and issue.path == "$.timeline[0].to_disc"
+        for issue in issues
+    )
+
+
 def test_duplicate_id_across_root_and_movie_is_rejected(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario()
     _items(raw["movies"])[0]["id"] = "r"

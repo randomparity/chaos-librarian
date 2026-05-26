@@ -352,12 +352,25 @@ def iter_entity_ids(raw: _RawMapping) -> Iterator[tuple[str, str, _Loc]]:
     yield from _iter_artist_entity_ids(raw)
 
 
-def entity_ids_by_kind(raw: _RawMapping) -> dict[str, dict[str, _Loc]]:
-    """Return ``namespace -> id -> first raw loc`` for hierarchy and tail ids."""
-    by_kind: dict[str, dict[str, _Loc]] = {}
-    for namespace, value, loc in iter_entity_ids(raw):
-        by_kind.setdefault(namespace, {}).setdefault(value, loc)
-    return by_kind
+def entity_ids_by_kind(raw: _RawMapping) -> dict[str, set[str]]:
+    """Return ``kind -> ids`` for hierarchy and tail ids."""
+    ids: dict[str, set[str]] = {
+        "movie": set(),
+        "series": set(),
+        "season": set(),
+        "episode": set(),
+        "artist": set(),
+        "album": set(),
+        "disc": set(),
+        "track": set(),
+        "variant": set(),
+        "bundle": set(),
+        "asset": set(),
+    }
+    for namespace, value, _loc in iter_global_namespaces(raw):
+        kind = namespace.removesuffix("_id")
+        ids[kind].add(value)
+    return ids
 
 
 def iter_asset_contexts(raw: _RawMapping) -> Iterator[RawAssetContext]:
