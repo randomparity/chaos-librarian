@@ -225,14 +225,28 @@ run/
   validation.json
   materialization.json
   reports/
-    assets/
-      asset_001.json
-    works/
-      work_001.json
+    movies/
+      movie_001.json
+    series/
+      series_001.json
+    seasons/
+      season_001.json
+    episodes/
+      episode_001.json
+    artists/
+      artist_001.json
+    albums/
+      album_001.json
+    discs/
+      disc_001.json
+    tracks/
+      track_001.json
     variants/
       variant_001.json
     bundles/
       bundle_001.json
+    assets/
+      asset_001.json
   library/
     movies-hd/
     movies-4k/
@@ -330,9 +344,16 @@ Every artifact carries a top-level `schema_version` field (positive integer).
 - `materialization.schema.json` — materialization diagnostics
 - `run-sentinel.schema.json` — `.chaos-librarian-run` sentinel file
 - `asset-report.schema.json` — per-asset report under `reports/assets/`
-- `work-report.schema.json` — per-work report under `reports/works/`
 - `variant-report.schema.json` — per-variant report under `reports/variants/`
 - `bundle-report.schema.json` — per-bundle report under `reports/bundles/`
+- `movie-report.schema.json` — per-movie report under `reports/movies/`
+- `series-report.schema.json` — per-series report under `reports/series/`
+- `season-report.schema.json` — per-season report under `reports/seasons/`
+- `episode-report.schema.json` — per-episode report under `reports/episodes/`
+- `artist-report.schema.json` — per-artist report under `reports/artists/`
+- `album-report.schema.json` — per-album report under `reports/albums/`
+- `disc-report.schema.json` — per-disc report under `reports/discs/`
+- `track-report.schema.json` — per-track report under `reports/tracks/`
 - `capabilities.schema.json` — output of `capabilities`
 - `observed-state.schema.json` — consumer input to `compare`
 - `divergence.schema.json` — output of `compare`
@@ -345,62 +366,34 @@ error reporting and validated against `scenario.schema.json`.
 Example shape:
 
 ```yaml
-schema_version: 1
-scenario_id: identity-move-rename
+"schema_version": 12
+scenario_id: hierarchy-shape
 seed: 42
 duration_scale: short
 
 library:
   roots:
-    - id: movies_hd
-      path: movies-hd
-    - id: movies_4k
-      path: movies-4k
+    - id: media_root
+      path: media
 
-works:
-  - id: work_blazar
-    title: "Synthetic Blazar"
-    variants:
-      - id: variant_hd
-        label: hd
-        bundle:
-          id: bundle_hd
-          assets:
-            - id: asset_hd_main
-              role: primary_video
-              container: mkv
-              duration_seconds: 12
-              video:
-                source: mandelbrot
-                codec: h264
-                resolution: 1080p
-              audio:
-                - codec: aac
-                  channels: stereo
-                  language: eng
-              subtitles:
-                - codec: srt
-                  language: eng
-                  mode: sidecar
-
-timeline:
-  - id: move_001
-    at: 2s
-    action: move_asset
-    target: asset_hd_main
-    to: movies-hd/Synthetic Blazar (HD).mkv
-  - id: reencode_001
-    at: 5s
-    action: reencode_video
-    target: asset_hd_main
-    resolution: sd
-    codec: h264
-  - id: downmix_001
-    at: 7s
-    action: reencode_audio
-    target: asset_hd_main
-    from_channels: "5.1"
-    to_channels: stereo
+movies:
+  - id: movie_quasar
+    title: Synthetic Quasar
+    layout: movie_flat
+    variants: []
+series:
+  - id: series_atlas
+    title: Atlas Station
+    layout: season_folders
+    episode_naming: sxxexx_title
+    seasons: []
+artists:
+  - id: artist_glass
+    name: Glass Harbour
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums: []
+timeline: []
 ```
 
 Scenario IDs are stable within a scenario. They become the oracle frame of
@@ -410,7 +403,14 @@ reference.
 
 Chaos Librarian assigns stable IDs:
 
-- `work_id`
+- `movie_id`
+- `series_id`
+- `season_id`
+- `episode_id`
+- `artist_id`
+- `album_id`
+- `disc_id`
+- `track_id`
 - `variant_id`
 - `bundle_id`
 - `asset_id`
@@ -466,7 +466,14 @@ logical time.
 
 The manifest describes current expected library state. It includes:
 
-- works
+- movies
+- series
+- seasons
+- episodes
+- artists
+- albums
+- discs
+- tracks
 - variants
 - bundles
 - assets
@@ -657,8 +664,8 @@ performance and progress tests.
 
 Larger performance profiles are reserved for opt-in scenarios. The scenario
 contract accepts the labels below, and validation enforces static source-fixture
-ceilings for declared assets, works, variants, bundles, sidecars, and timeline
-events.
+ceilings for declared hierarchy entities, variants, bundles, assets, sidecars,
+and timeline events.
 
 Reserved labels:
 
@@ -672,7 +679,7 @@ artifacts:
 | Budget | `performance-smoke` | `performance-scale` | `performance-stress` |
 | --- | ---: | ---: | ---: |
 | Media assets | 40 | 250 | 1,000 |
-| Works | 40 | 250 | 1,000 |
+| Movies, series, and artists | 40 | 250 | 1,000 |
 | Variants | 60 | 400 | 1,800 |
 | Bundles | 8 | 50 | 200 |
 | Sidecars | 120 | 750 | 3,000 |
@@ -730,15 +737,15 @@ must also appear in top-level `profiles`.
 
 `fuzz-smoke` uses the `smoke` lane. `fuzz-regression` is a deterministic lane
 suite with `core-fs`, `media-rewrite`, `sidecar-subtitle`, `malformed`,
-`negative-oracle`, `filesystem-artifact`, and `network-lag`. CI should shard
-these lanes or explicitly select lanes instead of treating `fuzz-regression` as
-one monolithic job.
+`negative-oracle`, `filesystem-artifact`, `network-lag`, `tv-topology`, and
+`music-topology`. CI should shard these lanes or explicitly select lanes
+instead of treating `fuzz-regression` as one monolithic job.
 
 Fuzz budgets are hard static ceilings per generated scenario:
 
 | Budget | `fuzz-smoke` | `fuzz-regression` |
 | --- | ---: | ---: |
-| Works | 3 | 12 |
+| Movies, series, and artists | 3 | 12 |
 | Variants | 4 | 18 |
 | Bundles | 4 | 18 |
 | Media assets | 4 | 18 |
@@ -851,7 +858,7 @@ Media mutations:
 Identity and variant mutations:
 
 - create duplicate asset
-- create HD and 4K variants for the same work
+- create HD and 4K variants for the same movie, episode, or track
 - replace a primary video with a better version
 - add fallback variant
 - move variant to a different root
@@ -932,7 +939,7 @@ them together. This targets bundle membership and sidecar reconciliation.
 
 ### Duplicate/Variant
 
-Create one work with HD and 4K variants plus a duplicate HD encode. This
+Create one movie with HD and 4K variants plus a duplicate HD encode. This
 targets variant modeling and duplicate-candidate evidence without expecting
 app policy outcomes.
 
@@ -1024,8 +1031,10 @@ Deliverables:
 
 - Seeded RNG with per-stream sub-seeds so independent subsystems do not
   interfere
-- ID allocator producing stable `work_id`, `variant_id`, `bundle_id`,
-  `asset_id`, `version_id`, `location_id`, `sidecar_id`, `mutation_id`
+- ID allocator producing stable `movie_id`, `series_id`, `season_id`,
+  `episode_id`, `artist_id`, `album_id`, `disc_id`, `track_id`, `variant_id`,
+  `bundle_id`, `asset_id`, `version_id`, `location_id`, `sidecar_id`,
+  `mutation_id`
 - Logical clock (nanosecond integer) and duration string *formatters*
   (`format_duration_human`, `format_duration_json`). Sprint 2 consumes the
   duration parser shipped in Sprint 1.
@@ -1061,7 +1070,8 @@ Deliverables:
 - `chaos-librarian inspect` reads a run directory and prints JSON
 - `chaos-librarian clean` removes a run directory safely
 - `chaos-librarian replay` re-runs from a replay bundle
-- Per-asset, per-work, per-variant, per-bundle reports under `reports/`
+- Per-domain-entity, per-asset, per-variant, and per-bundle reports under
+  `reports/`
 
 Exit criteria:
 

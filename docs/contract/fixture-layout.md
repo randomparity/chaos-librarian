@@ -16,10 +16,17 @@ run/
   validation.json
   materialization.json
   reports/
-    assets/
-    works/
+    movies/
+    series/
+    seasons/
+    episodes/
+    artists/
+    albums/
+    discs/
+    tracks/
     variants/
     bundles/
+    assets/
   library/                    # all scenario paths resolve under here
     movies-hd/
     movies-4k/

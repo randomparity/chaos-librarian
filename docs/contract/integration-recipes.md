@@ -72,11 +72,74 @@ Recommended exports:
   assets inside one bundle.
 - Prober recipe: add `content_hash` and `probed` for each asset. Equal hashes
   are duplicate-candidate evidence, not a policy command to merge records.
-- Topology recipe: add work, variant, and bundle refs when the consumer tracks
-  them. A pathless topology export can surface the ambiguous `Synthetic Echo`
-  and `Synthetic Pair` keys, but `current_path: null` still means deleted; add
-  paths or hashes before treating the compare result as a clean final-state
-  check.
+- Topology recipe: add movie, variant, bundle, and asset refs when the consumer
+  tracks them. A pathless topology export can surface the ambiguous
+  `Synthetic Echo` and `Synthetic Pair` keys, but `current_path: null` still
+  means deleted; add paths or hashes before treating the compare result as a
+  clean final-state check.
+
+## Domain Hierarchy Fixtures
+
+Movie fixtures use `movies[*]` with an explicit layout. Use `movie_flat` when
+assets should land directly below the root path, and `movie_folder` when each
+movie should get its own directory.
+
+```yaml
+movies:
+  - id: movie_quasar
+    title: Synthetic Quasar
+    layout: movie_flat
+    variants: []
+series: []
+artists: []
+```
+
+TV fixtures use `series[*].seasons[*].episodes[*]` with explicit `layout` and
+`episode_naming` values. Use `season_folders` for season directories or
+`series_flat` when all episode files should live under the series directory.
+
+```yaml
+movies: []
+series:
+  - id: series_atlas
+    title: Atlas Station
+    layout: season_folders
+    episode_naming: sxxexx_title
+    seasons: []
+artists: []
+```
+
+Music fixtures use `artists[*].albums[*].discs[*].tracks[*]` with explicit
+`layout` and `track_naming` values. `artist_album_disc` creates disc folders;
+`artist_album_flat` keeps tracks under the album directory.
+
+```yaml
+movies: []
+series: []
+artists:
+  - id: artist_glass
+    name: Glass Harbour
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums: []
+```
+
+Audio-only track assets are track assets with `role: primary_audio`, an audio
+container such as `flac`, `mp3`, or `m4a`, no `video` key, and at least one
+supported audio stream.
+
+```yaml
+assets:
+  - id: asset_tone_track1
+    role: primary_audio
+    container: flac
+    duration_seconds: 5
+    audio:
+      - source: sine
+        codec: flac
+        channels: stereo
+        language: eng
+```
 
 ## Fuzz Profile Generation
 
@@ -116,9 +179,13 @@ stored in `replay.json`.
 | `negative-oracle` | Intentional oracle mismatch events. |
 | `filesystem-artifact` | Filesystem artifact events such as mtime touches. |
 | `network-lag` | Run-mode lag windows for delayed visibility and rename behavior. |
+| `tv-topology` | Series, season, and episode hierarchy mutations. |
+| `music-topology` | Artist, album, disc, and track hierarchy mutations. |
 
 `fuzz-smoke` is suitable for local and optional fast checks. `fuzz-regression`
-is reserved for scheduled or maintainer-dispatched jobs.
+is reserved for scheduled or maintainer-dispatched jobs. Regression lane lists
+and seed-manifest fixtures should include `tv-topology` and `music-topology`
+when validating hierarchy generation.
 
 ## Watcher Identity-History
 

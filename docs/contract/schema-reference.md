@@ -11,22 +11,29 @@ python -m chaos_librarian.schema_export --write
 CI runs `--check` and fails if the committed artifacts diverge from the
 current models.
 
-| schema                          | purpose                                     |
-|---------------------------------|---------------------------------------------|
-| `scenario.schema.json`          | Input YAML format                           |
-| `manifest.schema.json`          | Initial and current expected library state  |
-| `journal.schema.json`           | One JSONL line per timeline event           |
-| `replay-bundle.schema.json`     | `replay.json` for reproducing a run         |
-| `validation.schema.json`        | Output of `chaos-librarian validate`        |
-| `materialization.schema.json`   | Output of `materialize` and `run`           |
-| `run-sentinel.schema.json`      | `.chaos-librarian-run` sentinel file        |
-| `asset-report.schema.json`      | Per-asset report under `reports/assets/`    |
-| `work-report.schema.json`       | Per-work report under `reports/works/`      |
-| `variant-report.schema.json`    | Per-variant report under `reports/variants/` |
-| `bundle-report.schema.json`     | Per-bundle report under `reports/bundles/`  |
-| `capabilities.schema.json`      | Output of `chaos-librarian capabilities`    |
-| `observed-state.schema.json`    | Consumer input to `chaos-librarian compare` |
-| `divergence.schema.json`        | Output of `chaos-librarian compare`         |
+| schema | purpose |
+| --- | --- |
+| `scenario.schema.json` | Input YAML format |
+| `manifest.schema.json` | Initial and current expected library state |
+| `journal.schema.json` | One JSONL line per timeline event |
+| `replay-bundle.schema.json` | `replay.json` for reproducing a run |
+| `validation.schema.json` | Output of `chaos-librarian validate` |
+| `materialization.schema.json` | Output of `materialize` and `run` |
+| `run-sentinel.schema.json` | `.chaos-librarian-run` sentinel file |
+| `capabilities.schema.json` | Output of `chaos-librarian capabilities` |
+| `asset-report.schema.json` | Per-asset report under `reports/assets/` |
+| `variant-report.schema.json` | Per-variant report under `reports/variants/` |
+| `bundle-report.schema.json` | Per-bundle report under `reports/bundles/` |
+| `movie-report.schema.json` | Per-movie report under `reports/movies/` |
+| `series-report.schema.json` | Per-series report under `reports/series/` |
+| `season-report.schema.json` | Per-season report under `reports/seasons/` |
+| `episode-report.schema.json` | Per-episode report under `reports/episodes/` |
+| `artist-report.schema.json` | Per-artist report under `reports/artists/` |
+| `album-report.schema.json` | Per-album report under `reports/albums/` |
+| `disc-report.schema.json` | Per-disc report under `reports/discs/` |
+| `track-report.schema.json` | Per-track report under `reports/tracks/` |
+| `observed-state.schema.json` | Consumer input to `chaos-librarian compare` |
+| `divergence.schema.json` | Output of `chaos-librarian compare` |
 
 Every artifact has a top-level `schema_version` integer. Version bumps are
 always breaking; readers must reject unknown versions through the
@@ -38,24 +45,36 @@ See [chaos-librarian-design.md "Versioning"](../specs/chaos-librarian-design.md)
 Current checked-in contract versions:
 
 | artifact | schema_version |
-|----------|----------------|
-| scenario | 11 |
-| manifest | 6 |
+| --- | ---: |
+| scenario | 12 |
+| manifest | 7 |
 | journal | 1 |
-| replay bundle | 6 |
+| replay bundle | 7 |
 | validation | 1 |
 | materialization | 9 |
 | run sentinel | 2 |
-| asset report | 6 |
-| work report | 1 |
-| variant report | 1 |
-| bundle report | 1 |
 | capabilities | 3 |
-| observed state | 1 |
+| asset report | 7 |
+| variant report | 2 |
+| bundle report | 1 |
+| movie report | 1 |
+| series report | 1 |
+| season report | 1 |
+| episode report | 1 |
+| artist report | 1 |
+| album report | 1 |
+| disc report | 1 |
+| track report | 1 |
+| observed state | 2 |
 | divergence | 1 |
 
-Scenario v11 adds public fuzz lane metadata on `generation.lane` and freezes the
-fuzz generation profile version at `2`.
+Scenario v12 adds explicit movie, TV, and music hierarchies. Manifest v7,
+replay-bundle v7, asset-report v7, variant-report v2, and observed-state v2
+carry the matching domain topology. New hierarchy report schemas start at
+version `1` because they are new artifacts.
+
+Scenario v11 added public fuzz lane metadata on `generation.lane` and freezes
+the fuzz generation profile version at `2`.
 
 Scenario v10 adds deterministic fuzz profile generation metadata plus the
 `fuzz-smoke` and `fuzz-regression` profile labels. Generated scenarios still

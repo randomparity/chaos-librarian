@@ -2,17 +2,19 @@
 
 `manifest.initial.json` describes the expected library state at `t=0`,
 *before* any timeline event has applied. The plan-only engine synthesizes the
-initial state from the scenario's
-`works[*].variants[*].bundle.assets[*]` declarations using this convention:
+initial state from the explicit domain hierarchy in the scenario:
+`movies[*].variants`, `series[*].seasons[*].episodes[*].variants`, and
+`artists[*].albums[*].discs[*].tracks[*].variants`.
+
+Initial asset paths are rendered from the root path, the selected
+movie/series/artist layout, the leaf metadata, the variant label, and the asset
+container. The initial manifest uses this convention:
 
 - One `Version` per asset (`version_NNNN`, monotonic allocator counter,
   `index = 0`).
-- One `Location` per asset (`location_NNNN`, monotonic allocator
-  counter), at path:
-
-  ```
-  <library.roots[0].path>/<asset.id>.<asset.container>
-  ```
+- One `Location` per asset (`location_NNNN`, monotonic allocator counter).
+  The concrete path shape is determined by the owning movie, episode, or track
+  layout and naming policy.
 
 - Declared subtitle tracks with `mode: sidecar` create initial sidecars.
   Additional sidecars are created by explicit `create_sidecar` timeline events.

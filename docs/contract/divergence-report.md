@@ -47,7 +47,8 @@ event ids in journal order.
 - `D_PROBE_MISMATCH`: both sides supplied probed media and compared fields differ.
 - `D_SIDECAR_MISSING`: oracle sidecar is missing from the observed asset.
 - `D_SIDECAR_UNEXPECTED`: observed sidecar is absent from the oracle.
-- `D_TOPOLOGY_MISMATCH`: matched work/variant/bundle structure differs.
+- `D_TOPOLOGY_MISMATCH`: matched movie, series, season, episode, artist,
+  album, disc, track, variant, bundle, or asset relationships differ.
 - `D_IDENTITY_SPLIT`: one oracle lifecycle maps to different observed refs.
 - `D_HISTORY_CONFLICT`: per-asset and global history evidence disagree.
 - `D_HISTORY_MISSING`: expected identity-history evidence is absent.
