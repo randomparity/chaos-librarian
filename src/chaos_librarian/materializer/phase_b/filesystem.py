@@ -68,6 +68,14 @@ class _HierarchyMove:
     to_path: str
 
 
+@dataclass(frozen=True, slots=True)
+class _PlannedHierarchyMove:
+    move: _HierarchyMove
+    source: Path
+    destination: Path
+    temp: Path
+
+
 def make_filesystem_phase_b_context(
     *,
     library_root: Path,
@@ -104,7 +112,7 @@ def apply_filesystem_action(
         # handler reading scenario_assets, or _slow_copy_commit's
         # ``assert isinstance``) still route through cleanup + exit 5
         # instead of escaping the dispatcher unwrapped.
-        target_asset = entry.target_ids[0] if entry.target_ids else None
+        target_asset = _filesystem_error_asset_id(action, entry)
         raise FilesystemActionError(
             f"{entry.action} failed for event {entry.event_id}: {exc}",
             event_id=entry.event_id,
@@ -115,6 +123,22 @@ def apply_filesystem_action(
     if result is None:
         return None
     return result.model_copy(update={"duration_ns": time.monotonic_ns() - started})
+
+
+def _filesystem_error_asset_id(action: TimelineActionName, entry: JournalEntry) -> str | None:
+    if action in _HIERARCHY_ACTIONS:
+        return _first_hierarchy_move_asset_id(entry)
+    return entry.target_ids[0] if entry.target_ids else None
+
+
+def _first_hierarchy_move_asset_id(entry: JournalEntry) -> str | None:
+    try:
+        moves = _normalize_hierarchy_moves(entry)
+    except Exception:
+        return None
+    if not moves:
+        return None
+    return moves[0].asset_id
 
 
 def _move_asset(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
@@ -236,13 +260,13 @@ def _hierarchy_moves(
     moves = _normalize_hierarchy_moves(entry)
     if not moves:
         return None
-    _validate_hierarchy_moves(ctx, moves)
-    staged = _stage_hierarchy_moves(ctx, entry, moves)
-    for move, temp in staged:
-        dst = resolve_under_library(Path(move.to_path), ctx.library_root)
-        dst.parent.mkdir(parents=True, exist_ok=True)
-        temp.replace(dst)
-    first = moves[0]
+    planned = _plan_hierarchy_moves(ctx, entry, moves)
+    _prepare_hierarchy_destinations(planned)
+    for plan in planned:
+        plan.source.replace(plan.temp)
+    for plan in planned:
+        plan.temp.replace(plan.destination)
+    first = planned[0].move
     return FilesystemAction(
         event_id=entry.event_id,
         action=TimelineActionName(entry.action),
@@ -278,13 +302,15 @@ def _normalize_hierarchy_move_list(raw_moves: object) -> list[_HierarchyMove]:
     return moves
 
 
-def _validate_hierarchy_moves(
+def _plan_hierarchy_moves(
     ctx: FilesystemPhaseBContext,
+    entry: JournalEntry,
     moves: list[_HierarchyMove],
-) -> None:
+) -> list[_PlannedHierarchyMove]:
+    planned: list[_PlannedHierarchyMove] = []
     source_paths: set[Path] = set()
     destination_paths: set[Path] = set()
-    for move in moves:
+    for index, move in enumerate(moves):
         source = resolve_under_library(Path(move.from_path), ctx.library_root)
         destination = resolve_under_library(Path(move.to_path), ctx.library_root)
         if source in source_paths:
@@ -293,28 +319,29 @@ def _validate_hierarchy_moves(
             raise ValueError(f"duplicate hierarchy destination path: {move.to_path}")
         source_paths.add(source)
         destination_paths.add(destination)
+        planned.append(
+            _PlannedHierarchyMove(
+                move=move,
+                source=source,
+                destination=destination,
+                temp=source.with_name(f".{source.name}.chaos-{entry.event_id}-{index}.tmp"),
+            )
+        )
     for source in source_paths:
         if not source.exists():
             raise FileNotFoundError(source)
     for destination in destination_paths:
         if destination.exists() and destination not in source_paths:
             raise FileExistsError(destination)
+    for plan in planned:
+        if plan.temp.exists():
+            raise FileExistsError(plan.temp)
+    return planned
 
 
-def _stage_hierarchy_moves(
-    ctx: FilesystemPhaseBContext,
-    entry: JournalEntry,
-    moves: list[_HierarchyMove],
-) -> list[tuple[_HierarchyMove, Path]]:
-    staged: list[tuple[_HierarchyMove, Path]] = []
-    for index, move in enumerate(moves):
-        src = resolve_under_library(Path(move.from_path), ctx.library_root)
-        tmp = src.with_name(f".{src.name}.chaos-{entry.event_id}-{index}.tmp")
-        if tmp.exists():
-            raise FileExistsError(tmp)
-        src.replace(tmp)
-        staged.append((move, tmp))
-    return staged
+def _prepare_hierarchy_destinations(planned: list[_PlannedHierarchyMove]) -> None:
+    for plan in planned:
+        plan.destination.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _slow_copy_start(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
@@ -407,3 +434,13 @@ _DISPATCH: Final[
     TimelineActionName.RENUMBER_DISC: _hierarchy_moves,
     TimelineActionName.MOVE_TRACK_TO_DISC: _hierarchy_moves,
 }
+
+_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }
+)

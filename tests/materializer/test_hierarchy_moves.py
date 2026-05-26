@@ -55,11 +55,91 @@ def test_hierarchy_move_rejects_destination_occupied_outside_move_set(
         },
     )
 
+    with pytest.raises(FilesystemActionError) as exc_info:
+        _apply(library, entry)
+
+    assert exc_info.value.asset_id == "asset_hd_main"
+    assert source.read_bytes() == b"source"
+    assert occupied.read_bytes() == b"occupied"
+
+
+def test_hierarchy_move_temp_collision_preserves_unstaged_sources(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    (library / "music").mkdir(parents=True)
+    first = library / "music" / "01 - First.flac"
+    second = library / "music" / "02 - Second.flac"
+    preexisting_temp = library / "music" / ".02 - Second.flac.chaos-renumber_disc_001-1.tmp"
+    first.write_bytes(b"first")
+    second.write_bytes(b"second")
+    preexisting_temp.write_bytes(b"preexisting")
+    entry = _atomic_entry(
+        event_id="renumber_disc_001",
+        action=TimelineActionName.RENUMBER_DISC,
+        target="disc_1",
+        state_delta={
+            "metadata": {"disc_number": {"before": 1, "after": 2}},
+            "path_moves": [
+                {
+                    "asset_id": "asset_first",
+                    "location_id": "location_0001",
+                    "from_path": "music/01 - First.flac",
+                    "to_path": "music/02 - Second.flac",
+                },
+                {
+                    "asset_id": "asset_second",
+                    "location_id": "location_0002",
+                    "from_path": "music/02 - Second.flac",
+                    "to_path": "music/01 - First.flac",
+                },
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    with pytest.raises(FilesystemActionError):
+        _apply(library, entry)
+
+    assert first.read_bytes() == b"first"
+    assert second.read_bytes() == b"second"
+    assert preexisting_temp.read_bytes() == b"preexisting"
+    assert not (library / "music" / ".01 - First.flac.chaos-renumber_disc_001-0.tmp").exists()
+
+
+def test_hierarchy_move_blocked_destination_parent_preserves_source(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "library"
+    (library / "tv").mkdir(parents=True)
+    source = library / "tv" / "Show - S01E01.mkv"
+    blocked_parent = library / "tv" / "blocked"
+    source.write_bytes(b"source")
+    blocked_parent.write_bytes(b"not-a-directory")
+    entry = _atomic_entry(
+        event_id="renumber_001",
+        action=TimelineActionName.RENUMBER_EPISODE,
+        target="episode_1",
+        state_delta={
+            "metadata": {"episode_number": {"before": 1, "after": 2}},
+            "path_moves": [
+                {
+                    "asset_id": "asset_hd_main",
+                    "location_id": "location_0001",
+                    "from_path": "tv/Show - S01E01.mkv",
+                    "to_path": "tv/blocked/Show - S01E02.mkv",
+                }
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
     with pytest.raises(FilesystemActionError):
         _apply(library, entry)
 
     assert source.read_bytes() == b"source"
-    assert occupied.read_bytes() == b"occupied"
+    assert blocked_parent.read_bytes() == b"not-a-directory"
+    assert not (library / "tv" / ".Show - S01E01.mkv.chaos-renumber_001-0.tmp").exists()
 
 
 def test_hierarchy_move_swaps_paths_via_temporary_siblings(tmp_path: Path) -> None:
