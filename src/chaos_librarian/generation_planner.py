@@ -336,7 +336,7 @@ def _artists_payload(
                                     "variants": [
                                         {
                                             "id": "variant_track_002",
-                                            "label": "mp3",
+                                            "label": "m4a",
                                             "bundle": {
                                                 "id": "bundle_track_002",
                                                 "assets": [_asset_payload(asset=second, rng=rng)],

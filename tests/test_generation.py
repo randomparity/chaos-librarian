@@ -252,6 +252,7 @@ def test_music_topology_reencode_targets_materializable_audio_asset() -> None:
     assert first_asset["container"] == "flac"
     assert "video" not in first_asset
     assert cast(list[dict[str, object]], first_asset["audio"])[0]["codec"] == "flac"
+    assert second_variant["label"] == "m4a"
     assert second_asset["id"] == "track_asset_002"
     assert second_asset["container"] == "m4a"
     assert cast(list[dict[str, object]], second_asset["audio"])[0]["codec"] == "aac"
