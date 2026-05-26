@@ -179,6 +179,79 @@ def test_observed_from_fixture_emits_track_domain_rows() -> None:
     assert observed.variants[0].parent_ref == "observed-track-a"
 
 
+def test_observed_from_fixture_without_topology_does_not_walk_domain_refs() -> None:
+    fixture = _fixture_for_episode()
+    manifest = fixture.current_manifest.model_copy(update={"seasons": []})
+    fixture = replace(fixture, current_manifest=manifest)
+
+    observed = _observed_from_fixture(fixture, include_topology=False)
+
+    assert observed.series == []
+    assert observed.seasons == []
+    assert observed.episodes == []
+    assert observed.variants == []
+    assert observed.bundles == []
+
+
+def test_episode_fixture_reports_match_manifest_topology() -> None:
+    fixture = _fixture_for_episode()
+    manifest = fixture.current_manifest
+
+    series = manifest.series[0]
+    season = manifest.seasons[0]
+    episode = manifest.episodes[0]
+    variant = manifest.variants[0]
+    series_report = fixture.reports.series[series.id]
+    season_report = fixture.reports.seasons[season.id]
+    episode_report = fixture.reports.episodes[episode.id]
+    variant_report = fixture.reports.variants[variant.id]
+
+    assert set(fixture.reports.series) == {series.id}
+    assert set(fixture.reports.seasons) == {season.id}
+    assert set(fixture.reports.episodes) == {episode.id}
+    assert set(fixture.reports.variants) == {variant.id}
+    assert series_report.title == series.title
+    assert season_report.series_id == series.id
+    assert season_report.season_number == season.season_number
+    assert episode_report.season_id == season.id
+    assert episode_report.episode_number == episode.episode_number
+    assert episode_report.title == episode.title
+    assert variant_report.parent_kind is variant.parent_kind
+    assert variant_report.parent_id == episode.id
+
+
+def test_track_fixture_reports_match_manifest_topology() -> None:
+    fixture = _fixture_for_track()
+    manifest = fixture.current_manifest
+
+    artist = manifest.artists[0]
+    album = manifest.albums[0]
+    disc = manifest.discs[0]
+    track = manifest.tracks[0]
+    variant = manifest.variants[0]
+    artist_report = fixture.reports.artists[artist.id]
+    album_report = fixture.reports.albums[album.id]
+    disc_report = fixture.reports.discs[disc.id]
+    track_report = fixture.reports.tracks[track.id]
+    variant_report = fixture.reports.variants[variant.id]
+
+    assert set(fixture.reports.artists) == {artist.id}
+    assert set(fixture.reports.albums) == {album.id}
+    assert set(fixture.reports.discs) == {disc.id}
+    assert set(fixture.reports.tracks) == {track.id}
+    assert set(fixture.reports.variants) == {variant.id}
+    assert artist_report.name == artist.name
+    assert album_report.artist_id == artist.id
+    assert album_report.title == album.title
+    assert disc_report.album_id == album.id
+    assert disc_report.disc_number == disc.disc_number
+    assert track_report.disc_id == disc.id
+    assert track_report.track_number == track.track_number
+    assert track_report.title == track.title
+    assert variant_report.parent_kind is variant.parent_kind
+    assert variant_report.parent_id == track.id
+
+
 def test_episode_topology_from_fixture_compares_clean() -> None:
     fixture = _fixture_for_episode()
     observed = _observed_from_fixture(fixture, include_topology=True)

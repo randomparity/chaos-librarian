@@ -831,7 +831,7 @@ def _observed_assets_from_manifest(
     for asset in current_manifest.assets:
         location = locations.get(asset.id)
         version = versions.get(asset.id)
-        bundle = bundles_by_id[asset.bundle_id]
+        bundle = bundles_by_id[asset.bundle_id] if include_topology else None
         observed_ref = f"observed-{asset.id}"
         asset_refs_by_bundle.setdefault(asset.bundle_id, []).append(observed_ref)
         current_path = location.path if location is not None and include_current_paths else None
@@ -843,7 +843,7 @@ def _observed_assets_from_manifest(
                 current_path=current_path,
                 content_hash=version.content_hash if version is not None else None,
                 probed=version.probed if version is not None else None,
-                variant_ref=refs.variants[bundle.variant_id] if include_topology else None,
+                variant_ref=refs.variants[bundle.variant_id] if bundle is not None else None,
                 bundle_ref=refs.bundles[asset.bundle_id] if include_topology else None,
                 sidecars=sidecars_by_asset.get(asset.id, []),
             )
@@ -974,29 +974,48 @@ def observed_from_fixture(
         include_topology=include_topology,
         path_override=path_override,
     )
-    domain_rows = _observed_domain_rows(current_manifest, refs)
-    variants = _observed_variants(current_manifest, refs)
-    bundles = _observed_bundles(
-        current_manifest,
-        refs=refs,
-        asset_refs_by_bundle=asset_refs_by_bundle,
-    )
+    movies: list[ObservedMovie] = []
+    series: list[ObservedSeries] = []
+    seasons: list[ObservedSeason] = []
+    episodes: list[ObservedEpisode] = []
+    artists: list[ObservedArtist] = []
+    albums: list[ObservedAlbum] = []
+    discs: list[ObservedDisc] = []
+    tracks: list[ObservedTrack] = []
+    variants: list[ObservedVariant] = []
+    bundles: list[ObservedBundle] = []
+    if include_topology:
+        domain_rows = _observed_domain_rows(current_manifest, refs)
+        movies = domain_rows.movies
+        series = domain_rows.series
+        seasons = domain_rows.seasons
+        episodes = domain_rows.episodes
+        artists = domain_rows.artists
+        albums = domain_rows.albums
+        discs = domain_rows.discs
+        tracks = domain_rows.tracks
+        variants = _observed_variants(current_manifest, refs)
+        bundles = _observed_bundles(
+            current_manifest,
+            refs=refs,
+            asset_refs_by_bundle=asset_refs_by_bundle,
+        )
     return ObservedState(
         schema_version=2,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id or oracle_fixture.run_id,
         observed_at=oracle_fixture.sentinel.created_at or datetime(2026, 5, 22, tzinfo=UTC),
         assets=assets,
-        movies=domain_rows.movies if include_topology else [],
-        series=domain_rows.series if include_topology else [],
-        seasons=domain_rows.seasons if include_topology else [],
-        episodes=domain_rows.episodes if include_topology else [],
-        artists=domain_rows.artists if include_topology else [],
-        albums=domain_rows.albums if include_topology else [],
-        discs=domain_rows.discs if include_topology else [],
-        tracks=domain_rows.tracks if include_topology else [],
-        variants=variants if include_topology else [],
-        bundles=bundles if include_topology else [],
+        movies=movies,
+        series=series,
+        seasons=seasons,
+        episodes=episodes,
+        artists=artists,
+        albums=albums,
+        discs=discs,
+        tracks=tracks,
+        variants=variants,
+        bundles=bundles,
     )
 
 
