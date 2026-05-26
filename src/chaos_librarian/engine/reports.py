@@ -123,61 +123,61 @@ def build_report_set(
     )
     movies = tuple(
         sorted(
-            (_build_movie_report(movie, initial) for movie in initial.movies),
+            (_build_movie_report(movie, current) for movie in current.movies),
             key=lambda report: report.movie_id,
         )
     )
     series = tuple(
         sorted(
-            (_build_series_report(series_row, initial) for series_row in initial.series),
+            (_build_series_report(series_row, current) for series_row in current.series),
             key=lambda report: report.series_id,
         )
     )
     seasons = tuple(
         sorted(
-            (_build_season_report(season, initial) for season in initial.seasons),
+            (_build_season_report(season, current) for season in current.seasons),
             key=lambda report: report.season_id,
         )
     )
     episodes = tuple(
         sorted(
-            (_build_episode_report(episode, initial) for episode in initial.episodes),
+            (_build_episode_report(episode, current) for episode in current.episodes),
             key=lambda report: report.episode_id,
         )
     )
     artists = tuple(
         sorted(
-            (_build_artist_report(artist, initial) for artist in initial.artists),
+            (_build_artist_report(artist, current) for artist in current.artists),
             key=lambda report: report.artist_id,
         )
     )
     albums = tuple(
         sorted(
-            (_build_album_report(album, initial) for album in initial.albums),
+            (_build_album_report(album, current) for album in current.albums),
             key=lambda report: report.album_id,
         )
     )
     discs = tuple(
         sorted(
-            (_build_disc_report(disc, initial) for disc in initial.discs),
+            (_build_disc_report(disc, current) for disc in current.discs),
             key=lambda report: report.disc_id,
         )
     )
     tracks = tuple(
         sorted(
-            (_build_track_report(track, initial) for track in initial.tracks),
+            (_build_track_report(track, current) for track in current.tracks),
             key=lambda report: report.track_id,
         )
     )
     variants = tuple(
         sorted(
-            (_build_variant_report(variant, initial) for variant in initial.variants),
+            (_build_variant_report(variant, current) for variant in current.variants),
             key=lambda report: report.variant_id,
         )
     )
     bundles = tuple(
         sorted(
-            (_build_bundle_report(bundle, initial, current) for bundle in initial.bundles),
+            (_build_bundle_report(bundle, current) for bundle in current.bundles),
             key=lambda report: report.bundle_id,
         )
     )
@@ -240,8 +240,8 @@ def _build_asset_report(
     if initial_snapshot is None:
         raise ChaosLibrarianValueError(f"asset {asset_id} missing from initial manifest")
     bundle = _bundle_for_asset(asset_id, initial)
-    variant = _variant_for_bundle(bundle, initial)
-    topology = _asset_topology_for(variant, initial)
+    variant = _variant_for_bundle(bundle, current)
+    topology = _asset_topology_for(variant, current)
     history = [
         AssetHistoryEntry(
             logical_time_ns=entry.logical_time_ns,
@@ -275,32 +275,32 @@ def _build_asset_report(
     )
 
 
-def _build_movie_report(movie: ManifestMovie, initial: Manifest) -> MovieReport:
-    variant_ids = _variant_ids_for_parent(initial, ParentKind.MOVIE, movie.id)
+def _build_movie_report(movie: ManifestMovie, manifest: Manifest) -> MovieReport:
+    variant_ids = _variant_ids_for_parent(manifest, ParentKind.MOVIE, movie.id)
     return MovieReport(
         schema_version=MOVIE_REPORT_SCHEMA_VERSION,
         movie_id=movie.id,
         title=movie.title,
         variant_ids=variant_ids,
-        asset_ids=_asset_ids_for_variants(initial, variant_ids),
+        asset_ids=_asset_ids_for_variants(manifest, variant_ids),
     )
 
 
-def _build_series_report(series: ManifestSeries, initial: Manifest) -> SeriesReport:
-    season_ids = sorted(season.id for season in initial.seasons if season.series_id == series.id)
-    episode_ids = _episode_ids_for_seasons(initial, season_ids)
+def _build_series_report(series: ManifestSeries, manifest: Manifest) -> SeriesReport:
+    season_ids = sorted(season.id for season in manifest.seasons if season.series_id == series.id)
+    episode_ids = _episode_ids_for_seasons(manifest, season_ids)
     return SeriesReport(
         schema_version=SERIES_REPORT_SCHEMA_VERSION,
         series_id=series.id,
         title=series.title,
         season_ids=season_ids,
         episode_ids=episode_ids,
-        asset_ids=_asset_ids_for_parents(initial, ParentKind.EPISODE, episode_ids),
+        asset_ids=_asset_ids_for_parents(manifest, ParentKind.EPISODE, episode_ids),
     )
 
 
-def _build_season_report(season: ManifestSeason, initial: Manifest) -> SeasonReport:
-    episode_ids = _episode_ids_for_seasons(initial, [season.id])
+def _build_season_report(season: ManifestSeason, manifest: Manifest) -> SeasonReport:
+    episode_ids = _episode_ids_for_seasons(manifest, [season.id])
     return SeasonReport(
         schema_version=SEASON_REPORT_SCHEMA_VERSION,
         season_id=season.id,
@@ -308,12 +308,12 @@ def _build_season_report(season: ManifestSeason, initial: Manifest) -> SeasonRep
         season_number=season.season_number,
         title=season.title,
         episode_ids=episode_ids,
-        asset_ids=_asset_ids_for_parents(initial, ParentKind.EPISODE, episode_ids),
+        asset_ids=_asset_ids_for_parents(manifest, ParentKind.EPISODE, episode_ids),
     )
 
 
-def _build_episode_report(episode: ManifestEpisode, initial: Manifest) -> EpisodeReport:
-    variant_ids = _variant_ids_for_parent(initial, ParentKind.EPISODE, episode.id)
+def _build_episode_report(episode: ManifestEpisode, manifest: Manifest) -> EpisodeReport:
+    variant_ids = _variant_ids_for_parent(manifest, ParentKind.EPISODE, episode.id)
     return EpisodeReport(
         schema_version=EPISODE_REPORT_SCHEMA_VERSION,
         episode_id=episode.id,
@@ -323,27 +323,27 @@ def _build_episode_report(episode: ManifestEpisode, initial: Manifest) -> Episod
         aired_on=episode.aired_on,
         absolute_number=episode.absolute_number,
         variant_ids=variant_ids,
-        asset_ids=_asset_ids_for_variants(initial, variant_ids),
+        asset_ids=_asset_ids_for_variants(manifest, variant_ids),
     )
 
 
-def _build_artist_report(artist: ManifestArtist, initial: Manifest) -> ArtistReport:
-    album_ids = sorted(album.id for album in initial.albums if album.artist_id == artist.id)
-    disc_ids = _disc_ids_for_albums(initial, album_ids)
-    track_ids = _track_ids_for_discs(initial, disc_ids)
+def _build_artist_report(artist: ManifestArtist, manifest: Manifest) -> ArtistReport:
+    album_ids = sorted(album.id for album in manifest.albums if album.artist_id == artist.id)
+    disc_ids = _disc_ids_for_albums(manifest, album_ids)
+    track_ids = _track_ids_for_discs(manifest, disc_ids)
     return ArtistReport(
         schema_version=ARTIST_REPORT_SCHEMA_VERSION,
         artist_id=artist.id,
         name=artist.name,
         album_ids=album_ids,
         track_ids=track_ids,
-        asset_ids=_asset_ids_for_parents(initial, ParentKind.TRACK, track_ids),
+        asset_ids=_asset_ids_for_parents(manifest, ParentKind.TRACK, track_ids),
     )
 
 
-def _build_album_report(album: ManifestAlbum, initial: Manifest) -> AlbumReport:
-    disc_ids = _disc_ids_for_albums(initial, [album.id])
-    track_ids = _track_ids_for_discs(initial, disc_ids)
+def _build_album_report(album: ManifestAlbum, manifest: Manifest) -> AlbumReport:
+    disc_ids = _disc_ids_for_albums(manifest, [album.id])
+    track_ids = _track_ids_for_discs(manifest, disc_ids)
     return AlbumReport(
         schema_version=ALBUM_REPORT_SCHEMA_VERSION,
         album_id=album.id,
@@ -352,24 +352,24 @@ def _build_album_report(album: ManifestAlbum, initial: Manifest) -> AlbumReport:
         release_year=album.release_year,
         disc_ids=disc_ids,
         track_ids=track_ids,
-        asset_ids=_asset_ids_for_parents(initial, ParentKind.TRACK, track_ids),
+        asset_ids=_asset_ids_for_parents(manifest, ParentKind.TRACK, track_ids),
     )
 
 
-def _build_disc_report(disc: ManifestDisc, initial: Manifest) -> DiscReport:
-    track_ids = _track_ids_for_discs(initial, [disc.id])
+def _build_disc_report(disc: ManifestDisc, manifest: Manifest) -> DiscReport:
+    track_ids = _track_ids_for_discs(manifest, [disc.id])
     return DiscReport(
         schema_version=DISC_REPORT_SCHEMA_VERSION,
         disc_id=disc.id,
         album_id=disc.album_id,
         disc_number=disc.disc_number,
         track_ids=track_ids,
-        asset_ids=_asset_ids_for_parents(initial, ParentKind.TRACK, track_ids),
+        asset_ids=_asset_ids_for_parents(manifest, ParentKind.TRACK, track_ids),
     )
 
 
-def _build_track_report(track: ManifestTrack, initial: Manifest) -> TrackReport:
-    variant_ids = _variant_ids_for_parent(initial, ParentKind.TRACK, track.id)
+def _build_track_report(track: ManifestTrack, manifest: Manifest) -> TrackReport:
+    variant_ids = _variant_ids_for_parent(manifest, ParentKind.TRACK, track.id)
     return TrackReport(
         schema_version=TRACK_REPORT_SCHEMA_VERSION,
         track_id=track.id,
@@ -378,13 +378,13 @@ def _build_track_report(track: ManifestTrack, initial: Manifest) -> TrackReport:
         title=track.title,
         performers=list(track.performers),
         variant_ids=variant_ids,
-        asset_ids=_asset_ids_for_variants(initial, variant_ids),
+        asset_ids=_asset_ids_for_variants(manifest, variant_ids),
     )
 
 
-def _build_variant_report(variant: ManifestVariant, initial: Manifest) -> VariantReport:
-    bundle = _bundle_for_variant(variant.id, initial)
-    asset_ids = sorted(asset.id for asset in initial.assets if asset.bundle_id == bundle.id)
+def _build_variant_report(variant: ManifestVariant, manifest: Manifest) -> VariantReport:
+    bundle = _bundle_for_variant(variant.id, manifest)
+    asset_ids = sorted(asset.id for asset in manifest.assets if asset.bundle_id == bundle.id)
     return VariantReport(
         schema_version=VARIANT_REPORT_SCHEMA_VERSION,
         variant_id=variant.id,
@@ -396,13 +396,11 @@ def _build_variant_report(variant: ManifestVariant, initial: Manifest) -> Varian
     )
 
 
-def _build_bundle_report(
-    bundle: ManifestBundle, initial: Manifest, current: Manifest
-) -> BundleReport:
-    asset_ids = sorted(asset.id for asset in initial.assets if asset.bundle_id == bundle.id)
+def _build_bundle_report(bundle: ManifestBundle, manifest: Manifest) -> BundleReport:
+    asset_ids = sorted(asset.id for asset in manifest.assets if asset.bundle_id == bundle.id)
     asset_id_set = set(asset_ids)
     sidecar_ids = sorted(
-        sidecar.id for sidecar in current.sidecars if sidecar.asset_id in asset_id_set
+        sidecar.id for sidecar in manifest.sidecars if sidecar.asset_id in asset_id_set
     )
     return BundleReport(
         schema_version=BUNDLE_REPORT_SCHEMA_VERSION,

@@ -364,6 +364,31 @@ class TestBuildReportSet:
         assert rs.episodes[0].variant_ids == ["variant_episode"]
         assert rs.episodes[0].asset_ids == ["asset_episode"]
 
+    def test_episode_move_reports_current_season_topology(self) -> None:
+        """WHY: hierarchy timeline moves must update report topology, not just manifest."""
+        initial = _manifest_with_domain_hierarchy()
+        current = _manifest_with_domain_hierarchy()
+        current.seasons.append(
+            ManifestSeason(
+                id="season_two",
+                series_id="series_starline",
+                season_number=2,
+                title="Second",
+            )
+        )
+        current.episodes[0] = current.episodes[0].model_copy(update={"season_id": "season_two"})
+
+        rs = build_report_set(initial=initial, current=current, journal=[])
+
+        assets = {report.asset_id: report for report in rs.assets}
+        seasons = {report.season_id: report for report in rs.seasons}
+        assert assets["asset_episode"].season_id == "season_two"
+        assert rs.episodes[0].season_id == "season_two"
+        assert seasons["season_specials"].episode_ids == []
+        assert seasons["season_specials"].asset_ids == []
+        assert seasons["season_two"].episode_ids == ["episode_signal"]
+        assert seasons["season_two"].asset_ids == ["asset_episode"]
+
     def test_artist_album_disc_and_track_reports_use_transitive_asset_ids(self) -> None:
         m = _manifest_with_domain_hierarchy()
 
@@ -383,6 +408,26 @@ class TestBuildReportSet:
         assert rs.tracks[0].track_id == "track_opening"
         assert rs.tracks[0].variant_ids == ["variant_track"]
         assert rs.tracks[0].asset_ids == ["asset_track"]
+
+    def test_track_move_reports_current_disc_topology(self) -> None:
+        """WHY: music hierarchy moves must update report topology, not just manifest."""
+        initial = _manifest_with_domain_hierarchy()
+        current = _manifest_with_domain_hierarchy()
+        current.discs.append(
+            ManifestDisc(id="disc_winter_02", album_id="album_winter", disc_number=2)
+        )
+        current.tracks[0] = current.tracks[0].model_copy(update={"disc_id": "disc_winter_02"})
+
+        rs = build_report_set(initial=initial, current=current, journal=[])
+
+        assets = {report.asset_id: report for report in rs.assets}
+        discs = {report.disc_id: report for report in rs.discs}
+        assert assets["asset_track"].disc_id == "disc_winter_02"
+        assert rs.tracks[0].disc_id == "disc_winter_02"
+        assert discs["disc_winter_01"].track_ids == []
+        assert discs["disc_winter_01"].asset_ids == []
+        assert discs["disc_winter_02"].track_ids == ["track_opening"]
+        assert discs["disc_winter_02"].asset_ids == ["asset_track"]
 
     def test_variant_links_bundle_and_parent(self) -> None:
         m = _manifest_with_one_asset()
