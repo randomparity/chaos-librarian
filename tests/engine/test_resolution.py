@@ -25,15 +25,16 @@ def _resolve_fixture(scenario_name: str) -> list[ResolvedEvent]:
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
-            "works": [
+            "movies": [
                 {
-                    "id": "w0",
+                    "id": "movie_0",
                     "title": "T",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "v0",
@@ -53,6 +54,8 @@ def _scenario(timeline: list[dict[str, object]]) -> Scenario:
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": timeline,
         }
     )

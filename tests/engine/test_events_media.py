@@ -24,15 +24,16 @@ def _scenario(
     profiles: list[str] | None = None,
 ) -> Scenario:
     payload: dict[str, object] = {
-        "schema_version": 11,
+        "schema_version": 12,
         "scenario_id": "media",
         "seed": 1,
         "duration_scale": "short",
         "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
-        "works": [
+        "movies": [
             {
-                "id": "w0",
+                "id": "movie_0",
                 "title": "T",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": "v0",
@@ -64,6 +65,8 @@ def _scenario(
                 ],
             }
         ],
+        "series": [],
+        "artists": [],
         "timeline": timeline,
     }
     if profiles is not None:
@@ -130,8 +133,8 @@ class TestCorruptContainerHeaderHandler:
         )
 
         assert entry.state_delta == {
-            "input_path": "movies-hd/a0.mkv",
-            "output_path": "movies-hd/a0.mkv",
+            "input_path": "movies-hd/T - hd.mkv",
+            "output_path": "movies-hd/T - hd.mkv",
             "profile": ProfileName.MALFORMED_MEDIA.value,
             "corruptor": "container_header_v1",
             "byte_start": 0,
@@ -194,8 +197,8 @@ class TestInterceptorHandlers:
                     "keep_bytes": 64,
                 },
                 {
-                    "input_path": "movies-hd/a0.mkv",
-                    "output_path": "movies-hd/a0.mkv",
+                    "input_path": "movies-hd/T - hd.mkv",
+                    "output_path": "movies-hd/T - hd.mkv",
                     "profile": "malformed-media",
                     "corruptor": "truncate_file_v1",
                     "keep_bytes": 64,
@@ -214,8 +217,8 @@ class TestInterceptorHandlers:
                     "packet_count": 2,
                 },
                 {
-                    "input_path": "movies-hd/a0.mkv",
-                    "output_path": "movies-hd/a0.mkv",
+                    "input_path": "movies-hd/T - hd.mkv",
+                    "output_path": "movies-hd/T - hd.mkv",
                     "profile": "malformed-media",
                     "corruptor": "packet_range_v1",
                     "stream": "video",
@@ -234,8 +237,8 @@ class TestInterceptorHandlers:
                     "value": "not-a-duration",
                 },
                 {
-                    "input_path": "movies-hd/a0.mkv",
-                    "output_path": "movies-hd/a0.mkv",
+                    "input_path": "movies-hd/T - hd.mkv",
+                    "output_path": "movies-hd/T - hd.mkv",
                     "profile": "malformed-media",
                     "corruptor": "invalid_duration_metadata_v1",
                     "value": "not-a-duration",
@@ -303,7 +306,7 @@ class TestInterceptorHandlers:
         assert isinstance(entry, AtomicJournalEntry)
         assert entry.phase == JournalPhase.ATOMIC
         assert entry.state_delta == {
-            "path": "movies-hd/a0.mkv",
+            "path": "movies-hd/T - hd.mkv",
             "profile": "filesystem-artifacts",
             "offset": "2s",
         }
@@ -339,8 +342,8 @@ class TestInterceptorHandlers:
         assert isinstance(entry, AtomicJournalEntry)
         assert entry.phase == JournalPhase.ATOMIC
         assert entry.state_delta == {
-            "input_path": "movies-hd/a0.mkv",
-            "output_path": "movies-hd/a0.mkv",
+            "input_path": "movies-hd/T - hd.mkv",
+            "output_path": "movies-hd/T - hd.mkv",
             "profile": "negative-oracle",
             "algorithm": "sha256",
             "seed_material": "wrong_oracle_hash_v1:42:wrong_hash_001:a0",
@@ -408,7 +411,7 @@ class TestReencodeVideoHandler:
         assert isinstance(output_path, str)
         # In-place re-encode: input and output paths are identical.
         assert input_path == output_path
-        assert input_path.endswith("/a0.mkv")
+        assert input_path.endswith("/T - hd.mkv")
 
 
 class TestReencodeAudioHandler:
@@ -462,7 +465,7 @@ class TestReencodeAudioHandler:
         assert isinstance(input_path, str)
         assert isinstance(output_path, str)
         assert input_path == output_path
-        assert input_path.endswith("/a0.mkv")
+        assert input_path.endswith("/T - hd.mkv")
 
 
 class TestCreateSidecarHandler:

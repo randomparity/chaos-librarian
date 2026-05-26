@@ -110,15 +110,15 @@ def _engine_event_context(
 def _build_minimal_scenario(
     *,
     roots: list[tuple[str, str]],
-    works: list[tuple[str, str, str]],
+    movies: list[tuple[str, str, str]],
     archive_root: str | None = None,
     with_media_tracks: bool = False,
     with_declared_subtitle: bool = False,
 ) -> Scenario:
     """Build a minimal Scenario for engine-level tests.
 
-    Each ``works`` entry is ``(work_id, asset_id, container)``; the helper
-    synthesizes one variant and one bundle per work, each holding the
+    Each ``movies`` entry is ``(movie_id, asset_id, container)``; the helper
+    synthesizes one variant and one bundle per movie, each holding the
     single declared asset. ``roots`` entries are ``(root_id, root_path)``;
     the first root is the primary one ``build_initial_state`` uses to
     synthesize initial location paths.
@@ -128,7 +128,7 @@ def _build_minimal_scenario(
 
     Args:
         roots: declared library roots, in scenario order.
-        works: one tuple per asset, each producing its own work / variant
+        movies: one tuple per asset, each producing its own movie / variant
             / bundle wrapper.
         archive_root: optional ``library.archive_root`` value. ``None``
             leaves the field at its default; the literal string
@@ -145,7 +145,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=11``.
+        A fully-validated Scenario at ``schema_version=12``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -175,32 +175,35 @@ def _build_minimal_scenario(
             ]
         return asset
 
-    scenario_works = [
+    scenario_movies = [
         {
-            "id": work_id,
-            "title": work_id,
+            "id": movie_id,
+            "title": movie_id,
+            "layout": "movie_flat",
             "variants": [
                 {
-                    "id": f"variant_{work_id}",
+                    "id": f"variant_{movie_id}",
                     "label": "default",
                     "bundle": {
-                        "id": f"bundle_{work_id}",
+                        "id": f"bundle_{movie_id}",
                         "assets": [_asset(asset_id, container)],
                     },
                 }
             ],
         }
-        for work_id, asset_id, container in works
+        for movie_id, asset_id, container in movies
     ]
 
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
             "library": library,
-            "works": scenario_works,
+            "movies": scenario_movies,
+            "series": [],
+            "artists": [],
             "timeline": [],
         }
     )
@@ -519,7 +522,7 @@ def _minimal_scenario_for_action(
             ("movies-hd", "library/movies-hd"),
             ("cold-storage", "library/cold-storage"),
         ],
-        works=[("work_001", "asset_hd_main", "mkv")],
+        movies=[("movie_001", "asset_hd_main", "mkv")],
         archive_root=None,
         with_media_tracks=action in _NEEDS_MEDIA_TRACKS,
         with_declared_subtitle=action in _NEEDS_DECLARED_SUBTITLE,

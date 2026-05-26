@@ -27,7 +27,7 @@ from tests.engine.conftest import _build_minimal_scenario, _engine_event_context
 def _scenario_state():
     scenario = _build_minimal_scenario(
         roots=[("movies-hd", "library/movies-hd")],
-        works=[("work_001", "asset_hd_main", "mkv")],
+        movies=[("movie_001", "asset_hd_main", "mkv")],
     )
     return scenario, build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
@@ -83,7 +83,7 @@ def test_network_lag_start_emits_started_entry_with_path_timing_evidence() -> No
         "logical_start_ns": 10_000_000_000,
         "logical_commit_ns": 12_000_000_000,
         "requested_duration_ns": 2_000_000_000,
-        "from_path": "library/movies-hd/asset_hd_main.mkv",
+        "from_path": "library/movies-hd/movie_001 - default.mkv",
         "to_path": "movies-hd/renamed.mkv",
     }
 
@@ -118,7 +118,7 @@ def test_network_lag_commit_emits_committed_entry_with_matching_evidence() -> No
     assert entry.related_event_id == "lag_start_001"
     assert entry.state_delta["effect"] == "delayed_rename"
     assert entry.state_delta["after_event_id"] == "rename_001"
-    assert entry.state_delta["from_path"] == "library/movies-hd/asset_hd_main.mkv"
+    assert entry.state_delta["from_path"] == "library/movies-hd/movie_001 - default.mkv"
     assert entry.state_delta["to_path"] == "movies-hd/renamed.mkv"
 
 

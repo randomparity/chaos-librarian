@@ -25,7 +25,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "fs",
             "seed": 1,
             "duration_scale": "short",
@@ -35,10 +35,11 @@ def _scenario(timeline: list[dict[str, object]]) -> Scenario:
                     {"id": "r1", "path": "archive"},
                 ]
             },
-            "works": [
+            "movies": [
                 {
-                    "id": "w0",
+                    "id": "movie_0",
                     "title": "T",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "v0",
@@ -58,6 +59,8 @@ def _scenario(timeline: list[dict[str, object]]) -> Scenario:
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": timeline,
         }
     )
@@ -92,7 +95,7 @@ class TestMoveAssetHandler:
         assert entry.phase == JournalPhase.ATOMIC
         assert entry.action == "move_asset"
         assert entry.target_ids == ["a0"]
-        assert entry.state_delta["from_path"] == "movies-hd/a0.mkv"
+        assert entry.state_delta["from_path"] == "movies-hd/T - hd.mkv"
         assert entry.state_delta["to_path"] == "movies-hd/Renamed.mkv"
         (loc,) = state.locations.values()
         assert loc.path == "movies-hd/Renamed.mkv"
@@ -142,7 +145,7 @@ class TestDeleteFileHandler:
         (resolved,) = resolve_timeline(scenario)
         (entry,) = apply_event(state, resolved, ids, _engine_event_context("fs", run_id=_RUN_ID))
         assert entry.action == "delete_file"
-        assert entry.state_delta["removed_path"] == "movies-hd/a0.mkv"
+        assert entry.state_delta["removed_path"] == "movies-hd/T - hd.mkv"
         assert state.locations == {}
 
 
@@ -206,7 +209,7 @@ class TestArchiveFileHandler:
     def test_archive_file_handler_moves_location_to_archive_path(self) -> None:
         scenario = _build_minimal_scenario(
             roots=[("movies-hd", "library/movies-hd")],
-            works=[("work_001", "asset_hd_main", "mkv")],
+            movies=[("movie_001", "asset_hd_main", "mkv")],
         )
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
         resolved = _resolve_archive_file(scenario, event_id="ev_arch_001", target="asset_hd_main")
@@ -224,7 +227,7 @@ class TestArchiveFileHandler:
         assert entry.action == TimelineActionName.ARCHIVE_FILE
         assert entry.target_ids == ["asset_hd_main"]
         assert entry.state_delta == {
-            "from_path": "library/movies-hd/asset_hd_main.mkv",
+            "from_path": "library/movies-hd/movie_001 - default.mkv",
             "to_path": "library/movies-hd/archive/asset_hd_main.mkv",
         }
 
@@ -234,7 +237,7 @@ class TestArchiveFileHandler:
                 ("movies-hd", "library/movies-hd"),
                 ("cold-storage", "library/cold-storage"),
             ],
-            works=[("work_001", "asset_hd_main", "mkv")],
+            movies=[("movie_001", "asset_hd_main", "mkv")],
             archive_root="cold-storage",
         )
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
@@ -264,7 +267,7 @@ class TestMoveBetweenRootsHandler:
                 ("movies-hd", "library/movies-hd"),
                 ("staging", "library/staging"),
             ],
-            works=[("work_001", "asset_hd_main", "mkv")],
+            movies=[("movie_001", "asset_hd_main", "mkv")],
         )
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
         resolved = _resolve_move_between_roots(
@@ -287,7 +290,7 @@ class TestMoveBetweenRootsHandler:
         assert entry.action == TimelineActionName.MOVE_BETWEEN_ROOTS
         assert entry.target_ids == ["asset_hd_main"]
         assert entry.state_delta == {
-            "from_path": "library/movies-hd/asset_hd_main.mkv",
+            "from_path": "library/movies-hd/movie_001 - default.mkv",
             "to_path": "library/staging/asset_hd_main.mkv",
             "from_root_id": "movies-hd",
             "to_root_id": "staging",

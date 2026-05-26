@@ -23,7 +23,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
 
 def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scenario:
-    """Asset declares one English subtitle as a sidecar at ``a0.eng.srt``.
+    """Asset declares one English subtitle as a sidecar next to the media path.
 
     ``build_initial_state`` seeds one ``ManifestSidecar`` per declared
     sidecar-mode subtitle into ``state.sidecars`` (the fixture below
@@ -33,15 +33,16 @@ def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scena
     """
     return Scenario.model_validate(
         {
-            "schema_version": 11,
+            "schema_version": 12,
             "scenario_id": "sidecar_tests",
             "seed": 1,
             "duration_scale": "short",
             "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
-            "works": [
+            "movies": [
                 {
-                    "id": "w0",
+                    "id": "movie_0",
                     "title": "T",
+                    "layout": "movie_flat",
                     "variants": [
                         {
                             "id": "v0",
@@ -76,6 +77,8 @@ def _scenario_with_subtitle_declared(timeline: list[dict[str, object]]) -> Scena
                     ],
                 }
             ],
+            "series": [],
+            "artists": [],
             "timeline": timeline,
         }
     )
@@ -299,7 +302,7 @@ class TestExtractSubtitleHandler:
         assert delta["language"] == "fra"
         input_path = delta["input_path"]
         assert isinstance(input_path, str)
-        assert input_path.endswith("/a0.mkv")
+        assert input_path.endswith("/T - hd.mkv")
         # extract has no output_path key — its output IS sidecar_path.
         assert "output_path" not in delta
 
@@ -532,15 +535,16 @@ class TestCreateSidecarKindRouting:
         """
         return Scenario.model_validate(
             {
-                "schema_version": 11,
+                "schema_version": 12,
                 "scenario_id": "create_sidecar_kind",
                 "seed": 1,
                 "duration_scale": "short",
                 "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
-                "works": [
+                "movies": [
                     {
-                        "id": "w0",
+                        "id": "movie_0",
                         "title": "T",
+                        "layout": "movie_flat",
                         "variants": [
                             {
                                 "id": "v0",
@@ -572,6 +576,8 @@ class TestCreateSidecarKindRouting:
                         ],
                     }
                 ],
+                "series": [],
+                "artists": [],
                 "timeline": timeline,
             }
         )

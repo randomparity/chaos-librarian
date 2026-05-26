@@ -5,16 +5,24 @@ from __future__ import annotations
 import uuid
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import (
     Manifest,
+    ManifestAlbum,
+    ManifestArtist,
     ManifestAsset,
     ManifestBundle,
+    ManifestDisc,
+    ManifestEpisode,
     ManifestLocation,
+    ManifestMovie,
+    ManifestSeason,
+    ManifestSeries,
     ManifestSidecar,
+    ManifestTrack,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -40,8 +48,22 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
     )
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="work_blazar", title="Synthetic Blazar")],
-        variants=[ManifestVariant(id="variant_hd", work_id="work_blazar", label="hd")],
+        movies=[ManifestMovie(id="movie_blazar", title="Synthetic Blazar", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(
+                id="variant_hd",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie_blazar",
+                label="hd",
+            )
+        ],
         bundles=[ManifestBundle(id="bundle_hd", variant_id="variant_hd")],
         assets=[
             ManifestAsset(
@@ -54,6 +76,135 @@ def _manifest_with_one_asset(*, location_path: str | None = "movies-hd/a.mkv") -
         ],
         versions=[ManifestVersion(id="version_0001", asset_id="asset_hd_main", index=0)],
         locations=locations,
+        sidecars=[],
+    )
+
+
+def _manifest_with_domain_hierarchy() -> Manifest:
+    return Manifest(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        movies=[ManifestMovie(id="movie_orbit", title="Orbit", layout="movie_flat")],
+        series=[
+            ManifestSeries(
+                id="series_starline",
+                title="Starline",
+                layout="season_folders",
+                episode_naming="sxxexx_title",
+            )
+        ],
+        seasons=[
+            ManifestSeason(
+                id="season_specials",
+                series_id="series_starline",
+                season_number=0,
+                title="Specials",
+            )
+        ],
+        episodes=[
+            ManifestEpisode(
+                id="episode_signal",
+                season_id="season_specials",
+                episode_number=1,
+                title="First Signal",
+                absolute_number=7,
+            )
+        ],
+        artists=[
+            ManifestArtist(
+                id="artist_north",
+                name="North Index",
+                layout="artist_album_disc",
+                track_naming="track_number_title",
+            )
+        ],
+        albums=[
+            ManifestAlbum(
+                id="album_winter",
+                artist_id="artist_north",
+                title="Winter Index",
+                release_year=2024,
+            )
+        ],
+        discs=[ManifestDisc(id="disc_winter_01", album_id="album_winter", disc_number=1)],
+        tracks=[
+            ManifestTrack(
+                id="track_opening",
+                disc_id="disc_winter_01",
+                track_number=1,
+                title="Opening",
+                performers=["North Index"],
+            )
+        ],
+        variants=[
+            ManifestVariant(
+                id="variant_movie",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie_orbit",
+                label="1080p",
+            ),
+            ManifestVariant(
+                id="variant_episode",
+                parent_kind=ParentKind.EPISODE,
+                parent_id="episode_signal",
+                label="1080p",
+            ),
+            ManifestVariant(
+                id="variant_track",
+                parent_kind=ParentKind.TRACK,
+                parent_id="track_opening",
+                label="lossless",
+            ),
+        ],
+        bundles=[
+            ManifestBundle(id="bundle_movie", variant_id="variant_movie"),
+            ManifestBundle(id="bundle_episode", variant_id="variant_episode"),
+            ManifestBundle(id="bundle_track", variant_id="variant_track"),
+        ],
+        assets=[
+            ManifestAsset(
+                id="asset_movie",
+                bundle_id="bundle_movie",
+                role="primary_video",
+                container="mkv",
+                duration_seconds=12.0,
+            ),
+            ManifestAsset(
+                id="asset_episode",
+                bundle_id="bundle_episode",
+                role="primary_video",
+                container="mkv",
+                duration_seconds=12.0,
+            ),
+            ManifestAsset(
+                id="asset_track",
+                bundle_id="bundle_track",
+                role="main",
+                container="flac",
+                duration_seconds=180.0,
+            ),
+        ],
+        versions=[
+            ManifestVersion(id="version_movie", asset_id="asset_movie", index=0),
+            ManifestVersion(id="version_episode", asset_id="asset_episode", index=0),
+            ManifestVersion(id="version_track", asset_id="asset_track", index=0),
+        ],
+        locations=[
+            ManifestLocation(
+                id="location_movie",
+                asset_id="asset_movie",
+                path="library/Orbit - 1080p.mkv",
+            ),
+            ManifestLocation(
+                id="location_episode",
+                asset_id="asset_episode",
+                path="library/Starline/S00E01.mkv",
+            ),
+            ManifestLocation(
+                id="location_track",
+                asset_id="asset_track",
+                path="library/North Index/Opening.flac",
+            ),
+        ],
         sidecars=[],
     )
 
@@ -119,7 +270,7 @@ def _atomic_entry(
 
 
 class TestBuildReportSet:
-    """Reports describe the asset/work/variant/bundle cross-cuts of a run.
+    """Reports describe the asset/domain/variant/bundle cross-cuts of a run.
 
     WHY: this is the adapter-facing contract; every cross-cut listed in
     the design must populate.
@@ -127,11 +278,27 @@ class TestBuildReportSet:
 
     def test_empty_journal_yields_initial_history(self) -> None:
         m = _manifest_with_one_asset()
+
         rs = build_report_set(initial=m, current=m, journal=[])
+
         assert isinstance(rs, ReportSet)
         assert len(rs.assets) == 1
         assert rs.assets[0].history == []
         assert rs.assets[0].current == rs.assets[0].initial
+
+    def test_asset_report_includes_initial_topology(self) -> None:
+        m = _manifest_with_one_asset()
+
+        rs = build_report_set(initial=m, current=m, journal=[])
+        asset_report = rs.assets[0]
+
+        assert asset_report.asset_id == "asset_hd_main"
+        assert asset_report.parent_kind is ParentKind.MOVIE
+        assert asset_report.parent_id == "movie_blazar"
+        assert asset_report.movie_id == "movie_blazar"
+        assert asset_report.series_id is None
+        assert asset_report.variant_id == "variant_hd"
+        assert asset_report.bundle_id == "bundle_hd"
 
     def test_history_filters_to_asset_target(self) -> None:
         m = _manifest_with_one_asset()
@@ -147,8 +314,10 @@ class TestBuildReportSet:
             target="asset_other",
             delta={"to": "movies-hd/Other.mkv"},
         )
+
         rs = build_report_set(initial=m, current=m, journal=[entry, non_matching])
         asset_report = rs.assets[0]
+
         assert len(asset_report.history) == 1
         assert asset_report.history[0].event_id == "move_001"
         assert asset_report.history[0].action == "move_asset"
@@ -157,32 +326,74 @@ class TestBuildReportSet:
     def test_deleted_asset_has_none_current(self) -> None:
         initial = _manifest_with_one_asset()
         current = _manifest_with_one_asset(location_path=None)
-        # In a real run the current manifest would also drop the location row;
-        # here the snapshot lookup falls back to "no location" → current is None.
         entry = _atomic_entry(
             event_id="del_001",
             action="delete_file",
             target="asset_hd_main",
             delta={},
         )
+
         rs = build_report_set(initial=initial, current=current, journal=[entry])
+
         assert rs.assets[0].current is None
         assert any(h.action == "delete_file" for h in rs.assets[0].history)
 
-    def test_work_lists_variants_and_transitive_assets(self) -> None:
+    def test_movie_lists_variants_and_transitive_assets(self) -> None:
         m = _manifest_with_one_asset()
-        rs = build_report_set(initial=m, current=m, journal=[])
-        wr = rs.works[0]
-        assert wr.work_id == "work_blazar"
-        assert wr.variant_ids == ["variant_hd"]
-        assert wr.asset_ids == ["asset_hd_main"]
 
-    def test_variant_links_bundle_and_work(self) -> None:
+        rs = build_report_set(initial=m, current=m, journal=[])
+        report = rs.movies[0]
+
+        assert report.movie_id == "movie_blazar"
+        assert report.variant_ids == ["variant_hd"]
+        assert report.asset_ids == ["asset_hd_main"]
+
+    def test_series_season_and_episode_reports_use_transitive_asset_ids(self) -> None:
+        m = _manifest_with_domain_hierarchy()
+
+        rs = build_report_set(initial=m, current=m, journal=[])
+
+        assert rs.series[0].series_id == "series_starline"
+        assert rs.series[0].season_ids == ["season_specials"]
+        assert rs.series[0].episode_ids == ["episode_signal"]
+        assert rs.series[0].asset_ids == ["asset_episode"]
+        assert rs.seasons[0].season_id == "season_specials"
+        assert rs.seasons[0].episode_ids == ["episode_signal"]
+        assert rs.seasons[0].asset_ids == ["asset_episode"]
+        assert rs.episodes[0].episode_id == "episode_signal"
+        assert rs.episodes[0].variant_ids == ["variant_episode"]
+        assert rs.episodes[0].asset_ids == ["asset_episode"]
+
+    def test_artist_album_disc_and_track_reports_use_transitive_asset_ids(self) -> None:
+        m = _manifest_with_domain_hierarchy()
+
+        rs = build_report_set(initial=m, current=m, journal=[])
+
+        assert rs.artists[0].artist_id == "artist_north"
+        assert rs.artists[0].album_ids == ["album_winter"]
+        assert rs.artists[0].track_ids == ["track_opening"]
+        assert rs.artists[0].asset_ids == ["asset_track"]
+        assert rs.albums[0].album_id == "album_winter"
+        assert rs.albums[0].disc_ids == ["disc_winter_01"]
+        assert rs.albums[0].track_ids == ["track_opening"]
+        assert rs.albums[0].asset_ids == ["asset_track"]
+        assert rs.discs[0].disc_id == "disc_winter_01"
+        assert rs.discs[0].track_ids == ["track_opening"]
+        assert rs.discs[0].asset_ids == ["asset_track"]
+        assert rs.tracks[0].track_id == "track_opening"
+        assert rs.tracks[0].variant_ids == ["variant_track"]
+        assert rs.tracks[0].asset_ids == ["asset_track"]
+
+    def test_variant_links_bundle_and_parent(self) -> None:
         m = _manifest_with_one_asset()
+
         rs = build_report_set(initial=m, current=m, journal=[])
         vr = rs.variants[0]
+
+        assert vr.schema_version == 2
         assert vr.variant_id == "variant_hd"
-        assert vr.work_id == "work_blazar"
+        assert vr.parent_kind is ParentKind.MOVIE
+        assert vr.parent_id == "movie_blazar"
         assert vr.bundle_id == "bundle_hd"
         assert vr.asset_ids == ["asset_hd_main"]
 
@@ -197,28 +408,24 @@ class TestBuildReportSet:
                 language="eng",
             )
         )
+
         rs = build_report_set(initial=m, current=m, journal=[])
         br = rs.bundles[0]
+
         assert br.bundle_id == "bundle_hd"
         assert br.asset_ids == ["asset_hd_main"]
         assert br.sidecar_ids == ["sidecar_0001"]
 
     def test_path_history_empty_for_static_scenario(self) -> None:
-        """WHY: AssetReport.path_history must default to [] when no filesystem events ran.
-
-        Sprint 6 added the field; reports for static scenarios must not
-        invent path_history rows that didn't happen.
-        """
+        """WHY: AssetReport.path_history must default to [] when no filesystem events ran."""
         m = _manifest_with_one_asset()
+
         rs = build_report_set(initial=m, current=m, journal=[])
+
         assert rs.assets[0].path_history == []
 
     def test_path_history_populated_for_move_asset(self) -> None:
-        """WHY: a filesystem-affecting journal event must surface in path_history.
-
-        Drift-locks AssetReport's Sprint 6 wiring against a future refactor
-        that forgets to call ``derive_path_history``.
-        """
+        """WHY: a filesystem-affecting journal event must surface in path_history."""
         m = _manifest_with_one_asset()
         entry = _atomic_entry(
             event_id="move_001",
@@ -229,29 +436,25 @@ class TestBuildReportSet:
                 "to_path": "movies-hd/Blazar.mkv",
             },
         )
+
         rs = build_report_set(initial=m, current=m, journal=[entry])
         path_history = rs.assets[0].path_history
+
         assert len(path_history) == 1
         assert path_history[0].event_id == "move_001"
         assert path_history[0].from_path == "movies-hd/a.mkv"
         assert path_history[0].to_path == "movies-hd/Blazar.mkv"
 
     def test_version_history_empty_for_static_scenario(self) -> None:
-        """WHY: AssetReport.version_history must default to [] when no version events ran.
-
-        Sprint 7 added the field; reports for static scenarios must not
-        invent version_history rows that didn't happen.
-        """
+        """WHY: AssetReport.version_history must default to [] when no version events ran."""
         m = _manifest_with_one_asset()
+
         rs = build_report_set(initial=m, current=m, journal=[])
+
         assert rs.assets[0].version_history == []
 
     def test_version_history_populated_for_reencode_video(self) -> None:
-        """WHY: a version-affecting journal event must surface in version_history.
-
-        Drift-locks AssetReport's Sprint 7 wiring against a future refactor
-        that forgets to call ``derive_version_history``.
-        """
+        """WHY: a version-affecting journal event must surface in version_history."""
         m = _manifest_with_one_asset()
         entry = _atomic_entry(
             event_id="reencode_001",
@@ -266,8 +469,10 @@ class TestBuildReportSet:
                 "output_path": "movies-hd/a.mkv",
             },
         )
+
         rs = build_report_set(initial=m, current=m, journal=[entry])
         version_history = rs.assets[0].version_history
+
         assert len(version_history) == 1
         assert version_history[0].event_id == "reencode_001"
         assert version_history[0].action == TimelineActionName.REENCODE_VIDEO
@@ -316,6 +521,8 @@ class TestBuildReportSet:
         require deterministic enumeration.
         """
         m = _manifest_with_one_asset()
+
         rs1 = build_report_set(initial=m, current=m, journal=[])
         rs2 = build_report_set(initial=m, current=m, journal=[])
+
         assert [a.asset_id for a in rs1.assets] == [a.asset_id for a in rs2.assets]

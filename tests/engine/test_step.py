@@ -47,7 +47,7 @@ def _make_fixture(tmp_path: Path, scenario_name: str, *, steps_limit: int | None
 
 def _corruption_scenario_bytes(seed: str = "42") -> bytes:
     return f"""
-schema_version: 11
+schema_version: 12
 scenario_id: corruption-step-test
 seed: {seed}
 duration_scale: short
@@ -57,9 +57,10 @@ library:
   roots:
     - id: movies_hd
       path: movies-hd
-works:
-  - id: work_001
+movies:
+  - id: movie_001
     title: Broken Header
+    layout: movie_flat
     variants:
       - id: variant_hd
         label: hd
@@ -70,6 +71,8 @@ works:
               role: primary_video
               container: mkv
               duration_seconds: 1
+series: []
+artists: []
 timeline:
   - id: corrupt_header_001
     at: 1s
