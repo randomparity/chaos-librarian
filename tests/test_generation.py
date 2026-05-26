@@ -29,6 +29,7 @@ from chaos_librarian.generation_lanes import (
     lane_config_for,
 )
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
+from chaos_librarian.materializer.run import materialize_scenario
 from chaos_librarian.scenario_io import parse_scenario_bytes
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -224,6 +225,50 @@ def test_music_topology_lane_emits_explicit_artist_hierarchy_and_audio_only_trac
 
     actions = {event["action"] for event in cast(list[dict[str, object]], payload["timeline"])}
     assert {"renumber_disc", "move_track_to_disc", "rename_file", "reencode_audio"} <= actions
+
+
+@pytest.mark.parametrize(
+    ("lane", "seed"),
+    [
+        (FuzzLaneName.TV_TOPOLOGY, 463),
+        (FuzzLaneName.MUSIC_TOPOLOGY, 464),
+    ],
+)
+def test_topology_materialize_gated_lanes_materialize_successfully(
+    tmp_path: Path,
+    lane: FuzzLaneName,
+    seed: int,
+) -> None:
+    data = generate_scenario_yaml(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=lane,
+        seed=seed,
+    )
+    scenario_path = tmp_path / f"{lane.value}.yaml"
+    scenario_path.write_bytes(data)
+
+    materialize_scenario(scenario_path, tmp_path / f"{lane.value}-run")
+
+
+def test_tv_topology_move_episode_crosses_season_folders() -> None:
+    data = generate_scenario_yaml(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        seed=463,
+    )
+    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    validation_report = run_validation(run_input)
+    assert validation_report.ok
+    artifacts = run_plan(run_input=run_input, validation_report=validation_report)
+    move_entry = next(
+        entry for entry in artifacts.journal if entry.action == "move_episode_to_season"
+    )
+
+    path_moves = cast(list[dict[str, object]], move_entry.state_delta["path_moves"])
+    assert any(
+        "Season 01" in str(move["from_path"]) and "Season 02" in str(move["to_path"])
+        for move in path_moves
+    )
 
 
 def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:

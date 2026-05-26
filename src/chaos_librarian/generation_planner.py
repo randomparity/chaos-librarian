@@ -179,8 +179,8 @@ def _planned_track_assets() -> list[PlannedAsset]:
         ),
         PlannedAsset(
             asset_id="track_asset_002",
-            container="mp3",
-            audio_codec="mp3",
+            container="m4a",
+            audio_codec="aac",
             audio_channels="stereo",
             role="primary_audio",
             duration_seconds=5,
@@ -479,7 +479,7 @@ def _emit_tv_topology_required_events(planner: TimelinePlanner) -> None:
     _renumber_episode(planner, target="episode_001", episode_number=2)
     _move_episode_to_season(
         planner,
-        target="episode_002",
+        target="episode_001",
         to_season="season_002",
         episode_number=2,
     )
@@ -497,7 +497,7 @@ def _emit_music_topology_required_events(planner: TimelinePlanner) -> None:
         track_number=2,
     )
     _rename_file(planner, assets[0])
-    _reencode_audio(planner, assets[0])
+    _reencode_audio(planner, assets[1])
 
 
 def _fill_remaining_events(
