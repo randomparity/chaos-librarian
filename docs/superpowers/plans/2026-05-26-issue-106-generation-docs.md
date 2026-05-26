@@ -85,6 +85,8 @@ generated artifact in the same commit.
 - Modify: `tests/test_generation.py`
 - Modify: `tests/cli/test_generate.py`
 - Modify: `tests/fixtures/fuzz-seeds.yaml`
+- Modify: `tests/fixtures/scenarios/fuzz-smoke-seed-123.yaml`
+- Modify: `tests/fixtures/scenarios/fuzz-regression-seed-456.yaml`
 
 - [ ] **Step 1: Add failing generation tests**
 
@@ -461,6 +463,20 @@ under `fuzz_regression:`.
 
 - [ ] **Step 7: Verify and commit**
 
+Before running the full generation suite, refresh the two checked-in generated
+fixtures. The `FUZZ_REGRESSION` budget change intentionally changes the
+embedded `generation.budgets` payload, so `test_committed_generated_fixtures`
+must be updated in the same coherent commit:
+
+```bash
+mkdir -p .tmp-issue-106-generation
+uv run chaos-librarian generate --profile fuzz-smoke --seed 123 --lane smoke --out .tmp-issue-106-generation/fuzz-smoke-seed-123.yaml
+uv run chaos-librarian generate --profile fuzz-regression --seed 456 --lane core-fs --out .tmp-issue-106-generation/fuzz-regression-seed-456.yaml
+mv .tmp-issue-106-generation/fuzz-smoke-seed-123.yaml tests/fixtures/scenarios/fuzz-smoke-seed-123.yaml
+mv .tmp-issue-106-generation/fuzz-regression-seed-456.yaml tests/fixtures/scenarios/fuzz-regression-seed-456.yaml
+trash .tmp-issue-106-generation
+```
+
 Run:
 
 ```bash
@@ -471,15 +487,13 @@ uv run ruff format --check src/chaos_librarian/contract/profiles.py src/chaos_li
 uv run ty check src tests
 uv run python -m chaos_librarian.schema_export --check
 git diff --check
-git add src/chaos_librarian/contract/profiles.py src/chaos_librarian/contract/scenario.py src/chaos_librarian/generation_lanes.py src/chaos_librarian/generation_planner.py src/chaos_librarian/generation.py tests/test_generation.py tests/cli/test_generate.py tests/fixtures/fuzz-seeds.yaml schemas
+git add src/chaos_librarian/contract/profiles.py src/chaos_librarian/contract/scenario.py src/chaos_librarian/generation_lanes.py src/chaos_librarian/generation_planner.py src/chaos_librarian/generation.py tests/test_generation.py tests/cli/test_generate.py tests/fixtures/fuzz-seeds.yaml tests/fixtures/scenarios/fuzz-smoke-seed-123.yaml tests/fixtures/scenarios/fuzz-regression-seed-456.yaml schemas
 git commit -m "feat: generate hierarchy fuzz lanes"
 ```
 
 ## Task 2: Refresh Scenario Fixtures
 
 **Files:**
-- Modify: `tests/fixtures/scenarios/fuzz-smoke-seed-123.yaml`
-- Modify: `tests/fixtures/scenarios/fuzz-regression-seed-456.yaml`
 - Modify: static fixtures under `tests/fixtures/scenarios/` with stale
   `id: work_*` movie ids.
 - Create: `tests/fixtures/scenarios/tv-season-folders.yaml`
@@ -488,19 +502,10 @@ git commit -m "feat: generate hierarchy fuzz lanes"
 - Modify: `tests/test_generation.py` if the committed generated fixture list
   should include topology fixtures.
 
-- [ ] **Step 1: Refresh committed generated fixtures**
+- [ ] **Step 1: Verify committed generated fixtures**
 
-Regenerate the two currently committed generated fixtures with the generator
-from Task 1:
-
-```bash
-mkdir -p .tmp-issue-106-generation
-uv run chaos-librarian generate --profile fuzz-smoke --seed 123 --lane smoke --out .tmp-issue-106-generation/fuzz-smoke-seed-123.yaml
-uv run chaos-librarian generate --profile fuzz-regression --seed 456 --lane core-fs --out .tmp-issue-106-generation/fuzz-regression-seed-456.yaml
-mv .tmp-issue-106-generation/fuzz-smoke-seed-123.yaml tests/fixtures/scenarios/fuzz-smoke-seed-123.yaml
-mv .tmp-issue-106-generation/fuzz-regression-seed-456.yaml tests/fixtures/scenarios/fuzz-regression-seed-456.yaml
-trash .tmp-issue-106-generation
-```
+Task 1 refreshes the checked-in generated fixtures because it changes embedded
+generation budget bytes. Confirm they still match the generator:
 
 Run:
 
