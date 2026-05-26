@@ -17,7 +17,7 @@ class PlannedAsset:
     video_codec: str
     resolution: str
     audio_channels: str
-    has_embedded_subtitle: bool = False
+    has_declared_subtitle: bool = False
 
 
 @dataclass(slots=True)
@@ -91,7 +91,9 @@ def _planned_assets(*, config: LaneConfig) -> list[PlannedAsset]:
                 video_codec="hevc" if index % 5 == 0 else "h264",
                 resolution=resolutions[(index - 1) % len(resolutions)],
                 audio_channels=channels[(index - 1) % len(channels)],
-                has_embedded_subtitle=index % 3 == 0,
+                has_declared_subtitle=(
+                    index % 3 == 0 or (config.lane is FuzzLaneName.SIDECAR_SUBTITLE and index == 1)
+                ),
             )
         )
     return assets
@@ -146,13 +148,13 @@ def _asset_payload(asset: PlannedAsset, rng: Any) -> dict[str, object]:
             }
         ],
     }
-    if asset.has_embedded_subtitle:
+    if asset.has_declared_subtitle:
         payload["subtitles"] = [
             {
                 "source": "generated_srt",
                 "codec": "srt",
                 "language": "eng",
-                "mode": "embedded",
+                "mode": "sidecar",
             }
         ]
     return payload
@@ -186,12 +188,13 @@ def _emit_lane_required_events(
         _remux_container(planner, assets[2])
         _edit_metadata(planner, assets[3])
     elif lane is FuzzLaneName.SIDECAR_SUBTITLE:
-        _create_subtitle_sidecar(planner, assets[0])
-        _update_first_sidecar(planner)
+        subtitle_asset = _first_declared_subtitle_asset(assets)
+        _create_subtitle_sidecar(planner, subtitle_asset)
+        _embed_latest_subtitle_sidecar(planner)
+        _extract_subtitle(planner, subtitle_asset)
         _remove_first_sidecar(planner)
         _create_nfo_sidecar(planner, assets[1])
-        _extract_subtitle(planner, _first_embedded_subtitle_asset(assets))
-        _embed_latest_subtitle_sidecar(planner)
+        _update_first_sidecar(planner)
     elif lane is FuzzLaneName.MALFORMED:
         _corrupt_container_header(planner, assets[0])
         _truncate_file(planner, assets[1])
@@ -550,11 +553,11 @@ def _extract_subtitle(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     )
 
 
-def _first_embedded_subtitle_asset(assets: list[PlannedAsset]) -> PlannedAsset:
+def _first_declared_subtitle_asset(assets: list[PlannedAsset]) -> PlannedAsset:
     for asset in assets:
-        if asset.has_embedded_subtitle:
+        if asset.has_declared_subtitle:
             return asset
-    raise ValueError("lane requires at least one asset with embedded subtitles")
+    raise ValueError("lane requires at least one asset with declared subtitles")
 
 
 def _update_first_sidecar(planner: TimelinePlanner) -> None:

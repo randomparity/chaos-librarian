@@ -89,7 +89,7 @@ works:
         - source: generated_srt
           codec: srt
           language: eng
-          mode: embedded
+          mode: sidecar
 timeline:
 - id: fuzz_0001_move
   at: 1ns

@@ -92,7 +92,7 @@ works:
         - source: generated_srt
           codec: srt
           language: eng
-          mode: embedded
+          mode: sidecar
 - id: work_004
   title: fuzz-regression core-fs Work 456-004
   variants:
@@ -160,7 +160,7 @@ works:
         - source: generated_srt
           codec: srt
           language: eng
-          mode: embedded
+          mode: sidecar
 - id: work_007
   title: fuzz-regression core-fs Work 456-007
   variants:
@@ -228,7 +228,7 @@ works:
         - source: generated_srt
           codec: srt
           language: eng
-          mode: embedded
+          mode: sidecar
 - id: work_010
   title: fuzz-regression core-fs Work 456-010
   variants:
