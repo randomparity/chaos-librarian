@@ -11,6 +11,8 @@ from chaos_librarian.validation.codes import (
 from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 
+DECLARED_SIDECAR_PATH = "library/r0/T - l.eng.srt"
+
 
 def _run(raw):
     collector = IssueCollector()
@@ -22,15 +24,16 @@ def _minimal(timeline, *, asset_subtitles=None):
     """Build a raw dict for one asset with optional declared subtitles."""
     subtitles = asset_subtitles or []
     return {
-        "schema_version": 11,
+        "schema_version": 12,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",
         "library": {"roots": [{"id": "r0", "path": "library/r0"}]},
-        "works": [
+        "movies": [
             {
-                "id": "w0",
+                "id": "movie_t",
                 "title": "T",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": "v0",
@@ -59,6 +62,8 @@ def _minimal(timeline, *, asset_subtitles=None):
                 ],
             }
         ],
+        "series": [],
+        "artists": [],
         "timeline": timeline,
     }
 
@@ -119,7 +124,7 @@ def test_embed_subtitle_against_declared_subtitle_valid():
                 "at": "1s",
                 "action": "embed_subtitle",
                 "target": "a0",
-                "sidecar_path": "a0.eng.srt",
+                "sidecar_path": DECLARED_SIDECAR_PATH,
             },
         ],
         asset_subtitles=[
@@ -127,8 +132,8 @@ def test_embed_subtitle_against_declared_subtitle_valid():
         ],
     )
     issues = _run(raw)
-    # Declared subtitle is in the projection at <asset_id>.<language>.srt
-    # with kind=subtitle — embed should be accepted.
+    # Declared subtitle is in the projection at the rendered media stem
+    # with kind=subtitle, so embed should be accepted.
     assert not any(i.code in {E_SIDECAR_TARGET_UNKNOWN, E_SIDECAR_KIND_MISMATCH} for i in issues)
 
 
@@ -164,7 +169,7 @@ def test_extract_subtitle_to_collides_with_declared_subtitle():
                 "at": "1s",
                 "action": "extract_subtitle",
                 "target": "a0",
-                "to": "a0.eng.srt",
+                "to": DECLARED_SIDECAR_PATH,
                 "language": "eng",
             },
         ],
@@ -210,14 +215,14 @@ def test_extract_subtitle_to_after_remove_valid():
                 "at": "1s",
                 "action": "remove_sidecar",
                 "target": "a0",
-                "sidecar_path": "a0.eng.srt",
+                "sidecar_path": DECLARED_SIDECAR_PATH,
             },
             {
                 "id": "e_xs",
                 "at": "2s",
                 "action": "extract_subtitle",
                 "target": "a0",
-                "to": "a0.eng.srt",
+                "to": DECLARED_SIDECAR_PATH,
                 "language": "eng",
             },
         ],
@@ -234,11 +239,11 @@ def test_create_subtitle_overrides_declared_at_different_path_then_embed_declare
     """Engine drops any prior subtitle row matching (asset, language) regardless of path.
 
     Without language-based dedup in the validator's projection, a
-    scenario that declares ``a0.eng.srt``, calls ``create_sidecar`` for
-    the same ``(asset_id, language)`` at a different path, and then
-    ``embed_subtitle`` on the old declared path validates clean — only
-    to crash the engine with a bare ``KeyError``. PR #63 adversarial
-    review finding #2.
+    scenario that declares a rendered sidecar, calls ``create_sidecar``
+    for the same ``(asset_id, language)`` at a different path, and then
+    ``embed_subtitle`` on the old declared path validates clean — only to
+    crash the engine with a bare ``KeyError``. PR #63 adversarial review
+    finding #2.
     """
     raw = _minimal(
         timeline=[
@@ -256,7 +261,7 @@ def test_create_subtitle_overrides_declared_at_different_path_then_embed_declare
                 "at": "2s",
                 "action": "embed_subtitle",
                 "target": "a0",
-                "sidecar_path": "a0.eng.srt",
+                "sidecar_path": DECLARED_SIDECAR_PATH,
             },
         ],
         asset_subtitles=[
@@ -275,14 +280,14 @@ def test_embed_subtitle_consumes_sidecar_then_subsequent_remove_unknown():
                 "at": "1s",
                 "action": "embed_subtitle",
                 "target": "a0",
-                "sidecar_path": "a0.eng.srt",
+                "sidecar_path": DECLARED_SIDECAR_PATH,
             },
             {
                 "id": "e_rs",
                 "at": "2s",
                 "action": "remove_sidecar",
                 "target": "a0",
-                "sidecar_path": "a0.eng.srt",
+                "sidecar_path": DECLARED_SIDECAR_PATH,
             },
         ],
         asset_subtitles=[

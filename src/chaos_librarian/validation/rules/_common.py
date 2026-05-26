@@ -324,13 +324,15 @@ def asset_containers(raw: _RawMapping) -> dict[str, str]:
 def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
     """Yield declared sidecar-mode subtitles using rendered asset paths."""
     root_path = primary_root_path(raw)
+    if root_path is None:
+        return
     for context in iter_asset_contexts(raw):
         asset = context.asset
         asset_id = asset.get("id")
         if not isinstance(asset_id, str):
             continue
-        media_path = _rendered_path_for_sidecar(context, root_path)
-        if media_path is None:
+        renderable = renderable_context_for(context, root_path)
+        if renderable is None:
             continue
         for sub_obj in _as_list(asset.get("subtitles")) or []:
             sub = _as_mapping(sub_obj)
@@ -340,6 +342,7 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
             if not isinstance(language, str):
                 continue
             try:
+                media_path = render_asset_path(renderable)
                 path = render_declared_sidecar_path(media_path, language)
             except ValueError:
                 continue
@@ -964,18 +967,6 @@ def _tail_render_fields(raw_context: RawAssetContext) -> tuple[str, str, str, in
         asset_container,
         raw_context.bundle_asset_count,
     )
-
-
-def _rendered_path_for_sidecar(raw_context: RawAssetContext, root_path: str | None) -> str | None:
-    if root_path is None:
-        return None
-    renderable = renderable_context_for(raw_context, root_path)
-    if renderable is None:
-        return None
-    try:
-        return render_asset_path(renderable)
-    except ValueError:
-        return None
 
 
 def _parent_kind(value: str) -> ParentKind | None:

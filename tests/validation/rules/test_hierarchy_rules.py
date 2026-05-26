@@ -223,6 +223,51 @@ def test_extract_subtitle_rejects_audio_only_track_asset(music_scenario, empty_i
     assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
 
 
+def test_declared_sidecar_uses_rendered_media_stem(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(
+        asset_subtitles=[
+            {
+                "source": "generated_srt",
+                "codec": "srt",
+                "language": "eng",
+                "mode": "sidecar",
+            }
+        ],
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "remove_sidecar",
+                "target": "a",
+                "sidecar_path": "r/Test Movie - l.eng.srt",
+            }
+        ],
+    )
+    issues = _issues_for(raw, empty_index)
+    assert not any(issue.code == codes.E_SIDECAR_TARGET_UNKNOWN for issue in issues)
+
+
+def test_slow_copy_temp_equal_to_rendered_initial_path_is_rejected(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        timeline=[
+            {
+                "id": "copy",
+                "at": "1s",
+                "action": "slow_copy_start",
+                "target": "a",
+                "to": "r/Copy.mkv",
+                "temp_path": "r/Test Movie - l.mkv",
+                "duration": "1s",
+            },
+            {"id": "commit", "at": "2s", "action": "slow_copy_commit", "for": "copy"},
+        ]
+    )
+    issues = _issues_for(raw, empty_index)
+    assert any(issue.code == codes.E_SLOW_COPY_PATH_COLLISION for issue in issues)
+
+
 def test_reencode_audio_allows_audio_only_track_asset(music_scenario, empty_index) -> None:
     raw = music_scenario(
         timeline=[

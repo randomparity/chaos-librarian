@@ -10,6 +10,9 @@ from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.rules.timeline_lifecycle import rule_timeline_lifecycle
 from chaos_librarian.validation.semantic import run_semantic_pass
 
+DECLARED_SIDECAR_PATH = "r/Test Movie - l.eng.srt"
+EXTRACTED_SIDECAR_PATH = "r/Test Movie - l.fra.srt"
+
 
 class TestRuleTimelineLifecycle:
     """The lifecycle rule rejects sequences that the engine cannot honor.
@@ -427,8 +430,8 @@ class TestSprint7LifecycleExtensions:
         [
             ("remux_container", {"to_container": "mp4"}),
             ("edit_metadata", {"fields": {"k": "v"}}),
-            ("embed_subtitle", {"sidecar_path": "asset_main.eng.srt"}),
-            ("extract_subtitle", {"to": "asset_main.fra.srt", "language": "fra"}),
+            ("embed_subtitle", {"sidecar_path": DECLARED_SIDECAR_PATH}),
+            ("extract_subtitle", {"to": EXTRACTED_SIDECAR_PATH, "language": "fra"}),
         ],
     )
     def test_slow_copy_forbidden_action(
@@ -475,7 +478,7 @@ class TestSprint7LifecycleExtensions:
                     "at": "0s",
                     "action": "create_sidecar",
                     "target": "asset_main",
-                    "to": "asset_main.eng.srt",
+                    "to": DECLARED_SIDECAR_PATH,
                     "language": "eng",
                 },
                 {
@@ -492,7 +495,7 @@ class TestSprint7LifecycleExtensions:
                     "at": "2s",
                     "action": "update_sidecar",
                     "target": "asset_main",
-                    "sidecar_path": "asset_main.eng.srt",
+                    "sidecar_path": DECLARED_SIDECAR_PATH,
                 },
             ],
         )
@@ -512,7 +515,7 @@ class TestSprint7LifecycleExtensions:
                     "at": "0s",
                     "action": "create_sidecar",
                     "target": "asset_main",
-                    "to": "asset_main.eng.srt",
+                    "to": DECLARED_SIDECAR_PATH,
                     "language": "eng",
                 },
                 {
@@ -529,7 +532,7 @@ class TestSprint7LifecycleExtensions:
                     "at": "2s",
                     "action": "remove_sidecar",
                     "target": "asset_main",
-                    "sidecar_path": "asset_main.eng.srt",
+                    "sidecar_path": DECLARED_SIDECAR_PATH,
                 },
             ],
         )
@@ -551,14 +554,14 @@ class TestSprint7LifecycleExtensions:
                     "at": "1s",
                     "action": "remove_sidecar",
                     "target": "asset_main",
-                    "sidecar_path": "asset_main.eng.srt",
+                    "sidecar_path": DECLARED_SIDECAR_PATH,
                 },
                 {
                     "id": "e_es",
                     "at": "2s",
                     "action": "embed_subtitle",
                     "target": "asset_main",
-                    "sidecar_path": "asset_main.eng.srt",
+                    "sidecar_path": DECLARED_SIDECAR_PATH,
                 },
             ],
         )

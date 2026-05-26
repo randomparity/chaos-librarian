@@ -175,19 +175,19 @@ def _scenario_with_movies_hd(
 ) -> dict[str, object]:
     """Build a Rule 5c scenario whose primary root is ``library/movies-hd``.
 
-    Rule 5c needs the primary root's ``path`` to format the asset's initial
-    path via ``INITIAL_PATH_TEMPLATE``. The default ``minimal_scenario``
-    fixture uses ``path: r`` which doesn't match the plan's test inputs,
-    so we override ``library`` and ``works`` to keep the rule's
-    asset_id → container index aligned with the timeline targets.
+    Rule 5c joins each slow-copy target against the hierarchy-rendered
+    initial path. The default ``minimal_scenario`` fixture uses ``path: r``,
+    so this helper overrides the movie hierarchy to keep the rendered path
+    aligned with the timeline targets.
     """
     return minimal_scenario(
         timeline=timeline,
         library={"roots": [{"id": "movies-hd", "path": "library/movies-hd"}]},
-        works=[
+        movies=[
             {
-                "id": "w",
+                "id": "movie_t",
                 "title": "t",
+                "layout": "movie_flat",
                 "variants": [
                     {
                         "id": "v",
@@ -229,8 +229,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "movies-hd/final.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/final.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -255,8 +255,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "library/movies-hd/asset_hd_main.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/t - l.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -281,8 +281,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "movies-hd/temp.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/movies-hd/temp.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},
@@ -309,8 +309,8 @@ class TestRule5cSlowCopyPathCollision:
                     "at": "0ns",
                     "action": "slow_copy_start",
                     "target": "asset_hd_main",
-                    "to": "movies-hd/final.mkv",
-                    "temp_path": "library/./movies-hd/asset_hd_main.mkv",
+                    "to": "library/movies-hd/final.mkv",
+                    "temp_path": "library/./movies-hd/t - l.mkv",
                     "duration": "1ns",
                 },
                 {"id": "scc", "at": "1ns", "action": "slow_copy_commit", "for": "scs"},

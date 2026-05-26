@@ -357,11 +357,7 @@ def _apply_update_sidecar(
 
 
 def _seed_sidecars_by_path(raw: Mapping[str, object]) -> dict[tuple[str, str], str]:
-    """Seed (asset_id, path) -> kind for declared subtitle sidecars.
-
-    Declared subtitles use the path convention <asset_id>.<language>.srt
-    (per scenario v5 §"Declared-sidecar path convention").
-    """
+    """Seed (asset_id, rendered_path) -> kind for declared subtitle sidecars."""
     return {
         (sidecar.asset_id, sidecar.path): sidecar.kind for sidecar in iter_declared_sidecars(raw)
     }

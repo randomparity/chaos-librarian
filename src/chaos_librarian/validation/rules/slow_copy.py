@@ -4,7 +4,7 @@
 start/commit index, so they share the ``_index_starts_and_commits``
 helper in this module. 5c (E_SLOW_COPY_PATH_COLLISION) walks each
 ``slow_copy_start`` event independently and joins against the asset's
-declared container to compute the initial path.
+rendered initial path.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ import os
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.paths import INITIAL_PATH_TEMPLATE
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import (
     E_SLOW_COPY_PATH_COLLISION,
@@ -24,8 +23,7 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _iter_timeline_events,
     _RawMapping,
-    asset_containers,
-    primary_root_path,
+    rendered_asset_paths,
     try_parse_duration,
 )
 
@@ -191,15 +189,11 @@ def rule_slow_copy_path_collision(
     so a ``.``-segment or trailing-slash variant cannot slip past the
     rule. Normalization is purely lexical -- no I/O, no symlink resolution.
 
-    Initial paths are derived via ``contract.paths.INITIAL_PATH_TEMPLATE``
-    formatted with the asset's primary-root path and container -- no other
-    source of truth.
+    Initial paths are derived through the same hierarchy-aware renderer used
+    by initial-state construction -- no legacy asset-id template fallback.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    primary_path = primary_root_path(raw)
-    if primary_path is None:
-        return  # Pydantic owns shape on missing roots[0]
-    containers_by_asset = asset_containers(raw)
+    initial_paths_by_asset = rendered_asset_paths(raw)
     for idx, event in _iter_timeline_events(raw):
         if event.get("action") != TimelineActionName.SLOW_COPY_START:
             continue
@@ -219,14 +213,10 @@ def rule_slow_copy_path_collision(
                 loc=("timeline", idx, "temp_path"),
             )
             continue  # one error per event
-        container = containers_by_asset.get(target)
-        if container is None:
+        initial_path_with_loc = initial_paths_by_asset.get(target)
+        if initial_path_with_loc is None:
             continue  # asset undeclared; rule_target_unknown owns that
-        initial_path = INITIAL_PATH_TEMPLATE.format(
-            root_path=primary_path,
-            asset_id=target,
-            container=container,
-        )
+        initial_path, _loc = initial_path_with_loc
         if _normalize(temp_path) == _normalize(initial_path):
             reporter.error(
                 code=E_SLOW_COPY_PATH_COLLISION,

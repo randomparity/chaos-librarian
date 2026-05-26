@@ -43,10 +43,10 @@ _Projection = dict[tuple[str, str], tuple[str, str | None]]
 ``_handle_create_sidecar`` can mirror the engine's ``(asset, language)``
 dedup (#63 finding #2): the engine drops any prior subtitle row matching
 the new event's ``(asset, language)`` regardless of path, so a scenario
-that declares ``a0.eng.srt`` and then ``create_sidecar`` writes
-``movies/a0/en.srt`` must invalidate the declared row in the projection
-too. Without this, embed/remove referencing the declared path validates
-clean but crashes the engine.
+that declares a rendered sidecar path and then ``create_sidecar`` writes
+a different subtitle path must invalidate the declared row in the
+projection too. Without this, embed/remove referencing the declared path
+validates clean but crashes the engine.
 """
 
 
@@ -115,9 +115,9 @@ def _handle_create_sidecar(
     path. The engine does the same in ``_handle_create_sidecar`` (removes
     every ``ManifestSidecar`` row keyed on ``(asset, "subtitle",
     language)``); validating without that dedup let a scenario like
-    "declared a0.eng.srt + create_sidecar to movies/a0/en.srt + embed
-    a0.eng.srt" pass shape validation only to fail at runtime with a bare
-    ``KeyError`` from the engine.
+    "declared rendered sidecar + create_sidecar to movies/a0/en.srt +
+    embed declared sidecar" pass shape validation only to fail at runtime
+    with a bare ``KeyError`` from the engine.
     """
     to = event.get("to")
     kind = event.get("kind", SidecarKind.SUBTITLE.value)
@@ -242,11 +242,7 @@ def _handle_update_sidecar(
 
 
 def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
-    """Seed (asset_id, path) -> kind for every declared subtitle.
-
-    Declared subtitles use the path convention <asset_id>.<language>.srt
-    (per scenario v5 §"Declared-sidecar path convention").
-    """
+    """Seed (asset_id, rendered_path) -> kind for every declared subtitle."""
     projection: _Projection = {}
     for sidecar in iter_declared_sidecars(raw):
         projection[(sidecar.asset_id, sidecar.path)] = (sidecar.kind, sidecar.language)
