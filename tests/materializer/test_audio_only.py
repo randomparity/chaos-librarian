@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from chaos_librarian.contract.domain import ParentKind
@@ -16,6 +18,8 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.preflight import preflight_asset
+from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, build_command
+from chaos_librarian.materializer.tooling.recipes import recipe_sine
 
 
 def _audio(codec: str) -> AudioTrack:
@@ -43,6 +47,35 @@ def test_track_audio_only_cells_pass_preflight(container: str, codec: str) -> No
         subtitles=[],
         container=container,
     )
+
+
+@pytest.mark.parametrize(
+    ("container", "codec", "encoder"),
+    [("flac", "flac", "flac"), ("mp3", "mp3", "libmp3lame"), ("m4a", "aac", "aac")],
+)
+def test_track_audio_only_cells_build_ffmpeg_command(
+    container: str,
+    codec: str,
+    encoder: str,
+    tmp_path: Path,
+) -> None:
+    output_path = tmp_path / f"asset.{container}"
+
+    argv = build_command(
+        video=None,
+        video_input=None,
+        audios=[_audio(codec)],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output_path,
+    )
+
+    assert "-c:v" not in argv
+    map_values = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-map"]
+    assert map_values == ["0:a:0"]
+    assert argv[argv.index("-c:a") + 1] == encoder
+    for flag in BITEXACT_FLAGS:
+        assert flag in argv
+    assert argv[-1] == str(output_path)
 
 
 def test_track_with_video_rejected_by_preflight() -> None:
