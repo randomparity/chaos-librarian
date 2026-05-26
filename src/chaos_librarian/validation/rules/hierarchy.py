@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import date
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import EpisodeNaming
@@ -97,8 +98,8 @@ def _check_episode_naming(
     episode_naming: object,
     reporter: Reporter,
 ) -> None:
-    if episode_naming == EpisodeNaming.DATE_TITLE.value and not isinstance(
-        episode.get("aired_on"), str
+    if episode_naming == EpisodeNaming.DATE_TITLE.value and not _is_date_value(
+        episode.get("aired_on")
     ):
         _report_error(reporter, "date_title episodes require aired_on", (*episode_loc, "aired_on"))
     if episode_naming == EpisodeNaming.ABSOLUTE_3_DIGIT_TITLE.value:
@@ -183,6 +184,10 @@ def _check_disc_tracks(
 
 def _is_positive_int(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
+def _is_date_value(value: object) -> bool:
+    return isinstance(value, str | date)
 
 
 def _report_error(reporter: Reporter, message: str, loc: _Loc) -> None:

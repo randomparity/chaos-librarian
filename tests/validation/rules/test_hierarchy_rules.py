@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import cast
 
 from chaos_librarian.contract.validation import ValidationIssue
@@ -282,6 +283,17 @@ def test_date_title_requires_aired_on(series_scenario, empty_index) -> None:
     issues = _issues_for(raw, empty_index)
 
     assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_date_title_accepts_aired_on_date_object(series_scenario, empty_index) -> None:
+    raw = series_scenario(episode_naming="date_title")
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    _items(season["episodes"])[0]["aired_on"] = date(2024, 5, 1)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
 
 
 def test_absolute_3_digit_title_requires_absolute_number(series_scenario, empty_index) -> None:
