@@ -14,9 +14,9 @@ from chaos_librarian.adapter import (
     load_fixture,
     load_observed_state,
 )
+from chaos_librarian.adapter.fixture import SentinelInvalidError
 from chaos_librarian.cli._envelope import E_SENTINEL_INVALID, emit_cli_error
 from chaos_librarian.cli.app import app
-from chaos_librarian.engine import SentinelInvalidError
 
 
 @app.command()

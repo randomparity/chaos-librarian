@@ -55,7 +55,7 @@ from chaos_librarian.validation import prepare_run_input_from_bytes, run_validat
 RUN_ID = uuid.UUID("7c44eb62-7046-4b8f-a168-eaf3a58e0145")
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
-_SYNTHETIC_SCENARIOS = frozenset({"identity-move-rename.yaml", "static-library.yaml"})
+_SYNTHETIC_SCENARIOS = frozenset({"static-library.yaml"})
 _REPORT_DIRS = (
     "assets",
     "movies",
