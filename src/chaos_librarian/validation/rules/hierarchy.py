@@ -98,6 +98,7 @@ def rule_hierarchy_timeline(
             )
             continue
         mutation = projection.apply(event)
+        _check_hierarchy_rendered_paths(mutation=mutation, event_idx=idx, reporter=reporter)
         _check_hierarchy_mutation_numbers(
             projection=projection,
             mutation=mutation,
@@ -128,6 +129,19 @@ def rule_media_action_compatible_with_parent(
         if context is None or context.parent_kind != ParentKind.TRACK.value:
             continue
         _check_track_media_action(event=event, event_idx=idx, reporter=reporter)
+
+
+def _check_hierarchy_rendered_paths(
+    *, mutation: HierarchyMutation, event_idx: int, reporter: Reporter
+) -> None:
+    for old_path, new_path in mutation.path_changes.values():
+        if old_path is not None and new_path is None:
+            _report_error(
+                reporter,
+                "hierarchy action makes an active asset path unrenderable",
+                _event_loc(event_idx),
+            )
+            return
 
 
 def _check_hierarchy_mutation_numbers(

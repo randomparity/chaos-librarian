@@ -44,6 +44,25 @@ def _first_track_asset(raw: dict[str, object]) -> dict[str, object]:
     return _mapping(_items(bundle["assets"])[0])
 
 
+def _add_destination_series(raw: dict[str, object], *, episode_naming: str) -> None:
+    _items(raw["series"]).append(
+        {
+            "id": "series_destination",
+            "title": "Destination",
+            "layout": "season_folders",
+            "episode_naming": episode_naming,
+            "seasons": [
+                {
+                    "id": "season_destination",
+                    "season_number": 1,
+                    "title": "Season 1",
+                    "episodes": [],
+                }
+            ],
+        }
+    )
+
+
 def _write_music_scenario(path: Path, *, timeline: str) -> None:
     path.write_text(
         f"""schema_version: 12
@@ -529,6 +548,62 @@ def test_move_track_to_disc_rejects_duplicate_track_number_after_mutation(
     issues = _issues_for(raw, empty_index)
 
     assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_move_episode_to_absolute_named_season_requires_absolute_number(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_episode_to_season",
+                "target": "episode_one",
+                "to_season": "season_destination",
+                "episode_number": 1,
+            }
+        ]
+    )
+    source_series = _mapping(_items(raw["series"])[0])
+    source_season = _mapping(_items(source_series["seasons"])[0])
+    source_episode = _mapping(_items(source_season["episodes"])[0])
+    source_episode.pop("absolute_number")
+    _add_destination_series(raw, episode_naming="absolute_3_digit_title")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_HIERARCHY_INVALID and issue.path == "$.timeline[0].action"
+        for issue in issues
+    )
+
+
+def test_move_episode_to_date_named_season_requires_aired_on(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_episode_to_season",
+                "target": "episode_one",
+                "to_season": "season_destination",
+                "episode_number": 1,
+            }
+        ]
+    )
+    source_series = _mapping(_items(raw["series"])[0])
+    source_season = _mapping(_items(source_series["seasons"])[0])
+    source_episode = _mapping(_items(source_season["episodes"])[0])
+    source_episode.pop("aired_on")
+    _add_destination_series(raw, episode_naming="date_title")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_HIERARCHY_INVALID and issue.path == "$.timeline[0].action"
+        for issue in issues
+    )
 
 
 def test_sequential_hierarchy_actions_render_from_mutated_metadata(

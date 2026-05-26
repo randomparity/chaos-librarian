@@ -803,12 +803,14 @@ class HierarchyProjection:
     ) -> dict[str, tuple[str | None, str | None]]:
         changes: dict[str, tuple[str | None, str | None]] = {}
         for asset_id in asset_ids:
+            old_path = before.get(asset_id)
+            if old_path is None:
+                continue
             new_path = self.render_asset_path(asset_id)
             if new_path is None:
                 self.current_paths.pop(asset_id, None)
             else:
                 self.current_paths[asset_id] = new_path
-            old_path = before.get(asset_id)
             if old_path != new_path:
                 changes[asset_id] = (old_path, new_path)
         return changes
