@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
 
 import pytest
+from click.testing import Result
 from typer.testing import CliRunner
 
 from chaos_librarian import generation
@@ -16,6 +18,11 @@ from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
 runner = CliRunner()
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _plain_output(result: Result) -> str:
+    return _ANSI_ESCAPE_RE.sub("", result.stdout + result.stderr)
 
 
 def _load_generated(path: Path) -> Scenario:
@@ -94,7 +101,7 @@ def test_generate_regression_requires_lane(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 2
-    assert "--lane is required for fuzz-regression" in result.stdout + result.stderr
+    assert "--lane is required for fuzz-regression" in _plain_output(result)
     assert not out.exists()
 
 
@@ -117,7 +124,7 @@ def test_generate_rejects_lane_profile_mismatch(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 2
-    assert "lane media-rewrite is not valid for fuzz-smoke" in result.stdout + result.stderr
+    assert "lane media-rewrite is not valid for fuzz-smoke" in _plain_output(result)
     assert not out.exists()
 
 
