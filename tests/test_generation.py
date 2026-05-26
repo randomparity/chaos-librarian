@@ -29,7 +29,6 @@ from chaos_librarian.generation_lanes import (
     lane_config_for,
 )
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
-from chaos_librarian.materializer.run import materialize_scenario
 from chaos_librarian.scenario_io import parse_scenario_bytes
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -227,27 +226,36 @@ def test_music_topology_lane_emits_explicit_artist_hierarchy_and_audio_only_trac
     assert {"renumber_disc", "move_track_to_disc", "rename_file", "reencode_audio"} <= actions
 
 
-@pytest.mark.parametrize(
-    ("lane", "seed"),
-    [
-        (FuzzLaneName.TV_TOPOLOGY, 463),
-        (FuzzLaneName.MUSIC_TOPOLOGY, 464),
-    ],
-)
-def test_topology_materialize_gated_lanes_materialize_successfully(
-    tmp_path: Path,
-    lane: FuzzLaneName,
-    seed: int,
-) -> None:
-    data = generate_scenario_yaml(
+def test_music_topology_reencode_targets_materializable_audio_asset() -> None:
+    payload = _generated_payload(
         profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=lane,
-        seed=seed,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        seed=464,
     )
-    scenario_path = tmp_path / f"{lane.value}.yaml"
-    scenario_path.write_bytes(data)
+    artists = cast(list[dict[str, object]], payload["artists"])
+    albums = cast(list[dict[str, object]], artists[0]["albums"])
+    discs = cast(list[dict[str, object]], albums[0]["discs"])
+    tracks = [track for disc in discs for track in cast(list[dict[str, object]], disc["tracks"])]
+    first_variant = cast(list[dict[str, object]], tracks[0]["variants"])[0]
+    first_bundle = cast(dict[str, object], first_variant["bundle"])
+    first_asset = cast(list[dict[str, object]], first_bundle["assets"])[0]
+    second_variant = cast(list[dict[str, object]], tracks[1]["variants"])[0]
+    second_bundle = cast(dict[str, object], second_variant["bundle"])
+    second_asset = cast(list[dict[str, object]], second_bundle["assets"])[0]
+    reencode_event = next(
+        event
+        for event in cast(list[dict[str, object]], payload["timeline"])
+        if event["action"] == "reencode_audio"
+    )
 
-    materialize_scenario(scenario_path, tmp_path / f"{lane.value}-run")
+    assert first_asset["id"] == "track_asset_001"
+    assert first_asset["container"] == "flac"
+    assert "video" not in first_asset
+    assert cast(list[dict[str, object]], first_asset["audio"])[0]["codec"] == "flac"
+    assert second_asset["id"] == "track_asset_002"
+    assert second_asset["container"] == "m4a"
+    assert cast(list[dict[str, object]], second_asset["audio"])[0]["codec"] == "aac"
+    assert reencode_event["target"] == second_asset["id"]
 
 
 def test_tv_topology_move_episode_crosses_season_folders() -> None:
