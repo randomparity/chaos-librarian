@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
+import shutil
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -33,7 +34,11 @@ from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import FilesystemAction
 from chaos_librarian.contract.paths import resolve_under_library
-from chaos_librarian.contract.scenario import Asset, TimelineActionName
+from chaos_librarian.contract.scenario import (
+    HIERARCHY_TIMELINE_ACTIONS,
+    Asset,
+    TimelineActionName,
+)
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.phase_b.content import hash_file
 
@@ -405,7 +410,7 @@ def _slow_copy_start(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> Files
     src = ctx.library_root / initial_path
     dst = ctx.library_root / temp_path
     dst.parent.mkdir(parents=True, exist_ok=True)
-    dst.write_bytes(src.read_bytes())
+    shutil.copyfile(src, dst)
     ctx.pending_slow_copy[entry.event_id] = _PendingSlowCopy(
         asset_id=asset_id,
         initial_path=initial_path,
@@ -487,12 +492,4 @@ _DISPATCH: Final[
     TimelineActionName.MOVE_TRACK_TO_DISC: _hierarchy_moves,
 }
 
-_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
-)
+_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS

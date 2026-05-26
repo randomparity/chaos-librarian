@@ -28,6 +28,8 @@ from chaos_librarian.contract import (
     VALIDATION_SCHEMA_VERSION,
     VARIANT_REPORT_SCHEMA_VERSION,
 )
+from chaos_librarian.contract import scenario as scenario_contract
+from chaos_librarian.contract.scenario import TimelineActionName
 
 
 def test_namespace_uuid_is_stable() -> None:
@@ -97,3 +99,19 @@ def test_all_schema_versions_are_positive_integers() -> None:
 def test_adapter_schema_versions() -> None:
     assert OBSERVED_STATE_SCHEMA_VERSION == 2
     assert DIVERGENCE_SCHEMA_VERSION == 1
+
+
+def test_hierarchy_timeline_actions_are_contract_owned() -> None:
+    assert hasattr(scenario_contract, "HIERARCHY_TIMELINE_ACTIONS")
+    assert (
+        frozenset(
+            {
+                TimelineActionName.RENUMBER_EPISODE,
+                TimelineActionName.MOVE_EPISODE_TO_SEASON,
+                TimelineActionName.RENAME_SEASON,
+                TimelineActionName.RENUMBER_DISC,
+                TimelineActionName.MOVE_TRACK_TO_DISC,
+            }
+        )
+        == scenario_contract.HIERARCHY_TIMELINE_ACTIONS
+    )

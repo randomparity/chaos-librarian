@@ -63,6 +63,16 @@ class TimelineActionName(enum.StrEnum):
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
 
+HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }
+)
+
 
 class VideoSource(enum.StrEnum):
     """Synthesis recipe for the video stream of an asset."""

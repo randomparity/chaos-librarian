@@ -379,6 +379,45 @@ def test_apply_slow_copy_start_writes_full_bytes_to_temp_path(tmp_path: Path) ->
     assert actions[0].to_path == "movies-hd/final.mkv"
 
 
+def test_apply_slow_copy_start_does_not_read_source_into_memory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    library = tmp_path / "library"
+    (library / "movies-hd").mkdir(parents=True)
+    (library / "movies-hd" / "asset_hd_main.mkv").write_bytes(b"slow-copy bytes")
+    journal = [
+        _started_entry(
+            event_id="sc_start",
+            target="asset_hd_main",
+            temp_path="movies-hd/asset_hd_main.mkv.partial",
+            state_delta={
+                "initial_path_at_start": "movies-hd/asset_hd_main.mkv",
+                "temp_path": "movies-hd/asset_hd_main.mkv.partial",
+                "final_path": "movies-hd/final.mkv",
+            },
+        )
+    ]
+
+    def fail_read_bytes(self: Path) -> bytes:
+        raise AssertionError(f"slow copy should stream from source path: {self}")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read_bytes)
+
+    actions, _ = _apply_entries(
+        library_root=library,
+        journal=journal,
+        scenario=_scenario(),
+        resolved_seed=1234,
+    )
+
+    staged = library / "movies-hd" / "asset_hd_main.mkv.partial"
+    with staged.open("rb") as handle:
+        assert handle.read() == b"slow-copy bytes"
+    assert len(actions) == 1
+    assert actions[0].action is TimelineActionName.SLOW_COPY_START
+
+
 def test_apply_slow_copy_commit_renames_temp_to_final(tmp_path: Path) -> None:
     """WHY: commit promotes the staged temp file to the final path. The
     dispatcher must thread pending_slow_copy state from start to commit

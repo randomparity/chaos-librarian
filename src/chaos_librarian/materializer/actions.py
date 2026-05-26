@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
 SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
@@ -63,15 +63,7 @@ _FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
-_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
-)
+_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS
 
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {

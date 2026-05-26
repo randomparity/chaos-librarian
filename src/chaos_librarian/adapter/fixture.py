@@ -114,9 +114,9 @@ def load_fixture(run_dir: Path) -> OracleFixture:
         return _load_fixture_checked(run_dir)
     except AdapterInputError:
         raise
+    except SentinelInvalidError:
+        raise
     except (OSError, ValidationError, ValueError, ChaosLibrarianError) as exc:
-        if exc.__class__.__name__ == "SentinelInvalidError":
-            raise
         _fixture_invalid(f"fixture input is invalid: {exc}", path=run_dir)
 
 

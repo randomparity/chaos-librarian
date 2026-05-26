@@ -12,28 +12,26 @@ from typing import Final, cast
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.reports import PathHistoryEntry
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
 __all__ = ["derive_path_history"]
 
 
-_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.MOVE_ASSET,
-        TimelineActionName.RENAME_FILE,
-        TimelineActionName.DELETE_FILE,
-        TimelineActionName.ADD_FILE,
-        TimelineActionName.CREATE_SIDECAR,
-        TimelineActionName.SLOW_COPY_START,
-        TimelineActionName.SLOW_COPY_COMMIT,
-        TimelineActionName.ARCHIVE_FILE,
-        TimelineActionName.MOVE_BETWEEN_ROOTS,
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
+_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    frozenset(
+        {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.DELETE_FILE,
+            TimelineActionName.ADD_FILE,
+            TimelineActionName.CREATE_SIDECAR,
+            TimelineActionName.SLOW_COPY_START,
+            TimelineActionName.SLOW_COPY_COMMIT,
+            TimelineActionName.ARCHIVE_FILE,
+            TimelineActionName.MOVE_BETWEEN_ROOTS,
+        }
+    )
+    | HIERARCHY_TIMELINE_ACTIONS
 )
 """Actions whose journal entries describe an on-disk change.
 
@@ -58,7 +56,7 @@ def derive_path_history(asset_id: str, journal: Iterable[JournalEntry]) -> list[
         if asset_id not in entry.target_ids:
             continue
         delta = entry.state_delta
-        if action in _HIERARCHY_ACTIONS:
+        if action in HIERARCHY_TIMELINE_ACTIONS:
             history.extend(_hierarchy_path_entries(asset_id, entry))
             continue
         history.append(
@@ -81,17 +79,6 @@ def derive_path_history(asset_id: str, journal: Iterable[JournalEntry]) -> list[
             )
         )
     return history
-
-
-_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
-)
 
 
 def _hierarchy_path_entries(

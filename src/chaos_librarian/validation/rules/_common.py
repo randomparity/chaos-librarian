@@ -25,6 +25,7 @@ from typing import TYPE_CHECKING, Final, cast
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
+    HIERARCHY_TIMELINE_ACTIONS,
     ArtistLayout,
     EpisodeNaming,
     MovieLayout,
@@ -1063,13 +1064,7 @@ def build_hierarchy_projection(raw: Mapping[str, object]) -> HierarchyProjection
 
 def is_hierarchy_action(action: object) -> bool:
     """Return whether ``action`` is a hierarchy timeline mutation."""
-    return action in {
-        TimelineActionName.RENUMBER_EPISODE,
-        TimelineActionName.MOVE_EPISODE_TO_SEASON,
-        TimelineActionName.RENAME_SEASON,
-        TimelineActionName.RENUMBER_DISC,
-        TimelineActionName.MOVE_TRACK_TO_DISC,
-    }
+    return action in HIERARCHY_TIMELINE_ACTIONS
 
 
 def _str(value: object) -> str | None:
@@ -1513,7 +1508,7 @@ def _movie_renderable_context(
 ) -> RenderableAssetContext | None:
     if raw_context.movie is None:
         return None
-    layout = _movie_layout(raw_context.movie.get("layout"))
+    layout = _enum(MovieLayout, raw_context.movie.get("layout"))
     movie_title = _str_field(raw_context.movie, "title")
     tail = _tail_render_fields(raw_context)
     if layout is None or movie_title is None or tail is None:
@@ -1547,8 +1542,8 @@ def _episode_renderable_context(
 ) -> RenderableAssetContext | None:
     if raw_context.series is None or raw_context.season is None or raw_context.episode is None:
         return None
-    layout = _series_layout(raw_context.series.get("layout"))
-    naming = _episode_naming(raw_context.series.get("episode_naming"))
+    layout = _enum(SeriesLayout, raw_context.series.get("layout"))
+    naming = _enum(EpisodeNaming, raw_context.series.get("episode_naming"))
     series_title = _str_field(raw_context.series, "title")
     season_number = _int_field(raw_context.season, "season_number")
     episode_number = _int_field(raw_context.episode, "episode_number")
@@ -1597,8 +1592,8 @@ def _track_renderable_context(
         return None
     if raw_context.disc is None or raw_context.track is None:
         return None
-    layout = _artist_layout(raw_context.artist.get("layout"))
-    naming = _track_naming(raw_context.artist.get("track_naming"))
+    layout = _enum(ArtistLayout, raw_context.artist.get("layout"))
+    naming = _enum(TrackNaming, raw_context.artist.get("track_naming"))
     artist_name = _str_field(raw_context.artist, "name")
     album_title = _str_field(raw_context.album, "title")
     disc_number = _int_field(raw_context.disc, "disc_number")
@@ -1652,51 +1647,6 @@ def _tail_render_fields(raw_context: RawAssetContext) -> tuple[str, str, str, in
 def _parent_kind(value: str) -> ParentKind | None:
     try:
         return ParentKind(value)
-    except ValueError:
-        return None
-
-
-def _movie_layout(value: object) -> MovieLayout | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return MovieLayout(value)
-    except ValueError:
-        return None
-
-
-def _series_layout(value: object) -> SeriesLayout | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return SeriesLayout(value)
-    except ValueError:
-        return None
-
-
-def _artist_layout(value: object) -> ArtistLayout | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return ArtistLayout(value)
-    except ValueError:
-        return None
-
-
-def _episode_naming(value: object) -> EpisodeNaming | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return EpisodeNaming(value)
-    except ValueError:
-        return None
-
-
-def _track_naming(value: object) -> TrackNaming | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        return TrackNaming(value)
     except ValueError:
         return None
 
