@@ -26,6 +26,23 @@ def _issues_for(raw: dict[str, object], empty_index) -> list[ValidationIssue]:
     return collector.issues
 
 
+def _first_movie_asset(raw: dict[str, object]) -> dict[str, object]:
+    movie = _mapping(_items(raw["movies"])[0])
+    variant = _mapping(_items(movie["variants"])[0])
+    bundle = _mapping(variant["bundle"])
+    return _mapping(_items(bundle["assets"])[0])
+
+
+def _first_track_asset(raw: dict[str, object]) -> dict[str, object]:
+    artist = _mapping(_items(raw["artists"])[0])
+    album = _mapping(_items(artist["albums"])[0])
+    disc = _mapping(_items(album["discs"])[0])
+    track = _mapping(_items(disc["tracks"])[0])
+    variant = _mapping(_items(track["variants"])[0])
+    bundle = _mapping(variant["bundle"])
+    return _mapping(_items(bundle["assets"])[0])
+
+
 def test_movie_asset_target_is_found_by_raw_hierarchy_walker(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(
         timeline=[{"id": "ev", "at": "1s", "action": "delete_file", "target": "a"}]
@@ -70,6 +87,164 @@ def test_track_asset_target_is_found_by_raw_hierarchy_walker(music_scenario, emp
     issues = _issues_for(raw, empty_index)
 
     assert not any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
+
+
+def test_track_asset_allows_audio_only_flac(music_scenario, empty_index) -> None:
+    raw = music_scenario()
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_track_asset_rejects_video_stream(music_scenario, empty_index) -> None:
+    raw = music_scenario()
+    asset = _first_track_asset(raw)
+    asset["container"] = "mp4"
+    asset["audio"] = [{"source": "sine", "codec": "aac", "channels": "stereo", "language": "eng"}]
+    asset["video"] = {"source": "color_bars", "codec": "h264", "resolution": "sd"}
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_movie_asset_rejects_audio_only(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    asset = _first_movie_asset(raw)
+    asset["container"] = "flac"
+    asset["audio"] = [{"source": "sine", "codec": "flac", "channels": "stereo", "language": "eng"}]
+    asset.pop("video")
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_track_asset_rejects_mp4_aac_video_container(music_scenario, empty_index) -> None:
+    raw = music_scenario()
+    asset = _first_track_asset(raw)
+    asset["container"] = "mp4"
+    asset["audio"] = [{"source": "sine", "codec": "aac", "channels": "stereo", "language": "eng"}]
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_reencode_video_rejects_audio_only_track_asset(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "reencode_video",
+                "target": "asset_track",
+                "codec": "h264",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_extract_subtitle_rejects_audio_only_track_asset(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "extract_subtitle",
+                "target": "asset_track",
+                "language": "eng",
+                "to": "track.eng.srt",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code in {codes.E_MATERIALIZE_UNSUPPORTED, codes.E_EXTRACT_TRACK_UNKNOWN}
+        for issue in issues
+    )
+
+
+def test_reencode_audio_allows_audio_only_track_asset(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "reencode_audio",
+                "target": "asset_track",
+                "codec": "flac",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_corrupt_packet_range_rejects_track_video_stream(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "corrupt_packet_range",
+                "target": "asset_track",
+                "stream": "video",
+                "packet_start": 0,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_corrupt_packet_range_rejects_track_subtitle_stream(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "corrupt_packet_range",
+                "target": "asset_track",
+                "stream": "subtitle",
+                "packet_start": 0,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
+
+
+def test_corrupt_packet_range_allows_track_audio_stream(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "corrupt_packet_range",
+                "target": "asset_track",
+                "stream": "audio",
+                "packet_start": 0,
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in issues)
 
 
 def test_renumber_episode_requires_episode_target(series_scenario, empty_index) -> None:

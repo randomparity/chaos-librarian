@@ -7,13 +7,22 @@ from collections.abc import Mapping
 from datetime import date
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.scenario import EpisodeNaming
-from chaos_librarian.validation.codes import E_HIERARCHY_INVALID, E_PATH_COLLISION, format_jsonpath
+from chaos_librarian.contract.domain import ParentKind
+from chaos_librarian.contract.scenario import EpisodeNaming, TimelineActionName
+from chaos_librarian.validation.codes import (
+    E_HIERARCHY_INVALID,
+    E_MATERIALIZE_UNSUPPORTED,
+    E_PATH_COLLISION,
+    format_jsonpath,
+)
 from chaos_librarian.validation.rules._common import (
+    RawAssetContext,
     Reporter,
     _as_list,
     _as_mapping,
+    _iter_timeline_events,
     _Loc,
+    iter_asset_contexts,
     rendered_asset_paths,
 )
 
@@ -21,7 +30,11 @@ if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["rule_hierarchy_invariants", "rule_rendered_path_collisions"]
+__all__ = [
+    "rule_hierarchy_invariants",
+    "rule_media_action_compatible_with_parent",
+    "rule_rendered_path_collisions",
+]
 
 
 def rule_hierarchy_invariants(
@@ -58,6 +71,24 @@ def rule_rendered_path_collisions(
             )
         else:
             seen[normalized] = (asset_id, loc)
+
+
+def rule_media_action_compatible_with_parent(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject media stream actions that cannot apply to the target's parent kind."""
+    reporter = Reporter(collector=collector, line_index=line_index)
+    assets_by_id = _asset_contexts_by_id(raw)
+    for idx, event in _iter_timeline_events(raw):
+        target = event.get("target")
+        if not isinstance(target, str):
+            continue
+        context = assets_by_id.get(target)
+        if context is None or context.parent_kind != ParentKind.TRACK.value:
+            continue
+        _check_track_media_action(event=event, event_idx=idx, reporter=reporter)
 
 
 def _check_series(raw: Mapping[str, object], reporter: Reporter) -> None:
@@ -207,6 +238,55 @@ def _check_disc_tracks(
             _report_error(reporter, "duplicate track_number", track_loc)
         else:
             seen.add(track_number)
+
+
+def _asset_contexts_by_id(raw: Mapping[str, object]) -> dict[str, RawAssetContext]:
+    contexts: dict[str, RawAssetContext] = {}
+    for context in iter_asset_contexts(raw):
+        asset_id = context.asset.get("id")
+        if isinstance(asset_id, str):
+            contexts[asset_id] = context
+    return contexts
+
+
+def _check_track_media_action(
+    *,
+    event: Mapping[str, object],
+    event_idx: int,
+    reporter: Reporter,
+) -> None:
+    action = event.get("action")
+    if action == TimelineActionName.REENCODE_VIDEO or action in {
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.EXTRACT_SUBTITLE,
+    }:
+        _report_media_action_error(reporter, action, ("timeline", event_idx, "target"))
+    elif action == TimelineActionName.CORRUPT_PACKET_RANGE:
+        _check_track_packet_range_action(event=event, event_idx=event_idx, reporter=reporter)
+
+
+def _check_track_packet_range_action(
+    *,
+    event: Mapping[str, object],
+    event_idx: int,
+    reporter: Reporter,
+) -> None:
+    stream = event.get("stream")
+    if stream not in {"video", "subtitle"}:
+        return
+    _report_media_action_error(
+        reporter,
+        event.get("action"),
+        ("timeline", event_idx, "stream"),
+    )
+
+
+def _report_media_action_error(reporter: Reporter, action: object, loc: _Loc) -> None:
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"{action!r} is not supported for track assets",
+        loc=loc,
+    )
 
 
 def _is_positive_int(value: object) -> bool:
