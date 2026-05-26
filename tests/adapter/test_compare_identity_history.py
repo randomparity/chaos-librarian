@@ -177,6 +177,26 @@ def test_identity_history_clean_move_between_roots() -> None:
     assert _compare(fixture, observed).ok is True
 
 
+def test_identity_history_clean_hierarchy_path_move() -> None:
+    fixture = _fixture_with_history(
+        _oracle_entry(
+            "renumber-1",
+            TimelineActionName.RENUMBER_EPISODE,
+            from_path="tv/Show/Season 01/Show - S01E01.mkv",
+            to_path="tv/Show/Season 01/Show - S01E02.mkv",
+        )
+    )
+    observed = _observed_with_history(
+        _history_entry(
+            "renumber_episode",
+            from_path="tv/Show/Season 01/Show - S01E01.mkv",
+            to_path="tv/Show/Season 01/Show - S01E02.mkv",
+        )
+    )
+
+    assert _compare(fixture, observed).ok is True
+
+
 def test_identity_history_clean_slow_copy_group() -> None:
     fixture = _fixture_with_history(
         _oracle_entry(

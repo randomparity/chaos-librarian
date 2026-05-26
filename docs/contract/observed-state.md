@@ -92,6 +92,9 @@ Or emitted as global events:
 }
 ```
 
+Hierarchy path moves use their hierarchy action names in the same lifecycle
+shape, with `from_path` and `to_path` populated.
+
 ## Probe And Sidecar Normalization
 
 Unknown stream language can appear differently across containers and ffprobe

@@ -105,6 +105,32 @@ def test_watcher_observed_state_round_trips_path_history_and_events() -> None:
     assert observed.events[1].related_observed_event_ref == "global-1"
 
 
+@pytest.mark.parametrize(
+    "action",
+    [
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_season",
+        "renumber_disc",
+        "move_track_to_disc",
+    ],
+)
+def test_observed_state_accepts_hierarchy_path_history_actions(action: str) -> None:
+    payload = _minimal_observed_payload()
+    asset = cast("list[dict[str, object]]", payload["assets"])[0]
+    asset["path_history"] = [
+        {
+            "action": action,
+            "from_path": "tv/Show/Season 01/Show - S01E01.mkv",
+            "to_path": "tv/Show/Season 01/Show - S01E02.mkv",
+        }
+    ]
+
+    observed = ObservedState.model_validate(payload)
+
+    assert observed.assets[0].path_history[0].action == action
+
+
 def test_observed_state_rejects_extra_fields() -> None:
     payload = _minimal_observed_payload()
     payload["unexpected"] = True

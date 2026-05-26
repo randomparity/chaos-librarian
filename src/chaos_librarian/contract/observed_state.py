@@ -25,6 +25,11 @@ class ObservedAction(enum.StrEnum):
     SLOW_COPY_COMMIT = "slow_copy_commit"
     ARCHIVE_FILE = "archive_file"
     MOVE_BETWEEN_ROOTS = "move_between_roots"
+    RENUMBER_EPISODE = "renumber_episode"
+    MOVE_EPISODE_TO_SEASON = "move_episode_to_season"
+    RENAME_SEASON = "rename_season"
+    RENUMBER_DISC = "renumber_disc"
+    MOVE_TRACK_TO_DISC = "move_track_to_disc"
 
 
 _MOVE_ACTIONS = frozenset(
@@ -33,6 +38,11 @@ _MOVE_ACTIONS = frozenset(
         ObservedAction.RENAME_FILE,
         ObservedAction.ARCHIVE_FILE,
         ObservedAction.MOVE_BETWEEN_ROOTS,
+        ObservedAction.RENUMBER_EPISODE,
+        ObservedAction.MOVE_EPISODE_TO_SEASON,
+        ObservedAction.RENAME_SEASON,
+        ObservedAction.RENUMBER_DISC,
+        ObservedAction.MOVE_TRACK_TO_DISC,
     }
 )
 _WINDOWS_DRIVE_PREFIX_LENGTH = 2

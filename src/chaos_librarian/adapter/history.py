@@ -32,6 +32,11 @@ IDENTITY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.SLOW_COPY_COMMIT,
         TimelineActionName.ARCHIVE_FILE,
         TimelineActionName.MOVE_BETWEEN_ROOTS,
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
     }
 )
 

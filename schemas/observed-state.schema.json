@@ -10,7 +10,12 @@
         "slow_copy_start",
         "slow_copy_commit",
         "archive_file",
-        "move_between_roots"
+        "move_between_roots",
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_season",
+        "renumber_disc",
+        "move_track_to_disc"
       ],
       "title": "ObservedAction",
       "type": "string"
