@@ -12,8 +12,9 @@ from typing import Any, NoReturn
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from chaos_librarian.adapter.errors import E_ADAPTER_FIXTURE_INVALID, AdapterInputError
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.journal import JournalEntry
-from chaos_librarian.contract.manifest import Manifest
+from chaos_librarian.contract.manifest import Manifest, ManifestBundle
 from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
     ReplayBundle,
@@ -22,7 +23,9 @@ from chaos_librarian.contract.replay_bundle import (
 from chaos_librarian.contract.reports import (
     AlbumReport,
     ArtistReport,
+    AssetHistoryEntry,
     AssetReport,
+    AssetSnapshot,
     BundleReport,
     DiscReport,
     EpisodeReport,
@@ -32,7 +35,7 @@ from chaos_librarian.contract.reports import (
     TrackReport,
     VariantReport,
 )
-from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
@@ -84,6 +87,25 @@ class OracleFixture:
     current_manifest: Manifest
     journal: tuple[JournalEntry, ...]
     reports: OracleReports
+
+
+class SentinelInvalidError(ChaosLibrarianError):
+    """Raised when a run-directory sentinel is missing or unparseable."""
+
+
+@dataclass(frozen=True)
+class _DerivedReportSet:
+    assets: tuple[AssetReport, ...]
+    movies: tuple[MovieReport, ...]
+    series: tuple[SeriesReport, ...]
+    seasons: tuple[SeasonReport, ...]
+    episodes: tuple[EpisodeReport, ...]
+    artists: tuple[ArtistReport, ...]
+    albums: tuple[AlbumReport, ...]
+    discs: tuple[DiscReport, ...]
+    tracks: tuple[TrackReport, ...]
+    variants: tuple[VariantReport, ...]
+    bundles: tuple[BundleReport, ...]
 
 
 def load_fixture(run_dir: Path) -> OracleFixture:
@@ -255,17 +277,21 @@ def _validate_journal_digest(
 
 
 def _verify_sentinel(run_dir: Path) -> RunSentinel:
-    # Lazy until engine cleanup lands, so adapter indexes remain importable.
-    from chaos_librarian.engine.step import verify_sentinel  # noqa: PLC0415
-
-    return verify_sentinel(run_dir)
+    target = run_dir / SENTINEL_FILENAME
+    if not target.exists():
+        raise SentinelInvalidError(f"sentinel missing: {target}")
+    try:
+        return RunSentinel.model_validate_json(target.read_text())
+    except (OSError, ValidationError, ValueError) as exc:
+        raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
 
 
 def _serialize_journal_bytes(entries: tuple[JournalEntry, ...]) -> bytes:
-    # Lazy until engine cleanup lands, so adapter indexes remain importable.
-    from chaos_librarian.engine.journal_io import serialize_journal_bytes  # noqa: PLC0415
-
-    return serialize_journal_bytes(entries)
+    chunks: list[bytes] = []
+    for entry in entries:
+        chunks.append(entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8"))
+        chunks.append(b"\n")
+    return b"".join(chunks)
 
 
 def _load_or_derive_reports(
@@ -288,27 +314,473 @@ def _build_report_set(
     initial: Manifest,
     current: Manifest,
     journal: tuple[JournalEntry, ...],
-) -> object:
-    # Lazy until engine cleanup lands, so adapter indexes remain importable.
-    from chaos_librarian.engine.reports import build_report_set  # noqa: PLC0415
+) -> _DerivedReportSet:
+    return _derive_report_set(initial, current, journal)
 
-    return build_report_set(initial=initial, current=current, journal=journal)
+
+def _derive_report_set(
+    initial: Manifest,
+    current: Manifest,
+    journal: tuple[JournalEntry, ...],
+) -> _DerivedReportSet:
+    assets_by_bundle = _asset_ids_by_bundle(initial)
+    variants_by_parent = _variant_ids_by_parent(initial)
+    bundle_by_variant = {bundle.variant_id: bundle for bundle in initial.bundles}
+    return _DerivedReportSet(
+        assets=tuple(_asset_reports(initial, current, journal)),
+        movies=tuple(_movie_reports(initial, variants_by_parent, bundle_by_variant)),
+        series=tuple(_series_reports(initial, variants_by_parent, bundle_by_variant)),
+        seasons=tuple(_season_reports(initial, variants_by_parent, bundle_by_variant)),
+        episodes=tuple(_episode_reports(initial, variants_by_parent, bundle_by_variant)),
+        artists=tuple(_artist_reports(initial, variants_by_parent, bundle_by_variant)),
+        albums=tuple(_album_reports(initial, variants_by_parent, bundle_by_variant)),
+        discs=tuple(_disc_reports(initial, variants_by_parent, bundle_by_variant)),
+        tracks=tuple(_track_reports(initial, variants_by_parent, bundle_by_variant)),
+        variants=tuple(_variant_reports(initial, assets_by_bundle, bundle_by_variant)),
+        bundles=tuple(_bundle_reports(initial, assets_by_bundle)),
+    )
+
+
+def _asset_reports(
+    initial: Manifest,
+    current: Manifest,
+    journal: tuple[JournalEntry, ...],
+) -> list[AssetReport]:
+    bundles = {bundle.id: bundle for bundle in initial.bundles}
+    variants = {variant.id: variant for variant in initial.variants}
+    history_by_asset = _journal_history_by_asset(journal)
+    reports: list[AssetReport] = []
+    for asset in initial.assets:
+        bundle = bundles[asset.bundle_id]
+        variant = variants[bundle.variant_id]
+        parent_ids = _asset_parent_ids(initial, variant.parent_kind, variant.parent_id)
+        reports.append(
+            AssetReport(
+                schema_version=7,
+                asset_id=asset.id,
+                parent_kind=variant.parent_kind,
+                parent_id=variant.parent_id,
+                movie_id=parent_ids["movie_id"],
+                series_id=parent_ids["series_id"],
+                season_id=parent_ids["season_id"],
+                episode_id=parent_ids["episode_id"],
+                artist_id=parent_ids["artist_id"],
+                album_id=parent_ids["album_id"],
+                disc_id=parent_ids["disc_id"],
+                track_id=parent_ids["track_id"],
+                variant_id=variant.id,
+                bundle_id=bundle.id,
+                initial=_asset_snapshot(initial, asset.id),
+                history=history_by_asset.get(asset.id, []),
+                current=_asset_snapshot_or_none(current, asset.id),
+            )
+        )
+    return reports
+
+
+def _journal_history_by_asset(
+    journal: tuple[JournalEntry, ...],
+) -> dict[str, list[AssetHistoryEntry]]:
+    result: dict[str, list[AssetHistoryEntry]] = {}
+    for entry in journal:
+        for asset_id in entry.target_ids:
+            result.setdefault(asset_id, []).append(
+                AssetHistoryEntry(
+                    logical_time_ns=entry.logical_time_ns,
+                    event_id=entry.event_id,
+                    action=entry.action,
+                    state_delta=entry.state_delta,
+                )
+            )
+    return result
+
+
+def _asset_snapshot(manifest: Manifest, asset_id: str) -> AssetSnapshot:
+    snapshot = _asset_snapshot_or_none(manifest, asset_id)
+    if snapshot is None:
+        raise ValueError(f"manifest is missing version for asset {asset_id}")
+    return snapshot
+
+
+def _asset_snapshot_or_none(manifest: Manifest, asset_id: str) -> AssetSnapshot | None:
+    versions = {version.asset_id: version for version in manifest.versions}
+    locations = {location.asset_id: location for location in manifest.locations}
+    version = versions.get(asset_id)
+    if version is None:
+        return None
+    location = locations.get(asset_id)
+    return AssetSnapshot(
+        location_path=location.path if location is not None else None,
+        version_id=version.id,
+        version_index=version.index,
+        content_hash=version.content_hash,
+        probed=version.probed,
+        corruption=version.corruption,
+    )
+
+
+def _asset_parent_ids(
+    manifest: Manifest,
+    parent_kind: ParentKind,
+    parent_id: str,
+) -> dict[str, str | None]:
+    ids: dict[str, str | None] = {
+        "movie_id": None,
+        "series_id": None,
+        "season_id": None,
+        "episode_id": None,
+        "artist_id": None,
+        "album_id": None,
+        "disc_id": None,
+        "track_id": None,
+    }
+    if parent_kind is ParentKind.MOVIE:
+        ids["movie_id"] = parent_id
+    elif parent_kind is ParentKind.EPISODE:
+        episode = {episode.id: episode for episode in manifest.episodes}[parent_id]
+        season = {season.id: season for season in manifest.seasons}[episode.season_id]
+        ids.update(
+            {
+                "series_id": season.series_id,
+                "season_id": season.id,
+                "episode_id": episode.id,
+            }
+        )
+    else:
+        track = {track.id: track for track in manifest.tracks}[parent_id]
+        disc = {disc.id: disc for disc in manifest.discs}[track.disc_id]
+        album = {album.id: album for album in manifest.albums}[disc.album_id]
+        ids.update(
+            {
+                "artist_id": album.artist_id,
+                "album_id": album.id,
+                "disc_id": disc.id,
+                "track_id": track.id,
+            }
+        )
+    return ids
+
+
+def _movie_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[MovieReport]:
+    return [
+        MovieReport(
+            schema_version=1,
+            movie_id=movie.id,
+            title=movie.title,
+            variant_ids=variants_by_parent.get((ParentKind.MOVIE, movie.id), []),
+            asset_ids=_asset_ids_for_parent(
+                (ParentKind.MOVIE, movie.id), variants_by_parent, bundle_by_variant, manifest
+            ),
+        )
+        for movie in manifest.movies
+    ]
+
+
+def _series_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[SeriesReport]:
+    reports: list[SeriesReport] = []
+    for series in manifest.series:
+        season_ids = [season.id for season in manifest.seasons if season.series_id == series.id]
+        episode_ids = [
+            episode.id for episode in manifest.episodes if episode.season_id in season_ids
+        ]
+        reports.append(
+            SeriesReport(
+                schema_version=1,
+                series_id=series.id,
+                title=series.title,
+                season_ids=season_ids,
+                episode_ids=episode_ids,
+                asset_ids=_asset_ids_for_parents(
+                    [(ParentKind.EPISODE, episode_id) for episode_id in episode_ids],
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _season_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[SeasonReport]:
+    reports: list[SeasonReport] = []
+    for season in manifest.seasons:
+        episode_ids = [
+            episode.id for episode in manifest.episodes if episode.season_id == season.id
+        ]
+        reports.append(
+            SeasonReport(
+                schema_version=1,
+                season_id=season.id,
+                series_id=season.series_id,
+                season_number=season.season_number,
+                title=season.title,
+                episode_ids=episode_ids,
+                asset_ids=_asset_ids_for_parents(
+                    [(ParentKind.EPISODE, episode_id) for episode_id in episode_ids],
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _episode_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[EpisodeReport]:
+    reports: list[EpisodeReport] = []
+    for episode in manifest.episodes:
+        parent = (ParentKind.EPISODE, episode.id)
+        reports.append(
+            EpisodeReport(
+                schema_version=1,
+                episode_id=episode.id,
+                season_id=episode.season_id,
+                episode_number=episode.episode_number,
+                title=episode.title,
+                aired_on=episode.aired_on,
+                absolute_number=episode.absolute_number,
+                variant_ids=variants_by_parent.get(parent, []),
+                asset_ids=_asset_ids_for_parent(
+                    parent,
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _artist_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[ArtistReport]:
+    reports: list[ArtistReport] = []
+    for artist in manifest.artists:
+        album_ids = [album.id for album in manifest.albums if album.artist_id == artist.id]
+        disc_ids = [disc.id for disc in manifest.discs if disc.album_id in album_ids]
+        track_ids = [track.id for track in manifest.tracks if track.disc_id in disc_ids]
+        reports.append(
+            ArtistReport(
+                schema_version=1,
+                artist_id=artist.id,
+                name=artist.name,
+                album_ids=album_ids,
+                track_ids=track_ids,
+                asset_ids=_asset_ids_for_parents(
+                    [(ParentKind.TRACK, track_id) for track_id in track_ids],
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _album_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[AlbumReport]:
+    reports: list[AlbumReport] = []
+    for album in manifest.albums:
+        disc_ids = [disc.id for disc in manifest.discs if disc.album_id == album.id]
+        track_ids = [track.id for track in manifest.tracks if track.disc_id in disc_ids]
+        reports.append(
+            AlbumReport(
+                schema_version=1,
+                album_id=album.id,
+                artist_id=album.artist_id,
+                title=album.title,
+                release_year=album.release_year,
+                disc_ids=disc_ids,
+                track_ids=track_ids,
+                asset_ids=_asset_ids_for_parents(
+                    [(ParentKind.TRACK, track_id) for track_id in track_ids],
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _disc_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[DiscReport]:
+    reports: list[DiscReport] = []
+    for disc in manifest.discs:
+        track_ids = [track.id for track in manifest.tracks if track.disc_id == disc.id]
+        reports.append(
+            DiscReport(
+                schema_version=1,
+                disc_id=disc.id,
+                album_id=disc.album_id,
+                disc_number=disc.disc_number,
+                track_ids=track_ids,
+                asset_ids=_asset_ids_for_parents(
+                    [(ParentKind.TRACK, track_id) for track_id in track_ids],
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _track_reports(
+    manifest: Manifest,
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[TrackReport]:
+    reports: list[TrackReport] = []
+    for track in manifest.tracks:
+        parent = (ParentKind.TRACK, track.id)
+        reports.append(
+            TrackReport(
+                schema_version=1,
+                track_id=track.id,
+                disc_id=track.disc_id,
+                track_number=track.track_number,
+                title=track.title,
+                performers=track.performers,
+                variant_ids=variants_by_parent.get(parent, []),
+                asset_ids=_asset_ids_for_parent(
+                    parent,
+                    variants_by_parent,
+                    bundle_by_variant,
+                    manifest,
+                ),
+            )
+        )
+    return reports
+
+
+def _variant_reports(
+    manifest: Manifest,
+    assets_by_bundle: dict[str, list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+) -> list[VariantReport]:
+    reports: list[VariantReport] = []
+    for variant in manifest.variants:
+        bundle = bundle_by_variant[variant.id]
+        reports.append(
+            VariantReport(
+                schema_version=2,
+                variant_id=variant.id,
+                parent_kind=variant.parent_kind,
+                parent_id=variant.parent_id,
+                label=variant.label,
+                bundle_id=bundle.id,
+                asset_ids=assets_by_bundle.get(bundle.id, []),
+            )
+        )
+    return reports
+
+
+def _bundle_reports(
+    manifest: Manifest,
+    assets_by_bundle: dict[str, list[str]],
+) -> list[BundleReport]:
+    sidecars_by_asset: dict[str, list[str]] = {}
+    for sidecar in manifest.sidecars:
+        sidecars_by_asset.setdefault(sidecar.asset_id, []).append(sidecar.id)
+    return [
+        BundleReport(
+            schema_version=1,
+            bundle_id=bundle.id,
+            variant_id=bundle.variant_id,
+            asset_ids=assets_by_bundle.get(bundle.id, []),
+            sidecar_ids=[
+                sidecar_id
+                for asset_id in assets_by_bundle.get(bundle.id, [])
+                for sidecar_id in sidecars_by_asset.get(asset_id, [])
+            ],
+        )
+        for bundle in manifest.bundles
+    ]
+
+
+def _variant_ids_by_parent(manifest: Manifest) -> dict[tuple[ParentKind, str], list[str]]:
+    result: dict[tuple[ParentKind, str], list[str]] = {}
+    for variant in manifest.variants:
+        result.setdefault((variant.parent_kind, variant.parent_id), []).append(variant.id)
+    return {key: sorted(ids) for key, ids in result.items()}
+
+
+def _asset_ids_by_bundle(manifest: Manifest) -> dict[str, list[str]]:
+    result: dict[str, list[str]] = {}
+    for asset in manifest.assets:
+        result.setdefault(asset.bundle_id, []).append(asset.id)
+    return {key: sorted(ids) for key, ids in result.items()}
+
+
+def _asset_ids_for_parent(
+    parent: tuple[ParentKind, str],
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+    manifest: Manifest,
+) -> list[str]:
+    return _asset_ids_for_parents([parent], variants_by_parent, bundle_by_variant, manifest)
+
+
+def _asset_ids_for_parents(
+    parents: list[tuple[ParentKind, str]],
+    variants_by_parent: dict[tuple[ParentKind, str], list[str]],
+    bundle_by_variant: dict[str, ManifestBundle],
+    manifest: Manifest,
+) -> list[str]:
+    assets_by_bundle = _asset_ids_by_bundle(manifest)
+    asset_ids: list[str] = []
+    for parent in parents:
+        for variant_id in variants_by_parent.get(parent, []):
+            bundle = bundle_by_variant[variant_id]
+            asset_ids.extend(assets_by_bundle.get(bundle.id, []))
+    return sorted(set(asset_ids))
 
 
 def _reports_from_report_set(report_set: Any) -> OracleReports:
     return OracleReports(
-        assets={report.asset_id: report for report in report_set.assets},
-        movies={report.movie_id: report for report in getattr(report_set, "movies", ())},
-        series={report.series_id: report for report in getattr(report_set, "series", ())},
-        seasons={report.season_id: report for report in getattr(report_set, "seasons", ())},
-        episodes={report.episode_id: report for report in getattr(report_set, "episodes", ())},
-        artists={report.artist_id: report for report in getattr(report_set, "artists", ())},
-        albums={report.album_id: report for report in getattr(report_set, "albums", ())},
-        discs={report.disc_id: report for report in getattr(report_set, "discs", ())},
-        tracks={report.track_id: report for report in getattr(report_set, "tracks", ())},
-        variants={report.variant_id: report for report in report_set.variants},
-        bundles={report.bundle_id: report for report in report_set.bundles},
+        assets=_required_report_map(report_set, "assets", "asset_id"),
+        movies=_required_report_map(report_set, "movies", "movie_id"),
+        series=_required_report_map(report_set, "series", "series_id"),
+        seasons=_required_report_map(report_set, "seasons", "season_id"),
+        episodes=_required_report_map(report_set, "episodes", "episode_id"),
+        artists=_required_report_map(report_set, "artists", "artist_id"),
+        albums=_required_report_map(report_set, "albums", "album_id"),
+        discs=_required_report_map(report_set, "discs", "disc_id"),
+        tracks=_required_report_map(report_set, "tracks", "track_id"),
+        variants=_required_report_map(report_set, "variants", "variant_id"),
+        bundles=_required_report_map(report_set, "bundles", "bundle_id"),
     )
+
+
+def _required_report_map(report_set: Any, name: str, id_field: str) -> dict[str, Any]:
+    if not hasattr(report_set, name):
+        raise ValueError(f"report set is missing required {name} reports")
+    return {getattr(report, id_field): report for report in getattr(report_set, name)}
 
 
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:

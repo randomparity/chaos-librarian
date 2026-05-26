@@ -23,7 +23,6 @@ from chaos_librarian.materializer.phase_b.filesystem import (
     make_filesystem_phase_b_context,
 )
 from chaos_librarian.topology import iter_asset_contexts
-from tests.engine.conftest import _build_minimal_scenario
 from tests.materializer.conftest import (
     _atomic_entry,
     _committed_entry,
@@ -33,13 +32,64 @@ from tests.materializer.conftest import (
 
 def _scenario() -> Scenario:
     """Build the minimal Scenario every phase-B test shares."""
-    return _build_minimal_scenario(
+    return _movie_scenario(
         roots=[
             ("movies-hd", "library/movies-hd"),
             ("cold-storage", "library/cold-storage"),
         ],
-        works=[("work_001", "asset_hd_main", "mkv")],
+        assets=[("asset_hd_main", "mkv")],
         archive_root="archive",
+    )
+
+
+def _movie_scenario(
+    *,
+    roots: list[tuple[str, str]],
+    assets: list[tuple[str, str]],
+    archive_root: str | None = None,
+) -> Scenario:
+    library: dict[str, object] = {
+        "roots": [{"id": root_id, "path": path} for root_id, path in roots],
+    }
+    if archive_root is not None:
+        library["archive_root"] = archive_root
+    movies = [
+        {
+            "id": f"movie_{index:03d}",
+            "title": f"Movie {index}",
+            "layout": "movie_flat",
+            "variants": [
+                {
+                    "id": f"variant_{index:03d}",
+                    "label": "default",
+                    "bundle": {
+                        "id": f"bundle_{index:03d}",
+                        "assets": [
+                            {
+                                "id": asset_id,
+                                "role": "primary_video",
+                                "container": container,
+                                "duration_seconds": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        for index, (asset_id, container) in enumerate(assets, start=1)
+    ]
+    return Scenario.model_validate(
+        {
+            "schema_version": 12,
+            "scenario_id": "materializer-filesystem-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": library,
+            "movies": movies,
+            "series": [],
+            "artists": [],
+            "timeline": [],
+        }
     )
 
 

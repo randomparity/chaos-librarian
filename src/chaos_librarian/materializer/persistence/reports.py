@@ -150,18 +150,28 @@ def build_reports(plan_artifacts: PlanArtifacts) -> MaterializeReports:
         journal=plan_artifacts.journal,
     )
     return MaterializeReports(
-        assets=_report_map(reports.assets, "asset_id"),
-        movies=_report_map(getattr(reports, "movies", ()), "movie_id"),
-        series=_report_map(getattr(reports, "series", ()), "series_id"),
-        seasons=_report_map(getattr(reports, "seasons", ()), "season_id"),
-        episodes=_report_map(getattr(reports, "episodes", ()), "episode_id"),
-        artists=_report_map(getattr(reports, "artists", ()), "artist_id"),
-        albums=_report_map(getattr(reports, "albums", ()), "album_id"),
-        discs=_report_map(getattr(reports, "discs", ()), "disc_id"),
-        tracks=_report_map(getattr(reports, "tracks", ()), "track_id"),
-        variants=_report_map(reports.variants, "variant_id"),
-        bundles=_report_map(reports.bundles, "bundle_id"),
+        assets=_required_report_map(reports, "assets", "asset_id"),
+        movies=_required_report_map(reports, "movies", "movie_id"),
+        series=_required_report_map(reports, "series", "series_id"),
+        seasons=_required_report_map(reports, "seasons", "season_id"),
+        episodes=_required_report_map(reports, "episodes", "episode_id"),
+        artists=_required_report_map(reports, "artists", "artist_id"),
+        albums=_required_report_map(reports, "albums", "album_id"),
+        discs=_required_report_map(reports, "discs", "disc_id"),
+        tracks=_required_report_map(reports, "tracks", "track_id"),
+        variants=_required_report_map(reports, "variants", "variant_id"),
+        bundles=_required_report_map(reports, "bundles", "bundle_id"),
     )
+
+
+def _required_report_map[T: BaseModel](
+    report_set: object,
+    name: str,
+    id_field: str,
+) -> dict[str, T]:
+    if not hasattr(report_set, name):
+        raise ValueError(f"report set is missing required {name} reports")
+    return _report_map(getattr(report_set, name), id_field)
 
 
 def _report_map[T: BaseModel](reports: Iterable[T], id_field: str) -> dict[str, T]:

@@ -3,19 +3,21 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 import pytest
 
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
 from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
 from chaos_librarian.contract.divergence import CompareMode, DivergenceCode
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     ManifestSidecar,
     ProbedMedia,
     ProbedStream,
     StreamKind,
 )
-from chaos_librarian.contract.observed_state import ObservedSidecar
+from chaos_librarian.contract.observed_state import ObservedSidecar, ObservedState
 from chaos_librarian.contract.scenario import SidecarKind
 from tests.support.adapter import (
     HASH_A,
@@ -34,6 +36,31 @@ from tests.support.adapter import (
 
 def _codes(report) -> list[str]:
     return [finding.code for finding in report.findings]
+
+
+def _observed_episode_topology() -> ObservedState:
+    payload = _observed().model_dump(mode="python")
+    payload["movies"] = []
+    payload["series"] = [{"observed_ref": "consumer-series", "title": "Synthetic"}]
+    payload["seasons"] = [
+        {
+            "observed_ref": "consumer-season",
+            "series_ref": "consumer-series",
+            "season_number": 1,
+            "title": "Season 1",
+        }
+    ]
+    payload["episodes"] = [
+        {
+            "observed_ref": "consumer-episode",
+            "season_ref": "consumer-season",
+            "episode_number": 1,
+            "title": "Synthetic",
+        }
+    ]
+    payload["variants"][0]["parent_kind"] = ParentKind.EPISODE
+    payload["variants"][0]["parent_ref"] = "consumer-episode"
+    return ObservedState.model_validate(payload)
 
 
 def test_clean_observed_state_returns_ok_report() -> None:
@@ -244,6 +271,21 @@ def test_topology_mismatch_emits_d_topology_mismatch_when_both_sides_supply_refs
     report = compare_fixture_to_observed(_fixture(), _observed(topology_label="sd"))
 
     assert "D_TOPOLOGY_MISMATCH" in _codes(report)
+
+
+def test_topology_mismatch_includes_parent_kind_after_path_match() -> None:
+    report = compare_fixture_to_observed(_fixture(), _observed_episode_topology())
+
+    assert "D_TOPOLOGY_MISMATCH" in _codes(report)
+    finding = next(
+        finding for finding in report.findings if finding.code is DivergenceCode.TOPOLOGY_MISMATCH
+    )
+    assert isinstance(finding.expected, dict)
+    assert isinstance(finding.observed, dict)
+    expected = cast("dict[str, object]", finding.expected)
+    observed = cast("dict[str, object]", finding.observed)
+    assert expected["parent_kind"] == "movie"
+    assert observed["parent_kind"] == "episode"
 
 
 def test_final_state_mode_skips_history_when_no_history_supplied() -> None:

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import uuid
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
+
+from pydantic import BaseModel
 
 from chaos_librarian.adapter.fixture import OracleFixture, OracleReports
 from chaos_librarian.contract import (
@@ -13,6 +17,7 @@ from chaos_librarian.contract import (
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
 from chaos_librarian.contract.domain import ParentKind
+from chaos_librarian.contract.journal import AtomicJournalEntry, JournalEntry
 from chaos_librarian.contract.manifest import (
     Manifest,
     ManifestAsset,
@@ -35,7 +40,7 @@ from chaos_librarian.contract.observed_state import (
     ObservedState,
     ObservedVariant,
 )
-from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
+from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle, compute_plan_only_run_id
 from chaos_librarian.contract.reports import (
     AssetReport,
     AssetSnapshot,
@@ -44,19 +49,41 @@ from chaos_librarian.contract.reports import (
     VariantReport,
 )
 from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 RUN_ID = uuid.UUID("7c44eb62-7046-4b8f-a168-eaf3a58e0145")
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
+_SYNTHETIC_SCENARIOS = frozenset({"identity-move-rename.yaml", "static-library.yaml"})
+_REPORT_DIRS = (
+    "assets",
+    "movies",
+    "series",
+    "seasons",
+    "episodes",
+    "artists",
+    "albums",
+    "discs",
+    "tracks",
+    "variants",
+    "bundles",
+)
 
 
 def scenario_bytes(name: str) -> bytes:
+    if name in _SYNTHETIC_SCENARIOS:
+        return _scenario_bytes_from_id(name.removesuffix(".yaml"))
     return (Path("tests/fixtures/scenarios") / name).read_bytes()
 
 
 def write_plan_fixture(tmp_path: Path, scenario_name: str = "identity-move-rename.yaml") -> Path:
     scenario_yaml_bytes = scenario_bytes(scenario_name)
+    if scenario_name in _SYNTHETIC_SCENARIOS:
+        run_dir = tmp_path / "run"
+        _write_synthetic_plan_fixture(run_dir, scenario_yaml_bytes)
+        return run_dir
+
     run_input = prepare_run_input_from_bytes(
         raw_bytes=scenario_yaml_bytes,
         source_label=f"test:{scenario_name}",
@@ -71,6 +98,100 @@ def write_plan_fixture(tmp_path: Path, scenario_name: str = "identity-move-renam
     run_dir = tmp_path / "run"
     write_fixture(run_dir, artifacts, scenario_yaml_bytes)
     return run_dir
+
+
+def _scenario_bytes_from_id(scenario_id: str) -> bytes:
+    return f"""schema_version: 12
+scenario_id: {scenario_id}
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: movie-a
+    title: Synthetic
+    layout: movie_flat
+    variants:
+      - id: variant-a
+        label: hd
+        bundle:
+          id: bundle-a
+          assets:
+            - id: asset-a
+              role: primary_video
+              container: mkv
+              duration_seconds: 60.0
+series: []
+artists: []
+timeline: []
+""".encode()
+
+
+def _write_synthetic_plan_fixture(run_dir: Path, scenario_yaml_bytes: bytes) -> None:
+    scenario_id = scenario_yaml_bytes.decode().split("scenario_id: ", 1)[1].split("\n", 1)[0]
+    content_hash = hashlib.sha256(scenario_yaml_bytes).hexdigest()
+    run_id = compute_plan_only_run_id(content_hash, 1)
+    journal = [
+        AtomicJournalEntry(
+            schema_version=1,
+            event_id="fixture-001",
+            scenario_id=scenario_id,
+            run_id=run_id,
+            logical_time_ns=0,
+            action="fixture",
+            target_ids=["asset-a"],
+        )
+    ]
+    replay = PlanOnlyReplayBundle(
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+        chaos_librarian_version="0.0.0",
+        scenario=scenario_yaml_bytes.decode(),
+        run_id=run_id,
+        resolved_seed=1,
+        applied_events=len(journal),
+        journal_digest=hashlib.sha256(_serialize_journal_bytes(journal)).hexdigest(),
+    )
+    sentinel = RunSentinel(
+        schema_version=2,
+        run_id=run_id,
+        created_by="chaos-librarian",
+        created_at=datetime(2026, 5, 22, tzinfo=UTC),
+    )
+    run_dir.mkdir()
+    (run_dir / "scenario.yaml").write_bytes(scenario_yaml_bytes)
+    _write_json(run_dir / "replay.json", replay)
+    _write_json(run_dir / "manifest.initial.json", manifest())
+    _write_json(run_dir / "manifest.current.json", manifest())
+    (run_dir / "journal.jsonl").write_bytes(_serialize_journal_bytes(journal))
+    _write_json(
+        run_dir / "validation.json",
+        ValidationReport(schema_version=1, scenario_id=scenario_id, ok=True),
+    )
+    _write_reports(run_dir / "reports", reports())
+    _write_json(run_dir / ".chaos-librarian-run", sentinel)
+
+
+def _write_reports(reports_dir: Path, oracle_reports: OracleReports) -> None:
+    reports_dir.mkdir()
+    for name in _REPORT_DIRS:
+        directory = reports_dir / name
+        directory.mkdir()
+        for report_id, report in getattr(oracle_reports, name).items():
+            _write_json(directory / f"{report_id}.json", report)
+
+
+def _write_json(path: Path, model: BaseModel) -> None:
+    path.write_text(model.model_dump_json(indent=2, by_alias=True, exclude_none=True) + "\n")
+
+
+def _serialize_journal_bytes(entries: Iterable[JournalEntry]) -> bytes:
+    chunks: list[bytes] = []
+    for entry in entries:
+        chunks.append(entry.model_dump_json(by_alias=True, exclude_none=True).encode())
+        chunks.append(b"\n")
+    return b"".join(chunks)
 
 
 def probe(*, duration: float = 60.0, codec: str = "h264") -> ProbedMedia:

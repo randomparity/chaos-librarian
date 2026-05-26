@@ -190,11 +190,13 @@ def _compare_topology(
     if oracle_topology is None or observed_topology is None:
         return []
     oracle_key = topology_key(
+        oracle_topology.parent_kind,
         oracle_topology.parent_title,
         oracle_topology.variant_label,
         len(oracle_topology.bundle_asset_ids),
     )
     observed_key = topology_key(
+        observed_topology.parent_kind,
         observed_topology.parent_title,
         observed_topology.variant_label,
         len(observed_topology.bundle_asset_refs),
@@ -206,8 +208,18 @@ def _compare_topology(
             DivergenceCode.TOPOLOGY_MISMATCH,
             "Topology relationship structure differs for matched asset.",
             match=match,
-            expected={"topology": oracle_key},
-            observed={"topology": observed_key},
+            expected={
+                "parent_kind": oracle_topology.parent_kind.value,
+                "topology": oracle_key,
+            },
+            observed={
+                "parent_kind": (
+                    observed_topology.parent_kind.value
+                    if observed_topology.parent_kind is not None
+                    else None
+                ),
+                "topology": observed_key,
+            },
         )
     ]
 

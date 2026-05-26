@@ -79,26 +79,38 @@ def _history_path(path: str) -> PathHistoryEntry:
     )
 
 
-def _oracle_topology(asset_id: str, *, title: str, label: str) -> OracleTopologyView:
+def _oracle_topology(
+    asset_id: str,
+    *,
+    title: str,
+    label: str,
+    parent_kind: ParentKind = ParentKind.MOVIE,
+) -> OracleTopologyView:
     return OracleTopologyView(
         asset_id=asset_id,
         bundle_id=f"oracle-bundle-{asset_id}",
         variant_id=f"oracle-variant-{asset_id}",
-        parent_kind=ParentKind.MOVIE,
-        parent_id=f"oracle-movie-{asset_id}",
+        parent_kind=parent_kind,
+        parent_id=f"oracle-{parent_kind.value}-{asset_id}",
         parent_title=title,
         variant_label=label,
         bundle_asset_ids=(asset_id,),
     )
 
 
-def _observed_topology(observed_ref: str, *, title: str, label: str) -> ObservedTopologyView:
+def _observed_topology(
+    observed_ref: str,
+    *,
+    title: str,
+    label: str,
+    parent_kind: ParentKind = ParentKind.MOVIE,
+) -> ObservedTopologyView:
     return ObservedTopologyView(
         observed_ref=observed_ref,
         bundle_ref=f"observed-bundle-{observed_ref}",
         variant_ref=f"observed-variant-{observed_ref}",
-        parent_kind=ParentKind.MOVIE,
-        parent_ref=f"observed-movie-{observed_ref}",
+        parent_kind=parent_kind,
+        parent_ref=f"observed-{parent_kind.value}-{observed_ref}",
         parent_title=title,
         variant_label=label,
         bundle_asset_refs=(observed_ref,),
@@ -193,7 +205,38 @@ def test_topology_match_records_match_evidence() -> None:
 
     result = match_assets(oracle, observed)
 
-    assert result.matches[0].evidence[0].value == "Synthetic|4k|1"
+    assert result.matches[0].evidence[0].value == "movie|Synthetic|4k|1"
+
+
+def test_topology_does_not_match_across_parent_kind() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-a"),),
+        (_observed_asset("observed-a"),),
+        oracle_topology=(
+            _oracle_topology(
+                "oracle-a",
+                title="Synthetic",
+                label="hd",
+                parent_kind=ParentKind.MOVIE,
+            ),
+        ),
+        observed_topology=(
+            _observed_topology(
+                "observed-a",
+                title="Synthetic",
+                label="hd",
+                parent_kind=ParentKind.EPISODE,
+            ),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert result.matches == ()
+    assert [finding.code for finding in result.findings] == [
+        "D_ASSET_MISSING",
+        "D_ASSET_UNEXPECTED",
+    ]
 
 
 def test_topology_ambiguity_emits_d_match_ambiguous() -> None:

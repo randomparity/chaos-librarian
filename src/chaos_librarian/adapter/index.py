@@ -107,6 +107,7 @@ class OracleIndex:
                 id_of=lambda view: view.asset_id,
                 keys_of=lambda view: (
                     topology_key(
+                        view.parent_kind,
                         view.parent_title,
                         view.variant_label,
                         len(view.bundle_asset_ids),
@@ -187,6 +188,7 @@ class ObservedIndex:
                 id_of=lambda view: view.observed_ref,
                 keys_of=lambda view: (
                     topology_key(
+                        view.parent_kind,
                         view.parent_title,
                         view.variant_label,
                         len(view.bundle_asset_refs),
@@ -206,14 +208,21 @@ class ObservedIndex:
 
 
 def topology_key(
+    parent_kind: ParentKind | None,
     parent_title: str | None,
     variant_label: str | None,
     bundle_member_count: int,
 ) -> str | None:
     """Return the consumer-neutral topology key, if enough facts exist."""
-    if parent_title is None and variant_label is None and bundle_member_count == 0:
+    if (
+        parent_kind is None
+        and parent_title is None
+        and variant_label is None
+        and bundle_member_count == 0
+    ):
         return None
-    return f"{parent_title or ''}|{variant_label or ''}|{bundle_member_count}"
+    parent_kind_value = parent_kind.value if parent_kind is not None else ""
+    return f"{parent_kind_value}|{parent_title or ''}|{variant_label or ''}|{bundle_member_count}"
 
 
 def _lookup_by[T](
