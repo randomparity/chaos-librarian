@@ -460,7 +460,9 @@ def _check_track_media_action(
     reporter: Reporter,
 ) -> None:
     action = event.get("action")
-    if action == TimelineActionName.REENCODE_VIDEO or action in {
+    if action in {
+        TimelineActionName.REENCODE_VIDEO,
+        TimelineActionName.REMUX_CONTAINER,
         TimelineActionName.EMBED_SUBTITLE,
         TimelineActionName.EXTRACT_SUBTITLE,
     }:

@@ -344,6 +344,24 @@ def test_validation_reencode_audio_allows_audio_only_track_asset(tmp_path: Path)
     assert report.issues == []
 
 
+def test_validation_remux_container_rejects_audio_only_track_asset(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-remux-container.yaml"
+    _write_music_scenario(
+        scenario,
+        timeline="""  - id: ev
+    at: 1s
+    action: remux_container
+    target: asset_track
+    to_container: mp3
+""",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    assert any(issue.code == codes.E_MATERIALIZE_UNSUPPORTED for issue in report.issues)
+
+
 def test_corrupt_packet_range_rejects_track_video_stream(music_scenario, empty_index) -> None:
     raw = music_scenario(
         timeline=[

@@ -45,6 +45,7 @@ from chaos_librarian.materializer.phase_b.sidecar_bytes import (
 from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import srt_payload
+from chaos_librarian.media_matrix import AUDIO_ENCODER_BY_CODEC
 
 
 def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
@@ -188,6 +189,48 @@ def _target_asset_id(entry: JournalEntry) -> str | None:
     return entry.target_ids[0] if entry.target_ids else None
 
 
+def _audio_encoder_for_reencode(ctx: MediaPhaseBContext, entry: JournalEntry) -> str:
+    asset_id = _target_asset_id(entry)
+    if asset_id is None:
+        raise MediaActionError(
+            f"reencode_audio: missing target asset for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=ValueError("target_ids is empty"),
+            asset_id=None,
+        )
+    asset = ctx.scenario_assets.get(asset_id)
+    if asset is None:
+        raise MediaActionError(
+            f"reencode_audio: asset {asset_id!r} not in scenario",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=KeyError(asset_id),
+            asset_id=asset_id,
+        )
+    if asset.video is not None:
+        return "aac"
+    if len(asset.audio) != 1:
+        raise MediaActionError(
+            f"reencode_audio: asset {asset.id!r} does not have exactly one audio stream",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=ValueError("audio stream count unsupported"),
+            asset_id=asset.id,
+        )
+    codec = asset.audio[0].codec
+    encoder = AUDIO_ENCODER_BY_CODEC.get(codec)
+    if encoder is None:
+        raise MediaActionError(
+            f"reencode_audio: unsupported audio codec {codec!r} for asset {asset.id!r}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_AUDIO,
+            cause=ValueError(f"unsupported audio codec: {codec!r}"),
+            asset_id=asset.id,
+        )
+    return encoder
+
+
 def _run_ffmpeg_checked(
     ctx: MediaPhaseBContext,
     *,
@@ -308,6 +351,7 @@ def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             cause=exc,
             asset_id=entry.target_ids[0] if entry.target_ids else None,
         ) from exc
+    audio_encoder = _audio_encoder_for_reencode(ctx, entry)
     argv = [
         "ffmpeg",
         "-hide_banner",
@@ -319,7 +363,7 @@ def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         "-ac",
         str(ac_value),
         "-c:a",
-        "aac",
+        audio_encoder,
         "-c:s",
         "copy",
         *BITEXACT_FLAGS,
