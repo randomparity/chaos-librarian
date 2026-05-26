@@ -105,7 +105,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
     archive_base = _archive_base_path(raw, declared_roots)
-    initial_paths = rendered_asset_paths(raw)
+    current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
 
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -114,8 +114,8 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 archive_base=archive_base,
-                primary_root=primary_root_path(raw),
-                initial_paths=initial_paths,
+                declared_roots=declared_roots,
+                current_paths=current_paths,
                 reporter=reporter,
             )
         elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
@@ -123,9 +123,17 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
                 event,
                 idx=idx,
                 declared_roots=declared_roots,
-                initial_paths=initial_paths,
+                current_paths=current_paths,
                 reporter=reporter,
             )
+        elif action in {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.ADD_FILE,
+        }:
+            _project_to_field_path(event, current_paths)
+        elif action == TimelineActionName.DELETE_FILE:
+            _project_deleted_path(event, current_paths)
 
 
 def _check_archive_file(
@@ -133,23 +141,29 @@ def _check_archive_file(
     *,
     idx: int,
     archive_base: str | None,
-    primary_root: str | None,
-    initial_paths: Mapping[str, tuple[str, _Loc]],
+    declared_roots: Mapping[str, str],
+    current_paths: dict[str, str],
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the archive destination for one ``archive_file``."""
     target = event.get("target")
-    if not isinstance(target, str) or archive_base is None or primary_root is None:
+    if not isinstance(target, str) or archive_base is None:
         return
-    initial = initial_paths.get(target)
-    if initial is None:
+    current_path = current_paths.get(target)
+    if current_path is None:
         return
     try:
-        synthesized = replace_root_prefix(initial[0], from_root=primary_root, to_root=archive_base)
+        current_root = _current_root_for_path(current_path, declared_roots)
+        synthesized = replace_root_prefix(
+            current_path,
+            from_root=current_root,
+            to_root=archive_base,
+        )
     except ValueError as error:
         reporter.error(code=E_PATH_CONTAINMENT, message=str(error), loc=("timeline", idx, "target"))
         return
     _check_containment(synthesized, loc=("timeline", idx, "target"), reporter=reporter)
+    current_paths[target] = synthesized
 
 
 def _check_move_between_roots(
@@ -157,7 +171,7 @@ def _check_move_between_roots(
     *,
     idx: int,
     declared_roots: Mapping[str, str],
-    initial_paths: Mapping[str, tuple[str, _Loc]],
+    current_paths: dict[str, str],
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the destination for one ``move_between_roots``."""
@@ -170,12 +184,12 @@ def _check_move_between_roots(
         return
     from_root_path = declared_roots.get(from_root_id)
     to_root_path = declared_roots.get(to_root_id)
-    initial = initial_paths.get(target)
-    if from_root_path is None or to_root_path is None or initial is None:
+    current_path = current_paths.get(target)
+    if from_root_path is None or to_root_path is None or current_path is None:
         return
     try:
         synthesized = replace_root_prefix(
-            initial[0],
+            current_path,
             from_root=from_root_path,
             to_root=to_root_path,
         )
@@ -187,6 +201,29 @@ def _check_move_between_roots(
         )
         return
     _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
+    current_paths[target] = synthesized
+
+
+def _project_to_field_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    target = event.get("target")
+    path = event.get("to")
+    if isinstance(target, str) and isinstance(path, str):
+        current_paths[target] = path
+
+
+def _project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    target = event.get("target")
+    if isinstance(target, str):
+        current_paths.pop(target, None)
+
+
+def _current_root_for_path(path: str, declared_roots: Mapping[str, str]) -> str:
+    root_paths: list[str] = list(declared_roots.values())
+    root_paths.sort(key=len, reverse=True)
+    for root_path in root_paths:
+        if path == root_path or path.startswith(f"{root_path}/"):
+            return root_path
+    raise ValueError("current path does not start with a declared root")
 
 
 def _archive_base_path(

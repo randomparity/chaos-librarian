@@ -381,7 +381,11 @@ def test_rendered_initial_asset_path_collision_is_rejected(minimal_scenario, emp
 
     issues = _issues_for(raw, empty_index)
 
-    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+    assert any(
+        issue.code == codes.E_PATH_COLLISION
+        and "$.movies[0].variants[0].bundle.assets[0]" in issue.message
+        for issue in issues
+    )
 
 
 def test_rendered_title_dot_segment_is_rejected(minimal_scenario, empty_index) -> None:

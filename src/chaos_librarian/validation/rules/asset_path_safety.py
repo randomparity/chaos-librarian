@@ -5,7 +5,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.path_rendering import render_asset_path, render_declared_sidecar_path
+from chaos_librarian.path_rendering import (
+    clean_display_component,
+    render_asset_path,
+    render_declared_sidecar_path,
+)
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
 from chaos_librarian.validation.rules._common import (
     RawAssetContext,
@@ -39,6 +43,8 @@ def rule_asset_id_container_safe(
         renderable = renderable_context_for(context, root_path)
         if renderable is None:
             continue
+        if not _check_display_fields(context, reporter):
+            continue
         try:
             media_path = render_asset_path(renderable)
         except ValueError as error:
@@ -49,6 +55,45 @@ def rule_asset_id_container_safe(
             )
             continue
         _check_declared_sidecar_paths(context.asset, context.asset_loc, media_path, reporter)
+
+
+def _check_display_fields(context: RawAssetContext, reporter: Reporter) -> bool:
+    is_valid = True
+    for value, loc in _iter_rendered_display_fields(context):
+        try:
+            clean_display_component(value)
+        except ValueError as error:
+            reporter.error(
+                code=E_PATH_CONTAINMENT,
+                message=f"rendered display field is invalid: {error}",
+                loc=loc,
+            )
+            is_valid = False
+    return is_valid
+
+
+def _iter_rendered_display_fields(context: RawAssetContext):
+    yield from _maybe_str_loc(context.movie, "title", context.movie_loc)
+    yield from _maybe_str_loc(context.series, "title", context.series_loc)
+    yield from _maybe_str_loc(context.episode, "title", context.episode_loc)
+    yield from _maybe_str_loc(context.artist, "name", context.artist_loc)
+    yield from _maybe_str_loc(context.album, "title", context.album_loc)
+    yield from _maybe_str_loc(context.track, "title", context.track_loc)
+    yield from _maybe_str_loc(context.variant, "label", context.variant_loc)
+    if context.bundle_asset_count > 1:
+        yield from _maybe_str_loc(context.asset, "role", context.asset_loc)
+
+
+def _maybe_str_loc(
+    mapping: Mapping[str, object] | None,
+    field_name: str,
+    loc: _Loc | None,
+):
+    if mapping is None or loc is None:
+        return
+    value = mapping.get(field_name)
+    if isinstance(value, str):
+        yield value, (*loc, field_name)
 
 
 def _check_declared_sidecar_paths(

@@ -8,7 +8,7 @@ from datetime import date
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import EpisodeNaming
-from chaos_librarian.validation.codes import E_HIERARCHY_INVALID, E_PATH_COLLISION
+from chaos_librarian.validation.codes import E_HIERARCHY_INVALID, E_PATH_COLLISION, format_jsonpath
 from chaos_librarian.validation.rules._common import (
     Reporter,
     _as_list,
@@ -47,11 +47,12 @@ def rule_rendered_path_collisions(
         normalized = os.path.normpath(path)
         if normalized in seen:
             first_asset_id, first_loc = seen[normalized]
+            first_path = format_jsonpath(first_loc)
             reporter.error(
                 code=E_PATH_COLLISION,
                 message=(
                     f"rendered initial path {normalized!r} for asset {asset_id!r} "
-                    f"collides with asset {first_asset_id!r} at {first_loc!r}"
+                    f"collides with asset {first_asset_id!r} at {first_path}"
                 ),
                 loc=loc,
             )

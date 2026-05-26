@@ -40,6 +40,35 @@ class TestRuleAssetPathSafety:
         issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
         assert any("asset_container" in i.message for i in issues)
 
+    def test_unsafe_variant_label_reports_variant_label_path(
+        self, minimal_scenario, empty_index, as_list, as_dict
+    ) -> None:
+        raw = minimal_scenario()
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        variant["label"] = "."
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
+        assert any(i.path == "$.movies[0].variants[0].label" for i in issues)
+
+    def test_unsafe_multi_asset_role_reports_asset_role_path(
+        self, minimal_scenario, empty_index, as_list, as_dict
+    ) -> None:
+        raw = minimal_scenario()
+        movie = as_dict(as_list(raw["movies"])[0])
+        variant = as_dict(as_list(movie["variants"])[0])
+        bundle = as_dict(variant["bundle"])
+        assets = as_list(bundle["assets"])
+        second_asset = dict(assets[0])
+        second_asset["id"] = "asset_two"
+        second_asset["role"] = "."
+        assets.append(second_asset)
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
+        assert any(i.path == "$.movies[0].variants[0].bundle.assets[1].role" for i in issues)
+
     def test_safe_asset_passes(self, minimal_scenario, empty_index) -> None:
         raw = minimal_scenario()
         collector = IssueCollector()
