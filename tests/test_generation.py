@@ -6,9 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.contract.profiles import FuzzProfileName
+from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import generate_scenario_yaml, write_generated_scenario
+from chaos_librarian.generation_lanes import lane_config_for, profiles_for_lane
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
 
@@ -42,6 +43,26 @@ def test_generated_yaml_validates_as_scenario() -> None:
     assert scenario.generation.profile is FuzzProfileName.FUZZ_SMOKE
     assert scenario.generation.lane.value == "smoke"
     assert scenario.generation.seed == 123
+
+
+def test_profiles_for_lane_orders_fuzz_profile_first() -> None:
+    profiles = profiles_for_lane(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MALFORMED,
+    )
+
+    assert profiles == (
+        ProfileName.FUZZ_REGRESSION,
+        ProfileName.MALFORMED_MEDIA,
+    )
+
+
+def test_lane_config_rejects_profile_mismatch() -> None:
+    with pytest.raises(ValueError, match="not valid"):
+        lane_config_for(
+            profile=FuzzProfileName.FUZZ_SMOKE,
+            lane=FuzzLaneName.MEDIA_REWRITE,
+        )
 
 
 def test_atomic_write_rejects_existing_destination(tmp_path: Path) -> None:

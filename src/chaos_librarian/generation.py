@@ -23,13 +23,8 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.determinism.rng import RngStreams
 from chaos_librarian.determinism.trace import TraceRecorder
+from chaos_librarian.generation_lanes import LaneConfig, lane_config_for, profiles_for_lane
 from chaos_librarian.scenario_io import parse_scenario_bytes
-
-
-@dataclass(frozen=True, slots=True)
-class _ProfileShape:
-    works: int
-    timeline_events: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +32,6 @@ class _GeneratedAsset:
     asset_id: str
     container: str
 
-
-_PROFILE_SHAPES: Final[dict[FuzzProfileName, _ProfileShape]] = {
-    FuzzProfileName.FUZZ_SMOKE: _ProfileShape(works=2, timeline_events=6),
-    FuzzProfileName.FUZZ_REGRESSION: _ProfileShape(works=8, timeline_events=32),
-}
 
 _VIDEO_SOURCES: Final[tuple[str, ...]] = ("color_bars", "mandelbrot", "solid_color")
 _RESOLUTIONS: Final[tuple[str, ...]] = ("sd", "hd", "1080p")
@@ -60,15 +50,16 @@ def generate_scenario_yaml(
         raise ValueError("seed must be non-negative")
 
     resolved_lane = lane or FuzzLaneName.SMOKE
+    config = lane_config_for(profile=profile, lane=resolved_lane)
+    profile_labels = profiles_for_lane(profile=profile, lane=resolved_lane)
     rng = RngStreams(resolved_seed=seed, recorder=TraceRecorder()).stream("fuzz-generation")
-    shape = _PROFILE_SHAPES[profile]
-    assets, works = _generate_works(profile=profile, seed=seed, shape=shape, rng=rng)
+    assets, works = _generate_works(profile=profile, seed=seed, config=config, rng=rng)
     payload: dict[str, object] = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": f"{profile.value}-{resolved_lane.value}-seed-{seed}",
         "seed": seed,
         "duration_scale": "short",
-        "profiles": [profile.value],
+        "profiles": [label.value for label in profile_labels],
         "generation": {
             "generator": "chaos-librarian",
             "profile": profile.value,
@@ -79,7 +70,7 @@ def generate_scenario_yaml(
         },
         "library": {"roots": [{"id": "movies_hd", "path": "movies-hd"}]},
         "works": works,
-        "timeline": _generate_timeline(shape=shape, assets=assets, rng=rng),
+        "timeline": _generate_timeline(config=config, assets=assets, rng=rng),
     }
     data = _dump_yaml(payload)
     _validate_generated_yaml(data)
@@ -131,12 +122,12 @@ def _generate_works(
     *,
     profile: FuzzProfileName,
     seed: int,
-    shape: _ProfileShape,
+    config: LaneConfig,
     rng,
 ) -> tuple[list[_GeneratedAsset], list[dict[str, object]]]:
     assets: list[_GeneratedAsset] = []
     works: list[dict[str, object]] = []
-    for index in range(1, shape.works + 1):
+    for index in range(1, config.works + 1):
         asset = _GeneratedAsset(
             asset_id=f"asset_{index:03d}",
             container=rng.choice(_CONTAINERS),
@@ -194,13 +185,13 @@ def _asset_payload(asset: _GeneratedAsset, rng) -> dict[str, object]:
 
 def _generate_timeline(
     *,
-    shape: _ProfileShape,
+    config: LaneConfig,
     assets: list[_GeneratedAsset],
     rng,
 ) -> list[dict[str, object]]:
     events: list[dict[str, object]] = []
     sidecars: list[tuple[str, str]] = []
-    for index in range(1, shape.timeline_events + 1):
+    for index in range(1, config.timeline_events + 1):
         asset = rng.choice(assets)
         actions = ["move_asset", "rename_file", "edit_metadata", "create_sidecar"]
         if sidecars:
