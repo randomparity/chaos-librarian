@@ -5,16 +5,25 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+import chaos_librarian.contract.manifest as manifest_module
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     Manifest,
+    ManifestAlbum,
+    ManifestArtist,
     ManifestAsset,
     ManifestBundle,
+    ManifestDisc,
+    ManifestEpisode,
     ManifestLocation,
+    ManifestMovie,
+    ManifestSeason,
+    ManifestSeries,
     ManifestSidecar,
+    ManifestTrack,
     ManifestVariant,
     ManifestVersion,
-    ManifestWork,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -36,7 +45,14 @@ def _corruption_record() -> CorruptionRecord:
 def _empty_manifest() -> Manifest:
     return Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[],
+        movies=[],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
         variants=[],
         bundles=[],
         assets=[],
@@ -55,13 +71,72 @@ def test_empty_manifest_roundtrip() -> None:
 def test_populated_manifest_roundtrip() -> None:
     m = Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
-        works=[ManifestWork(id="w1", title="W1")],
-        variants=[ManifestVariant(id="v1", work_id="w1", label="hd")],
-        bundles=[ManifestBundle(id="b1", variant_id="v1")],
+        movies=[ManifestMovie(id="movie_orbit", title="Orbit", layout="movie_folder")],
+        series=[
+            ManifestSeries(
+                id="series_starline",
+                title="Starline",
+                layout="season_folders",
+                episode_naming="sxxexx_title",
+            )
+        ],
+        seasons=[
+            ManifestSeason(
+                id="season_specials",
+                series_id="series_starline",
+                season_number=0,
+                title="Specials",
+            )
+        ],
+        episodes=[
+            ManifestEpisode(
+                id="episode_special_01",
+                season_id="season_specials",
+                episode_number=1,
+                title="First Signal",
+                aired_on=None,
+                absolute_number=None,
+            )
+        ],
+        artists=[
+            ManifestArtist(
+                id="artist_north",
+                name="North Index",
+                layout="artist_album_disc",
+                track_naming="track_number_title",
+            )
+        ],
+        albums=[
+            ManifestAlbum(
+                id="album_winter",
+                artist_id="artist_north",
+                title="Winter Index",
+                release_year=2024,
+            )
+        ],
+        discs=[ManifestDisc(id="disc_winter_01", album_id="album_winter", disc_number=1)],
+        tracks=[
+            ManifestTrack(
+                id="track_opening",
+                disc_id="disc_winter_01",
+                track_number=1,
+                title="Opening",
+                performers=["North Index"],
+            )
+        ],
+        variants=[
+            ManifestVariant(
+                id="variant_movie",
+                parent_kind=ParentKind.MOVIE,
+                parent_id="movie_orbit",
+                label="1080p",
+            )
+        ],
+        bundles=[ManifestBundle(id="bundle_movie", variant_id="variant_movie")],
         assets=[
             ManifestAsset(
                 id="a1",
-                bundle_id="b1",
+                bundle_id="bundle_movie",
                 role="primary_video",
                 container="mkv",
                 duration_seconds=12,
@@ -73,6 +148,10 @@ def test_populated_manifest_roundtrip() -> None:
     )
     loaded = Manifest.model_validate_json(m.model_dump_json())
     assert loaded == m
+
+
+def test_manifest_contract_removes_manifest_work() -> None:
+    assert not hasattr(manifest_module, "ManifestWork")
 
 
 def test_rejects_unknown_schema_version() -> None:
@@ -128,8 +207,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_six():
-    assert MANIFEST_SCHEMA_VERSION == 6
+def test_manifest_schema_version_is_seven():
+    assert MANIFEST_SCHEMA_VERSION == 7
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -168,7 +247,7 @@ def test_manifest_sidecar_subtitle_keeps_language():
     assert sidecar.kind == "subtitle"
 
 
-def test_manifest_sidecar_kind_remains_free_form_for_v6_compatibility():
+def test_manifest_sidecar_kind_remains_free_form():
     sidecar = ManifestSidecar.model_validate(
         {
             "id": "sidecar_0001",
@@ -181,10 +260,17 @@ def test_manifest_sidecar_kind_remains_free_form_for_v6_compatibility():
     assert sidecar.kind == "srt"
 
 
-def test_manifest_v6_schema_version():
+def test_manifest_v7_schema_version():
     manifest = Manifest(
-        schema_version=6,
-        works=[],
+        schema_version=7,
+        movies=[],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
         variants=[],
         bundles=[],
         assets=[],
@@ -192,7 +278,7 @@ def test_manifest_v6_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 6
+    assert manifest.schema_version == 7
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:
