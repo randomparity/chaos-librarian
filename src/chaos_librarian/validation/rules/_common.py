@@ -68,7 +68,6 @@ __all__ = [
     "_as_mapping",
     "_iter_timeline_events",
     "_list_at_path",
-    "asset_containers",
     "build_hierarchy_projection",
     "entity_ids_by_kind",
     "is_hierarchy_action",
@@ -315,17 +314,6 @@ def iter_assets_with_loc(
     """
     for context in iter_asset_contexts(raw):
         yield context.asset, context.asset_loc
-
-
-def asset_containers(raw: _RawMapping) -> dict[str, str]:
-    """Return ``asset_id -> container`` for every well-shaped declared asset."""
-    containers: dict[str, str] = {}
-    for asset, _ in iter_assets_with_loc(raw):
-        asset_id = asset.get("id")
-        container = asset.get("container")
-        if isinstance(asset_id, str) and isinstance(container, str):
-            containers[asset_id] = container
-    return containers
 
 
 def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
