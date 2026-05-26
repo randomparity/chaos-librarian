@@ -35,6 +35,9 @@ from tests.support.adapter import (
     observed as _observed,
 )
 from tests.support.adapter import (
+    observed_from_fixture as _observed_from_fixture,
+)
+from tests.support.adapter import (
     probe as _probe,
 )
 
@@ -129,6 +132,14 @@ def _episode_fixture():
     return replace(base, initial_manifest=manifest, current_manifest=manifest)
 
 
+def _fixture_for_episode():
+    return _fixture(parent_kind=ParentKind.EPISODE)
+
+
+def _fixture_for_track():
+    return _fixture(parent_kind=ParentKind.TRACK)
+
+
 def _movie_to_episode_fixture():
     base = _fixture()
     return replace(base, current_manifest=_episode_manifest(base.current_manifest))
@@ -141,6 +152,51 @@ def test_clean_observed_state_returns_ok_report() -> None:
     assert report.findings == []
     assert report.fixture.asset_count == 1
     assert report.observed.consumer_name == "voom-v2"
+
+
+def test_observed_from_fixture_emits_episode_domain_rows() -> None:
+    fixture = _fixture_for_episode()
+
+    observed = _observed_from_fixture(fixture, include_topology=True)
+
+    assert observed.series[0].title == "Starline"
+    assert observed.seasons[0].series_ref == "observed-series-a"
+    assert observed.episodes[0].season_ref == "observed-season-a"
+    assert observed.variants[0].parent_kind is ParentKind.EPISODE
+    assert observed.variants[0].parent_ref == "observed-episode-a"
+
+
+def test_observed_from_fixture_emits_track_domain_rows() -> None:
+    fixture = _fixture_for_track()
+
+    observed = _observed_from_fixture(fixture, include_topology=True)
+
+    assert observed.artists[0].name == "North Index"
+    assert observed.albums[0].artist_ref == "observed-artist-a"
+    assert observed.discs[0].album_ref == "observed-album-a"
+    assert observed.tracks[0].disc_ref == "observed-disc-a"
+    assert observed.variants[0].parent_kind is ParentKind.TRACK
+    assert observed.variants[0].parent_ref == "observed-track-a"
+
+
+def test_episode_topology_from_fixture_compares_clean() -> None:
+    fixture = _fixture_for_episode()
+    observed = _observed_from_fixture(fixture, include_topology=True)
+
+    report = compare_fixture_to_observed(fixture, observed)
+
+    assert report.ok is True
+    assert report.findings == []
+
+
+def test_track_topology_from_fixture_compares_clean() -> None:
+    fixture = _fixture_for_track()
+    observed = _observed_from_fixture(fixture, include_topology=True)
+
+    report = compare_fixture_to_observed(fixture, observed)
+
+    assert report.ok is True
+    assert report.findings == []
 
 
 def test_run_id_mismatch_is_input_error_not_divergence() -> None:
