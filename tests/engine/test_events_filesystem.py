@@ -220,7 +220,7 @@ class TestArchiveFileHandler:
             ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
-        assert state.locations[loc_id].path == "library/movies-hd/archive/asset_hd_main.mkv"
+        assert state.locations[loc_id].path == ("library/movies-hd/archive/movie_001 - default.mkv")
         assert state.has_location("asset_hd_main"), "archive keeps the asset placed"
         assert len(entries) == 1
         (entry,) = entries
@@ -228,7 +228,7 @@ class TestArchiveFileHandler:
         assert entry.target_ids == ["asset_hd_main"]
         assert entry.state_delta == {
             "from_path": "library/movies-hd/movie_001 - default.mkv",
-            "to_path": "library/movies-hd/archive/asset_hd_main.mkv",
+            "to_path": "library/movies-hd/archive/movie_001 - default.mkv",
         }
 
     def test_archive_file_handler_uses_explicit_archive_root(self) -> None:
@@ -242,14 +242,19 @@ class TestArchiveFileHandler:
         )
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
         resolved = _resolve_archive_file(scenario, event_id="ev_arch_001", target="asset_hd_main")
-        apply_event(
+        entries = apply_event(
             state=state,
             resolved=resolved,
             ids=IdAllocator(TraceRecorder()),
             ctx=_engine_event_context(),
         )
         loc_id = state.location_id_for_asset("asset_hd_main")
-        assert state.locations[loc_id].path == "library/cold-storage/asset_hd_main.mkv"
+        assert state.locations[loc_id].path == "library/cold-storage/movie_001 - default.mkv"
+        (entry,) = entries
+        assert entry.state_delta == {
+            "from_path": "library/movies-hd/movie_001 - default.mkv",
+            "to_path": "library/cold-storage/movie_001 - default.mkv",
+        }
 
 
 class TestMoveBetweenRootsHandler:

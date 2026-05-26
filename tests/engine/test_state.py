@@ -446,7 +446,7 @@ def test_world_state_archive_path_for_default_root() -> None:
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
     assert state.archive_path_for("asset_hd_main") == (
-        "library/movies-hd/archive/asset_hd_main.mkv"
+        "library/movies-hd/archive/movie_001 - default.mkv"
     )
 
 
@@ -459,7 +459,7 @@ def test_world_state_archive_path_for_sentinel_value() -> None:
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
     assert state.archive_path_for("asset_hd_main") == (
-        "library/movies-hd/archive/asset_hd_main.mkv"
+        "library/movies-hd/archive/movie_001 - default.mkv"
     )
 
 
@@ -474,7 +474,19 @@ def test_world_state_archive_path_for_explicit_root() -> None:
     )
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
-    assert state.archive_path_for("asset_hd_main") == "library/cold-storage/asset_hd_main.mkv"
+    assert state.archive_path_for("asset_hd_main") == "library/cold-storage/movie_001 - default.mkv"
+
+
+def test_world_state_archive_path_for_unsafe_asset_id_preserves_rendered_suffix() -> None:
+    scenario = _build_minimal_scenario(
+        roots=[("movies-hd", "library/movies-hd")],
+        movies=[("movie_001", "../../escape", "mkv")],
+    )
+    state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+
+    assert state.archive_path_for("../../escape") == (
+        "library/movies-hd/archive/movie_001 - default.mkv"
+    )
 
 
 def test_sidecar_id_for_path_returns_id_when_match() -> None:

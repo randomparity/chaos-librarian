@@ -51,6 +51,7 @@ from chaos_librarian.path_rendering import (
     RenderableAssetContext,
     render_asset_path,
     render_declared_sidecar_path,
+    replace_root_prefix,
 )
 from chaos_librarian.topology import AssetContext, iter_asset_contexts
 
@@ -87,12 +88,11 @@ class WorldState:
     previous_event_delta: tuple[str, dict[str, object]] | None = None
     pending_network_lags: dict[str, dict[str, object]] = field(default_factory=dict)
 
-    # Sprint 6 additions: populated once in ``build_initial_state`` from
-    # ``scenario.library`` so the archive_file / move_between_roots handlers
-    # can resolve a root id or compute an asset's archive destination
-    # without re-deriving the convention each call.
+    # Populated once in ``build_initial_state`` from ``scenario.library`` so
+    # archive_file / move_between_roots handlers can resolve root paths and
+    # preserve rendered suffixes while moving assets across roots.
     _root_paths: dict[str, str] = field(default_factory=dict)
-    _archive_path_template: str = ""
+    _archive_base_path: str = ""
     _primary_root_path: str = ""
     _renderer_managed_asset_ids: set[str] = field(default_factory=set)
     _renderer_derived_sidecar_ids: set[str] = field(default_factory=set)
@@ -108,15 +108,27 @@ class WorldState:
     def archive_path_for(self, asset_id: str) -> str:
         """Return the archive destination for ``asset_id``.
 
-        Formats ``_archive_path_template`` with the asset's container.
-        Validation (``rules/target_unknown.rule_root_unknown``) has
-        already proven the archive root resolves, so the template is
-        populated and the format call cannot KeyError.
+        Preserves the asset's current rendered path suffix and replaces
+        only its current declared root prefix with the configured archive
+        base. Validation has already proven the archive root resolves.
         """
-        asset = self.assets[asset_id]
-        return self._archive_path_template.format(
-            asset_id=asset_id,
-            container=asset.container,
+        loc_id = self.location_id_for_asset(asset_id)
+        current_path = self.locations[loc_id].path
+        current_root = self._current_root_for_path(current_path)
+        return replace_root_prefix(
+            current_path,
+            from_root=current_root,
+            to_root=self._archive_base_path,
+        )
+
+    def _current_root_for_path(self, path: str) -> str:
+        root_paths: list[str] = list(self._root_paths.values())
+        root_paths.sort(key=len, reverse=True)
+        for root_path in root_paths:
+            if path == root_path or path.startswith(f"{root_path}/"):
+                return root_path
+        raise ChaosLibrarianValueError(
+            f"current path {path!r} does not start with a declared library root"
         )
 
     def location_id_for_asset(self, asset_id: str) -> str:
@@ -367,7 +379,7 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
         archive_base = f"{primary_root.path}/archive"
     else:
         archive_base = state._root_paths[archive_root]
-    state._archive_path_template = f"{archive_base}/{{asset_id}}.{{container}}"
+    state._archive_base_path = archive_base
 
     _seed_domain_rows(state, scenario)
     for context in iter_asset_contexts(scenario):
