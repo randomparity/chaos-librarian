@@ -15,7 +15,7 @@ from typing import Final
 from ruamel.yaml import YAML
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
-from chaos_librarian.contract.profiles import FuzzProfileName
+from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import (
     FUZZ_GENERATION_PROFILE_VERSION,
     Scenario,
@@ -50,23 +50,29 @@ _AUDIO_CHANNELS: Final[tuple[str, ...]] = ("mono", "stereo", "5.1")
 _CONTAINERS: Final[tuple[str, ...]] = ("mkv", "mp4")
 
 
-def generate_scenario_yaml(profile: FuzzProfileName, seed: int) -> bytes:
-    """Return deterministic scenario YAML bytes for one fuzz profile and seed."""
+def generate_scenario_yaml(
+    profile: FuzzProfileName,
+    seed: int,
+    lane: FuzzLaneName | None = None,
+) -> bytes:
+    """Return deterministic scenario YAML bytes for one fuzz profile, lane, and seed."""
     if seed < 0:
         raise ValueError("seed must be non-negative")
 
+    resolved_lane = lane or FuzzLaneName.SMOKE
     rng = RngStreams(resolved_seed=seed, recorder=TraceRecorder()).stream("fuzz-generation")
     shape = _PROFILE_SHAPES[profile]
     assets, works = _generate_works(profile=profile, seed=seed, shape=shape, rng=rng)
     payload: dict[str, object] = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
-        "scenario_id": f"{profile.value}-seed-{seed}",
+        "scenario_id": f"{profile.value}-{resolved_lane.value}-seed-{seed}",
         "seed": seed,
         "duration_scale": "short",
         "profiles": [profile.value],
         "generation": {
             "generator": "chaos-librarian",
             "profile": profile.value,
+            "lane": resolved_lane.value,
             "profile_version": FUZZ_GENERATION_PROFILE_VERSION,
             "seed": seed,
             "budgets": generation_budget_for(profile).model_dump(mode="json"),
@@ -111,6 +117,7 @@ def generated_scenario_summary(
         raise ValueError("generated scenario is missing generation metadata")
     summary = {
         "ok": True,
+        "lane": scenario.generation.lane.value,
         "profile": scenario.generation.profile.value,
         "scenario_id": scenario.scenario_id,
         "scenario_path": str(out.resolve()),

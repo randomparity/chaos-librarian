@@ -36,10 +36,11 @@ def test_generated_yaml_validates_as_scenario() -> None:
         generate_scenario_yaml(profile=FuzzProfileName.FUZZ_SMOKE, seed=123)
     )
 
-    assert scenario.scenario_id == "fuzz-smoke-seed-123"
+    assert scenario.scenario_id == "fuzz-smoke-smoke-seed-123"
     assert [profile.value for profile in scenario.profiles] == ["fuzz-smoke"]
     assert scenario.generation is not None
     assert scenario.generation.profile is FuzzProfileName.FUZZ_SMOKE
+    assert scenario.generation.lane.value == "smoke"
     assert scenario.generation.seed == 123
 
 
