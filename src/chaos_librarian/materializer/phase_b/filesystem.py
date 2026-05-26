@@ -331,7 +331,7 @@ def _plan_hierarchy_moves(
                 move=move,
                 source=source,
                 destination=destination,
-                temp=source.with_name(f".{source.name}.chaos-{event_token}-{index}.tmp"),
+                temp=_hierarchy_temp_path(source, event_token, index),
             )
         )
     for source in source_paths:
@@ -354,6 +354,10 @@ def _hierarchy_temp_event_token(event_id: str) -> str:
         token = "event"
     digest = hashlib.sha256(event_id.encode("utf-8")).hexdigest()[:8]
     return f"{token}-{digest}"
+
+
+def _hierarchy_temp_path(source: Path, event_token: str, index: int) -> Path:
+    return source.with_name(f".chaos-hierarchy-{event_token}-{index}.tmp")
 
 
 def _prepare_hierarchy_destinations(planned: list[_PlannedHierarchyMove]) -> None:

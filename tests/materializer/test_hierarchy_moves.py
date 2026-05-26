@@ -33,6 +33,10 @@ def _temp_event_token(event_id: str) -> str:
     return f"{event_id[:48]}-{digest}"
 
 
+def _temp_name(event_id: str, index: int) -> str:
+    return f".chaos-hierarchy-{_temp_event_token(event_id)}-{index}.tmp"
+
+
 def test_hierarchy_move_rejects_destination_occupied_outside_move_set(
     tmp_path: Path,
 ) -> None:
@@ -75,9 +79,7 @@ def test_hierarchy_move_temp_collision_preserves_unstaged_sources(tmp_path: Path
     first = library / "music" / "01 - First.flac"
     second = library / "music" / "02 - Second.flac"
     event_id = "renumber_disc_001"
-    preexisting_temp = (
-        library / "music" / f".02 - Second.flac.chaos-{_temp_event_token(event_id)}-1.tmp"
-    )
+    preexisting_temp = library / "music" / _temp_name(event_id, 1)
     first.write_bytes(b"first")
     second.write_bytes(b"second")
     preexisting_temp.write_bytes(b"preexisting")
@@ -112,9 +114,7 @@ def test_hierarchy_move_temp_collision_preserves_unstaged_sources(tmp_path: Path
     assert first.read_bytes() == b"first"
     assert second.read_bytes() == b"second"
     assert preexisting_temp.read_bytes() == b"preexisting"
-    assert not (
-        library / "music" / f".01 - First.flac.chaos-{_temp_event_token(event_id)}-0.tmp"
-    ).exists()
+    assert not (library / "music" / _temp_name(event_id, 0)).exists()
 
 
 def test_hierarchy_move_blocked_destination_parent_preserves_source(
@@ -151,9 +151,7 @@ def test_hierarchy_move_blocked_destination_parent_preserves_source(
 
     assert source.read_bytes() == b"source"
     assert blocked_parent.read_bytes() == b"not-a-directory"
-    assert not (
-        library / "tv" / f".Show - S01E01.mkv.chaos-{_temp_event_token(event_id)}-0.tmp"
-    ).exists()
+    assert not (library / "tv" / _temp_name(event_id, 0)).exists()
 
 
 def test_hierarchy_move_swaps_paths_via_temporary_siblings(tmp_path: Path) -> None:
@@ -264,6 +262,43 @@ def test_hierarchy_move_with_long_safe_event_id_uses_bounded_temp_sibling(
 
     assert action is not None
     assert action.event_id == event_id
+    assert not source.exists()
+    assert destination.read_bytes() == b"media"
+    assert list((library / "tv").glob("*.tmp")) == []
+
+
+def test_hierarchy_move_with_long_source_name_uses_bounded_temp_sibling(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "library"
+    (library / "tv").mkdir(parents=True)
+    source_name = f"{'a' * 236}.mkv"
+    destination_name = f"{'b' * 236}.mkv"
+    source = library / "tv" / source_name
+    destination = library / "tv" / destination_name
+    source.write_bytes(b"media")
+    entry = _atomic_entry(
+        event_id="renumber_001",
+        action=TimelineActionName.RENUMBER_EPISODE,
+        target="episode_1",
+        state_delta={
+            "metadata": {"episode_number": {"before": 1, "after": 2}},
+            "path_moves": [
+                {
+                    "asset_id": "asset_hd_main",
+                    "location_id": "location_0001",
+                    "from_path": f"tv/{source_name}",
+                    "to_path": f"tv/{destination_name}",
+                }
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    action = _apply(library, entry)
+
+    assert action is not None
     assert not source.exists()
     assert destination.read_bytes() == b"media"
     assert list((library / "tv").glob("*.tmp")) == []
