@@ -106,6 +106,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
     }
     archive_base = _archive_base_path(raw, declared_roots)
     current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
+    pending_slow_copies: dict[str, tuple[str, str]] = {}
 
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
@@ -132,6 +133,10 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
             TimelineActionName.ADD_FILE,
         }:
             _project_to_field_path(event, current_paths)
+        elif action == TimelineActionName.SLOW_COPY_START:
+            _project_slow_copy_start(event, pending_slow_copies)
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
+            _project_slow_copy_commit(event, pending_slow_copies, current_paths)
         elif action == TimelineActionName.DELETE_FILE:
             _project_deleted_path(event, current_paths)
 
@@ -215,6 +220,32 @@ def _project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> 
     target = event.get("target")
     if isinstance(target, str):
         current_paths.pop(target, None)
+
+
+def _project_slow_copy_start(
+    event: _RawMapping,
+    pending_slow_copies: dict[str, tuple[str, str]],
+) -> None:
+    event_id = event.get("id")
+    target = event.get("target")
+    final_path = event.get("to")
+    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
+        pending_slow_copies[event_id] = (target, final_path)
+
+
+def _project_slow_copy_commit(
+    event: _RawMapping,
+    pending_slow_copies: dict[str, tuple[str, str]],
+    current_paths: dict[str, str],
+) -> None:
+    start_id = event.get("for")
+    if not isinstance(start_id, str):
+        return
+    pending = pending_slow_copies.pop(start_id, None)
+    if pending is None:
+        return
+    target, final_path = pending
+    current_paths[target] = final_path
 
 
 def _current_root_for_path(path: str, declared_roots: Mapping[str, str]) -> str:
