@@ -182,6 +182,42 @@ def test_hierarchy_move_swaps_paths_via_temporary_siblings(tmp_path: Path) -> No
     assert list((library / "music").glob("*.tmp")) == []
 
 
+def test_hierarchy_move_with_path_separator_event_id_uses_safe_temp_sibling(
+    tmp_path: Path,
+) -> None:
+    library = tmp_path / "library"
+    (library / "tv").mkdir(parents=True)
+    source = library / "tv" / "Show - S01E01.mkv"
+    destination = library / "tv" / "Show - S01E02.mkv"
+    source.write_bytes(b"media")
+    entry = _atomic_entry(
+        event_id="renumber/001",
+        action=TimelineActionName.RENUMBER_EPISODE,
+        target="episode_1",
+        state_delta={
+            "metadata": {"episode_number": {"before": 1, "after": 2}},
+            "path_moves": [
+                {
+                    "asset_id": "asset_hd_main",
+                    "location_id": "location_0001",
+                    "from_path": "tv/Show - S01E01.mkv",
+                    "to_path": "tv/Show - S01E02.mkv",
+                }
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    action = _apply(library, entry)
+
+    assert action is not None
+    assert action.event_id == "renumber/001"
+    assert not source.exists()
+    assert destination.read_bytes() == b"media"
+    assert list((library / "tv").glob("*.tmp")) == []
+
+
 def test_hierarchy_move_moves_renderer_derived_sidecar(tmp_path: Path) -> None:
     library = tmp_path / "library"
     (library / "tv").mkdir(parents=True)

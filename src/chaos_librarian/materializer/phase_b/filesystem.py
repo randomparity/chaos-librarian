@@ -20,7 +20,9 @@ through ``cleanup_failed_run``.
 
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -74,6 +76,9 @@ class _PlannedHierarchyMove:
     source: Path
     destination: Path
     temp: Path
+
+
+_UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS: Final[re.Pattern[str]] = re.compile(r"[^A-Za-z0-9_.-]")
 
 
 def make_filesystem_phase_b_context(
@@ -310,6 +315,7 @@ def _plan_hierarchy_moves(
     planned: list[_PlannedHierarchyMove] = []
     source_paths: set[Path] = set()
     destination_paths: set[Path] = set()
+    event_token = _hierarchy_temp_event_token(entry.event_id)
     for index, move in enumerate(moves):
         source = resolve_under_library(Path(move.from_path), ctx.library_root)
         destination = resolve_under_library(Path(move.to_path), ctx.library_root)
@@ -324,7 +330,7 @@ def _plan_hierarchy_moves(
                 move=move,
                 source=source,
                 destination=destination,
-                temp=source.with_name(f".{source.name}.chaos-{entry.event_id}-{index}.tmp"),
+                temp=source.with_name(f".{source.name}.chaos-{event_token}-{index}.tmp"),
             )
         )
     for source in source_paths:
@@ -337,6 +343,16 @@ def _plan_hierarchy_moves(
         if plan.temp.exists():
             raise FileExistsError(plan.temp)
     return planned
+
+
+def _hierarchy_temp_event_token(event_id: str) -> str:
+    token = _UNSAFE_HIERARCHY_TEMP_TOKEN_CHARS.sub("_", event_id)
+    if token == event_id and token:
+        return token
+    if not token:
+        token = "event"
+    digest = hashlib.sha256(event_id.encode("utf-8")).hexdigest()[:8]
+    return f"{token}-{digest}"
 
 
 def _prepare_hierarchy_destinations(planned: list[_PlannedHierarchyMove]) -> None:
