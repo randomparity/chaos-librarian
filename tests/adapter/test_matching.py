@@ -244,6 +244,29 @@ def test_topology_match_records_match_evidence() -> None:
     assert result.matches[0].evidence[0].value == "movie:Synthetic|4k|1"
 
 
+def test_topology_separator_values_do_not_collide_internal_keys() -> None:
+    oracle, observed = _indexes(
+        (_oracle_asset("oracle-title-pipe"), _oracle_asset("oracle-label-pipe")),
+        (_observed_asset("observed-title-pipe"), _observed_asset("observed-label-pipe")),
+        oracle_topology=(
+            _oracle_topology("oracle-title-pipe", title="A|B", label="C"),
+            _oracle_topology("oracle-label-pipe", title="A", label="B|C"),
+        ),
+        observed_topology=(
+            _observed_topology("observed-title-pipe", title="A|B", label="C"),
+            _observed_topology("observed-label-pipe", title="A", label="B|C"),
+        ),
+    )
+
+    result = match_assets(oracle, observed)
+
+    assert sorted((match.oracle_asset_id, match.observed_ref) for match in result.matches) == [
+        ("oracle-label-pipe", "observed-label-pipe"),
+        ("oracle-title-pipe", "observed-title-pipe"),
+    ]
+    assert result.findings == ()
+
+
 def test_topology_match_uses_episode_domain_key() -> None:
     oracle, observed = _indexes(
         (_oracle_asset("oracle-a"),),

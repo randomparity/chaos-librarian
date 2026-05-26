@@ -8,7 +8,13 @@ import pytest
 
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
 from chaos_librarian.adapter.fixture import OracleFixture, load_fixture
-from chaos_librarian.adapter.index import OracleIndex
+from chaos_librarian.adapter.index import (
+    OracleIndex,
+    TopologyKey,
+    format_topology_key,
+    topology_key,
+)
+from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.topology import iter_asset_contexts
@@ -68,18 +74,18 @@ def test_duplicate_variant_expansion_pack_oracle_evidence(
 ) -> None:
     """WHY: the fixture must expose the ambiguous topology cases adapters document."""
     oracle_index = OracleIndex.from_fixture(oracle_fixture)
+    pair_key = _movie_topology_key("Synthetic Pair", "hd", 2)
+    ladder_1080p_key = _movie_topology_key("Synthetic Ladder", "1080p", 1)
+    ladder_sd_key = _movie_topology_key("Synthetic Ladder", "sd", 1)
 
     assert all(len(asset_ids) == 1 for asset_ids in oracle_index.current_path_to_asset_ids.values())
-    assert oracle_index.topology_key_to_asset_ids["movie|Synthetic Pair|hd|2"] == (
+    assert format_topology_key(pair_key) == "movie:Synthetic Pair|hd|2"
+    assert oracle_index.topology_key_to_asset_ids[pair_key] == (
         "asset_pair_disc_a",
         "asset_pair_disc_b",
     )
-    assert oracle_index.topology_key_to_asset_ids["movie|Synthetic Ladder|1080p|1"] == (
-        "asset_ladder_1080p",
-    )
-    assert oracle_index.topology_key_to_asset_ids["movie|Synthetic Ladder|sd|1"] == (
-        "asset_ladder_sd",
-    )
+    assert oracle_index.topology_key_to_asset_ids[ladder_1080p_key] == ("asset_ladder_1080p",)
+    assert oracle_index.topology_key_to_asset_ids[ladder_sd_key] == ("asset_ladder_sd",)
 
 
 def test_duplicate_variant_path_and_topology_recipe_compares_clean(
@@ -111,7 +117,7 @@ def test_duplicate_variant_pathless_topology_export_reports_ambiguity(
         for finding in report.findings
         if finding.code == "D_MATCH_AMBIGUOUS"
     } == {
-        "movie|Synthetic Pair|hd|2",
+        "movie:Synthetic Pair|hd|2",
     }
 
 
@@ -185,3 +191,14 @@ def _asset_recipe(scenario: Scenario, asset_id: str) -> tuple[object, ...]:
         tuple((audio.source, audio.codec, audio.channels, audio.language) for audio in asset.audio),
         tuple(asset.subtitles),
     )
+
+
+def _movie_topology_key(title: str, label: str, bundle_member_count: int) -> TopologyKey:
+    key = topology_key(
+        parent_kind=ParentKind.MOVIE,
+        variant_label=label,
+        bundle_member_count=bundle_member_count,
+        movie_title=title,
+    )
+    assert key is not None
+    return key

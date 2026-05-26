@@ -10,6 +10,7 @@ from chaos_librarian.adapter.index import (
     ObservedIndex,
     OracleAssetView,
     OracleIndex,
+    format_topology_key,
     topology_key,
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
@@ -221,6 +222,8 @@ def _compare_topology(
     )
     if oracle_key is None or observed_key is None or oracle_key == observed_key:
         return []
+    oracle_domain_key = format_topology_key(oracle_key)
+    observed_domain_key = format_topology_key(observed_key)
     return [
         _finding(
             DivergenceCode.TOPOLOGY_MISMATCH,
@@ -228,7 +231,7 @@ def _compare_topology(
             match=match,
             expected={
                 "parent_kind": oracle_topology.parent_kind.value,
-                "domain_key": oracle_key,
+                "domain_key": oracle_domain_key,
             },
             observed={
                 "parent_kind": (
@@ -236,7 +239,7 @@ def _compare_topology(
                     if observed_topology.parent_kind is not None
                     else None
                 ),
-                "domain_key": observed_key,
+                "domain_key": observed_domain_key,
             },
         )
     ]

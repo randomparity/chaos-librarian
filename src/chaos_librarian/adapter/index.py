@@ -2,20 +2,39 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.contract.domain import ParentKind
-from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
+from chaos_librarian.contract.manifest import (
+    ManifestAlbum,
+    ManifestArtist,
+    ManifestDisc,
+    ManifestEpisode,
+    ManifestMovie,
+    ManifestSeason,
+    ManifestSeries,
+    ManifestSidecar,
+    ManifestTrack,
+    ProbedMedia,
+)
 from chaos_librarian.contract.observed_state import (
+    ObservedAlbum,
+    ObservedArtist,
     ObservedAsset,
     ObservedBundle,
+    ObservedDisc,
+    ObservedEpisode,
     ObservedEvent,
+    ObservedMovie,
     ObservedPathHistoryEntry,
+    ObservedSeason,
+    ObservedSeries,
     ObservedSidecar,
     ObservedState,
+    ObservedTrack,
 )
 from chaos_librarian.contract.reports import PathHistoryEntry
 
@@ -85,6 +104,11 @@ class ObservedTopologyView:
     bundle_asset_refs: tuple[str, ...] = ()
 
 
+class TopologyKey(NamedTuple):
+    kind: str
+    components: tuple[str, ...]
+
+
 class _TopologyDomainFields(TypedDict, total=False):
     movie_title: str | None
     series_title: str | None
@@ -99,13 +123,37 @@ class _TopologyDomainFields(TypedDict, total=False):
 
 
 @dataclass(frozen=True)
+class _OracleDomainLookups:
+    movies: Mapping[str, ManifestMovie]
+    series: Mapping[str, ManifestSeries]
+    seasons: Mapping[str, ManifestSeason]
+    episodes: Mapping[str, ManifestEpisode]
+    artists: Mapping[str, ManifestArtist]
+    albums: Mapping[str, ManifestAlbum]
+    discs: Mapping[str, ManifestDisc]
+    tracks: Mapping[str, ManifestTrack]
+
+
+@dataclass(frozen=True)
+class _ObservedDomainLookups:
+    movies: Mapping[str, ObservedMovie]
+    series: Mapping[str, ObservedSeries]
+    seasons: Mapping[str, ObservedSeason]
+    episodes: Mapping[str, ObservedEpisode]
+    artists: Mapping[str, ObservedArtist]
+    albums: Mapping[str, ObservedAlbum]
+    discs: Mapping[str, ObservedDisc]
+    tracks: Mapping[str, ObservedTrack]
+
+
+@dataclass(frozen=True)
 class OracleIndex:
     assets: Mapping[str, OracleAssetView]
     topology: Mapping[str, OracleTopologyView] = field(default_factory=dict)
     current_path_to_asset_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     historical_path_to_asset_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     hash_to_asset_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    topology_key_to_asset_ids: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    topology_key_to_asset_ids: Mapping[TopologyKey, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_views(
@@ -193,7 +241,7 @@ class ObservedIndex:
     current_path_to_refs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     historical_path_to_refs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     hash_to_refs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
-    topology_key_to_refs: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    topology_key_to_refs: Mapping[TopologyKey, tuple[str, ...]] = field(default_factory=dict)
 
     @classmethod
     def from_views(
@@ -272,20 +320,27 @@ def topology_key(
     disc_number: int | None = None,
     track_number: int | None = None,
     track_title: str | None = None,
-) -> str | None:
+) -> TopologyKey | None:
     """Return the consumer-neutral domain topology key when enough facts exist."""
     label = variant_label or ""
-    key: str | None = None
+    key: TopologyKey | None = None
     if parent_kind is ParentKind.MOVIE and movie_title is not None:
-        key = f"movie:{movie_title}|{label}|{bundle_member_count}"
+        key = TopologyKey("movie", (movie_title, label, str(bundle_member_count)))
     elif (
         parent_kind is ParentKind.EPISODE
         and series_title is not None
         and season_number is not None
         and episode_number is not None
     ):
-        key = (
-            f"episode:{series_title}|{season_number}|{episode_number}|{episode_title or ''}|{label}"
+        key = TopologyKey(
+            "episode",
+            (
+                series_title,
+                str(season_number),
+                str(episode_number),
+                episode_title or "",
+                label,
+            ),
         )
     elif (
         parent_kind is ParentKind.TRACK
@@ -294,20 +349,32 @@ def topology_key(
         and disc_number is not None
         and track_number is not None
     ):
-        key = (
-            f"track:{artist_name}|{album_title}|{disc_number}|"
-            f"{track_number}|{track_title or ''}|{label}"
+        key = TopologyKey(
+            "track",
+            (
+                artist_name,
+                album_title,
+                str(disc_number),
+                str(track_number),
+                track_title or "",
+                label,
+            ),
         )
     return key
 
 
-def _lookup_by[T](
+def format_topology_key(key: TopologyKey) -> str:
+    """Return the human-readable topology evidence value for a structured key."""
+    return f"{key.kind}:{'|'.join(key.components)}"
+
+
+def _lookup_by[T, K: Hashable](
     items: Sequence[T],
     *,
     id_of: Callable[[T], str],
-    keys_of: Callable[[T], Sequence[str | None]],
-) -> dict[str, tuple[str, ...]]:
-    values: dict[str, list[str]] = {}
+    keys_of: Callable[[T], Sequence[K | None]],
+) -> dict[K, tuple[str, ...]]:
+    values: dict[K, list[str]] = {}
     for item in items:
         item_id = id_of(item)
         for key in keys_of(item):
@@ -342,6 +409,17 @@ def _manifest_sidecars_by_asset(
 def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
     bundles = {bundle.id: bundle for bundle in fixture.initial_manifest.bundles}
     variants = {variant.id: variant for variant in fixture.initial_manifest.variants}
+    manifest = fixture.initial_manifest
+    domain_lookups = _OracleDomainLookups(
+        movies={movie.id: movie for movie in manifest.movies},
+        series={series.id: series for series in manifest.series},
+        seasons={season.id: season for season in manifest.seasons},
+        episodes={episode.id: episode for episode in manifest.episodes},
+        artists={artist.id: artist for artist in manifest.artists},
+        albums={album.id: album for album in manifest.albums},
+        discs={disc.id: disc for disc in manifest.discs},
+        tracks={track.id: track for track in manifest.tracks},
+    )
     bundle_members: dict[str, list[str]] = {}
     for asset in fixture.initial_manifest.assets:
         bundle_members.setdefault(asset.bundle_id, []).append(asset.id)
@@ -349,7 +427,11 @@ def _oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
     for asset in fixture.initial_manifest.assets:
         bundle = bundles[asset.bundle_id]
         variant = variants[bundle.variant_id]
-        domain_fields = _oracle_domain_fields(fixture, variant.parent_kind, variant.parent_id)
+        domain_fields = _oracle_domain_fields(
+            domain_lookups,
+            variant.parent_kind,
+            variant.parent_id,
+        )
         views.append(
             OracleTopologyView(
                 asset_id=asset.id,
@@ -381,6 +463,16 @@ def _observed_asset_view(asset: ObservedAsset) -> ObservedAssetView:
 def _observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]:
     variants = {variant.observed_ref: variant for variant in state.variants}
     bundles = {bundle.observed_ref: bundle for bundle in state.bundles}
+    domain_lookups = _ObservedDomainLookups(
+        movies={movie.observed_ref: movie for movie in state.movies},
+        series={series.observed_ref: series for series in state.series},
+        seasons={season.observed_ref: season for season in state.seasons},
+        episodes={episode.observed_ref: episode for episode in state.episodes},
+        artists={artist.observed_ref: artist for artist in state.artists},
+        albums={album.observed_ref: album for album in state.albums},
+        discs={disc.observed_ref: disc for disc in state.discs},
+        tracks={track.observed_ref: track for track in state.tracks},
+    )
     containing_bundle = _observed_containing_bundle(state)
     views: list[ObservedTopologyView] = []
     for asset in state.assets:
@@ -389,7 +481,7 @@ def _observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]
         variant = variants.get(variant_ref or "")
         parent_kind = variant.parent_kind if variant else None
         parent_ref = variant.parent_ref if variant else None
-        domain_fields = _observed_domain_fields(state, parent_kind, parent_ref)
+        domain_fields = _observed_domain_fields(domain_lookups, parent_kind, parent_ref)
         views.append(
             ObservedTopologyView(
                 observed_ref=asset.observed_ref,
@@ -406,28 +498,27 @@ def _observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]
 
 
 def _oracle_domain_fields(
-    fixture: OracleFixture,
+    lookups: _OracleDomainLookups,
     parent_kind: ParentKind,
     parent_id: str,
 ) -> _TopologyDomainFields:
-    manifest = fixture.initial_manifest
     if parent_kind is ParentKind.MOVIE:
-        movie = {movie.id: movie for movie in manifest.movies}[parent_id]
+        movie = lookups.movies[parent_id]
         return {"movie_title": movie.title}
     if parent_kind is ParentKind.EPISODE:
-        episode = {episode.id: episode for episode in manifest.episodes}[parent_id]
-        season = {season.id: season for season in manifest.seasons}[episode.season_id]
-        series = {series.id: series for series in manifest.series}[season.series_id]
+        episode = lookups.episodes[parent_id]
+        season = lookups.seasons[episode.season_id]
+        series = lookups.series[season.series_id]
         return {
             "series_title": series.title,
             "season_number": season.season_number,
             "episode_number": episode.episode_number,
             "episode_title": episode.title,
         }
-    track = {track.id: track for track in manifest.tracks}[parent_id]
-    disc = {disc.id: disc for disc in manifest.discs}[track.disc_id]
-    album = {album.id: album for album in manifest.albums}[disc.album_id]
-    artist = {artist.id: artist for artist in manifest.artists}[album.artist_id]
+    track = lookups.tracks[parent_id]
+    disc = lookups.discs[track.disc_id]
+    album = lookups.albums[disc.album_id]
+    artist = lookups.artists[album.artist_id]
     return {
         "artist_name": artist.name,
         "album_title": album.title,
@@ -438,45 +529,33 @@ def _oracle_domain_fields(
 
 
 def _observed_domain_fields(
-    state: ObservedState,
+    lookups: _ObservedDomainLookups,
     parent_kind: ParentKind | None,
     parent_ref: str | None,
 ) -> _TopologyDomainFields:
     if parent_kind is None or parent_ref is None:
         return {}
     if parent_kind is ParentKind.MOVIE:
-        movie = {movie.observed_ref: movie for movie in state.movies}.get(parent_ref)
+        movie = lookups.movies.get(parent_ref)
         return {"movie_title": movie.title if movie else None}
     if parent_kind is ParentKind.EPISODE:
-        episode = {episode.observed_ref: episode for episode in state.episodes}.get(parent_ref)
+        episode = lookups.episodes.get(parent_ref)
         if episode is None:
             return {}
-        season = {season.observed_ref: season for season in state.seasons}.get(episode.season_ref)
-        series = (
-            {series.observed_ref: series for series in state.series}.get(season.series_ref)
-            if season is not None
-            else None
-        )
+        season = lookups.seasons.get(episode.season_ref)
+        series = lookups.series.get(season.series_ref) if season is not None else None
         return {
             "series_title": series.title if series else None,
             "season_number": season.season_number if season else None,
             "episode_number": episode.episode_number,
             "episode_title": episode.title,
         }
-    track = {track.observed_ref: track for track in state.tracks}.get(parent_ref)
+    track = lookups.tracks.get(parent_ref)
     if track is None:
         return {}
-    disc = {disc.observed_ref: disc for disc in state.discs}.get(track.disc_ref)
-    album = (
-        {album.observed_ref: album for album in state.albums}.get(disc.album_ref)
-        if disc is not None
-        else None
-    )
-    artist = (
-        {artist.observed_ref: artist for artist in state.artists}.get(album.artist_ref)
-        if album is not None
-        else None
-    )
+    disc = lookups.discs.get(track.disc_ref)
+    album = lookups.albums.get(disc.album_ref) if disc is not None else None
+    artist = lookups.artists.get(album.artist_ref) if album is not None else None
     return {
         "artist_name": artist.name if artist else None,
         "album_title": album.title if album else None,
