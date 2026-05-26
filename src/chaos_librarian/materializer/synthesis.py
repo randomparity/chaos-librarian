@@ -90,6 +90,13 @@ class PhaseAResult:
 MaterializeAsset = Callable[..., MaterializeAssetResult]
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedMediaInputs:
+    video_input: FFmpegInput | None
+    audio_inputs: tuple[FFmpegInput, ...]
+    content_sources: tuple[ContentSourceEvidence, ...]
+
+
 def materialize_assets_phase_a(
     *,
     scenario: Scenario,
@@ -186,12 +193,67 @@ def materialize_one_asset(
     library_dir = out_dir / "library"
     output_path = library_dir / rendered_relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    resolved_inputs = _resolve_media_inputs(asset, seed)
+    argv = build_command(
+        video=asset.video,
+        video_input=resolved_inputs.video_input,
+        audios=asset.audio,
+        audio_inputs=resolved_inputs.audio_inputs,
+        output_path=output_path,
+    )
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
+    if invocation.exit_code != 0:
+        raise ToolFailedError(
+            f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
+            asset_id=asset.id,
+            field=None,
+            payload={
+                "stderr_tail": stderr_tail,
+                "exit_code": invocation.exit_code,
+            },
+            invocation=invocation,
+            content_sources=resolved_inputs.content_sources,
+        )
+    sidecar_hashes = write_sidecars(
+        asset,
+        library_dir,
+        seed,
+        rendered_relative_path=rendered_relative_path,
+        skip_languages=skip_languages,
+    )
+    try:
+        probed = probe_file(output_path)
+    except ProbeParseError as exc:
+        exc.content_sources = resolved_inputs.content_sources
+        raise
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes=sidecar_hashes,
+        content_sources=resolved_inputs.content_sources,
+    )
+
+
+def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
+    """Resolve source recipes into FFmpeg inputs and content-source evidence."""
     video_input = None
     content_sources: list[ContentSourceEvidence] = []
-    if asset.video is not None:
-        width, height = RESOLUTION_PIXELS[asset.video.resolution]
+    video = asset.video
+    if video is not None:
+        width, height = RESOLUTION_PIXELS[video.resolution]
         video_resolution = resolve_video_source(
-            source=asset.video.source,
+            source=video.source,
             request=VideoSourceRequest(
                 asset_id=asset.id,
                 seed=seed,
@@ -210,6 +272,7 @@ def materialize_one_asset(
             asset_id=asset.id,
             payload={},
         )
+
     audio_inputs: list[FFmpegInput] = []
     for index, audio in enumerate(asset.audio):
         audio_resolution = resolve_audio_source(
@@ -224,53 +287,10 @@ def materialize_one_asset(
         )
         audio_inputs.append(audio_resolution.ffmpeg_input)
         content_sources.append(audio_resolution.evidence)
-    argv = build_command(
-        video=asset.video,
+
+    return _ResolvedMediaInputs(
         video_input=video_input,
-        audios=asset.audio,
-        audio_inputs=audio_inputs,
-        output_path=output_path,
-    )
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
-    if invocation.exit_code != 0:
-        raise ToolFailedError(
-            f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
-            asset_id=asset.id,
-            field=None,
-            payload={
-                "stderr_tail": stderr_tail,
-                "exit_code": invocation.exit_code,
-            },
-            invocation=invocation,
-            content_sources=tuple(content_sources),
-        )
-    sidecar_hashes = write_sidecars(
-        asset,
-        library_dir,
-        seed,
-        rendered_relative_path=rendered_relative_path,
-        skip_languages=skip_languages,
-    )
-    try:
-        probed = probe_file(output_path)
-    except ProbeParseError as exc:
-        exc.content_sources = tuple(content_sources)
-        raise
-    with output_path.open("rb") as fh:
-        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
-    materialized_asset = MaterializedAsset(
-        asset_id=asset.id,
-        location_path=str(output_path.relative_to(out_dir)),
-        content_hash=content_hash,
-        size_bytes=probed.size_bytes,
-        duration_seconds=probed.duration_seconds,
-        invocation_index=invocation_index,
-    )
-    return MaterializeAssetResult(
-        invocation=invocation,
-        materialized_asset=materialized_asset,
-        probed=probed,
-        sidecar_hashes=sidecar_hashes,
+        audio_inputs=tuple(audio_inputs),
         content_sources=tuple(content_sources),
     )
 

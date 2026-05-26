@@ -1,7 +1,7 @@
 """FFmpeg argv builder and subprocess wrapper.
 
-``build_command`` is pure — given a video track, an audio list, and the
-output path, returns the argv tuple. Unsupported combinations raise
+``build_command`` is pure — given a video-backed or audio-only asset shape
+and the output path, returns the argv tuple. Unsupported combinations raise
 ``UnsupportedMaterializationError`` with the exact scenario field name.
 
 ``run_ffmpeg`` is the subprocess wrapper. Returns the ``ToolInvocation``
@@ -19,6 +19,7 @@ from typing import Final
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
+    AUDIO_CHANNEL_COUNTS_BY_NAME,
     AudioTrack,
     VideoTrack,
 )
@@ -203,6 +204,8 @@ def _build_audio_only_command(
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=0))
     argv.extend(["-c:a", AUDIO_ENCODER_BY_CODEC[audios[0].codec]])
+    channel_count = AUDIO_CHANNEL_COUNTS_BY_NAME[audios[0].channels.value]
+    argv.extend(["-ac", str(channel_count)])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")
     argv.append(str(output_path))

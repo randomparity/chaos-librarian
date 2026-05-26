@@ -205,9 +205,40 @@ def test_audio_only_command_maps_audio_without_video_codec(
     map_values = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-map"]
     assert map_values == ["0:a:0"]
     assert argv[argv.index("-c:a") + 1] == encoder
+    assert argv[argv.index("-ac") + 1] == "2"
     for flag in BITEXACT_FLAGS:
         assert flag in argv
     assert argv[-1] == str(output)
+    input_indexes = [index for index, arg in enumerate(argv) if arg == "-i"]
+    first_map_index = argv.index("-map")
+    audio_codec_index = argv.index("-c:a")
+    channel_count_index = argv.index("-ac")
+    assert max(input_indexes) < first_map_index < audio_codec_index < channel_count_index
+    assert channel_count_index < len(argv) - 1
+
+
+@pytest.mark.parametrize(
+    ("channels", "expected_count"),
+    [
+        (AudioChannelLayout.MONO, "1"),
+        (AudioChannelLayout.STEREO, "2"),
+        (AudioChannelLayout.FIVE_ONE, "6"),
+    ],
+)
+def test_audio_only_command_enforces_declared_channel_count(
+    channels: AudioChannelLayout,
+    expected_count: str,
+    tmp_path: Path,
+) -> None:
+    argv = build_command(
+        video=None,
+        video_input=None,
+        audios=[_audio(channels=channels, codec="flac")],
+        audio_inputs=[recipe_sine(channels=channels, duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.flac",
+    )
+
+    assert argv[argv.index("-ac") + 1] == expected_count
 
 
 def test_audio_only_command_rejects_wrong_codec_for_container(tmp_path: Path) -> None:
@@ -258,6 +289,32 @@ def test_audio_only_command_rejects_audio_count_mismatch(
         )
 
     assert exc.value.field == "audio"
+
+
+def test_audio_only_command_rejects_video_input(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=None,
+            video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+            audios=[_audio(codec="flac")],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.flac",
+        )
+
+    assert exc.value.field == "video_input"
+
+
+def test_video_command_rejects_missing_video_input(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=_video(),
+            video_input=None,
+            audios=[_audio()],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.mkv",
+        )
+
+    assert exc.value.field == "video_input"
 
 
 def test_build_command_does_not_own_source_support_after_resolution(tmp_path: Path) -> None:
