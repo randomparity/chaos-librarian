@@ -90,14 +90,32 @@ uv run chaos-librarian generate \
   --out fuzz-smoke.yaml \
   --json
 
+uv run chaos-librarian generate \
+  --profile fuzz-regression \
+  --lane media-rewrite \
+  --seed 457 \
+  --out fuzz-regression-media-rewrite.yaml \
+  --json
+
 uv run chaos-librarian plan fuzz-smoke.yaml --out run-fuzz-smoke --json
 ```
 
 The generated YAML carries `profiles: ["fuzz-smoke"]` and a `generation` block
-with the profile, profile version, seed, and static budget ceilings. Timeline
-events are explicit after generation, so downstream commands do not use hidden
-randomness. Replay never calls the generator; it reads the scenario source stored
-in `replay.json`.
+with the profile, lane, profile version, seed, and static budget ceilings.
+Timeline events are explicit after generation, so downstream commands do not use
+hidden randomness. Replay never calls the generator; it reads the scenario source
+stored in `replay.json`.
+
+| Lane | Purpose |
+| --- | --- |
+| `smoke` | Small materialize-safe local scenario. |
+| `core-fs` | Moves, renames, delete/add, archive, roots, and slow copy. |
+| `media-rewrite` | Video, audio, container, and metadata rewrites. |
+| `sidecar-subtitle` | Sidecar create/update/remove plus subtitle extract/embed. |
+| `malformed` | Corrupt and malformed media events behind `malformed-media`. |
+| `negative-oracle` | Intentional oracle mismatch events. |
+| `filesystem-artifact` | Filesystem artifact events such as mtime touches. |
+| `network-lag` | Run-mode lag windows for delayed visibility and rename behavior. |
 
 `fuzz-smoke` is suitable for local and optional fast checks. `fuzz-regression`
 is reserved for scheduled or maintainer-dispatched jobs.

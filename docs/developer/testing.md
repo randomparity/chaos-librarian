@@ -67,3 +67,7 @@ Generator tests must prove byte-identical output for the same profile and seed,
 different YAML for different seeds, and schema-valid generated scenarios. Replay
 tests should assert that replay uses the serialized scenario from `replay.json`;
 it must not call the generator.
+
+Property-based fuzz generation tests use bounded deterministic Hypothesis
+settings and must not depend on wall-clock time or installed media tools unless
+marked as integration tests.

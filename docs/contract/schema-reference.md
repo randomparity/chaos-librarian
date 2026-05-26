@@ -39,7 +39,7 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 |----------|----------------|
-| scenario | 10 |
+| scenario | 11 |
 | manifest | 6 |
 | journal | 1 |
 | replay bundle | 6 |
@@ -53,6 +53,9 @@ Current checked-in contract versions:
 | capabilities | 3 |
 | observed state | 1 |
 | divergence | 1 |
+
+Scenario v11 adds public fuzz lane metadata on `generation.lane` and freezes the
+fuzz generation profile version at `2`.
 
 Scenario v10 adds deterministic fuzz profile generation metadata plus the
 `fuzz-smoke` and `fuzz-regression` profile labels. Generated scenarios still

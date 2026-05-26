@@ -723,11 +723,18 @@ Implemented labels:
 - `fuzz-regression`
 
 Generated scenarios carry a top-level `generation` block with the generator
-name, fuzz profile, profile version, concrete seed, and selected budget ceilings.
-The scenario `seed` must be a concrete integer and must match `generation.seed`.
-`generation.profile` must also appear in top-level `profiles`.
+name, fuzz profile, lane, profile version, concrete seed, and selected budget
+ceilings. Scenario v11 metadata includes `generation.lane`; the scenario `seed`
+must be a concrete integer and must match `generation.seed`. `generation.profile`
+must also appear in top-level `profiles`.
 
-Fuzz budgets are hard static ceilings:
+`fuzz-smoke` uses the `smoke` lane. `fuzz-regression` is a deterministic lane
+suite with `core-fs`, `media-rewrite`, `sidecar-subtitle`, `malformed`,
+`negative-oracle`, `filesystem-artifact`, and `network-lag`. CI should shard
+these lanes or explicitly select lanes instead of treating `fuzz-regression` as
+one monolithic job.
+
+Fuzz budgets are hard static ceilings per generated scenario:
 
 | Budget | `fuzz-smoke` | `fuzz-regression` |
 | --- | ---: | ---: |
