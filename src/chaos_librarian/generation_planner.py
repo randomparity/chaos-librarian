@@ -20,6 +20,12 @@ class PlannedAsset:
     has_declared_subtitle: bool = False
 
 
+@dataclass(frozen=True, slots=True)
+class EventReference:
+    event_id: str
+    at: str
+
+
 @dataclass(slots=True)
 class TimelinePlanner:
     root_id: str
@@ -27,13 +33,8 @@ class TimelinePlanner:
     secondary_root_id: str
     assets: list[PlannedAsset]
     events: list[dict[str, object]] = field(default_factory=list)
-    placed_assets: set[str] = field(default_factory=set)
     sidecars_by_asset: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
-    deleted_assets: set[str] = field(default_factory=set)
     media_unstable_assets: set[str] = field(default_factory=set)
-
-    def __post_init__(self) -> None:
-        self.placed_assets = {asset.asset_id for asset in self.assets}
 
     def next_index(self) -> int:
         return len(self.events) + 1
@@ -47,25 +48,29 @@ class TimelinePlanner:
 
 def plan_payload_parts(
     *,
-    profile: FuzzProfileName,
-    lane: FuzzLaneName,
     seed: int,
     config: LaneConfig,
     rng: Any,
 ) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
     assets = _planned_assets(config=config)
-    library = _library_for_lane(lane)
+    library = _library_for_lane(config.lane)
     planner = TimelinePlanner(
         root_id="movies-hd",
         root_path="movies-hd",
         secondary_root_id="cold-storage",
         assets=assets,
     )
-    _emit_lane_required_events(planner=planner, lane=lane, rng=rng)
+    _emit_lane_required_events(planner=planner, lane=config.lane)
     _fill_remaining_events(planner=planner, config=config, rng=rng)
     return (
         library,
-        _works_payload(profile=profile, lane=lane, seed=seed, assets=assets, rng=rng),
+        _works_payload(
+            profile=config.profile,
+            lane=config.lane,
+            seed=seed,
+            assets=assets,
+            rng=rng,
+        ),
         planner.events,
     )
 
@@ -165,9 +170,7 @@ def _emit_lane_required_events(
     *,
     planner: TimelinePlanner,
     lane: FuzzLaneName,
-    rng: Any,
 ) -> None:
-    del rng
     assets = planner.assets
     if lane is FuzzLaneName.SMOKE:
         _move_asset(planner, assets[0])
@@ -209,6 +212,8 @@ def _emit_lane_required_events(
         _network_lag_pair(planner, assets[0], NetworkLagEffect.DELAYED_VISIBILITY)
         _network_lag_pair(planner, assets[1], NetworkLagEffect.DELAYED_RENAME)
         _network_lag_pair(planner, assets[2], NetworkLagEffect.HELD_HANDLE)
+    else:
+        raise ValueError(f"unsupported fuzz lane {lane.value}")
 
 
 def _fill_remaining_events(
@@ -225,7 +230,7 @@ def _fill_remaining_events(
     else:
         filler_actions = (_move_asset, _rename_file, _create_nfo_sidecar)
     while len(planner.events) < config.timeline_events:
-        if planner.sidecars_by_asset and rng.randint(0, 3) == 0:
+        if _has_live_sidecars(planner) and rng.randint(0, 3) == 0:
             _update_first_sidecar(planner)
             continue
         action = rng.choice(filler_actions)
@@ -248,19 +253,21 @@ def _move_asset(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     )
 
 
-def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
-        {
-            "id": planner.event_id("rename"),
-            "at": planner.at(),
-            "action": "rename_file",
-            "target": asset.asset_id,
-            "to": (
-                f"{planner.root_path}/renamed/"
-                f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
-            ),
-        }
-    )
+def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> EventReference:
+    event_id = planner.event_id("rename")
+    at = planner.at()
+    event: dict[str, object] = {
+        "id": event_id,
+        "at": at,
+        "action": "rename_file",
+        "target": asset.asset_id,
+        "to": (
+            f"{planner.root_path}/renamed/"
+            f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
+        ),
+    }
+    planner.events.append(event)
+    return EventReference(event_id=event_id, at=at)
 
 
 def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -272,8 +279,6 @@ def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             "target": asset.asset_id,
         }
     )
-    planner.deleted_assets.add(asset.asset_id)
-    planner.placed_assets.discard(asset.asset_id)
 
 
 def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -289,8 +294,6 @@ def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             ),
         }
     )
-    planner.deleted_assets.discard(asset.asset_id)
-    planner.placed_assets.add(asset.asset_id)
 
 
 def _archive_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -465,32 +468,26 @@ def _network_lag_pair(
     effect: NetworkLagEffect,
 ) -> None:
     if effect is NetworkLagEffect.DELAYED_RENAME:
-        _rename_file(planner, asset)
+        trigger = _rename_file(planner, asset)
     else:
-        _edit_metadata(planner, asset)
-
-    trigger = planner.events[-1]
-    trigger_id = trigger["id"]
-    trigger_at = trigger["at"]
-    if not isinstance(trigger_id, str) or not isinstance(trigger_at, str):
-        raise TypeError("network lag trigger event must have string id and at")
+        trigger = _edit_metadata(planner, asset)
 
     start_id = planner.event_id("network_lag_start")
     planner.events.append(
         {
             "id": start_id,
-            "at": trigger_at,
+            "at": trigger.at,
             "action": "network_lag_start",
             "effect": effect.value,
             "target": asset.asset_id,
-            "after": trigger_id,
+            "after": trigger.event_id,
             "duration": "1ns",
         }
     )
     planner.events.append(
         {
             "id": planner.event_id("network_lag_commit"),
-            "at": _one_ns_after(trigger_at),
+            "at": _one_ns_after(trigger.at),
             "action": "network_lag_commit",
             "for": start_id,
         }
@@ -503,16 +500,18 @@ def _one_ns_after(at: str) -> str:
     return f"{int(at.removesuffix('ns')) + 1}ns"
 
 
-def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
-        {
-            "id": planner.event_id("metadata"),
-            "at": planner.at(),
-            "action": "edit_metadata",
-            "target": asset.asset_id,
-            "fields": {"title": f"Generated Title {planner.next_index():04d}"},
-        }
-    )
+def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> EventReference:
+    event_id = planner.event_id("metadata")
+    at = planner.at()
+    event: dict[str, object] = {
+        "id": event_id,
+        "at": at,
+        "action": "edit_metadata",
+        "target": asset.asset_id,
+        "fields": {"title": f"Generated Title {planner.next_index():04d}"},
+    }
+    planner.events.append(event)
+    return EventReference(event_id=event_id, at=at)
 
 
 def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
@@ -587,13 +586,16 @@ def _update_first_sidecar(planner: TimelinePlanner) -> None:
             }
         )
         return
+    raise ValueError("update_sidecar requires a live sidecar")
 
 
 def _remove_first_sidecar(planner: TimelinePlanner) -> None:
-    for asset_id, sidecars in planner.sidecars_by_asset.items():
+    for asset_id, sidecars in tuple(planner.sidecars_by_asset.items()):
         if not sidecars:
             continue
         _, path = sidecars.pop(0)
+        if not sidecars:
+            del planner.sidecars_by_asset[asset_id]
         planner.events.append(
             {
                 "id": planner.event_id("remove_sidecar"),
@@ -604,15 +606,18 @@ def _remove_first_sidecar(planner: TimelinePlanner) -> None:
             }
         )
         return
+    raise ValueError("remove_sidecar requires a live sidecar")
 
 
 def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
-    for asset_id, sidecars in reversed(planner.sidecars_by_asset.items()):
+    for asset_id, sidecars in reversed(tuple(planner.sidecars_by_asset.items())):
         for index in range(len(sidecars) - 1, -1, -1):
             kind, path = sidecars[index]
             if kind != SidecarKind.SUBTITLE.value:
                 continue
             sidecars.pop(index)
+            if not sidecars:
+                del planner.sidecars_by_asset[asset_id]
             planner.events.append(
                 {
                     "id": planner.event_id("embed_subtitle"),
@@ -624,3 +629,7 @@ def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
             )
             return
     raise ValueError("lane requires a live subtitle sidecar")
+
+
+def _has_live_sidecars(planner: TimelinePlanner) -> bool:
+    return any(planner.sidecars_by_asset.values())

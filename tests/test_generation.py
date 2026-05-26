@@ -10,7 +10,12 @@ import pytest
 from ruamel.yaml import YAML
 
 from chaos_librarian import generation_lanes
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
+from chaos_librarian.contract.profiles import (
+    FUZZ_LANES_BY_PROFILE,
+    FuzzLaneName,
+    FuzzProfileName,
+    ProfileName,
+)
 from chaos_librarian.contract.scenario import EmbedSubtitleEvent, ExtractSubtitleEvent, Scenario
 from chaos_librarian.engine import run_plan
 from chaos_librarian.generation import (
@@ -22,7 +27,6 @@ from chaos_librarian.generation import (
 from chaos_librarian.generation_lanes import (
     coverage_for_payload,
     lane_config_for,
-    profiles_for_lane,
 )
 from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
 from chaos_librarian.scenario_io import parse_scenario_bytes
@@ -75,16 +79,26 @@ def test_generated_yaml_validates_as_scenario() -> None:
     assert scenario.generation.seed == 123
 
 
-def test_profiles_for_lane_orders_fuzz_profile_first() -> None:
-    profiles = profiles_for_lane(
+def test_lane_config_orders_fuzz_profile_first() -> None:
+    config = lane_config_for(
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.MALFORMED,
     )
 
-    assert profiles == (
+    assert config.profiles == (
         ProfileName.FUZZ_REGRESSION,
         ProfileName.MALFORMED_MEDIA,
     )
+
+
+def test_lane_configs_cover_allowed_lane_contract() -> None:
+    configured_by_profile: dict[FuzzProfileName, set[FuzzLaneName]] = {}
+    for profile, lane in generation_lanes.LANE_CONFIGS:
+        configured_by_profile.setdefault(profile, set()).add(lane)
+
+    assert {
+        profile: frozenset(lanes) for profile, lanes in configured_by_profile.items()
+    } == FUZZ_LANES_BY_PROFILE
 
 
 def test_lane_config_rejects_profile_mismatch() -> None:

@@ -7,21 +7,18 @@ from pathlib import Path
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from chaos_librarian import generation_lanes
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import generate_scenario_yaml
 from chaos_librarian.generation_lanes import coverage_for_payload, lane_config_for
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
-LANE_CASES = (
-    (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MEDIA_REWRITE),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.SIDECAR_SUBTITLE),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG),
+LANE_CASES: tuple[tuple[FuzzProfileName, FuzzLaneName], ...] = tuple(
+    sorted(
+        generation_lanes.LANE_CONFIGS,
+        key=lambda item: (item[0].value, item[1].value),
+    )
 )
 
 

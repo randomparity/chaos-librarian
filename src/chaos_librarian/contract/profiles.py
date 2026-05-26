@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import enum
+from typing import Final
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,22 @@ class FuzzLaneName(enum.StrEnum):
     NEGATIVE_ORACLE = "negative-oracle"
     FILESYSTEM_ARTIFACT = "filesystem-artifact"
     NETWORK_LAG = "network-lag"
+
+
+FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
+    FuzzProfileName.FUZZ_SMOKE: frozenset({FuzzLaneName.SMOKE}),
+    FuzzProfileName.FUZZ_REGRESSION: frozenset(
+        {
+            FuzzLaneName.CORE_FS,
+            FuzzLaneName.MEDIA_REWRITE,
+            FuzzLaneName.SIDECAR_SUBTITLE,
+            FuzzLaneName.MALFORMED,
+            FuzzLaneName.NEGATIVE_ORACLE,
+            FuzzLaneName.FILESYSTEM_ARTIFACT,
+            FuzzLaneName.NETWORK_LAG,
+        }
+    ),
+}
 
 
 class CorruptionProbeOutcome(enum.StrEnum):

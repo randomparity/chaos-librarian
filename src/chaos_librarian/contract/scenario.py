@@ -11,7 +11,12 @@ from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, model_validator
 
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
+from chaos_librarian.contract.profiles import (
+    FUZZ_LANES_BY_PROFILE,
+    FuzzLaneName,
+    FuzzProfileName,
+    ProfileName,
+)
 
 
 class TimelineActionName(enum.StrEnum):
@@ -471,22 +476,6 @@ FUZZ_GENERATION_BUDGETS: Final[dict[FuzzProfileName, GenerationBudget]] = {
         assets=18,
         sidecars=54,
         timeline_events=80,
-    ),
-}
-
-
-FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
-    FuzzProfileName.FUZZ_SMOKE: frozenset({FuzzLaneName.SMOKE}),
-    FuzzProfileName.FUZZ_REGRESSION: frozenset(
-        {
-            FuzzLaneName.CORE_FS,
-            FuzzLaneName.MEDIA_REWRITE,
-            FuzzLaneName.SIDECAR_SUBTITLE,
-            FuzzLaneName.MALFORMED,
-            FuzzLaneName.NEGATIVE_ORACLE,
-            FuzzLaneName.FILESYSTEM_ARTIFACT,
-            FuzzLaneName.NETWORK_LAG,
-        }
     ),
 }
 

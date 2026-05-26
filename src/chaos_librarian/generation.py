@@ -8,6 +8,7 @@ import json
 import os
 import tempfile
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 from ruamel.yaml import YAML
@@ -24,10 +25,17 @@ from chaos_librarian.determinism.trace import TraceRecorder
 from chaos_librarian.generation_lanes import (
     coverage_for_payload,
     lane_config_for,
-    profiles_for_lane,
 )
 from chaos_librarian.generation_planner import plan_payload_parts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
+
+
+@dataclass(frozen=True, slots=True)
+class GeneratedScenario:
+    """Generated scenario bytes paired with the validated scenario model."""
+
+    data: bytes
+    scenario: Scenario
 
 
 class GeneratedScenarioCoverageError(ValueError):
@@ -44,16 +52,32 @@ def generate_scenario_yaml(
     lane: FuzzLaneName | None = None,
 ) -> bytes:
     """Return deterministic scenario YAML bytes for one fuzz profile, lane, and seed."""
+    return generate_scenario(profile=profile, seed=seed, lane=lane).data
+
+
+def generate_scenario(
+    profile: FuzzProfileName,
+    seed: int,
+    lane: FuzzLaneName | None = None,
+) -> GeneratedScenario:
+    """Return deterministic scenario YAML and its validated model."""
     if seed < 0:
         raise ValueError("seed must be non-negative")
 
+    data = _generate_scenario_yaml_unvalidated(profile=profile, seed=seed, lane=lane)
+    scenario = _validate_generated_yaml(data)
+    return GeneratedScenario(data=data, scenario=scenario)
+
+
+def _generate_scenario_yaml_unvalidated(
+    profile: FuzzProfileName,
+    seed: int,
+    lane: FuzzLaneName | None,
+) -> bytes:
     resolved_lane = lane or FuzzLaneName.SMOKE
     config = lane_config_for(profile=profile, lane=resolved_lane)
-    profile_labels = profiles_for_lane(profile=profile, lane=resolved_lane)
     rng = RngStreams(resolved_seed=seed, recorder=TraceRecorder()).stream("fuzz-generation")
     library, works, timeline = plan_payload_parts(
-        profile=profile,
-        lane=resolved_lane,
         seed=seed,
         config=config,
         rng=rng,
@@ -63,7 +87,7 @@ def generate_scenario_yaml(
         "scenario_id": f"{profile.value}-{resolved_lane.value}-seed-{seed}",
         "seed": seed,
         "duration_scale": "short",
-        "profiles": [label.value for label in profile_labels],
+        "profiles": [label.value for label in config.profiles],
         "generation": {
             "generator": "chaos-librarian",
             "profile": profile.value,
@@ -85,7 +109,6 @@ def generate_scenario_yaml(
             f"seed {seed}: {missing_sorted}"
         )
     data = _dump_yaml(payload)
-    _validate_generated_yaml(data)
     return data
 
 
@@ -113,9 +136,12 @@ def write_generated_scenario(out: Path, data: bytes) -> None:
 def generated_scenario_summary(
     out: Path,
     data: bytes,
+    *,
+    scenario: Scenario | None = None,
 ) -> str:
     """Return sorted JSON for the successful generate command."""
-    scenario = _validate_generated_yaml(data)
+    if scenario is None:
+        scenario = _validate_generated_yaml(data)
     if scenario.generation is None:
         raise ValueError("generated scenario is missing generation metadata")
     summary = {

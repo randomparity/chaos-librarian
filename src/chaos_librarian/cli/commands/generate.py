@@ -9,10 +9,9 @@ import typer
 
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
-from chaos_librarian.contract.scenario import FUZZ_LANES_BY_PROFILE
+from chaos_librarian.contract.profiles import FUZZ_LANES_BY_PROFILE, FuzzLaneName, FuzzProfileName
 from chaos_librarian.generation import (
-    generate_scenario_yaml,
+    generate_scenario,
     generated_scenario_summary,
     write_generated_scenario,
 )
@@ -28,10 +27,10 @@ def generate(
 ) -> None:
     """Generate a deterministic fuzz scenario YAML file."""
     resolved_lane = _resolve_lane(profile=profile, lane=lane)
-    data = generate_scenario_yaml(profile=profile, lane=resolved_lane, seed=seed)
-    write_generated_scenario(out, data)
+    generated = generate_scenario(profile=profile, lane=resolved_lane, seed=seed)
+    write_generated_scenario(out, generated.data)
     if json_output:
-        typer.echo(generated_scenario_summary(out, data))
+        typer.echo(generated_scenario_summary(out, generated.data, scenario=generated.scenario))
     else:
         typer.echo(f"generate: wrote {out}")
 
