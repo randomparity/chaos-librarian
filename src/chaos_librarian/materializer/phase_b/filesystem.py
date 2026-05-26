@@ -25,7 +25,7 @@ import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final
+from typing import Final, cast
 
 from chaos_librarian.clock import parse_duration
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
@@ -59,6 +59,13 @@ class FilesystemPhaseBContext:
     pending_slow_copy: dict[str, _PendingSlowCopy] = field(default_factory=dict)
     phase_b_sidecar_hashes: dict[str, str] = field(default_factory=dict)
     restoration_cache: dict[str, bytes] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class _HierarchyMove:
+    asset_id: str
+    from_path: str
+    to_path: str
 
 
 def make_filesystem_phase_b_context(
@@ -105,6 +112,8 @@ def apply_filesystem_action(
             action=action,
             asset_id=target_asset,
         ) from exc
+    if result is None:
+        return None
     return result.model_copy(update={"duration_ns": time.monotonic_ns() - started})
 
 
@@ -219,6 +228,95 @@ def _touch_mtime(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> Filesyste
     )
 
 
+def _hierarchy_moves(
+    ctx: FilesystemPhaseBContext,
+    entry: JournalEntry,
+) -> FilesystemAction | None:
+    """Apply engine-rendered hierarchy path and sidecar moves."""
+    moves = _normalize_hierarchy_moves(entry)
+    if not moves:
+        return None
+    _validate_hierarchy_moves(ctx, moves)
+    staged = _stage_hierarchy_moves(ctx, entry, moves)
+    for move, temp in staged:
+        dst = resolve_under_library(Path(move.to_path), ctx.library_root)
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        temp.replace(dst)
+    first = moves[0]
+    return FilesystemAction(
+        event_id=entry.event_id,
+        action=TimelineActionName(entry.action),
+        target_asset_id=first.asset_id,
+        from_path=first.from_path,
+        to_path=first.to_path,
+        temp_path=None,
+        duration_ns=0,
+    )
+
+
+def _normalize_hierarchy_moves(entry: JournalEntry) -> list[_HierarchyMove]:
+    moves = _normalize_hierarchy_move_list(entry.state_delta["path_moves"])
+    moves.extend(_normalize_hierarchy_move_list(entry.state_delta["sidecar_moves"]))
+    return moves
+
+
+def _normalize_hierarchy_move_list(raw_moves: object) -> list[_HierarchyMove]:
+    if not isinstance(raw_moves, list):
+        raise TypeError("hierarchy move list must be a list")
+    moves: list[_HierarchyMove] = []
+    for raw_move in raw_moves:
+        if not isinstance(raw_move, Mapping):
+            raise TypeError("hierarchy move must be a mapping")
+        move = cast("Mapping[str, object]", raw_move)
+        moves.append(
+            _HierarchyMove(
+                asset_id=str(move["asset_id"]),
+                from_path=str(move["from_path"]),
+                to_path=str(move["to_path"]),
+            )
+        )
+    return moves
+
+
+def _validate_hierarchy_moves(
+    ctx: FilesystemPhaseBContext,
+    moves: list[_HierarchyMove],
+) -> None:
+    source_paths: set[Path] = set()
+    destination_paths: set[Path] = set()
+    for move in moves:
+        source = resolve_under_library(Path(move.from_path), ctx.library_root)
+        destination = resolve_under_library(Path(move.to_path), ctx.library_root)
+        if source in source_paths:
+            raise ValueError(f"duplicate hierarchy source path: {move.from_path}")
+        if destination in destination_paths:
+            raise ValueError(f"duplicate hierarchy destination path: {move.to_path}")
+        source_paths.add(source)
+        destination_paths.add(destination)
+    for source in source_paths:
+        if not source.exists():
+            raise FileNotFoundError(source)
+    for destination in destination_paths:
+        if destination.exists() and destination not in source_paths:
+            raise FileExistsError(destination)
+
+
+def _stage_hierarchy_moves(
+    ctx: FilesystemPhaseBContext,
+    entry: JournalEntry,
+    moves: list[_HierarchyMove],
+) -> list[tuple[_HierarchyMove, Path]]:
+    staged: list[tuple[_HierarchyMove, Path]] = []
+    for index, move in enumerate(moves):
+        src = resolve_under_library(Path(move.from_path), ctx.library_root)
+        tmp = src.with_name(f".{src.name}.chaos-{entry.event_id}-{index}.tmp")
+        if tmp.exists():
+            raise FileExistsError(tmp)
+        src.replace(tmp)
+        staged.append((move, tmp))
+    return staged
+
+
 def _slow_copy_start(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> FilesystemAction:
     """Stage a slow-copy at ``temp_path``; defer rename until commit."""
     asset_id = entry.target_ids[0]
@@ -288,7 +386,10 @@ def promote_slow_copy(
 
 
 _DISPATCH: Final[
-    dict[TimelineActionName, Callable[[FilesystemPhaseBContext, JournalEntry], FilesystemAction]]
+    dict[
+        TimelineActionName,
+        Callable[[FilesystemPhaseBContext, JournalEntry], FilesystemAction | None],
+    ]
 ] = {
     TimelineActionName.MOVE_ASSET: _move_asset,
     TimelineActionName.RENAME_FILE: _move_asset,
@@ -300,4 +401,9 @@ _DISPATCH: Final[
     TimelineActionName.SLOW_COPY_COMMIT: _slow_copy_commit,
     TimelineActionName.ARCHIVE_FILE: _move_asset,
     TimelineActionName.MOVE_BETWEEN_ROOTS: _move_asset,
+    TimelineActionName.RENUMBER_EPISODE: _hierarchy_moves,
+    TimelineActionName.MOVE_EPISODE_TO_SEASON: _hierarchy_moves,
+    TimelineActionName.RENAME_SEASON: _hierarchy_moves,
+    TimelineActionName.RENUMBER_DISC: _hierarchy_moves,
+    TimelineActionName.MOVE_TRACK_TO_DISC: _hierarchy_moves,
 }

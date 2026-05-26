@@ -6,6 +6,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.actions import (
     _CORRUPTION_ACTIONS,
     _FILESYSTEM_ARTIFACT_ACTIONS,
+    _HIERARCHY_ACTIONS,
     _MEDIA_ACTIONS,
     _ORACLE_HASH_ACTIONS,
     _STDLIB_ACTIONS,
@@ -76,4 +77,19 @@ def test_supported_s10_actions_includes_corruption_actions() -> None:
         | _CORRUPTION_ACTIONS
         | _ORACLE_HASH_ACTIONS
         | _FILESYSTEM_ARTIFACT_ACTIONS
+        | _HIERARCHY_ACTIONS
     )
+
+
+def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
+    expected = frozenset(
+        {
+            TimelineActionName.RENUMBER_EPISODE,
+            TimelineActionName.MOVE_EPISODE_TO_SEASON,
+            TimelineActionName.RENAME_SEASON,
+            TimelineActionName.RENUMBER_DISC,
+            TimelineActionName.MOVE_TRACK_TO_DISC,
+        }
+    )
+    assert expected == _HIERARCHY_ACTIONS
+    assert expected <= SUPPORTED_S10_ACTIONS

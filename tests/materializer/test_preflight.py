@@ -188,6 +188,23 @@ def test_preflight_accepts_wrong_oracle_hash() -> None:
     preflight_timeline(scenario)
 
 
+@pytest.mark.parametrize(
+    ("action_name", "extra_fields"),
+    [
+        ("renumber_episode", {"episode_number": 2}),
+        ("move_episode_to_season", {"to_season": "season_2", "episode_number": 1}),
+        ("rename_season", {"title": "Renamed"}),
+        ("renumber_disc", {"disc_number": 2}),
+        ("move_track_to_disc", {"to_disc": "disc_2", "track_number": 3}),
+    ],
+)
+def test_preflight_timeline_accepts_hierarchy_actions(
+    action_name: str, extra_fields: dict[str, object]
+) -> None:
+    scenario = _scenario_with_timeline([(action_name, "hierarchy_target", extra_fields)])
+    preflight_timeline(scenario)
+
+
 def test_supported_s10_actions_exported_from_preflight() -> None:
     assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
     assert "wrong_oracle_hash" in {action.value for action in SUPPORTED_S10_ACTIONS}

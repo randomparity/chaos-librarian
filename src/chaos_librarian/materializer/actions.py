@@ -63,6 +63,16 @@ _FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
+_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }
+)
+
 NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.NETWORK_LAG_START,
@@ -76,4 +86,5 @@ SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
     | _CORRUPTION_ACTIONS
     | _ORACLE_HASH_ACTIONS
     | _FILESYSTEM_ARTIFACT_ACTIONS
+    | _HIERARCHY_ACTIONS
 )
