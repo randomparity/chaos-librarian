@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
-from chaos_librarian.contract.scenario import AUDIO_CHANNEL_COUNTS_BY_NAME
+from chaos_librarian.contract.scenario import AUDIO_CHANNEL_COUNTS_BY_NAME, VideoVfrCadence
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,6 +79,42 @@ def recipe_solid_color(
         lavfi=f"color=c=#{hex_color}:s={width}x{height}:r={fps}",
         extra_flags=("-t", str(duration_s)),
     )
+
+
+VFR_BASE_FPS: Final = 120
+_CADENCE_SELECT_MODS: Final[dict[VideoVfrCadence, tuple[int, ...]]] = {
+    VideoVfrCadence.TWENTY_FOUR_TO_THIRTY: (5, 4),
+    VideoVfrCadence.THIRTY_TO_SIXTY: (4, 2),
+    VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY: (5, 4, 2),
+}
+
+
+def apply_vfr_cadence(
+    ffmpeg_input: FFmpegInput, *, cadence: VideoVfrCadence, duration_s: float
+) -> FFmpegInput:
+    """Wrap a lavfi video input with a deterministic VFR frame-selection filter."""
+    if ffmpeg_input.lavfi is None:
+        raise ValueError("VFR cadence requires a lavfi video input")
+    filters = _vfr_select_filter(cadence=cadence, duration_s=duration_s)
+    return FFmpegInput(
+        lavfi=f"{ffmpeg_input.lavfi},{filters}",
+        extra_flags=ffmpeg_input.extra_flags,
+    )
+
+
+def _vfr_select_filter(*, cadence: VideoVfrCadence, duration_s: float) -> str:
+    mods = _CADENCE_SELECT_MODS[cadence]
+    segment_s = duration_s / len(mods)
+    expression = _select_expression(mods=mods, segment_s=segment_s)
+    return f"select='{expression}'"
+
+
+def _select_expression(*, mods: tuple[int, ...], segment_s: float) -> str:
+    expression = f"not(mod(n,{mods[-1]}))"
+    for index in range(len(mods) - 2, -1, -1):
+        boundary = round(segment_s * (index + 1), 6)
+        expression = f"if(lt(t,{boundary}),not(mod(n,{mods[index]})),{expression})"
+    return expression
 
 
 _CHANNEL_COUNTS = AUDIO_CHANNEL_COUNTS_BY_NAME

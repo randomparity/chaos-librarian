@@ -287,9 +287,10 @@ def iter_global_namespaces(
 ) -> Iterator[tuple[str, str, _Loc]]:
     """Yield ``(namespace, id_value, loc)`` for every hierarchy and tail id.
 
-    Walks Scenario v12 movie, series, and artist hierarchy tails in declaration
-    order and skips malformed sub-trees whose shape Pydantic would have rejected.
-    Root and timeline ids are intentionally handled by ``id_duplicate.py``.
+    Walks the current Scenario movie, series, and artist hierarchy tails in
+    declaration order and skips malformed sub-trees whose shape Pydantic would
+    have rejected. Root and timeline ids are intentionally handled by
+    ``id_duplicate.py``.
     """
     yield from iter_entity_ids(raw)
 
@@ -311,7 +312,7 @@ def iter_assets_with_loc(
 ) -> Iterator[tuple[_RawMapping, _Loc]]:
     """Yield ``(asset_mapping, loc)`` for every well-shaped asset.
 
-    Reuses ``iter_asset_contexts`` so rules inspect a single Scenario v12
+    Reuses ``iter_asset_contexts`` so rules inspect a single Scenario
     hierarchy walk.
     """
     for context in iter_asset_contexts(raw):

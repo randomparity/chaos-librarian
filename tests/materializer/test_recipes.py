@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from chaos_librarian.contract.scenario import AudioChannelLayout
+from chaos_librarian.contract.scenario import AudioChannelLayout, VideoVfrCadence
 from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
+    apply_vfr_cadence,
     recipe_channel_tones,
     recipe_color_bars,
     recipe_mandelbrot,
@@ -70,6 +71,31 @@ def test_every_video_recipe_carries_duration_flag(seed: int) -> None:
         recipe_solid_color(**kwargs),
     ):
         assert "-t" in fi.extra_flags
+
+
+@pytest.mark.parametrize(
+    ("cadence", "expected_mods"),
+    [
+        (VideoVfrCadence.TWENTY_FOUR_TO_THIRTY, ("mod(n,5)", "mod(n,4)")),
+        (VideoVfrCadence.THIRTY_TO_SIXTY, ("mod(n,4)", "mod(n,2)")),
+        (
+            VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY,
+            ("mod(n,5)", "mod(n,4)", "mod(n,2)"),
+        ),
+    ],
+)
+def test_apply_vfr_cadence_wraps_lavfi_select_filter(
+    cadence: VideoVfrCadence, expected_mods: tuple[str, ...]
+) -> None:
+    base = recipe_color_bars(width=640, height=480, fps=120, duration_s=3.0, seed=1)
+
+    wrapped = apply_vfr_cadence(base, cadence=cadence, duration_s=3.0)
+
+    assert wrapped.lavfi is not None
+    assert wrapped.lavfi.startswith("smptebars=size=640x480:rate=120,select=")
+    for expected in expected_mods:
+        assert expected in wrapped.lavfi
+    assert wrapped.extra_flags == base.extra_flags
 
 
 def test_sine_frequency_derives_from_seed():

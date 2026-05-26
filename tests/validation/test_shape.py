@@ -52,7 +52,7 @@ class TestShapePassUnknownField:
 
     def test_unknown_top_level_field(self) -> None:
         raw = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -77,7 +77,7 @@ class TestShapePassLiteralValue:
 
     def test_wrong_duration_scale(self) -> None:
         raw = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "extremely_long",  # not in Literal
@@ -102,7 +102,7 @@ class TestShapePassDiscriminatorTag:
 
     def test_unknown_action(self) -> None:
         raw = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -129,7 +129,7 @@ class TestShapePassJSONPathStripping:
 
     def test_for_alias_under_slow_copy_commit(self) -> None:
         raw = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -183,7 +183,7 @@ class TestShapePassTupleType:
         bad_value: object,
     ) -> None:
         raw: dict[str, Any] = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -213,7 +213,7 @@ class TestShapePassNoErrorsForValidScenario:
 
     def test_valid_scenario_produces_no_issues(self) -> None:
         raw = {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",

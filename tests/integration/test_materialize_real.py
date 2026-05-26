@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import subprocess
+from itertools import pairwise
 from pathlib import Path
 
 import pytest
@@ -153,6 +154,36 @@ def test_materialize_hevc_mkv_when_libx265_available(tmp_path: Path) -> None:
     assert [stream.codec for stream in video_streams] == ["hevc"]
 
 
+@pytest.mark.parametrize(
+    ("cadence", "expected_intervals"),
+    [
+        ("24_to_30", ({41, 42}, {33, 34})),
+        ("30_to_60", ({33, 34}, {16, 17})),
+        ("24_30_60", ({41, 42}, {33, 34}, {16, 17})),
+    ],
+)
+def test_materialize_vfr_video_has_variable_packet_intervals(
+    cadence: str, expected_intervals: tuple[set[int], ...], tmp_path: Path
+) -> None:
+    """WHY: #129 needs packet cadence to differ from plain CFR, not only a
+    schema knob. ffprobe packet PTS deltas prove each supported cadence
+    materializes with its requested timing sections."""
+    scenario_path = _vfr_scenario_for(cadence, tmp_path)
+    out = tmp_path / "vfr"
+    result = runner.invoke(
+        app,
+        ["materialize", str(scenario_path), "--out", str(out), "--json"],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    media_path = next((out / "library").rglob("*.mkv"))
+
+    deltas = _video_packet_deltas(media_path)
+
+    assert len(set(deltas)) > 1
+    for interval in expected_intervals:
+        assert any(delta in interval for delta in deltas)
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -166,6 +197,45 @@ def test_capabilities_real() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     Capabilities.model_validate_json(completed.stdout)
+
+
+def _video_packet_deltas(path: Path) -> list[int]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "packet=pts_time",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    pts_values = sorted(
+        float(packet["pts_time"])
+        for packet in payload["packets"]
+        if isinstance(packet, dict) and "pts_time" in packet
+    )
+    return [round((current - previous) * 1000) for previous, current in pairwise(pts_values)]
+
+
+def _vfr_scenario_for(cadence: str, tmp_path: Path) -> Path:
+    scenario = (FIXTURE_DIR / "vfr-video.yaml").read_text()
+    scenario = scenario.replace("scenario_id: vfr-video", f"scenario_id: vfr-video-{cadence}")
+    scenario = scenario.replace("vfr_cadence: 24_30_60", f"vfr_cadence: {cadence}")
+    scenario_path = tmp_path / f"vfr-{cadence}.yaml"
+    scenario_path.write_text(scenario)
+    return scenario_path
 
 
 def _install_failing_ffmpeg(bin_dir: Path) -> None:

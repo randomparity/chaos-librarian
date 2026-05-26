@@ -1,4 +1,4 @@
-"""Hierarchy validation tests for Scenario v12 semantic rules."""
+"""Hierarchy validation tests for current Scenario semantic rules."""
 
 from __future__ import annotations
 
@@ -65,7 +65,7 @@ def _add_destination_series(raw: dict[str, object], *, episode_naming: str) -> N
 
 def _write_music_scenario(path: Path, *, timeline: str) -> None:
     path.write_text(
-        f"""schema_version: 12
+        f"""schema_version: 13
 scenario_id: music-action-validation
 seed: 1
 duration_scale: short

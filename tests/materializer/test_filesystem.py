@@ -80,7 +80,7 @@ def _movie_scenario(
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 12,
+            "schema_version": 13,
             "scenario_id": "materializer-filesystem-test",
             "seed": 1,
             "duration_scale": "short",

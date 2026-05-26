@@ -1,40 +1,36 @@
-# expected: E_PROFILE_REQUIRED
 schema_version: 13
-scenario_id: truncate-file-missing-profile
-seed: 42
+scenario_id: vfr-video
+seed: 129
 duration_scale: short
 library:
   roots:
-    - id: movies_hd
-      path: movies-hd
+    - id: root_main
+      path: movies
 movies:
-  - id: movie_001
-    title: Truncated File
+  - id: movie_vfr
+    title: VFR Fixture
     layout: movie_flat
     variants:
-      - id: variant_hd
-        label: hd
+      - id: variant_vfr
+        label: sd
         bundle:
-          id: bundle_hd
+          id: bundle_vfr
           assets:
-            - id: asset_main
+            - id: asset_vfr_main
               role: primary_video
               container: mkv
-              duration_seconds: 1
+              duration_seconds: 3.0
               video:
                 source: color_bars
                 codec: h264
                 resolution: sd
+                vfr_cadence: 24_30_60
               audio:
                 - source: sine
                   codec: aac
                   channels: stereo
                   language: eng
+              subtitles: []
 series: []
 artists: []
-timeline:
-  - id: truncate_001
-    at: 1s
-    action: truncate_file
-    target: asset_main
-    keep_bytes: 64
+timeline: []

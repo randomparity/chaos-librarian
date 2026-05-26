@@ -15,6 +15,7 @@ from chaos_librarian.contract.scenario import (
     AudioTrack,
     VideoSource,
     VideoTrack,
+    VideoVfrCadence,
 )
 from chaos_librarian.materializer import content_sources
 from chaos_librarian.materializer.content_sources import (
@@ -29,7 +30,7 @@ from chaos_librarian.materializer.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 
-def _video_request() -> VideoSourceRequest:
+def _video_request(vfr_cadence: VideoVfrCadence | None = None) -> VideoSourceRequest:
     return VideoSourceRequest(
         asset_id="asset_main",
         track_index=None,
@@ -38,6 +39,7 @@ def _video_request() -> VideoSourceRequest:
         width=640,
         height=480,
         fps=24,
+        vfr_cadence=vfr_cadence,
     )
 
 
@@ -102,6 +104,28 @@ def test_resolve_video_source_digest_changes_with_recipe_output(
     changed = resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
 
     assert changed.evidence.recipe_digest != original.evidence.recipe_digest
+
+
+def test_vfr_video_source_uses_select_filter_and_records_cadence() -> None:
+    request = _video_request(vfr_cadence=VideoVfrCadence.TWENTY_FOUR_TO_THIRTY)
+
+    resolution = resolve_video_source(source=VideoSource.COLOR_BARS, request=request)
+
+    assert resolution.ffmpeg_input.lavfi is not None
+    assert "rate=120" in resolution.ffmpeg_input.lavfi
+    assert "select=" in resolution.ffmpeg_input.lavfi
+    assert "mod(n,5)" in resolution.ffmpeg_input.lavfi
+    assert "mod(n,4)" in resolution.ffmpeg_input.lavfi
+
+
+def test_vfr_cadence_changes_recipe_digest() -> None:
+    cfr = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    vfr = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(vfr_cadence=VideoVfrCadence.THIRTY_TO_SIXTY),
+    )
+
+    assert vfr.evidence.recipe_digest != cfr.evidence.recipe_digest
 
 
 def test_resolve_audio_source_records_track_index() -> None:
@@ -170,4 +194,7 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "video:color_bars",
         "video:mandelbrot",
         "video:solid_color",
+        "video:vfr:24_30_60",
+        "video:vfr:24_to_30",
+        "video:vfr:30_to_60",
     )
