@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import (
     E_SIDECAR_KIND_MISMATCH,
@@ -12,6 +14,8 @@ from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 
 DECLARED_SIDECAR_PATH = "library/r0/T - l.eng.srt"
+SERIES_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E01 - Pilot - HD.eng.srt"
+REN_NUMBERED_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.eng.srt"
 
 
 def _run(raw):
@@ -66,6 +70,16 @@ def _minimal(timeline, *, asset_subtitles=None):
         "artists": [],
         "timeline": timeline,
     }
+
+
+def _series_asset(raw: dict[str, object]) -> dict[str, object]:
+    series_items = cast("list[dict[str, object]]", raw["series"])
+    season_items = cast("list[dict[str, object]]", series_items[0]["seasons"])
+    episode_items = cast("list[dict[str, object]]", season_items[0]["episodes"])
+    variant_items = cast("list[dict[str, object]]", episode_items[0]["variants"])
+    bundle = cast("dict[str, object]", variant_items[0]["bundle"])
+    assets = cast("list[dict[str, object]]", bundle["assets"])
+    return assets[0]
 
 
 def test_remove_sidecar_unknown_path():
@@ -135,6 +149,60 @@ def test_embed_subtitle_against_declared_subtitle_valid():
     # Declared subtitle is in the projection at the rendered media stem
     # with kind=subtitle, so embed should be accepted.
     assert not any(i.code in {E_SIDECAR_TARGET_UNKNOWN, E_SIDECAR_KIND_MISMATCH} for i in issues)
+
+
+def test_hierarchy_rerender_accepts_current_declared_sidecar_path(series_scenario):
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "renumber",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+            {
+                "id": "update",
+                "at": "2s",
+                "action": "update_sidecar",
+                "target": "asset_episode",
+                "sidecar_path": REN_NUMBERED_SIDECAR_PATH,
+            },
+        ]
+    )
+    asset = _series_asset(raw)
+    asset["subtitles"] = [{"codec": "srt", "language": "eng", "mode": "sidecar"}]
+
+    issues = _run(raw)
+
+    assert not any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
+
+
+def test_hierarchy_rerender_rejects_stale_declared_sidecar_path(series_scenario):
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "renumber",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+            {
+                "id": "update",
+                "at": "2s",
+                "action": "update_sidecar",
+                "target": "asset_episode",
+                "sidecar_path": SERIES_SIDECAR_PATH,
+            },
+        ]
+    )
+    asset = _series_asset(raw)
+    asset["subtitles"] = [{"codec": "srt", "language": "eng", "mode": "sidecar"}]
+
+    issues = _run(raw)
+
+    assert any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
 
 
 def test_embed_subtitle_against_poster_sidecar():

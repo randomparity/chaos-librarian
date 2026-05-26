@@ -320,6 +320,64 @@ class TestRule5cSlowCopyPathCollision:
         run_semantic_pass(raw, empty_index, collector)
         assert any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
 
+    def test_slow_copy_rejects_temp_equals_hierarchy_mutated_current_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "copy",
+                    "at": "2s",
+                    "action": "slow_copy_start",
+                    "target": "asset_episode",
+                    "to": "TV/Starline/Season 01/final.mkv",
+                    "temp_path": ("TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.mkv"),
+                    "duration": "1s",
+                },
+                {"id": "commit", "at": "3s", "action": "slow_copy_commit", "for": "copy"},
+            ]
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+
+        assert any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
+    def test_slow_copy_allows_temp_equal_stale_pre_hierarchy_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "copy",
+                    "at": "2s",
+                    "action": "slow_copy_start",
+                    "target": "asset_episode",
+                    "to": "TV/Starline/Season 01/final.mkv",
+                    "temp_path": ("TV/Starline/Season 01/Starline - S01E01 - Pilot - HD.mkv"),
+                    "duration": "1s",
+                },
+                {"id": "commit", "at": "3s", "action": "slow_copy_commit", "for": "copy"},
+            ]
+        )
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+
+        assert not any(i.code == codes.E_SLOW_COPY_PATH_COLLISION for i in collector.issues)
+
     def test_slow_copy_allows_temp_equal_to_stale_initial_path_after_move(
         self, minimal_scenario, empty_index
     ) -> None:

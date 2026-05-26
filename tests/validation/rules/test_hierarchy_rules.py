@@ -465,6 +465,128 @@ def test_move_track_to_disc_requires_known_destination_disc(music_scenario, empt
     )
 
 
+def test_renumber_episode_rejects_duplicate_number_after_mutation(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            }
+        ]
+    )
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    episodes = _items(season["episodes"])
+    duplicate = dict(episodes[0])
+    duplicate["id"] = "episode_two"
+    duplicate["episode_number"] = 2
+    duplicate["variants"] = []
+    episodes.append(duplicate)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_move_track_to_disc_rejects_duplicate_track_number_after_mutation(
+    music_scenario, empty_index
+) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "move_track_to_disc",
+                "target": "track_one",
+                "to_disc": "disc_two",
+                "track_number": 1,
+            }
+        ]
+    )
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    _items(album["discs"]).append(
+        {
+            "id": "disc_two",
+            "disc_number": 2,
+            "tracks": [
+                {
+                    "id": "track_two",
+                    "track_number": 1,
+                    "title": "Second Opening",
+                    "performers": ["North Index"],
+                    "variants": [],
+                }
+            ],
+        }
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_sequential_hierarchy_actions_render_from_mutated_metadata(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "rename",
+                "at": "1s",
+                "action": "rename_season",
+                "target": "season_one",
+                "title": "Renamed Season",
+            },
+            {
+                "id": "renumber",
+                "at": "2s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+    assert not any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_hierarchy_action_under_pending_slow_copy_is_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "copy",
+                "at": "1s",
+                "action": "slow_copy_start",
+                "target": "asset_episode",
+                "to": "TV/Starline/Season 01/copy.mkv",
+                "temp_path": "TV/Starline/Season 01/copy.part",
+                "duration": "2s",
+            },
+            {
+                "id": "renumber",
+                "at": "2s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+            {"id": "commit", "at": "3s", "action": "slow_copy_commit", "for": "copy"},
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_LIFECYCLE_INVALID for issue in issues)
+
+
 def test_duplicate_id_across_root_and_movie_is_rejected(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario()
     _items(raw["movies"])[0]["id"] = "r"

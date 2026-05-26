@@ -14,6 +14,7 @@ from functools import partial
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
@@ -21,6 +22,11 @@ from chaos_librarian.validation.rules._common import (
     _Loc,
     iter_asset_ids,
     iter_declared_sidecars,
+)
+from chaos_librarian.validation.rules.hierarchy import (
+    HierarchyMutation,
+    HierarchyProjection,
+    build_hierarchy_projection,
 )
 
 if TYPE_CHECKING:
@@ -82,6 +88,15 @@ _PATH_MUTATING_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.WRONG_ORACLE_HASH,
     }
 )
+_SIDECAR_ACTIONS: frozenset[str] = frozenset(
+    {
+        TimelineActionName.CREATE_SIDECAR,
+        TimelineActionName.EXTRACT_SUBTITLE,
+        TimelineActionName.EMBED_SUBTITLE,
+        TimelineActionName.REMOVE_SIDECAR,
+        TimelineActionName.UPDATE_SIDECAR,
+    }
+)
 
 
 @dataclass
@@ -96,8 +111,8 @@ class _LifecycleState:
     placed: set[str]
     pending_slow_copies: dict[str, str]  # start_event_id -> asset_id
     assets_with_pending_copy: set[str]
-    sidecars_by_path: dict[tuple[str, str], str] = field(default_factory=dict)
-    """(asset_id, path) -> kind. Seeded from declared subtitles; updated
+    sidecars_by_path: dict[tuple[str, str], tuple[str, str | None]] = field(default_factory=dict)
+    """(asset_id, path) -> (kind, language). Seeded from declared subtitles; updated
     by create_sidecar / extract_subtitle (insert) and
     remove_sidecar / embed_subtitle (delete)."""
 
@@ -127,6 +142,7 @@ def rule_timeline_lifecycle(
     # Bind ``code=E_LIFECYCLE_INVALID`` once — every emission in this rule uses
     # the same code, so threading it through five helpers is pure noise.
     emit: _Emit = partial(reporter.error, code=E_LIFECYCLE_INVALID)
+    hierarchy_projection = build_hierarchy_projection(raw)
     state = _LifecycleState(
         placed=set(iter_asset_ids(raw)),
         pending_slow_copies={},
@@ -143,6 +159,14 @@ def rule_timeline_lifecycle(
 
         if action == TimelineActionName.ADD_FILE and isinstance(target, str):
             _lifecycle_check_add_file(target=target, state=state, emit=emit, loc=loc)
+        elif _is_hierarchy_action(action):
+            _lifecycle_check_hierarchy_action(
+                event=event,
+                state=state,
+                hierarchy_projection=hierarchy_projection,
+                emit=emit,
+                loc=loc,
+            )
         elif action in _MUTATION_ACTIONS and isinstance(target, str):
             _lifecycle_check_mutation(
                 action=action,
@@ -151,31 +175,15 @@ def rule_timeline_lifecycle(
                 emit=emit,
                 loc=loc,
             )
-        elif action == TimelineActionName.CREATE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(
-                action=action, target=target, state=state, emit=emit, loc=loc
+        elif action in _SIDECAR_ACTIONS and isinstance(target, str):
+            _lifecycle_check_sidecar_action(
+                event=event,
+                action=action,
+                target=target,
+                state=state,
+                emit=emit,
+                loc=loc,
             )
-            _apply_create_sidecar(event=event, target=target, state=state)
-        elif action == TimelineActionName.EXTRACT_SUBTITLE and isinstance(target, str):
-            _lifecycle_check_passthrough(
-                action=action, target=target, state=state, emit=emit, loc=loc
-            )
-            _apply_extract_subtitle(event=event, target=target, state=state)
-        elif action == TimelineActionName.EMBED_SUBTITLE and isinstance(target, str):
-            _lifecycle_check_passthrough(
-                action=action, target=target, state=state, emit=emit, loc=loc
-            )
-            _apply_embed_subtitle(event=event, target=target, state=state, emit=emit, loc=loc)
-        elif action == TimelineActionName.REMOVE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(
-                action=action, target=target, state=state, emit=emit, loc=loc
-            )
-            _apply_remove_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
-        elif action == TimelineActionName.UPDATE_SIDECAR and isinstance(target, str):
-            _lifecycle_check_passthrough(
-                action=action, target=target, state=state, emit=emit, loc=loc
-            )
-            _apply_update_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
         elif action in _LOCATION_DEPENDENT_PASSTHROUGH and isinstance(target, str):
             _lifecycle_check_passthrough(
                 action=action, target=target, state=state, emit=emit, loc=loc
@@ -239,6 +247,28 @@ def _lifecycle_check_passthrough(
         emit(message=f"{action} on asset {target!r} with a pending slow_copy", loc=loc)
 
 
+def _lifecycle_check_sidecar_action(
+    *,
+    event: Mapping[str, object],
+    action: str,
+    target: str,
+    state: _LifecycleState,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    _lifecycle_check_passthrough(action=action, target=target, state=state, emit=emit, loc=loc)
+    if action == TimelineActionName.CREATE_SIDECAR:
+        _apply_create_sidecar(event=event, target=target, state=state)
+    elif action == TimelineActionName.EXTRACT_SUBTITLE:
+        _apply_extract_subtitle(event=event, target=target, state=state)
+    elif action == TimelineActionName.EMBED_SUBTITLE:
+        _apply_embed_subtitle(event=event, target=target, state=state, emit=emit, loc=loc)
+    elif action == TimelineActionName.REMOVE_SIDECAR:
+        _apply_remove_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
+    elif action == TimelineActionName.UPDATE_SIDECAR:
+        _apply_update_sidecar(event=event, target=target, state=state, emit=emit, loc=loc)
+
+
 def _lifecycle_check_slow_copy_start(
     *,
     target: str,
@@ -260,6 +290,16 @@ def _lifecycle_check_slow_copy_start(
     state.assets_with_pending_copy.add(target)
 
 
+def _is_hierarchy_action(action: object) -> bool:
+    return action in {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }
+
+
 def _lifecycle_apply_commit(*, ref: object, state: _LifecycleState) -> None:
     """Drop the matched start from pending state. Rule 5a owns orphan reporting."""
     if not isinstance(ref, str):
@@ -268,6 +308,47 @@ def _lifecycle_apply_commit(*, ref: object, state: _LifecycleState) -> None:
         return
     committed_asset = state.pending_slow_copies.pop(ref)
     state.assets_with_pending_copy.discard(committed_asset)
+
+
+def _lifecycle_check_hierarchy_action(
+    *,
+    event: Mapping[str, object],
+    state: _LifecycleState,
+    hierarchy_projection: HierarchyProjection,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    action = event.get("action")
+    affected_asset_ids = hierarchy_projection.affected_asset_ids(event)
+    for asset_id in affected_asset_ids:
+        if asset_id in state.assets_with_pending_copy:
+            emit(message=f"{action} on asset {asset_id!r} with a pending slow_copy", loc=loc)
+    mutation = hierarchy_projection.apply(event)
+    _project_declared_sidecars_for_hierarchy_mutation(mutation, state.sidecars_by_path)
+
+
+def _project_declared_sidecars_for_hierarchy_mutation(
+    mutation: HierarchyMutation,
+    sidecars_by_path: dict[tuple[str, str], tuple[str, str | None]],
+) -> None:
+    for asset_id, (old_media_path, new_media_path) in mutation.path_changes.items():
+        if old_media_path is None or new_media_path is None:
+            continue
+        for key, value in list(sidecars_by_path.items()):
+            key_asset_id, sidecar_path = key
+            kind, language = value
+            if key_asset_id != asset_id or kind != SidecarKind.SUBTITLE.value:
+                continue
+            if language is None:
+                continue
+            try:
+                old_sidecar_path = render_declared_sidecar_path(old_media_path, language)
+                new_sidecar_path = render_declared_sidecar_path(new_media_path, language)
+            except ValueError:
+                continue
+            if sidecar_path == old_sidecar_path:
+                del sidecars_by_path[key]
+                sidecars_by_path[(asset_id, new_sidecar_path)] = value
 
 
 def _apply_create_sidecar(
@@ -279,8 +360,12 @@ def _apply_create_sidecar(
     """Insert (target, to) -> kind into the sidecar projection."""
     to = event.get("to")
     kind = event.get("kind", SidecarKind.SUBTITLE.value)
+    language = event.get("language")
     if isinstance(to, str) and isinstance(kind, str):
-        state.sidecars_by_path[(target, to)] = kind
+        state.sidecars_by_path[(target, to)] = (
+            kind,
+            language if isinstance(language, str) else None,
+        )
 
 
 def _apply_extract_subtitle(
@@ -291,8 +376,12 @@ def _apply_extract_subtitle(
 ) -> None:
     """Insert (target, to) -> subtitle into the sidecar projection."""
     to = event.get("to")
+    language = event.get("language")
     if isinstance(to, str):
-        state.sidecars_by_path[(target, to)] = SidecarKind.SUBTITLE.value
+        state.sidecars_by_path[(target, to)] = (
+            SidecarKind.SUBTITLE.value,
+            language if isinstance(language, str) else None,
+        )
 
 
 def _apply_embed_subtitle(
@@ -356,8 +445,11 @@ def _apply_update_sidecar(
         )
 
 
-def _seed_sidecars_by_path(raw: Mapping[str, object]) -> dict[tuple[str, str], str]:
-    """Seed (asset_id, rendered_path) -> kind for declared subtitle sidecars."""
+def _seed_sidecars_by_path(
+    raw: Mapping[str, object],
+) -> dict[tuple[str, str], tuple[str, str | None]]:
+    """Seed (asset_id, rendered_path) -> (kind, language) for declared sidecars."""
     return {
-        (sidecar.asset_id, sidecar.path): sidecar.kind for sidecar in iter_declared_sidecars(raw)
+        (sidecar.asset_id, sidecar.path): (sidecar.kind, sidecar.language)
+        for sidecar in iter_declared_sidecars(raw)
     }

@@ -30,6 +30,7 @@ from chaos_librarian.validation.rules._common import (
     rendered_asset_paths,
     try_parse_duration,
 )
+from chaos_librarian.validation.rules.hierarchy import build_hierarchy_projection
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -200,6 +201,7 @@ def rule_slow_copy_path_collision(
     reporter = Reporter(collector=collector, line_index=line_index)
     current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
     pending_slow_copies: dict[str, tuple[str, str]] = {}
+    hierarchy_projection = build_hierarchy_projection(raw)
     declared_roots = {
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
@@ -235,6 +237,8 @@ def rule_slow_copy_path_collision(
             _project_move_between_roots(event, roots=declared_roots, current_paths=current_paths)
         elif action == TimelineActionName.REMUX_CONTAINER:
             _project_remux_container(event, current_paths)
+        elif _is_hierarchy_action(action):
+            _project_hierarchy_action(event, hierarchy_projection, current_paths)
 
 
 def _check_slow_copy_start_path_collision(
@@ -379,6 +383,26 @@ def _project_remux_container(event: _RawMapping, current_paths: dict[str, str]) 
     if current_path is None:
         return
     current_paths[target] = _swap_extension(current_path, to_container)
+
+
+def _project_hierarchy_action(event, hierarchy_projection, current_paths: dict[str, str]) -> None:
+    mutation = hierarchy_projection.apply(event)
+    for asset_id in mutation.affected_asset_ids:
+        path = hierarchy_projection.current_paths.get(asset_id)
+        if path is None:
+            current_paths.pop(asset_id, None)
+        else:
+            current_paths[asset_id] = path
+
+
+def _is_hierarchy_action(action: object) -> bool:
+    return action in {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }
 
 
 def _current_root_for_path(path: str, roots: Mapping[str, str]) -> str:

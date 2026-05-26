@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from chaos_librarian.validation import codes
@@ -12,6 +14,18 @@ from chaos_librarian.validation.semantic import run_semantic_pass
 
 DECLARED_SIDECAR_PATH = "r/Test Movie - l.eng.srt"
 EXTRACTED_SIDECAR_PATH = "r/Test Movie - l.fra.srt"
+SERIES_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E01 - Pilot - HD.eng.srt"
+REN_NUMBERED_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.eng.srt"
+
+
+def _series_asset(raw: dict[str, object]) -> dict[str, object]:
+    series_items = cast("list[dict[str, object]]", raw["series"])
+    season_items = cast("list[dict[str, object]]", series_items[0]["seasons"])
+    episode_items = cast("list[dict[str, object]]", season_items[0]["episodes"])
+    variant_items = cast("list[dict[str, object]]", episode_items[0]["variants"])
+    bundle = cast("dict[str, object]", variant_items[0]["bundle"])
+    assets = cast("list[dict[str, object]]", bundle["assets"])
+    return assets[0]
 
 
 class TestRuleTimelineLifecycle:
@@ -567,6 +581,68 @@ class TestSprint7LifecycleExtensions:
         )
         collector = IssueCollector()
         rule_timeline_lifecycle(raw, empty_index, collector)
+        assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+
+class TestHierarchySidecarLifecycleProjection:
+    """Hierarchy rerenders move declared sidecars with the media asset."""
+
+    def test_update_sidecar_after_hierarchy_rerender_uses_current_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "update",
+                    "at": "2s",
+                    "action": "update_sidecar",
+                    "target": "asset_episode",
+                    "sidecar_path": REN_NUMBERED_SIDECAR_PATH,
+                },
+            ],
+        )
+        asset = _series_asset(raw)
+        asset["subtitles"] = [{"codec": "srt", "language": "eng", "mode": "sidecar"}]
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
+        assert not any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+    def test_update_sidecar_after_hierarchy_rerender_rejects_stale_path(
+        self, series_scenario, empty_index
+    ) -> None:
+        raw = series_scenario(
+            timeline=[
+                {
+                    "id": "renumber",
+                    "at": "1s",
+                    "action": "renumber_episode",
+                    "target": "episode_one",
+                    "episode_number": 2,
+                },
+                {
+                    "id": "update",
+                    "at": "2s",
+                    "action": "update_sidecar",
+                    "target": "asset_episode",
+                    "sidecar_path": SERIES_SIDECAR_PATH,
+                },
+            ],
+        )
+        asset = _series_asset(raw)
+        asset["subtitles"] = [{"codec": "srt", "language": "eng", "mode": "sidecar"}]
+        collector = IssueCollector()
+
+        rule_timeline_lifecycle(raw, empty_index, collector)
+
         assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
 
 

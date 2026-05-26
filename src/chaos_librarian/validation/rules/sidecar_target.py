@@ -19,6 +19,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.codes import (
     E_SIDECAR_KIND_MISMATCH,
     E_SIDECAR_PATH_COLLISION,
@@ -28,6 +29,10 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _iter_timeline_events,
     iter_declared_sidecars,
+)
+from chaos_librarian.validation.rules.hierarchy import (
+    HierarchyMutation,
+    build_hierarchy_projection,
 )
 
 if TYPE_CHECKING:
@@ -61,12 +66,18 @@ def rule_sidecar_target(
     """
     reporter = Reporter(collector=collector, line_index=line_index)
     projection = _seed_projection_from_declared(raw)
+    hierarchy_projection = build_hierarchy_projection(raw)
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         target = event.get("target")
-        if not isinstance(action, str) or not isinstance(target, str):
+        if not isinstance(action, str):
             continue
-        if action == TimelineActionName.CREATE_SIDECAR:
+        if _is_hierarchy_action(action):
+            mutation = hierarchy_projection.apply(event)
+            _project_declared_sidecars_for_hierarchy_mutation(mutation, projection)
+        elif not isinstance(target, str):
+            continue
+        elif action == TimelineActionName.CREATE_SIDECAR:
             _handle_create_sidecar(event, target=target, projection=projection)
         elif action == TimelineActionName.EXTRACT_SUBTITLE:
             _handle_extract_subtitle(
@@ -247,3 +258,37 @@ def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
     for sidecar in iter_declared_sidecars(raw):
         projection[(sidecar.asset_id, sidecar.path)] = (sidecar.kind, sidecar.language)
     return projection
+
+
+def _project_declared_sidecars_for_hierarchy_mutation(
+    mutation: HierarchyMutation,
+    projection: _Projection,
+) -> None:
+    for asset_id, (old_media_path, new_media_path) in mutation.path_changes.items():
+        if old_media_path is None or new_media_path is None:
+            continue
+        for key, value in list(projection.items()):
+            key_asset_id, sidecar_path = key
+            kind, language = value
+            if key_asset_id != asset_id or kind != SidecarKind.SUBTITLE.value:
+                continue
+            if language is None:
+                continue
+            try:
+                old_sidecar_path = render_declared_sidecar_path(old_media_path, language)
+                new_sidecar_path = render_declared_sidecar_path(new_media_path, language)
+            except ValueError:
+                continue
+            if sidecar_path == old_sidecar_path:
+                del projection[key]
+                projection[(asset_id, new_sidecar_path)] = value
+
+
+def _is_hierarchy_action(action: object) -> bool:
+    return action in {
+        TimelineActionName.RENUMBER_EPISODE,
+        TimelineActionName.MOVE_EPISODE_TO_SEASON,
+        TimelineActionName.RENAME_SEASON,
+        TimelineActionName.RENUMBER_DISC,
+        TimelineActionName.MOVE_TRACK_TO_DISC,
+    }

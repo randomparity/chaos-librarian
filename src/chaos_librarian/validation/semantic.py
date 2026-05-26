@@ -20,6 +20,7 @@ from chaos_librarian.validation.rules.extract_track_unknown import (
 )
 from chaos_librarian.validation.rules.hierarchy import (
     rule_hierarchy_invariants,
+    rule_hierarchy_timeline,
     rule_media_action_compatible_with_parent,
     rule_rendered_path_collisions,
 )
@@ -68,6 +69,7 @@ _RULES: list[Rule] = [
     rule_path_containment,
     rule_timeline_order,
     rule_timeline_lifecycle,
+    rule_hierarchy_timeline,
     rule_asset_id_container_safe,
     rule_materialize_media_matrix,
     rule_media_action_compatible_with_parent,
