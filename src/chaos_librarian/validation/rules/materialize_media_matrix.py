@@ -68,7 +68,11 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             loc=(*asset_loc, "video"),
         )
     else:
-        _check_video(video=video, video_loc=(*asset_loc, "video"), reporter=reporter)
+        _check_video(
+            video=video,
+            video_loc=(*asset_loc, "video"),
+            reporter=reporter,
+        )
     for index, audio_obj in enumerate(_as_list(asset.get("audio")) or []):
         audio = _as_mapping(audio_obj)
         if audio is None:
@@ -159,6 +163,28 @@ def _check_video(
             supported=supported,
             loc=(*video_loc, field_name),
             reporter=reporter,
+        )
+    _check_interlaced_video(
+        video=video,
+        video_loc=video_loc,
+        reporter=reporter,
+    )
+
+
+def _check_interlaced_video(
+    *,
+    video: Mapping[str, object],
+    video_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    field_order = video.get("field_order")
+    if not isinstance(field_order, str):
+        return
+    if "vfr_cadence" in video and video.get("vfr_cadence") is not None:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="field_order cannot be combined with vfr_cadence",
+            loc=(*video_loc, "field_order"),
         )
 
 

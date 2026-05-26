@@ -13,7 +13,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-from chaos_librarian.contract.scenario import AUDIO_CHANNEL_COUNTS_BY_NAME, VideoVfrCadence
+from chaos_librarian.contract.scenario import (
+    AUDIO_CHANNEL_COUNTS_BY_NAME,
+    VideoFieldOrder,
+    VideoVfrCadence,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,6 +91,10 @@ _CADENCE_SELECT_MODS: Final[dict[VideoVfrCadence, tuple[int, ...]]] = {
     VideoVfrCadence.THIRTY_TO_SIXTY: (4, 2),
     VideoVfrCadence.TWENTY_FOUR_THIRTY_SIXTY: (5, 4, 2),
 }
+_FIELD_ORDER_FILTERS: Final[dict[VideoFieldOrder, str]] = {
+    VideoFieldOrder.TOP_FIELD_FIRST: "tinterlace=mode=interleave_top,setfield=tff",
+    VideoFieldOrder.BOTTOM_FIELD_FIRST: "tinterlace=mode=interleave_bottom,setfield=bff",
+}
 
 
 def apply_vfr_cadence(
@@ -98,6 +106,18 @@ def apply_vfr_cadence(
     filters = _vfr_select_filter(cadence=cadence, duration_s=duration_s)
     return FFmpegInput(
         lavfi=f"{ffmpeg_input.lavfi},{filters}",
+        extra_flags=ffmpeg_input.extra_flags,
+    )
+
+
+def apply_interlaced_field_order(
+    ffmpeg_input: FFmpegInput, *, field_order: VideoFieldOrder
+) -> FFmpegInput:
+    """Wrap a lavfi video input with deterministic interlaced field ordering."""
+    if ffmpeg_input.lavfi is None:
+        raise ValueError("interlaced field order requires a lavfi video input")
+    return FFmpegInput(
+        lavfi=f"{ffmpeg_input.lavfi},{_FIELD_ORDER_FILTERS[field_order]}",
         extra_flags=ffmpeg_input.extra_flags,
     )
 

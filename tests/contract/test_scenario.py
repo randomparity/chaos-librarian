@@ -57,6 +57,7 @@ from chaos_librarian.contract.scenario import (
     TrackNaming,
     UpdateSidecarEvent,
     Variant,
+    VideoFieldOrder,
     VideoSource,
     VideoTrack,
     VideoVfrCadence,
@@ -176,7 +177,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v13_payload() -> None:
+def test_movie_only_scenario_v14_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -189,7 +190,7 @@ def test_movie_only_scenario_v13_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 13
+    assert scenario.schema_version == 14
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -595,8 +596,44 @@ def test_video_track_rejects_unknown_vfr_cadence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_thirteen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 13
+def test_video_field_order_enum_values() -> None:
+    assert VideoFieldOrder.TOP_FIELD_FIRST.value == "top_field_first"
+    assert VideoFieldOrder.BOTTOM_FIELD_FIRST.value == "bottom_field_first"
+
+
+def test_video_track_field_order_defaults_to_none() -> None:
+    track = VideoTrack.model_validate({"source": "color_bars", "codec": "h264", "resolution": "sd"})
+
+    assert track.field_order is None
+
+
+def test_video_track_accepts_supported_field_order() -> None:
+    track = VideoTrack.model_validate(
+        {
+            "source": "color_bars",
+            "codec": "h264",
+            "resolution": "sd",
+            "field_order": "top_field_first",
+        }
+    )
+
+    assert track.field_order is VideoFieldOrder.TOP_FIELD_FIRST
+
+
+def test_video_track_rejects_unknown_field_order() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "h264",
+        "resolution": "sd",
+        "field_order": "sideways",
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_scenario_schema_version_is_fourteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 14
 
 
 def test_scenario_accepts_profile_labels() -> None:

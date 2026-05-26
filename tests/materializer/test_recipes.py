@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from chaos_librarian.contract.scenario import AudioChannelLayout, VideoVfrCadence
+from chaos_librarian.contract.scenario import (
+    AudioChannelLayout,
+    VideoFieldOrder,
+    VideoVfrCadence,
+)
 from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
+    apply_interlaced_field_order,
     apply_vfr_cadence,
     recipe_channel_tones,
     recipe_color_bars,
@@ -96,6 +103,38 @@ def test_apply_vfr_cadence_wraps_lavfi_select_filter(
     for expected in expected_mods:
         assert expected in wrapped.lavfi
     assert wrapped.extra_flags == base.extra_flags
+
+
+@pytest.mark.parametrize(
+    ("field_order", "expected_filter"),
+    [
+        (
+            VideoFieldOrder.TOP_FIELD_FIRST,
+            "tinterlace=mode=interleave_top,setfield=tff",
+        ),
+        (
+            VideoFieldOrder.BOTTOM_FIELD_FIRST,
+            "tinterlace=mode=interleave_bottom,setfield=bff",
+        ),
+    ],
+)
+def test_apply_interlaced_field_order_wraps_lavfi_filter(
+    field_order: VideoFieldOrder, expected_filter: str
+) -> None:
+    base = recipe_color_bars(width=640, height=480, fps=48, duration_s=3.0, seed=1)
+
+    wrapped = apply_interlaced_field_order(base, field_order=field_order)
+
+    assert wrapped.lavfi == f"smptebars=size=640x480:rate=48,{expected_filter}"
+    assert wrapped.extra_flags == base.extra_flags
+
+
+def test_apply_interlaced_field_order_rejects_file_input(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="requires a lavfi video input"):
+        apply_interlaced_field_order(
+            FFmpegInput(file_path=tmp_path / "source.mkv"),
+            field_order=VideoFieldOrder.TOP_FIELD_FIRST,
+        )
 
 
 def test_sine_frequency_derives_from_seed():

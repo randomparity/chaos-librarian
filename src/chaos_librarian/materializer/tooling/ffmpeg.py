@@ -21,12 +21,14 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     AudioTrack,
+    VideoFieldOrder,
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
     AUDIO_ENCODER_BY_CODEC,
+    HEVC_VIDEO_CODECS,
     SUPPORTED_AUDIO_CODECS,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
     SUPPORTED_CONTAINERS,
@@ -58,6 +60,14 @@ _CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {
     ".mkv": "mkv",
     ".mp3": "mp3",
     ".mp4": "mp4",
+}
+_X264_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
+    VideoFieldOrder.TOP_FIELD_FIRST: "tff=1",
+    VideoFieldOrder.BOTTOM_FIELD_FIRST: "bff=1",
+}
+_X265_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
+    VideoFieldOrder.TOP_FIELD_FIRST: "interlace=tff",
+    VideoFieldOrder.BOTTOM_FIELD_FIRST: "interlace=bff",
 }
 
 
@@ -99,6 +109,20 @@ def _validate_audio(audios: Sequence[AudioTrack]) -> None:
     """Reject any audio track outside the codec matrix."""
     for index, audio in enumerate(audios):
         _require(audio.codec, SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
+
+
+def _interlaced_video_args(video: VideoTrack) -> list[str]:
+    if video.field_order is None:
+        return []
+    if video.codec == "h264":
+        return ["-x264-params", _X264_FIELD_ORDER_PARAMS[video.field_order]]
+    if video.codec in HEVC_VIDEO_CODECS:
+        return ["-x265-params", _X265_FIELD_ORDER_PARAMS[video.field_order]]
+    raise UnsupportedMaterializationError(
+        f"interlaced video codec {video.codec!r} is not supported",
+        field="video.codec",
+        payload={"supported": sorted(SUPPORTED_VIDEO_CODECS)},
+    )
 
 
 def _validate_audio_only(container: str, audios: Sequence[AudioTrack]) -> None:
@@ -183,6 +207,7 @@ def _build_video_command(
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
     argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
+    argv.extend(_interlaced_video_args(video))
     argv.extend(["-c:a", "aac"])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.append("-shortest")

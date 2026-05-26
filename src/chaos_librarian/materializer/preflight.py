@@ -118,6 +118,7 @@ def preflight_asset(
             height=height,
             fps=FPS_DEFAULT,
             vfr_cadence=video.vfr_cadence,
+            field_order=video.field_order,
         ),
     )
     build_command(

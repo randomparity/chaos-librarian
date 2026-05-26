@@ -9,7 +9,7 @@ from chaos_librarian.validation import codes, prepare_run_input, run_validation
 
 def _write_track_scenario(path: Path, *, container: str, codec: str) -> None:
     path.write_text(
-        f"""schema_version: 13
+        f"""schema_version: 14
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -66,10 +66,12 @@ def _write_movie_scenario(
     video_codec: str = "h264",
     video_resolution: str = "sd",
     vfr_cadence: str | None = None,
+    field_order: str | None = None,
 ) -> None:
     vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
+    field_order_line = f"                field_order: {field_order}\n" if field_order else ""
     path.write_text(
-        f"""schema_version: 13
+        f"""schema_version: 14
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -96,6 +98,7 @@ movies:
                 codec: {video_codec}
                 resolution: {video_resolution}
 {vfr_line.rstrip()}
+{field_order_line.rstrip()}
               audio:
                 - source: sine
                   codec: {audio_codec}
@@ -164,7 +167,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 13
+        """schema_version: 14
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -216,6 +219,50 @@ def test_vfr_video_cadence_validates_clean(tmp_path: Path) -> None:
 
     assert report.ok is True
     assert report.issues == []
+
+
+def test_interlaced_video_field_order_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "interlaced.yaml"
+    _write_movie_scenario(scenario, field_order="top_field_first")
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+def test_interlaced_video_rejects_vfr_cadence(tmp_path: Path) -> None:
+    scenario = tmp_path / "interlaced-vfr.yaml"
+    _write_movie_scenario(
+        scenario,
+        vfr_cadence="24_to_30",
+        field_order="top_field_first",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    assert issue.path.endswith(".video.field_order")
+    assert "vfr_cadence" in issue.message
+
+
+def test_interlaced_video_rejects_yaml_numeric_vfr_cadence(tmp_path: Path) -> None:
+    scenario = tmp_path / "interlaced-vfr-numeric.yaml"
+    _write_movie_scenario(
+        scenario,
+        vfr_cadence="24_30_60",
+        field_order="top_field_first",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    assert issue.path.endswith(".video.field_order")
+    assert "vfr_cadence" in issue.message
 
 
 def test_audio_only_flac_track_validates_clean(tmp_path: Path) -> None:
