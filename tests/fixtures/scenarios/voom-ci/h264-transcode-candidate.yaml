@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: voom-ci-h264-transcode-candidate
 seed: 9702
 duration_scale: short
@@ -6,9 +6,10 @@ library:
   roots:
     - id: root_movies
       path: movies
-works:
-  - id: work_h264_policy
+movies:
+  - id: movie_h264_policy
     title: VOOM CI H264 Policy Candidates
+    layout: movie_flat
     variants:
       - id: variant_candidate_mp4
         label: h264-mp4
@@ -46,4 +47,6 @@ works:
                   codec: aac
                   channels: "5.1"
                   language: eng
+series: []
+artists: []
 timeline: []

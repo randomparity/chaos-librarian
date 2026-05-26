@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: voom-ci-single-step-media-mutation
 seed: 9704
 duration_scale: short
@@ -6,9 +6,10 @@ library:
   roots:
     - id: root_movies
       path: movies
-works:
-  - id: work_mutation
+movies:
+  - id: movie_mutation
     title: VOOM CI Single-Step Mutation
+    layout: movie_flat
     variants:
       - id: variant_mutation
         label: h264-mkv
@@ -28,6 +29,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: reencode_video_001
     at: 1s

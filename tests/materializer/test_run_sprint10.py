@@ -170,7 +170,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 11\n",
+            scenario="schema_version: 12\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,

@@ -1,4 +1,4 @@
-schema_version: 11
+schema_version: 12
 scenario_id: voom-ci-malformed-media-header
 seed: 9705
 duration_scale: short
@@ -8,9 +8,10 @@ library:
   roots:
     - id: root_movies
       path: movies
-works:
-  - id: work_malformed
+movies:
+  - id: movie_malformed
     title: VOOM CI Malformed Header
+    layout: movie_flat
     variants:
       - id: variant_malformed
         label: h264-mkv
@@ -30,6 +31,8 @@ works:
                   codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: corrupt_header_001
     at: 1s

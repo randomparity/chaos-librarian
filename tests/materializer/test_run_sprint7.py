@@ -28,7 +28,7 @@ from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.run import materialize_scenario
 
 _REENCODE_SCENARIO_BODY = """\
-schema_version: 11
+schema_version: 12
 scenario_id: sc_test
 seed: 42
 duration_scale: short
@@ -36,9 +36,10 @@ library:
   roots:
     - id: r0
       path: library/r0
-works:
-  - id: w0
+movies:
+  - id: movie_0
     title: T
+    layout: movie_flat
     variants:
       - id: v0
         label: hd
@@ -57,6 +58,8 @@ works:
                 - codec: aac
                   channels: stereo
                   language: eng
+series: []
+artists: []
 timeline:
   - id: ev_rv_001
     at: 1s
