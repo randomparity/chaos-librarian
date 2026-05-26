@@ -240,19 +240,40 @@ def test_load_fixture_rejects_missing_asset_report_when_reports_present(tmp_path
     _assert_fixture_invalid(run_dir)
 
 
-def test_load_fixture_rejects_missing_movie_report_when_reports_present(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "directory_name",
+    [
+        "assets",
+        "movies",
+        "series",
+        "seasons",
+        "episodes",
+        "artists",
+        "albums",
+        "discs",
+        "tracks",
+        "variants",
+        "bundles",
+    ],
+)
+def test_load_fixture_rejects_missing_report_family(
+    tmp_path: Path,
+    directory_name: str,
+) -> None:
     run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "movies").glob("*.json")).unlink()
+    reports_dir = run_dir / "reports" / directory_name
+    reports = sorted(reports_dir.glob("*.json"))
+    for report in reports:
+        report.unlink()
+    reports_dir.rmdir()
+
     _assert_fixture_invalid(run_dir)
 
 
-def test_load_fixture_rejects_missing_variant_report_when_reports_present(tmp_path: Path) -> None:
+def test_load_fixture_rejects_old_work_report_directory(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "variants").glob("*.json")).unlink()
-    _assert_fixture_invalid(run_dir)
+    works_dir = run_dir / "reports" / "works"
+    works_dir.mkdir()
+    (works_dir / "work-a.json").write_text("{}")
 
-
-def test_load_fixture_rejects_missing_bundle_report_when_reports_present(tmp_path: Path) -> None:
-    run_dir = _write_plan_fixture(tmp_path)
-    next((run_dir / "reports" / "bundles").glob("*.json")).unlink()
     _assert_fixture_invalid(run_dir)

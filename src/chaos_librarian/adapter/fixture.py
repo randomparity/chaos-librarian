@@ -784,6 +784,17 @@ def _required_report_map(report_set: Any, name: str, id_field: str) -> dict[str,
 
 
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:
+    present_names = {path.name for path in reports_dir.iterdir() if path.is_dir()}
+    expected_names = set(_REPORT_DIR_NAMES)
+    if present_names != expected_names:
+        _fixture_invalid(
+            "reports directory set does not match required report families",
+            path=reports_dir,
+            details={
+                "missing": sorted(expected_names - present_names),
+                "extra": sorted(present_names - expected_names),
+            },
+        )
     for name in _REPORT_DIR_NAMES:
         directory = reports_dir / name
         if not directory.is_dir():
