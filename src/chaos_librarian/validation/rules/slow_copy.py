@@ -4,7 +4,7 @@
 start/commit index, so they share the ``_index_starts_and_commits``
 helper in this module. 5c (E_SLOW_COPY_PATH_COLLISION) walks each
 ``slow_copy_start`` event independently and joins against the asset's
-rendered initial path.
+current projected path.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.path_rendering import replace_root_prefix
 from chaos_librarian.validation.codes import (
     E_SLOW_COPY_PATH_COLLISION,
     E_SLOW_COPY_TIMING,
@@ -21,8 +22,11 @@ from chaos_librarian.validation.codes import (
 )
 from chaos_librarian.validation.rules._common import (
     Reporter,
+    _as_mapping,
     _iter_timeline_events,
     _RawMapping,
+    iter_declared_roots,
+    primary_root_path,
     rendered_asset_paths,
     try_parse_duration,
 )
@@ -177,11 +181,11 @@ def rule_slow_copy_path_collision(
     line_index: LineIndex,
     collector: IssueCollector,
 ) -> None:
-    """5c: reject ``temp_path == to`` and ``temp_path == initial_path``.
+    """5c: reject ``temp_path == to`` and ``temp_path == current_path``.
 
     Phase B's commit helper unlinks ``initial_path`` and then ``replace``s
     ``temp_path -> final_path``. If ``temp_path == to`` the multi-phase
-    visibility contract collapses; if ``temp_path == initial_path`` the
+    visibility contract collapses; if ``temp_path == current_path`` the
     unlink wipes the temp before the replace runs. Both cases emit
     ``E_SLOW_COPY_PATH_COLLISION``.
 
@@ -189,20 +193,67 @@ def rule_slow_copy_path_collision(
     so a ``.``-segment or trailing-slash variant cannot slip past the
     rule. Normalization is purely lexical -- no I/O, no symlink resolution.
 
-    Initial paths are derived through the same hierarchy-aware renderer used
-    by initial-state construction -- no legacy asset-id template fallback.
+    Current paths are seeded through the same hierarchy-aware renderer used
+    by initial-state construction, then projected through prior timeline
+    path mutations before each slow_copy_start.
     """
     reporter = Reporter(collector=collector, line_index=line_index)
-    initial_paths_by_asset = rendered_asset_paths(raw)
+    current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
+    pending_slow_copies: dict[str, tuple[str, str]] = {}
+    declared_roots = {
+        root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
+    }
+    archive_base = _archive_base_path(raw, declared_roots)
     for idx, event in _iter_timeline_events(raw):
-        if event.get("action") != TimelineActionName.SLOW_COPY_START:
-            continue
-        target = event.get("target")
-        temp_path = event.get("temp_path")
-        final_path = event.get("to")
-        if not isinstance(target, str) or not isinstance(temp_path, str):
-            continue
-        if isinstance(final_path, str) and _normalize(temp_path) == _normalize(final_path):
+        action = event.get("action")
+        if action == TimelineActionName.SLOW_COPY_START:
+            _check_slow_copy_start_path_collision(
+                event,
+                idx=idx,
+                current_paths=current_paths,
+                pending_slow_copies=pending_slow_copies,
+                reporter=reporter,
+            )
+        elif action == TimelineActionName.SLOW_COPY_COMMIT:
+            _project_slow_copy_commit(event, pending_slow_copies, current_paths)
+        elif action in {
+            TimelineActionName.MOVE_ASSET,
+            TimelineActionName.RENAME_FILE,
+            TimelineActionName.ADD_FILE,
+        }:
+            _project_to_field_path(event, current_paths)
+        elif action == TimelineActionName.DELETE_FILE:
+            _project_deleted_path(event, current_paths)
+        elif action == TimelineActionName.ARCHIVE_FILE:
+            _project_archive_file(
+                event,
+                archive_base=archive_base,
+                roots=declared_roots,
+                current_paths=current_paths,
+            )
+        elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
+            _project_move_between_roots(event, roots=declared_roots, current_paths=current_paths)
+        elif action == TimelineActionName.REMUX_CONTAINER:
+            _project_remux_container(event, current_paths)
+
+
+def _check_slow_copy_start_path_collision(
+    event: _RawMapping,
+    *,
+    idx: int,
+    current_paths: dict[str, str],
+    pending_slow_copies: dict[str, tuple[str, str]],
+    reporter: Reporter,
+) -> None:
+    """Check one slow_copy_start against final and current paths."""
+    target = event.get("target")
+    temp_path = event.get("temp_path")
+    final_path = event.get("to")
+    if not isinstance(target, str) or not isinstance(temp_path, str):
+        return
+    if isinstance(final_path, str):
+        _project_slow_copy_start(event, pending_slow_copies)
+        if _normalize(temp_path) == _normalize(final_path):
             reporter.error(
                 code=E_SLOW_COPY_PATH_COLLISION,
                 message=(
@@ -212,18 +263,149 @@ def rule_slow_copy_path_collision(
                 ),
                 loc=("timeline", idx, "temp_path"),
             )
-            continue  # one error per event
-        initial_path_with_loc = initial_paths_by_asset.get(target)
-        if initial_path_with_loc is None:
-            continue  # asset undeclared; rule_target_unknown owns that
-        initial_path, _loc = initial_path_with_loc
-        if _normalize(temp_path) == _normalize(initial_path):
-            reporter.error(
-                code=E_SLOW_COPY_PATH_COLLISION,
-                message=(
-                    f"slow_copy_start temp_path equals the asset's initial "
-                    f"path {initial_path!r}; the commit's unlink(initial) "
-                    f"would wipe the temp file before the replace runs"
-                ),
-                loc=("timeline", idx, "temp_path"),
-            )
+            return  # one error per event
+    current_path = current_paths.get(target)
+    if current_path is None:
+        return  # asset undeclared or currently deleted; other rules own that
+    if _normalize(temp_path) == _normalize(current_path):
+        reporter.error(
+            code=E_SLOW_COPY_PATH_COLLISION,
+            message=(
+                f"slow_copy_start temp_path equals the asset's current "
+                f"path {current_path!r}; the commit's unlink(current) "
+                f"would wipe the temp file before the replace runs"
+            ),
+            loc=("timeline", idx, "temp_path"),
+        )
+
+
+def _project_to_field_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    target = event.get("target")
+    path = event.get("to")
+    if isinstance(target, str) and isinstance(path, str):
+        current_paths[target] = path
+
+
+def _project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    target = event.get("target")
+    if isinstance(target, str):
+        current_paths.pop(target, None)
+
+
+def _project_slow_copy_start(
+    event: _RawMapping,
+    pending_slow_copies: dict[str, tuple[str, str]],
+) -> None:
+    event_id = event.get("id")
+    target = event.get("target")
+    final_path = event.get("to")
+    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
+        pending_slow_copies[event_id] = (target, final_path)
+
+
+def _project_slow_copy_commit(
+    event: _RawMapping,
+    pending_slow_copies: dict[str, tuple[str, str]],
+    current_paths: dict[str, str],
+) -> None:
+    start_id = event.get("for")
+    if not isinstance(start_id, str):
+        return
+    pending = pending_slow_copies.pop(start_id, None)
+    if pending is None:
+        return
+    target, final_path = pending
+    current_paths[target] = final_path
+
+
+def _project_archive_file(
+    event: _RawMapping,
+    *,
+    archive_base: str | None,
+    roots: Mapping[str, str],
+    current_paths: dict[str, str],
+) -> None:
+    target = event.get("target")
+    if not isinstance(target, str) or archive_base is None:
+        return
+    current_path = current_paths.get(target)
+    if current_path is None:
+        return
+    try:
+        current_root = _current_root_for_path(current_path, roots)
+        current_paths[target] = replace_root_prefix(
+            current_path,
+            from_root=current_root,
+            to_root=archive_base,
+        )
+    except ValueError:
+        return
+
+
+def _project_move_between_roots(
+    event: _RawMapping,
+    *,
+    roots: Mapping[str, str],
+    current_paths: dict[str, str],
+) -> None:
+    target = event.get("target")
+    from_root_id = event.get("from_root_id")
+    to_root_id = event.get("to_root_id")
+    if not isinstance(target, str):
+        return
+    if not isinstance(from_root_id, str) or not isinstance(to_root_id, str):
+        return
+    from_root_path = roots.get(from_root_id)
+    to_root_path = roots.get(to_root_id)
+    current_path = current_paths.get(target)
+    if from_root_path is None or to_root_path is None or current_path is None:
+        return
+    try:
+        current_paths[target] = replace_root_prefix(
+            current_path,
+            from_root=from_root_path,
+            to_root=to_root_path,
+        )
+    except ValueError:
+        return
+
+
+def _project_remux_container(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    target = event.get("target")
+    to_container = event.get("to_container")
+    if not isinstance(target, str) or not isinstance(to_container, str):
+        return
+    current_path = current_paths.get(target)
+    if current_path is None:
+        return
+    current_paths[target] = _swap_extension(current_path, to_container)
+
+
+def _current_root_for_path(path: str, roots: Mapping[str, str]) -> str:
+    root_paths: list[str] = list(roots.values())
+    root_paths.sort(key=len, reverse=True)
+    for root_path in root_paths:
+        if path == root_path or path.startswith(f"{root_path}/"):
+            return root_path
+    raise ValueError("current path does not start with a declared root")
+
+
+def _archive_base_path(raw: _RawMapping, declared_roots: Mapping[str, str]) -> str | None:
+    primary_path = primary_root_path(raw)
+    if primary_path is None:
+        return None
+    library = _as_mapping(raw.get("library"))
+    archive_root = library.get("archive_root") if library is not None else None
+    if archive_root is None or archive_root == "archive":
+        return f"{primary_path}/archive"
+    if isinstance(archive_root, str):
+        return declared_roots.get(archive_root)
+    return None
+
+
+def _swap_extension(path: str, new_ext: str) -> str:
+    basename = path.rsplit("/", 1)[-1]
+    if "." in basename:
+        base = path.rsplit(".", 1)[0]
+        return f"{base}.{new_ext}"
+    return f"{path}.{new_ext}"
