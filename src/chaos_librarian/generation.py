@@ -77,7 +77,7 @@ def _generate_scenario_yaml_unvalidated(
     resolved_lane = lane or FuzzLaneName.SMOKE
     config = lane_config_for(profile=profile, lane=resolved_lane)
     rng = RngStreams(resolved_seed=seed, recorder=TraceRecorder()).stream("fuzz-generation")
-    library, movies, timeline = plan_payload_parts(
+    library, movies, series, artists, timeline = plan_payload_parts(
         seed=seed,
         config=config,
         rng=rng,
@@ -98,8 +98,8 @@ def _generate_scenario_yaml_unvalidated(
         },
         "library": library,
         "movies": movies,
-        "series": [],
-        "artists": [],
+        "series": series,
+        "artists": artists,
         "timeline": timeline,
     }
     coverage = coverage_for_payload(payload)

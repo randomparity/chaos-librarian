@@ -666,7 +666,9 @@
         "malformed",
         "negative-oracle",
         "filesystem-artifact",
-        "network-lag"
+        "network-lag",
+        "tv-topology",
+        "music-topology"
       ],
       "title": "FuzzLaneName",
       "type": "string"

@@ -12,16 +12,16 @@ generation:
   seed: 456
   budgets:
     movies: 12
-    series: 0
-    seasons: 0
-    episodes: 0
-    artists: 0
-    albums: 0
-    discs: 0
-    tracks: 0
-    variants: 18
-    bundles: 18
-    assets: 18
+    series: 1
+    seasons: 2
+    episodes: 2
+    artists: 1
+    albums: 1
+    discs: 2
+    tracks: 2
+    variants: 22
+    bundles: 22
+    assets: 22
     sidecars: 54
     timeline_events: 80
 library:

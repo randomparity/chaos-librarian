@@ -122,6 +122,8 @@ def test_lane_config_rejects_profile_mismatch() -> None:
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE, 460),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT, 461),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG, 462),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY, 463),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY, 464),
     ],
 )
 def test_generated_lane_meets_required_coverage(
@@ -158,6 +160,70 @@ def test_generated_gated_lanes_include_required_profiles(
     profiles = payload["profiles"]
     assert isinstance(profiles, list)
     assert tuple(profiles) == required_profiles
+
+
+def test_tv_topology_lane_emits_explicit_series_hierarchy() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        seed=463,
+    )
+
+    assert payload["movies"] == []
+    series = cast(list[dict[str, object]], payload["series"])
+    assert len(series) == 1
+    assert series[0]["id"] == "series_001"
+    assert series[0]["layout"] == "season_folders"
+    assert series[0]["episode_naming"] == "sxxexx_title"
+    seasons = cast(list[dict[str, object]], series[0]["seasons"])
+    assert [season["id"] for season in seasons] == ["season_001", "season_002"]
+    episodes = [
+        episode
+        for season in seasons
+        for episode in cast(list[dict[str, object]], season["episodes"])
+    ]
+    assert [episode["id"] for episode in episodes] == ["episode_001", "episode_002"]
+
+    actions = {event["action"] for event in cast(list[dict[str, object]], payload["timeline"])}
+    assert {
+        "renumber_episode",
+        "move_episode_to_season",
+        "rename_file",
+        "reencode_video",
+    } <= actions
+
+
+def test_music_topology_lane_emits_explicit_artist_hierarchy_and_audio_only_track() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        seed=464,
+    )
+
+    assert payload["movies"] == []
+    assert payload["series"] == []
+    artists = cast(list[dict[str, object]], payload["artists"])
+    assert len(artists) == 1
+    assert artists[0]["id"] == "artist_001"
+    assert artists[0]["layout"] == "artist_album_disc"
+    assert artists[0]["track_naming"] == "disc_track_number_title"
+    albums = cast(list[dict[str, object]], artists[0]["albums"])
+    discs = cast(list[dict[str, object]], albums[0]["discs"])
+    assert [disc["id"] for disc in discs] == ["disc_001", "disc_002"]
+    tracks = [track for disc in discs for track in cast(list[dict[str, object]], disc["tracks"])]
+    assert [track["id"] for track in tracks] == ["track_001", "track_002"]
+
+    variants = cast(list[dict[str, object]], tracks[0]["variants"])
+    bundle = cast(dict[str, object], variants[0]["bundle"])
+    assets = cast(list[dict[str, object]], bundle["assets"])
+    first_asset = assets[0]
+    assert first_asset["role"] == "primary_audio"
+    assert first_asset["container"] == "flac"
+    assert "video" not in first_asset
+    assert cast(list[dict[str, object]], first_asset["audio"])[0]["codec"] == "flac"
+
+    actions = {event["action"] for event in cast(list[dict[str, object]], payload["timeline"])}
+    assert {"renumber_disc", "move_track_to_disc", "rename_file", "reencode_audio"} <= actions
 
 
 def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:
