@@ -65,6 +65,7 @@ def _video_request(
 
 def _audio_request(
     *,
+    channels: str = "stereo",
     noise_color: AudioNoiseColor | None = None,
     sample_rate: int = 48000,
     sample_format: AudioSampleFormat | None = None,
@@ -74,7 +75,7 @@ def _audio_request(
         track_index=0,
         seed=42,
         duration_s=2.0,
-        channels="stereo",
+        channels=channels,
         noise_color=noise_color,
         sample_rate=sample_rate,
         sample_format=sample_format,
@@ -305,10 +306,11 @@ def test_resolution_sequence_changes_recipe_digest_and_evidence() -> None:
 def test_resolve_audio_source_records_track_index() -> None:
     resolution = resolve_audio_source(
         source=AudioSource.SINE,
-        request=_audio_request(),
+        request=_audio_request(channels="lcr"),
     )
 
     assert resolution.ffmpeg_input.lavfi is not None
+    assert "pan=3.0" in resolution.ffmpeg_input.lavfi
     assert resolution.evidence.track_kind == ContentTrackKind.AUDIO
     assert resolution.evidence.track_index == 0
 
