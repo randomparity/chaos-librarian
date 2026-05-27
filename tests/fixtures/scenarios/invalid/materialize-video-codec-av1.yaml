@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 18
+schema_version: 19
 scenario_id: materialize-video-codec-av1
 seed: 1
 duration_scale: short

@@ -15,6 +15,7 @@ from chaos_librarian.adapter.fixture import OracleFixture, OracleReports
 from chaos_librarian.contract import (
     ASSET_REPORT_SCHEMA_VERSION,
     MANIFEST_SCHEMA_VERSION,
+    OBSERVED_STATE_SCHEMA_VERSION,
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
 from chaos_librarian.contract.domain import ParentKind
@@ -175,7 +176,7 @@ def write_plan_fixture(tmp_path: Path, scenario_name: str = "identity-move-renam
 
 
 def _scenario_bytes_from_id(scenario_id: str) -> bytes:
-    return f"""schema_version: 18
+    return f"""schema_version: 19
 scenario_id: {scenario_id}
 seed: 1
 duration_scale: short
@@ -751,7 +752,7 @@ def observed(
     topology_label: str = "hd",
 ) -> ObservedState:
     return ObservedState(
-        schema_version=2,
+        schema_version=OBSERVED_STATE_SCHEMA_VERSION,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id,
         observed_at=datetime(2026, 5, 22, tzinfo=UTC),
@@ -1012,7 +1013,7 @@ def observed_from_fixture(
             asset_refs_by_bundle=asset_refs_by_bundle,
         )
     return ObservedState(
-        schema_version=2,
+        schema_version=OBSERVED_STATE_SCHEMA_VERSION,
         consumer=ObservedConsumer(name="voom-v2", version="0.9.0"),
         run_id=run_id or oracle_fixture.run_id,
         observed_at=oracle_fixture.sentinel.created_at or datetime(2026, 5, 22, tzinfo=UTC),

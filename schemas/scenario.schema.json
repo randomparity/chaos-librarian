@@ -207,7 +207,10 @@
         "mono",
         "stereo",
         "2.1",
+        "4.0",
+        "lcr",
         "5.1",
+        "6.1",
         "7.1"
       ],
       "title": "AudioChannelLayout",
@@ -269,6 +272,10 @@
           ],
           "default": null
         },
+        "role": {
+          "$ref": "#/$defs/AudioTrackRole",
+          "default": "main"
+        },
         "sample_format": {
           "anyOf": [
             {
@@ -305,6 +312,16 @@
       ],
       "title": "AudioTrack",
       "type": "object"
+    },
+    "AudioTrackRole": {
+      "description": "Author-facing role for an audio stream.",
+      "enum": [
+        "main",
+        "commentary",
+        "alternate"
+      ],
+      "title": "AudioTrackRole",
+      "type": "string"
     },
     "Bundle": {
       "additionalProperties": false,
@@ -2183,7 +2200,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 18,
+      "const": 19,
       "title": "Schema Version",
       "type": "integer"
     },

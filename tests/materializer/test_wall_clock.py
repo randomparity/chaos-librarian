@@ -51,7 +51,7 @@ _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 18
+schema_version: 19
 scenario_id: resolution-switch-wall-clock-capability-test
 seed: 133
 duration_scale: short
@@ -328,7 +328,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 18
+            schema_version: 19
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -384,7 +384,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 18
+            schema_version: 19
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short

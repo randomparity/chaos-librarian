@@ -12,6 +12,7 @@ from typing import Any, NoReturn
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from chaos_librarian.adapter.errors import E_ADAPTER_FIXTURE_INVALID, AdapterInputError
+from chaos_librarian.contract import ASSET_REPORT_SCHEMA_VERSION
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import Manifest, ManifestBundle
@@ -356,7 +357,7 @@ def _asset_reports(
         parent_ids = _asset_parent_ids(initial, variant.parent_kind, variant.parent_id)
         reports.append(
             AssetReport(
-                schema_version=7,
+                schema_version=ASSET_REPORT_SCHEMA_VERSION,
                 asset_id=asset.id,
                 parent_kind=variant.parent_kind,
                 parent_id=variant.parent_id,

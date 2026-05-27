@@ -1,4 +1,4 @@
-schema_version: 18
+schema_version: 19
 scenario_id: version-evolution
 seed: 17
 duration_scale: short
