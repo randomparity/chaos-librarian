@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -390,7 +391,7 @@ def test_replay_bundle_schema_version_is_twelve() -> None:
 
 def test_materialize_bundle_carries_content_source_evidence() -> None:
     payload = _materialize_payload()
-    content_sources = payload["content_sources"]
+    content_sources = cast("list[dict[str, object]]", payload["content_sources"])
     assert isinstance(content_sources, list)
     content_sources.append(
         {
