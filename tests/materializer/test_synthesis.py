@@ -21,6 +21,8 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    EmbeddedChapters,
+    EmbeddedCoverArt,
     Mp4MoovPlacement,
     SubtitleMode,
     SubtitleTrack,
@@ -36,6 +38,7 @@ from chaos_librarian.materializer.synthesis import (
     materialize_assets_phase_a,
     materialize_one_asset,
 )
+from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 _RECIPE_DIGEST = "sha256:" + "f" * 64
@@ -47,7 +50,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 20
+schema_version: 21
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -161,7 +164,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 20
+schema_version: 21
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -346,8 +349,10 @@ def test_materialize_one_asset_records_mp4_moov_placement(
         audio_inputs: object,
         output_path: Path,
         mp4_moov_placement: Mp4MoovPlacement | None,
+        chapters_input: object | None = None,
+        cover_art_input: object | None = None,
     ) -> list[str]:
-        del video, video_input, audios, audio_inputs
+        del video, video_input, audios, audio_inputs, chapters_input, cover_art_input
         captured["mp4_moov_placement"] = mp4_moov_placement
         return ["ffmpeg", "-i", "synthetic", str(output_path)]
 
@@ -389,6 +394,98 @@ def test_materialize_one_asset_records_mp4_moov_placement(
 
     assert captured["mp4_moov_placement"] is Mp4MoovPlacement.MOOV_AT_START
     assert result.materialized_asset.mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START
+
+
+def test_materialize_one_asset_threads_embedded_metadata_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        id="asset_embed",
+        role="main",
+        container="mp4",
+        duration_seconds=1.0,
+        embedded_chapters=EmbeddedChapters(count=2, title_prefix="Scene"),
+        embedded_cover_art=EmbeddedCoverArt(),
+        video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+        audio=(
+            AudioTrack(
+                source=AudioSource.SINE,
+                codec="aac",
+                channels=AudioChannelLayout.STEREO,
+                language="eng",
+            ),
+        ),
+    )
+    output_path = tmp_path / "run" / "library" / "r" / "Embedded.mp4"
+    captured: dict[str, str] = {}
+
+    def fake_build_command(
+        *,
+        video: VideoTrack | None,
+        video_input: object | None,
+        audios: object,
+        audio_inputs: object,
+        output_path: Path,
+        mp4_moov_placement: Mp4MoovPlacement | None,
+        chapters_input: FFmpegInput | None,
+        cover_art_input: FFmpegInput | None,
+    ) -> list[str]:
+        del video, video_input, audios, audio_inputs, mp4_moov_placement
+        assert chapters_input is not None
+        assert chapters_input.file_path is not None
+        assert cover_art_input is not None
+        assert cover_art_input.file_path is not None
+        captured["chapters"] = chapters_input.file_path.read_text(encoding="utf-8")
+        captured["cover_name"] = cover_art_input.file_path.name
+        return ["ffmpeg", "-i", "synthetic", str(output_path)]
+
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        Path(argv[-1]).write_bytes(b"media")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "build_command", fake_build_command)
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda _path: ProbedMedia(
+            container="mov,mp4,m4a,3gp,3g2,mj2",
+            duration_seconds=1,
+            size_bytes=output_path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+        ),
+    )
+
+    result = materialize_one_asset(
+        asset,
+        137,
+        tmp_path / "run",
+        _caps(),
+        0,
+        rendered_relative_path="r/Embedded.mp4",
+    )
+
+    assert len(result.prelude_invocations) == 1
+    assert Path(result.prelude_invocations[0].command[-1]).name == captured["cover_name"]
+    assert "[CHAPTER]" in captured["chapters"]
+    assert "title=Scene 01 " in captured["chapters"]
+    assert {source.track_kind for source in result.content_sources} == {
+        ContentTrackKind.VIDEO,
+        ContentTrackKind.AUDIO,
+        ContentTrackKind.CHAPTERS,
+        ContentTrackKind.COVER_ART,
+    }
 
 
 def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
@@ -483,7 +580,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 20
+schema_version: 21
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -542,7 +639,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 20
+schema_version: 21
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -590,7 +687,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 20
+schema_version: 21
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short

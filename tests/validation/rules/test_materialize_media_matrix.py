@@ -36,6 +36,8 @@ def _write_track_scenario(
     noise_color: str | None = None,
     sample_rate: int = 48000,
     sample_format: str | None = None,
+    embedded_chapters: bool = False,
+    embedded_cover_art: bool = False,
 ) -> None:
     noise_color_line = (
         f"                              noise_color: {noise_color}\n" if noise_color else ""
@@ -43,8 +45,23 @@ def _write_track_scenario(
     sample_format_line = (
         f"                              sample_format: {sample_format}\n" if sample_format else ""
     )
+    chapters_block = (
+        "                          embedded_chapters:\n"
+        "                            count: 2\n"
+        "                            title_prefix: Scene\n"
+        if embedded_chapters
+        else ""
+    )
+    cover_block = (
+        "                          embedded_cover_art:\n"
+        "                            source: solid_color\n"
+        "                            image_format: png\n"
+        "                            resolution: square_320\n"
+        if embedded_cover_art
+        else ""
+    )
     path.write_text(
-        f"""schema_version: 20
+        f"""schema_version: 21
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -82,6 +99,8 @@ artists:
                           role: main
                           container: {container}
                           duration_seconds: 2.0
+{chapters_block.rstrip()}
+{cover_block.rstrip()}
                           audio:
                             - source: {source}
 {noise_color_line.rstrip()}
@@ -100,11 +119,15 @@ def _write_movie_scenario(
     path: Path,
     *,
     container: str = "mkv",
+    duration_seconds: float = 2.0,
     audio_codec: str = "aac",
     video_source: str = "color_bars",
     video_codec: str = "h264",
     video_resolution: str = "sd",
     mp4_moov_placement: str | None = None,
+    embedded_chapters: bool = False,
+    embedded_chapter_count: int = 2,
+    embedded_cover_art: bool = False,
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
@@ -114,13 +137,28 @@ def _write_movie_scenario(
     moov_line = (
         f"              mp4_moov_placement: {mp4_moov_placement}\n" if mp4_moov_placement else ""
     )
+    chapters_block = (
+        "              embedded_chapters:\n"
+        f"                count: {embedded_chapter_count}\n"
+        "                title_prefix: Scene\n"
+        if embedded_chapters
+        else ""
+    )
+    cover_block = (
+        "              embedded_cover_art:\n"
+        "                source: solid_color\n"
+        "                image_format: png\n"
+        "                resolution: square_320\n"
+        if embedded_cover_art
+        else ""
+    )
     vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
     field_order_line = f"                field_order: {field_order}\n" if field_order else ""
     color_space_line = f"                color_space: {color_space}\n" if color_space else ""
     color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     hdr_mode_line = f"                hdr_mode: {hdr_mode}\n" if hdr_mode else ""
     path.write_text(
-        f"""schema_version: 20
+        f"""schema_version: 21
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -142,7 +180,9 @@ movies:
               role: main
               container: {container}
 {moov_line.rstrip()}
-              duration_seconds: 2.0
+              duration_seconds: {duration_seconds}
+{chapters_block.rstrip()}
+{cover_block.rstrip()}
               video:
                 source: {video_source}
                 codec: {video_codec}
@@ -174,6 +214,8 @@ def _write_resolution_switch_scenario(
     video_resolution: str = "sd",
     audio: bool = False,
     subtitles: bool = False,
+    embedded_chapters: bool = False,
+    embedded_cover_art: bool = False,
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
@@ -213,8 +255,23 @@ def _write_resolution_switch_scenario(
         if subtitles
         else ""
     )
+    chapters_block = (
+        "              embedded_chapters:\n"
+        "                count: 2\n"
+        "                title_prefix: Scene\n"
+        if embedded_chapters
+        else ""
+    )
+    cover_block = (
+        "              embedded_cover_art:\n"
+        "                source: solid_color\n"
+        "                image_format: png\n"
+        "                resolution: square_320\n"
+        if embedded_cover_art
+        else ""
+    )
     path.write_text(
-        f"""schema_version: 20
+        f"""schema_version: 21
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -236,6 +293,8 @@ movies:
               role: main
               container: {container}
               duration_seconds: 2.0
+{chapters_block.rstrip()}
+{cover_block.rstrip()}
               video:
                 source: {video_source}
                 codec: {video_codec}
@@ -380,6 +439,103 @@ def test_mp4_moov_placement_rejected_on_non_mp4(tmp_path: Path) -> None:
     assert path.endswith(".assets[0].mp4_moov_placement")
 
 
+def test_embedded_chapters_validate_for_mp4_and_mkv(tmp_path: Path) -> None:
+    for container in ("mp4", "mkv"):
+        scenario = tmp_path / f"chapters-{container}.yaml"
+        _write_movie_scenario(scenario, container=container, embedded_chapters=True)
+
+        report = run_validation(prepare_run_input(scenario))
+
+        assert report.ok is True
+        assert report.issues == []
+
+
+def test_embedded_cover_art_validates_for_mp4(tmp_path: Path) -> None:
+    scenario = tmp_path / "cover-art-mp4.yaml"
+    _write_movie_scenario(scenario, container="mp4", embedded_cover_art=True)
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+def test_embedded_cover_art_rejects_mkv(tmp_path: Path) -> None:
+    scenario = tmp_path / "cover-art-mkv.yaml"
+    _write_movie_scenario(scenario, container="mkv", embedded_cover_art=True)
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].embedded_cover_art")
+
+
+def test_embedded_chapters_rejects_audio_only_track(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-chapters.yaml"
+    _write_track_scenario(
+        scenario,
+        container="flac",
+        codec="flac",
+        embedded_chapters=True,
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].embedded_chapters")
+
+
+def test_embedded_cover_art_rejects_audio_only_track(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-cover-art.yaml"
+    _write_track_scenario(
+        scenario,
+        container="flac",
+        codec="flac",
+        embedded_cover_art=True,
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].embedded_cover_art")
+
+
+def test_embedded_chapters_rejects_zero_length_intervals(tmp_path: Path) -> None:
+    scenario = tmp_path / "chapter-count-too-high.yaml"
+    _write_movie_scenario(
+        scenario,
+        container="mp4",
+        duration_seconds=0.001,
+        embedded_chapters=True,
+        embedded_chapter_count=2,
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].embedded_chapters.count")
+
+
+@pytest.mark.parametrize(
+    ("field", "field_suffix"),
+    [
+        ("embedded_chapters", ".embedded_chapters"),
+        ("embedded_cover_art", ".embedded_cover_art"),
+    ],
+)
+def test_resolution_switch_rejects_embedded_metadata(
+    tmp_path: Path,
+    field: str,
+    field_suffix: str,
+) -> None:
+    scenario = tmp_path / f"resolution-switch-{field}.yaml"
+    _write_resolution_switch_scenario(
+        scenario,
+        embedded_chapters=field == "embedded_chapters",
+        embedded_cover_art=field == "embedded_cover_art",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(field_suffix)
+
+
 def test_unsupported_video_codec_names_field(tmp_path: Path) -> None:
     scenario = tmp_path / "materialize-video-codec-av1.yaml"
     _write_movie_scenario(scenario, video_codec="av1")
@@ -422,7 +578,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 20
+        """schema_version: 21
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short

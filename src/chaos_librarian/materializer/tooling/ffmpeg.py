@@ -55,7 +55,7 @@ _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
     "+bitexact",
     "-flags",
     "+bitexact",
-    "-map_metadata",
+    "-map_metadata:g",
     "-1",
     "-metadata",
     "creation_time=1970-01-01T00:00:00Z",
@@ -381,6 +381,8 @@ def _build_video_command(
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
     mp4_moov_placement: Mp4MoovPlacement | None,
+    chapters_input: FFmpegInput | None,
+    cover_art_input: FFmpegInput | None,
 ) -> list[str]:
     _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
     _validate_video(video)
@@ -388,7 +390,19 @@ def _build_video_command(
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
+    next_input_index = 1 + len(audio_inputs)
+    chapter_index = None
+    if chapters_input is not None:
+        chapter_index = next_input_index
+        next_input_index += 1
+        argv.extend(_input_args(chapters_input, field="embedded_chapters"))
+    cover_index = None
+    if cover_art_input is not None:
+        cover_index = next_input_index
+        argv.extend(_input_args(cover_art_input, field="embedded_cover_art"))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
+    if cover_index is not None:
+        argv.extend(["-map", f"{cover_index}:v:0"])
     argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
     argv.extend(_hdr_video_args(video))
     argv.extend(_interlaced_video_args(video))
@@ -396,10 +410,15 @@ def _build_video_command(
     argv.extend(["-c:a", "aac"])
     argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    if chapter_index is not None:
+        argv.extend(["-map_metadata", str(chapter_index), "-map_chapters", str(chapter_index)])
     argv.extend(_audio_metadata_args(audios))
+    if cover_index is not None:
+        argv.extend(["-c:v:1", "png", "-disposition:v:1", "attached_pic"])
     if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
         argv.extend(["-movflags", "+faststart"])
-    argv.append("-shortest")
+    if cover_index is None:
+        argv.append("-shortest")
     argv.append(str(output_path))
     return argv
 
@@ -434,6 +453,8 @@ def build_command(
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
     mp4_moov_placement: Mp4MoovPlacement | None = None,
+    chapters_input: FFmpegInput | None = None,
+    cover_art_input: FFmpegInput | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for one asset.
 
@@ -453,6 +474,18 @@ def build_command(
             payload={"container": container},
         )
     if video is None:
+        if chapters_input is not None:
+            raise UnsupportedMaterializationError(
+                "audio-only assets cannot embed chapters",
+                field="embedded_chapters",
+                payload={},
+            )
+        if cover_art_input is not None:
+            raise UnsupportedMaterializationError(
+                "audio-only assets cannot embed cover art",
+                field="embedded_cover_art",
+                payload={},
+            )
         if video_input is not None:
             raise UnsupportedMaterializationError(
                 "audio-only assets must not pass a video input",
@@ -479,6 +512,8 @@ def build_command(
         audio_inputs=audio_inputs,
         output_path=output_path,
         mp4_moov_placement=mp4_moov_placement,
+        chapters_input=chapters_input,
+        cover_art_input=cover_art_input,
     )
 
 

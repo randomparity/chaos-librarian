@@ -801,10 +801,57 @@
       "title": "ParentKind",
       "type": "string"
     },
+    "ProbedChapter": {
+      "additionalProperties": false,
+      "description": "One chapter from ``ffprobe -show_chapters``.",
+      "properties": {
+        "end_ms": {
+          "minimum": 0,
+          "title": "End Ms",
+          "type": "integer"
+        },
+        "index": {
+          "minimum": 0,
+          "title": "Index",
+          "type": "integer"
+        },
+        "start_ms": {
+          "minimum": 0,
+          "title": "Start Ms",
+          "type": "integer"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        }
+      },
+      "required": [
+        "index",
+        "start_ms",
+        "end_ms"
+      ],
+      "title": "ProbedChapter",
+      "type": "object"
+    },
     "ProbedMedia": {
       "additionalProperties": false,
-      "description": "Output of ``ffprobe -show_format -show_streams`` mapped into a model.",
+      "description": "Output of ``ffprobe`` mapped into a model.",
       "properties": {
+        "chapters": {
+          "items": {
+            "$ref": "#/$defs/ProbedChapter"
+          },
+          "title": "Chapters",
+          "type": "array"
+        },
         "container": {
           "title": "Container",
           "type": "string"
@@ -838,6 +885,18 @@
       "additionalProperties": false,
       "description": "One stream from ``ffprobe -show_streams``.\n\nOptional fields are populated only for the matching ``kind``; ffprobe\nsilently omits the others, and ``exclude_none=True`` keeps the serialized\noutput compact.",
       "properties": {
+        "attached_pic": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Attached Pic"
+        },
         "channel_layout": {
           "anyOf": [
             {
@@ -1068,7 +1127,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
     },

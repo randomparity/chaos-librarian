@@ -15,6 +15,9 @@ from chaos_librarian.contract.scenario import (
     AudioSampleFormat,
     AudioSource,
     AudioTrack,
+    CoverArtResolution,
+    EmbeddedChapters,
+    EmbeddedCoverArt,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -27,9 +30,13 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.materializer import content_sources
 from chaos_librarian.materializer.content_sources import (
     AudioSourceRequest,
+    ChapterSourceRequest,
+    CoverArtSourceRequest,
     VideoSourceRequest,
     collect_content_source_capabilities,
     resolve_audio_source,
+    resolve_chapter_source,
+    resolve_cover_art_source,
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
@@ -301,6 +308,51 @@ def test_resolution_sequence_changes_recipe_digest_and_evidence() -> None:
     assert switched.evidence.recipe_digest != default.evidence.recipe_digest
     assert switched.evidence.resolution_sequence is VideoResolutionSequence.SD_TO_HD
     assert default.evidence.resolution_sequence is None
+
+
+def test_resolve_chapter_source_is_deterministic_and_records_recipe() -> None:
+    chapters = EmbeddedChapters(count=2, title_prefix="Scene")
+    request = ChapterSourceRequest(
+        asset_id="asset_main",
+        seed=137,
+        duration_s=2.0,
+        chapters=chapters,
+    )
+
+    first = resolve_chapter_source(request)
+    second = resolve_chapter_source(request)
+
+    assert first.evidence.recipe_digest == second.evidence.recipe_digest
+    assert first.evidence.track_kind is ContentTrackKind.CHAPTERS
+    assert first.evidence.chapter_count == 2
+    assert first.evidence.chapter_title_prefix == "Scene"
+    assert [chapter.title for chapter in first.chapters] == [
+        second.chapters[0].title,
+        second.chapters[1].title,
+    ]
+    assert [(chapter.start_ms, chapter.end_ms) for chapter in first.chapters] == [
+        (0, 1000),
+        (1000, 2000),
+    ]
+
+
+def test_resolve_cover_art_source_is_deterministic_and_records_recipe() -> None:
+    cover_art = EmbeddedCoverArt()
+    request = CoverArtSourceRequest(
+        asset_id="asset_main",
+        seed=137,
+        cover_art=cover_art,
+    )
+
+    first = resolve_cover_art_source(request)
+    second = resolve_cover_art_source(request)
+
+    assert first.evidence.recipe_digest == second.evidence.recipe_digest
+    assert first.evidence.track_kind is ContentTrackKind.COVER_ART
+    assert first.evidence.cover_art_image_format == cover_art.image_format
+    assert first.evidence.cover_art_resolution is CoverArtResolution.SQUARE_320
+    assert first.evidence.cover_art_color == second.color
+    assert first.color.startswith("#")
 
 
 def test_resolve_audio_source_records_track_index() -> None:

@@ -1,28 +1,32 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
 schema_version: 21
-scenario_id: materialize-video-source-noise
-seed: 1
+scenario_id: invalid-embedded-cover-art-mkv
+seed: 137
 duration_scale: short
 library:
   roots:
     - id: root_main
       path: library
 movies:
-  - id: movie_movie
-    title: Unsupported Video Source
+  - id: movie_bad
+    title: Bad Cover Art
     layout: movie_flat
     variants:
-      - id: variant_noise
-        label: noise
+      - id: variant_bad
+        label: mkv
         bundle:
-          id: bundle_noise
+          id: bundle_bad
           assets:
-            - id: asset_noise_main
+            - id: asset_bad
               role: main
               container: mkv
-              duration_seconds: 2.0
+              duration_seconds: 1.0
+              embedded_cover_art:
+                source: solid_color
+                image_format: png
+                resolution: square_320
               video:
-                source: noise
+                source: color_bars
                 codec: h264
                 resolution: sd
               audio:

@@ -80,6 +80,7 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
                 reporter=reporter,
             )
             return
+        _check_video_embedded_metadata(asset=asset, asset_loc=asset_loc, reporter=reporter)
         _check_string_field(
             asset,
             field_name="container",
@@ -173,6 +174,12 @@ def _check_resolution_switch_video(
             message="resolution-switch video materialization does not support subtitle tracks",
             loc=(*asset_loc, "subtitles"),
         )
+    _reject_embedded_metadata_for_asset(
+        asset=asset,
+        asset_loc=asset_loc,
+        reporter=reporter,
+        reason="cannot be combined with resolution-switch video materialization",
+    )
     for field_name in (
         "vfr_cadence",
         "field_order",
@@ -193,6 +200,12 @@ def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
     asset = context.asset
     asset_loc = context.asset_loc
     _check_mp4_moov_placement(asset=asset, asset_loc=asset_loc, reporter=reporter)
+    _reject_embedded_metadata_for_asset(
+        asset=asset,
+        asset_loc=asset_loc,
+        reporter=reporter,
+        reason="is only supported for video assets",
+    )
     if _as_mapping(asset.get("video")) is not None:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
@@ -219,6 +232,75 @@ def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
     _check_track_container_and_codec(
         asset=asset, audio=audio, asset_loc=asset_loc, reporter=reporter
     )
+
+
+def _check_video_embedded_metadata(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    container = asset.get("container")
+    chapters = _as_mapping(asset.get("embedded_chapters"))
+    cover_art = _as_mapping(asset.get("embedded_cover_art"))
+    if chapters is not None:
+        if container not in {"mp4", "mkv"}:
+            reporter.error(
+                code=E_MATERIALIZE_UNSUPPORTED,
+                message="embedded_chapters is only supported for mp4 and mkv video assets",
+                loc=(*asset_loc, "embedded_chapters"),
+            )
+        _check_chapter_duration(
+            asset=asset,
+            chapters=chapters,
+            asset_loc=asset_loc,
+            reporter=reporter,
+        )
+    if cover_art is not None and container != "mp4":
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="embedded_cover_art is only supported for mp4 video assets",
+            loc=(*asset_loc, "embedded_cover_art"),
+        )
+
+
+def _check_chapter_duration(
+    *,
+    asset: Mapping[str, object],
+    chapters: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    count = chapters.get("count")
+    duration = asset.get("duration_seconds")
+    if not isinstance(count, int) or isinstance(count, bool):
+        return
+    if not isinstance(duration, int | float) or isinstance(duration, bool):
+        return
+    if count <= round(float(duration) * 1000):
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="embedded_chapters.count requires at least one millisecond per chapter",
+        loc=(*asset_loc, "embedded_chapters", "count"),
+    )
+
+
+def _reject_embedded_metadata_for_asset(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+    reason: str,
+) -> None:
+    for field_name in ("embedded_chapters", "embedded_cover_art"):
+        if _as_mapping(asset.get(field_name)) is None:
+            continue
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message=f"{field_name} {reason}",
+            loc=(*asset_loc, field_name),
+        )
 
 
 def _check_track_container_and_codec(

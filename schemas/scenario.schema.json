@@ -165,6 +165,28 @@
           "title": "Duration Seconds",
           "type": "number"
         },
+        "embedded_chapters": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EmbeddedChapters"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "embedded_cover_art": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EmbeddedCoverArt"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -440,6 +462,30 @@
       "title": "CorruptPacketRangeEvent",
       "type": "object"
     },
+    "CoverArtImageFormat": {
+      "description": "Image format for embedded cover art.",
+      "enum": [
+        "png"
+      ],
+      "title": "CoverArtImageFormat",
+      "type": "string"
+    },
+    "CoverArtResolution": {
+      "description": "Pixel geometry for embedded cover art.",
+      "enum": [
+        "square_320"
+      ],
+      "title": "CoverArtResolution",
+      "type": "string"
+    },
+    "CoverArtSource": {
+      "description": "Synthesis recipe for embedded cover art.",
+      "enum": [
+        "solid_color"
+      ],
+      "title": "CoverArtSource",
+      "type": "string"
+    },
     "CreateSidecarEvent": {
       "additionalProperties": false,
       "properties": {
@@ -630,6 +676,48 @@
         "sidecar_path"
       ],
       "title": "EmbedSubtitleEvent",
+      "type": "object"
+    },
+    "EmbeddedChapters": {
+      "additionalProperties": false,
+      "properties": {
+        "count": {
+          "maximum": 20,
+          "minimum": 1,
+          "title": "Count",
+          "type": "integer"
+        },
+        "title_prefix": {
+          "default": "Chapter",
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Title Prefix",
+          "type": "string"
+        }
+      },
+      "required": [
+        "count"
+      ],
+      "title": "EmbeddedChapters",
+      "type": "object"
+    },
+    "EmbeddedCoverArt": {
+      "additionalProperties": false,
+      "properties": {
+        "image_format": {
+          "$ref": "#/$defs/CoverArtImageFormat",
+          "default": "png"
+        },
+        "resolution": {
+          "$ref": "#/$defs/CoverArtResolution",
+          "default": "square_320"
+        },
+        "source": {
+          "$ref": "#/$defs/CoverArtSource",
+          "default": "solid_color"
+        }
+      },
+      "title": "EmbeddedCoverArt",
       "type": "object"
     },
     "Episode": {
@@ -2220,7 +2308,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 20,
+      "const": 21,
       "title": "Schema Version",
       "type": "integer"
     },

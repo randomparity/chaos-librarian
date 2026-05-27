@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 20
+schema_version: 21
 scenario_id: materialize-video-resolution-small
 seed: 1
 duration_scale: short

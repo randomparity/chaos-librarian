@@ -1,4 +1,4 @@
-schema_version: 20
+schema_version: 21
 scenario_id: tv-season-folders
 seed: 10601
 duration_scale: short

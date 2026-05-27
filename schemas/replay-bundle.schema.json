@@ -80,6 +80,31 @@
           "default": null,
           "title": "Cache Key"
         },
+        "chapter_count": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chapter Count"
+        },
+        "chapter_title_prefix": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Chapter Title Prefix"
+        },
         "color_range": {
           "anyOf": [
             {
@@ -114,6 +139,41 @@
           ],
           "default": null,
           "title": "Content Hash"
+        },
+        "cover_art_color": {
+          "anyOf": [
+            {
+              "pattern": "^#[0-9a-f]{6}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cover Art Color"
+        },
+        "cover_art_image_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoverArtImageFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "cover_art_resolution": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CoverArtResolution"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "license": {
           "anyOf": [
@@ -230,9 +290,27 @@
       "enum": [
         "video",
         "audio",
-        "subtitle"
+        "subtitle",
+        "chapters",
+        "cover_art"
       ],
       "title": "ContentTrackKind",
+      "type": "string"
+    },
+    "CoverArtImageFormat": {
+      "description": "Image format for embedded cover art.",
+      "enum": [
+        "png"
+      ],
+      "title": "CoverArtImageFormat",
+      "type": "string"
+    },
+    "CoverArtResolution": {
+      "description": "Pixel geometry for embedded cover art.",
+      "enum": [
+        "square_320"
+      ],
+      "title": "CoverArtResolution",
       "type": "string"
     },
     "MaterializeReplayBundle": {
@@ -312,7 +390,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 10,
+          "const": 11,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -430,7 +508,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 10,
+          "const": 11,
           "title": "Schema Version",
           "type": "integer"
         }

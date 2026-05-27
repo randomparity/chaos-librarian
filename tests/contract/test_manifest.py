@@ -24,6 +24,7 @@ from chaos_librarian.contract.manifest import (
     ManifestTrack,
     ManifestVariant,
     ManifestVersion,
+    ProbedChapter,
     ProbedMedia,
     ProbedStream,
     StreamKind,
@@ -201,6 +202,29 @@ def test_probed_media_round_trip():
     assert loaded == media
 
 
+def test_probed_media_round_trip_with_chapters_and_attached_picture() -> None:
+    media = ProbedMedia(
+        container="mov,mp4,m4a,3gp,3g2,mj2",
+        duration_seconds=2.0,
+        size_bytes=1024,
+        streams=[
+            ProbedStream(
+                kind=StreamKind.VIDEO,
+                codec="png",
+                width=320,
+                height=320,
+                attached_pic=True,
+            )
+        ],
+        chapters=[ProbedChapter(index=0, start_ms=0, end_ms=1000, title="Scene 01 abc123")],
+    )
+
+    loaded = ProbedMedia.model_validate_json(media.model_dump_json())
+
+    assert loaded.chapters[0].title == "Scene 01 abc123"
+    assert loaded.streams[0].attached_pic is True
+
+
 def test_manifest_version_probed_defaults_none():
     """WHY: plan-only manifests must stay bit-identical post-v2 bump.
     The default None plus exclude_none=True in the writer guarantees that."""
@@ -223,8 +247,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_eight():
-    assert MANIFEST_SCHEMA_VERSION == 8
+def test_manifest_schema_version_is_nine():
+    assert MANIFEST_SCHEMA_VERSION == 9
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -276,9 +300,9 @@ def test_manifest_sidecar_kind_remains_free_form():
     assert sidecar.kind == "srt"
 
 
-def test_manifest_v8_schema_version():
+def test_manifest_v9_schema_version():
     manifest = Manifest(
-        schema_version=8,
+        schema_version=9,
         movies=[],
         series=[],
         seasons=[],
@@ -294,7 +318,7 @@ def test_manifest_v8_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 8
+    assert manifest.schema_version == 9
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:

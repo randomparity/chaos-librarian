@@ -39,8 +39,15 @@ _GOOD_PROBE = json.dumps(
 )
 
 
-def _patch_run(monkeypatch: pytest.MonkeyPatch, stdout: str, returncode: int = 0) -> None:
-    def stub(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+def _patch_run(
+    monkeypatch: pytest.MonkeyPatch,
+    stdout: str,
+    returncode: int = 0,
+    calls: list[list[str]] | None = None,
+) -> None:
+    def stub(args: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if calls is not None:
+            calls.append(args)
         return subprocess.CompletedProcess(
             args=["ffprobe"], returncode=returncode, stdout=stdout, stderr=""
         )
@@ -106,6 +113,58 @@ def test_probe_file_uses_audio_handler_name_as_title_fallback(
 
     audio = next(s for s in media.streams if s.kind == "audio")
     assert audio.title == "Commentary"
+
+
+def test_probe_file_parses_chapters_and_attached_picture(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[list[str]] = []
+    probe = json.loads(_GOOD_PROBE)
+    probe["streams"][0]["codec_name"] = "png"
+    probe["streams"][0]["disposition"] = {"attached_pic": 1}
+    probe["chapters"] = [
+        {
+            "id": 0,
+            "time_base": "1/1000",
+            "start": 0,
+            "end": 1000,
+            "tags": {"title": "Scene 01 abc123"},
+        },
+        {
+            "id": 1,
+            "start_time": "1.000000",
+            "end_time": "2.000000",
+            "tags": {"title": "Scene 02 def456"},
+        },
+    ]
+    _patch_run(monkeypatch, json.dumps(probe), calls=calls)
+
+    media = probe_file(tmp_path / "fake.mp4")
+
+    assert "-show_chapters" in calls[0]
+    video = next(s for s in media.streams if s.kind == "video")
+    assert video.attached_pic is True
+    assert [chapter.title for chapter in media.chapters] == [
+        "Scene 01 abc123",
+        "Scene 02 def456",
+    ]
+    assert [(chapter.start_ms, chapter.end_ms) for chapter in media.chapters] == [
+        (0, 1000),
+        (1000, 2000),
+    ]
+
+
+def test_probe_file_omits_false_attached_picture_disposition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    probe = json.loads(_GOOD_PROBE)
+    probe["streams"][0]["disposition"] = {"attached_pic": 0}
+    _patch_run(monkeypatch, json.dumps(probe))
+
+    media = probe_file(tmp_path / "fake.mp4")
+
+    video = next(s for s in media.streams if s.kind == "video")
+    assert video.attached_pic is None
 
 
 def test_probe_file_raises_on_non_zero_exit(

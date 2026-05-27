@@ -42,12 +42,12 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_issue_106_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 20
-    assert MANIFEST_SCHEMA_VERSION == 8
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 10
-    assert ASSET_REPORT_SCHEMA_VERSION == 8
+    assert SCENARIO_SCHEMA_VERSION == 21
+    assert MANIFEST_SCHEMA_VERSION == 9
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 11
+    assert ASSET_REPORT_SCHEMA_VERSION == 9
     assert VARIANT_REPORT_SCHEMA_VERSION == 2
-    assert OBSERVED_STATE_SCHEMA_VERSION == 3
+    assert OBSERVED_STATE_SCHEMA_VERSION == 4
 
 
 def test_domain_report_schema_versions_start_at_one() -> None:
@@ -61,8 +61,8 @@ def test_domain_report_schema_versions_start_at_one() -> None:
     assert TRACK_REPORT_SCHEMA_VERSION == 1
 
 
-def test_materialization_schema_version_bumped_to_13() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 13
+def test_materialization_schema_version_bumped_to_14() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 14
 
 
 def test_capabilities_schema_version_bumped_to_6() -> None:
@@ -97,7 +97,7 @@ def test_all_schema_versions_are_positive_integers() -> None:
 
 
 def test_adapter_schema_versions() -> None:
-    assert OBSERVED_STATE_SCHEMA_VERSION == 3
+    assert OBSERVED_STATE_SCHEMA_VERSION == 4
     assert DIVERGENCE_SCHEMA_VERSION == 1
 
 
