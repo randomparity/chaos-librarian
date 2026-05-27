@@ -154,6 +154,19 @@ def test_probe_file_parses_chapters_and_attached_picture(
     ]
 
 
+def test_probe_file_omits_false_attached_picture_disposition(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    probe = json.loads(_GOOD_PROBE)
+    probe["streams"][0]["disposition"] = {"attached_pic": 0}
+    _patch_run(monkeypatch, json.dumps(probe))
+
+    media = probe_file(tmp_path / "fake.mp4")
+
+    video = next(s for s in media.streams if s.kind == "video")
+    assert video.attached_pic is None
+
+
 def test_probe_file_raises_on_non_zero_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

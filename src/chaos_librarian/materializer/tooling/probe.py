@@ -113,7 +113,7 @@ def _attached_pic(blob: dict[str, object]) -> bool | None:
     disposition = _coerce_blob(blob.get("disposition"))
     if disposition is None:
         return None
-    return _opt_bool(disposition, "attached_pic")
+    return True if _opt_bool(disposition, "attached_pic") is True else None
 
 
 def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
