@@ -1,24 +1,24 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
 schema_version: 22
-scenario_id: invalid-mp4-moov-placement-non-mp4
-seed: 136
+scenario_id: invalid-matroska-profile-mp4
+seed: 139
 duration_scale: short
 library: {roots: [{id: root_main, path: library}]}
 movies:
   - id: movie_bad
-    title: Bad Moov
+    title: Bad Muxing Profile
     layout: movie_flat
     variants:
       - id: variant_bad
-        label: mkv
+        label: mp4
         bundle:
           id: bundle_bad
           assets:
             - id: asset_bad
               role: main
-              container: mkv
-              mp4_moov_placement: moov_at_start
+              container: mp4
               duration_seconds: 1.0
+              matroska_muxing_profile: no_cues
               video: {source: color_bars, codec: h264, resolution: sd}
               audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
 series: []

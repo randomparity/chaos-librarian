@@ -1,26 +1,24 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
 schema_version: 22
-scenario_id: invalid-mp4-moov-placement-non-mp4
-seed: 136
+scenario_id: invalid-webm-without-profile
+seed: 142
 duration_scale: short
 library: {roots: [{id: root_main, path: library}]}
 movies:
   - id: movie_bad
-    title: Bad Moov
+    title: Bad WebM Profile
     layout: movie_flat
     variants:
       - id: variant_bad
-        label: mkv
+        label: webm
         bundle:
           id: bundle_bad
           assets:
             - id: asset_bad
               role: main
-              container: mkv
-              mp4_moov_placement: moov_at_start
+              container: webm
               duration_seconds: 1.0
-              video: {source: color_bars, codec: h264, resolution: sd}
-              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              video: {source: color_bars, codec: vp9, resolution: sd}
 series: []
 artists: []
 timeline: []

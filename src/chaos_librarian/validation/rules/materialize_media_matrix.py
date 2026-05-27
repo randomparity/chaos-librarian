@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.media_matrix import (
@@ -39,6 +39,17 @@ if TYPE_CHECKING:
 
 __all__ = ["rule_materialize_media_matrix"]
 
+_MATROSKA_MUXING_PROFILE_CONTAINERS: Final[frozenset[str]] = frozenset({"mkv", "webm"})
+_WEBM_VIDEO_CODEC: Final = "vp9"
+_WEBM_REJECTED_VIDEO_FIELDS: Final[tuple[str, ...]] = (
+    "vfr_cadence",
+    "field_order",
+    "color_space",
+    "color_range",
+    "hdr_mode",
+    "resolution_sequence",
+)
+
 
 def rule_materialize_media_matrix(
     raw: Mapping[str, object],
@@ -71,6 +82,15 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             loc=(*asset_loc, "video"),
         )
     else:
+        if asset.get("container") == "webm":
+            _check_webm_video_asset(
+                asset=asset,
+                video=video,
+                asset_loc=asset_loc,
+                video_loc=(*asset_loc, "video"),
+                reporter=reporter,
+            )
+            return
         if isinstance(video.get("resolution_sequence"), str):
             _check_resolution_switch_video(
                 asset=asset,
@@ -80,6 +100,11 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
                 reporter=reporter,
             )
             return
+        _check_matroska_muxing_profile(
+            asset=asset,
+            asset_loc=asset_loc,
+            reporter=reporter,
+        )
         _check_video_embedded_metadata(asset=asset, asset_loc=asset_loc, reporter=reporter)
         _check_string_field(
             asset,
@@ -142,6 +167,12 @@ def _check_resolution_switch_video(
     video_loc: _Loc,
     reporter: Reporter,
 ) -> None:
+    _reject_matroska_muxing_profile_for_asset(
+        asset=asset,
+        asset_loc=asset_loc,
+        reporter=reporter,
+        reason="cannot be combined with resolution-switch video materialization",
+    )
     _check_expected_string_field(
         asset,
         field_name="container",
@@ -206,6 +237,12 @@ def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
         reporter=reporter,
         reason="is only supported for video assets",
     )
+    _reject_matroska_muxing_profile_for_asset(
+        asset=asset,
+        asset_loc=asset_loc,
+        reporter=reporter,
+        reason="is only supported for mkv and webm video assets",
+    )
     if _as_mapping(asset.get("video")) is not None:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
@@ -264,6 +301,84 @@ def _check_video_embedded_metadata(
         )
 
 
+def _check_matroska_muxing_profile(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    profile = asset.get("matroska_muxing_profile")
+    if not isinstance(profile, str):
+        return
+    if asset.get("container") in _MATROSKA_MUXING_PROFILE_CONTAINERS:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="matroska_muxing_profile is only supported for mkv and webm video assets",
+        loc=(*asset_loc, "matroska_muxing_profile"),
+    )
+
+
+def _check_webm_video_asset(
+    *,
+    asset: Mapping[str, object],
+    video: Mapping[str, object],
+    asset_loc: _Loc,
+    video_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    if not isinstance(asset.get("matroska_muxing_profile"), str):
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="webm video materialization requires matroska_muxing_profile",
+            loc=(*asset_loc, "matroska_muxing_profile"),
+        )
+    for field_name, supported in (
+        ("source", SUPPORTED_VIDEO_SOURCES),
+        ("resolution", SUPPORTED_RESOLUTIONS),
+    ):
+        _check_string_field(
+            video,
+            field_name=field_name,
+            supported=supported,
+            loc=(*video_loc, field_name),
+            reporter=reporter,
+        )
+    codec = video.get("codec")
+    if isinstance(codec, str) and codec != _WEBM_VIDEO_CODEC:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="webm video materialization only supports VP9 video",
+            loc=(*video_loc, "codec"),
+        )
+    if _as_list(asset.get("audio")):
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="webm muxing profile materialization does not support audio streams",
+            loc=(*asset_loc, "audio"),
+        )
+    if _as_list(asset.get("subtitles")):
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="webm muxing profile materialization does not support subtitle tracks",
+            loc=(*asset_loc, "subtitles"),
+        )
+    _reject_embedded_metadata_for_asset(
+        asset=asset,
+        asset_loc=asset_loc,
+        reporter=reporter,
+        reason="cannot be combined with webm muxing profile materialization",
+    )
+    for field_name in _WEBM_REJECTED_VIDEO_FIELDS:
+        if field_name not in video or video.get(field_name) is None:
+            continue
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message=f"webm muxing profile materialization cannot combine {field_name}",
+            loc=(*video_loc, field_name),
+        )
+
+
 def _check_chapter_duration(
     *,
     asset: Mapping[str, object],
@@ -301,6 +416,22 @@ def _reject_embedded_metadata_for_asset(
             message=f"{field_name} {reason}",
             loc=(*asset_loc, field_name),
         )
+
+
+def _reject_matroska_muxing_profile_for_asset(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+    reason: str,
+) -> None:
+    if not isinstance(asset.get("matroska_muxing_profile"), str):
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"matroska_muxing_profile {reason}",
+        loc=(*asset_loc, "matroska_muxing_profile"),
+    )
 
 
 def _check_track_container_and_codec(

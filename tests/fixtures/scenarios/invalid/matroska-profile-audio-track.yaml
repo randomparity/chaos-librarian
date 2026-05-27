@@ -1,7 +1,7 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
 schema_version: 22
-scenario_id: invalid-embedded-chapters-audio-track
-seed: 137
+scenario_id: invalid-matroska-profile-audio-track
+seed: 138
 duration_scale: short
 library:
   roots:
@@ -11,7 +11,7 @@ movies: []
 series: []
 artists:
   - id: artist_bad
-    name: Bad Chapters
+    name: Bad Muxing Track
     layout: artist_album_flat
     track_naming: track_number_title
     albums:
@@ -34,9 +34,7 @@ artists:
                           role: main
                           container: flac
                           duration_seconds: 1.0
-                          embedded_chapters:
-                            count: 2
-                            title_prefix: Scene
+                          matroska_muxing_profile: short_clusters
                           audio:
                             - source: sine
                               codec: flac
