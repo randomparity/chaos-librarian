@@ -41,6 +41,7 @@ from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionA
 from chaos_librarian.materializer.replay import replay_run_bundle
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
+from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO_BYTES
 
 _RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 _CORRUPTED_HASH = "sha256:" + "2" * 64
@@ -49,7 +50,7 @@ _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 _RESOLUTION_SWITCH_SCENARIO = b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: run-replay-resolution-switch-capability-test
 seed: 133
 duration_scale: short
@@ -91,7 +92,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 17
+schema_version: 18
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -130,7 +131,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -172,7 +173,7 @@ timeline:
     bytes: 64
 """
 _HDR_SCENARIO = b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: run-replay-hdr-capability-test
 seed: 7
 duration_scale: short
@@ -314,7 +315,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -327,6 +328,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
             materialize_hevc_video=True,
             materialize_hdr_video=False,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -350,7 +352,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -363,6 +365,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=False,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -378,6 +381,44 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
         replay_run_bundle(_run_bundle_for(_RESOLUTION_SWITCH_SCENARIO, applied_events=0), out)
 
     assert exc.value.field == "ready_for.materialize_resolution_switch_video"
+    assert not out.exists()
+
+
+def test_run_replay_refuses_audio_noise_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caps = Capabilities(
+        schema_version=6,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
+            materialize_audio_recipes=False,
+        ),
+    )
+    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(
+        replay_mod,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        replay_run_bundle(_run_bundle_for(AUDIO_NOISE_SCENARIO_BYTES, applied_events=0), out)
+
+    assert exc.value.field == "ready_for.materialize_audio_recipes"
+    assert exc.value.asset_id == "asset_noise"
     assert not out.exists()
 
 
@@ -567,7 +608,7 @@ def _patch_replay_materializer(
     patch_corruption: bool = True,
 ) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -580,6 +621,7 @@ def _patch_replay_materializer(
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)

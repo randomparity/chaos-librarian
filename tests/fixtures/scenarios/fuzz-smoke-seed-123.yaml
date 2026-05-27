@@ -1,4 +1,4 @@
-schema_version: 17
+schema_version: 18
 scenario_id: fuzz-smoke-smoke-seed-123
 seed: 123
 duration_scale: short

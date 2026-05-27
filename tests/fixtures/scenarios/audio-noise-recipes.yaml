@@ -1,0 +1,115 @@
+schema_version: 18
+scenario_id: audio-noise-recipes
+seed: 134
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: Music
+movies: []
+series: []
+artists:
+  - id: artist_noise
+    name: Noise Recipes
+    layout: artist_album_disc
+    track_naming: track_number_title
+    albums:
+      - id: album_matrix
+        title: Sample Matrix
+        release_year: 2026
+        discs:
+          - id: disc_one
+            disc_number: 1
+            tracks:
+              - id: track_flac
+                track_number: 1
+                title: White Noise FLAC
+                performers: []
+                variants:
+                  - id: variant_flac
+                    label: flac-s16
+                    bundle:
+                      id: bundle_flac
+                      assets:
+                        - id: asset_noise_flac
+                          role: main
+                          container: flac
+                          duration_seconds: 1.0
+                          audio:
+                            - source: noise
+                              noise_color: white
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+                              sample_rate: 44100
+                              sample_format: s16
+                          subtitles: []
+              - id: track_wav
+                track_number: 2
+                title: Pink Noise WAV
+                performers: []
+                variants:
+                  - id: variant_wav
+                    label: wav-float
+                    bundle:
+                      id: bundle_wav
+                      assets:
+                        - id: asset_noise_wav
+                          role: main
+                          container: wav
+                          duration_seconds: 1.0
+                          audio:
+                            - source: noise
+                              noise_color: pink
+                              codec: pcm_f32le
+                              channels: stereo
+                              language: zxx
+                              sample_rate: 96000
+                              sample_format: flt
+                          subtitles: []
+              - id: track_mp3
+                track_number: 3
+                title: Brown Noise MP3
+                performers: []
+                variants:
+                  - id: variant_mp3
+                    label: mp3
+                    bundle:
+                      id: bundle_mp3
+                      assets:
+                        - id: asset_noise_mp3
+                          role: main
+                          container: mp3
+                          duration_seconds: 1.0
+                          audio:
+                            - source: noise
+                              noise_color: brown
+                              codec: mp3
+                              channels: stereo
+                              language: zxx
+                              sample_rate: 22050
+                          subtitles: []
+              - id: track_wav24
+                track_number: 4
+                title: Brown Noise WAV 24
+                performers: []
+                variants:
+                  - id: variant_wav24
+                    label: wav-24
+                    bundle:
+                      id: bundle_wav24
+                      assets:
+                        - id: asset_noise_wav24
+                          role: main
+                          container: wav
+                          duration_seconds: 1.0
+                          audio:
+                            - source: noise
+                              noise_color: brown
+                              codec: pcm_s24le
+                              channels: stereo
+                              language: zxx
+                              sample_rate: 88200
+                              sample_format: s24
+                          subtitles: []
+timeline: []

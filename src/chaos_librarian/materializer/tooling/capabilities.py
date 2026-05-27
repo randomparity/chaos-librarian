@@ -193,6 +193,9 @@ def detect_capabilities() -> Capabilities:
         libx265_available=libx265_available,
     )
     resolution_switch_available = ffmpeg_ok and ffprobe_ok and libx264_available
+    audio_recipes_available = (
+        ffmpeg_ok and ffprobe_ok and _ffmpeg_filter_available(ffmpeg, "anoisesrc")
+    )
     return Capabilities(
         schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ffmpeg,
@@ -203,6 +206,7 @@ def detect_capabilities() -> Capabilities:
             ffmpeg_available=ffmpeg_ok,
             hdr_available=hdr_video_available,
             resolution_sequence_available=resolution_switch_available,
+            audio_recipes_available=audio_recipes_available,
         ),
         ready_for=ReadyFor(
             materialize_static=ffmpeg_ok and ffprobe_ok,
@@ -211,6 +215,7 @@ def detect_capabilities() -> Capabilities:
             materialize_hevc_video=ffmpeg_ok and ffprobe_ok and libx265_available,
             materialize_hdr_video=hdr_video_available,
             materialize_resolution_switch_video=resolution_switch_available,
+            materialize_audio_recipes=audio_recipes_available,
         ),
     )
 

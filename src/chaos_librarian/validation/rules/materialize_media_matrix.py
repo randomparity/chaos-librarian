@@ -7,7 +7,9 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.media_matrix import (
+    AUDIO_SAMPLE_FORMATS_BY_CODEC,
     HEVC_VIDEO_CODECS,
+    MP3_SAMPLE_RATES,
     RESOLUTION_SWITCH_VIDEO_CODEC,
     RESOLUTION_SWITCH_VIDEO_CONTAINER,
     RESOLUTION_SWITCH_VIDEO_RESOLUTION,
@@ -15,6 +17,7 @@ from chaos_librarian.media_matrix import (
     RESOLUTION_SWITCH_VIDEO_SOURCE,
     SUPPORTED_AUDIO_CODECS,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
+    SUPPORTED_AUDIO_SAMPLE_RATES,
     SUPPORTED_RESOLUTIONS,
     SUPPORTED_VIDEO_CODECS,
     SUPPORTED_VIDEO_CONTAINERS,
@@ -97,6 +100,16 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             field_name="codec",
             supported=SUPPORTED_AUDIO_CODECS,
             loc=(*asset_loc, "audio", index, "codec"),
+            reporter=reporter,
+        )
+        _check_audio_sample_rate(
+            audio=audio,
+            loc=(*asset_loc, "audio", index, "sample_rate"),
+            reporter=reporter,
+        )
+        _check_audio_sample_format(
+            audio=audio,
+            loc=(*asset_loc, "audio", index, "sample_format"),
             reporter=reporter,
         )
 
@@ -207,6 +220,16 @@ def _check_track_container_and_codec(
         return
     supported_codecs = SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER.get(container)
     if supported_codecs is None or codec in supported_codecs:
+        _check_audio_sample_rate(
+            audio=audio,
+            loc=(*asset_loc, "audio", 0, "sample_rate"),
+            reporter=reporter,
+        )
+        _check_audio_sample_format(
+            audio=audio,
+            loc=(*asset_loc, "audio", 0, "sample_format"),
+            reporter=reporter,
+        )
         return
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
@@ -214,6 +237,48 @@ def _check_track_container_and_codec(
             f"track audio codec {codec!r} is not supported for audio-only container {container!r}"
         ),
         loc=(*asset_loc, "audio", 0, "codec"),
+    )
+
+
+def _check_audio_sample_rate(
+    *,
+    audio: Mapping[str, object],
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    sample_rate = audio.get("sample_rate")
+    if not isinstance(sample_rate, int) or isinstance(sample_rate, bool):
+        return
+    codec = audio.get("codec")
+    supported_rates = MP3_SAMPLE_RATES if codec == "mp3" else SUPPORTED_AUDIO_SAMPLE_RATES
+    if sample_rate in supported_rates:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"sample_rate {sample_rate!r} is not supported for audio codec {codec!r}",
+        loc=loc,
+    )
+
+
+def _check_audio_sample_format(
+    *,
+    audio: Mapping[str, object],
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    sample_format = audio.get("sample_format")
+    if not isinstance(sample_format, str):
+        return
+    codec = audio.get("codec")
+    if not isinstance(codec, str):
+        return
+    supported_formats = AUDIO_SAMPLE_FORMATS_BY_CODEC.get(codec)
+    if supported_formats is not None and sample_format in supported_formats:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"sample_format {sample_format!r} is not supported for audio codec {codec!r}",
+        loc=loc,
     )
 
 

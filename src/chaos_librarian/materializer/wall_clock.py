@@ -33,6 +33,7 @@ from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.capability_gates import (
+    assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
     assert_capable_for_resolution_switch_video,
 )
@@ -182,6 +183,7 @@ def run_wall_clock_scenario(
     _preflight_wall_clock_slow_copies(resolved_timeline)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    assert_capable_for_audio_recipes(scenario, caps)
     assert_capable_for_resolution_switch_video(scenario, caps)
     assert_capable_for_hdr_video(scenario, caps)
     run_id = uuid.uuid4()

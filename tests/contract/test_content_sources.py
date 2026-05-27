@@ -12,7 +12,12 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceProviderCapability,
     ContentTrackKind,
 )
-from chaos_librarian.contract.scenario import VideoColorRange, VideoColorSpace
+from chaos_librarian.contract.scenario import (
+    AudioNoiseColor,
+    AudioSampleFormat,
+    VideoColorRange,
+    VideoColorSpace,
+)
 
 
 def test_content_source_evidence_round_trips_builtin_video() -> None:
@@ -66,6 +71,28 @@ def test_content_source_evidence_round_trips_cached_audio() -> None:
     assert loaded.content_hash == "sha256:" + "3" * 64
     assert loaded.origin_uri == "tts:example:voice-a"
     assert loaded.license == "generated-test-fixture"
+
+
+def test_content_source_evidence_round_trips_audio_recipe_parameters() -> None:
+    evidence = ContentSourceEvidence(
+        asset_id="asset_main",
+        track_kind=ContentTrackKind.AUDIO,
+        track_index=0,
+        source="noise",
+        provider="builtin-lavfi",
+        recipe_digest="sha256:" + "4" * 64,
+        noise_color=AudioNoiseColor.BROWN,
+        sample_rate=88200,
+        sample_format=AudioSampleFormat.FLT,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+    loaded = ContentSourceEvidence.model_validate_json(evidence.model_dump_json())
+
+    assert loaded == evidence
+    assert loaded.noise_color is AudioNoiseColor.BROWN
+    assert loaded.sample_rate == 88200
+    assert loaded.sample_format is AudioSampleFormat.FLT
 
 
 def test_content_source_evidence_rejects_bad_recipe_digest() -> None:

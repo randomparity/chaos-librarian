@@ -316,7 +316,7 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
         "chaos_librarian_version": "0.1.0",
-        "scenario": "schema_version: 17\nscenario_id: x\n",
+        "scenario": "schema_version: 18\nscenario_id: x\n",
         "run_id": "00000000-0000-4000-8000-000000000000",
         "resolved_seed": 1,
         "applied_events": 0,
@@ -384,8 +384,8 @@ def test_materialize_bundle_toolchain_rejects_unknown_tool():
         MaterializeReplayBundle.model_validate(payload)
 
 
-def test_replay_bundle_schema_version_is_nine() -> None:
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 9
+def test_replay_bundle_schema_version_is_ten() -> None:
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 10
 
 
 def test_materialize_bundle_carries_content_source_evidence() -> None:

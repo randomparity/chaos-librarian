@@ -104,6 +104,10 @@
       "additionalProperties": false,
       "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nThe current CLI only consults ``materialize_static``. The other\nflags are populated so adapter authors can skip the corresponding\nmutation-mode tests cleanly.",
       "properties": {
+        "materialize_audio_recipes": {
+          "title": "Materialize Audio Recipes",
+          "type": "boolean"
+        },
         "materialize_filesystem_mutations": {
           "title": "Materialize Filesystem Mutations",
           "type": "boolean"
@@ -135,7 +139,8 @@
         "materialize_media_mutations",
         "materialize_hevc_video",
         "materialize_hdr_video",
-        "materialize_resolution_switch_video"
+        "materialize_resolution_switch_video",
+        "materialize_audio_recipes"
       ],
       "title": "ReadyFor",
       "type": "object"
@@ -208,7 +213,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 5,
+      "const": 6,
       "title": "Schema Version",
       "type": "integer"
     }

@@ -150,6 +150,23 @@ class AudioSource(enum.StrEnum):
     SINE = "sine"
     SILENCE = "silence"
     CHANNEL_TONES = "channel_tones"
+    NOISE = "noise"
+
+
+class AudioNoiseColor(enum.StrEnum):
+    """Supported deterministic audio noise colors."""
+
+    WHITE = "white"
+    PINK = "pink"
+    BROWN = "brown"
+
+
+class AudioSampleFormat(enum.StrEnum):
+    """Author-facing sample formats for probe-verifiable audio outputs."""
+
+    S16 = "s16"
+    S24 = "s24"
+    FLT = "flt"
 
 
 class AudioChannelLayout(enum.StrEnum):
@@ -261,6 +278,17 @@ class AudioTrack(BaseModel):
     codec: str
     channels: AudioChannelLayout
     language: str
+    noise_color: AudioNoiseColor | None = None
+    sample_rate: Literal[8000, 22050, 44100, 48000, 88200, 96000] = 48000
+    sample_format: AudioSampleFormat | None = None
+
+    @model_validator(mode="after")
+    def _validate_noise_color(self) -> AudioTrack:
+        if self.source is AudioSource.NOISE and self.noise_color is None:
+            raise ValueError("audio noise source requires noise_color")
+        if self.source is not AudioSource.NOISE and self.noise_color is not None:
+            raise ValueError("noise_color is only valid with source='noise'")
+        return self
 
 
 class SubtitleTrack(BaseModel):
@@ -751,7 +779,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[17]
+    schema_version: Literal[18]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

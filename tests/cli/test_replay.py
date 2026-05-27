@@ -118,7 +118,7 @@ def _make_wall_clock_fixture(
 
 def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -131,6 +131,7 @@ def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)

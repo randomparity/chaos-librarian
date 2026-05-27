@@ -7,6 +7,8 @@ import enum
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.scenario import (
+    AudioNoiseColor,
+    AudioSampleFormat,
     VideoColorRange,
     VideoColorSpace,
     VideoResolutionSequence,
@@ -44,6 +46,9 @@ class ContentSourceEvidence(BaseModel):
     color_space: VideoColorSpace | None = None
     color_range: VideoColorRange | None = None
     resolution_sequence: VideoResolutionSequence | None = None
+    noise_color: AudioNoiseColor | None = None
+    sample_rate: int | None = None
+    sample_format: AudioSampleFormat | None = None
     track_index: int | None = Field(default=None, ge=0)
     cache_disposition: CacheDisposition
     cache_key: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)

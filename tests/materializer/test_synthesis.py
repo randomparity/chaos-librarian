@@ -46,7 +46,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -160,7 +160,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -406,7 +406,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -465,7 +465,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 17
+schema_version: 18
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -513,7 +513,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 17
+schema_version: 18
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short
@@ -607,7 +607,7 @@ def _patch_successful_ffmpeg(monkeypatch: pytest.MonkeyPatch, final_path: Path) 
 
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -620,6 +620,7 @@ def _caps() -> Capabilities:
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
 

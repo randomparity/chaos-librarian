@@ -535,6 +535,9 @@ def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
                 seed=seed,
                 duration_s=asset.duration_seconds,
                 channels=audio.channels.value,
+                noise_color=audio.noise_color,
+                sample_rate=audio.sample_rate,
+                sample_format=audio.sample_format,
             ),
         )
         audio_inputs.append(audio_resolution.ffmpeg_input)

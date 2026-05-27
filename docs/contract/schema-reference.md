@@ -46,14 +46,14 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 17 |
+| scenario | 18 |
 | manifest | 7 |
 | journal | 1 |
-| replay bundle | 9 |
+| replay bundle | 10 |
 | validation | 1 |
-| materialization | 11 |
+| materialization | 12 |
 | run sentinel | 2 |
-| capabilities | 5 |
+| capabilities | 6 |
 | asset report | 7 |
 | variant report | 2 |
 | bundle report | 1 |
@@ -67,6 +67,11 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 2 |
 | divergence | 1 |
+
+Scenario v18 adds audio noise recipes plus audio `sample_rate` and
+`sample_format` selection. Capabilities v6 adds
+`ready_for.materialize_audio_recipes`. Materialization v12 and replay-bundle
+v10 add selected audio recipe parameters to content-source evidence.
 
 Scenario v17 adds optional mid-stream video resolution sequence selection on
 video tracks (`resolution_sequence`) with `sd_to_hd`. Capabilities v5 adds

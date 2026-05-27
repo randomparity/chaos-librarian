@@ -35,6 +35,7 @@ from chaos_librarian.materializer.errors import (
 from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
 from chaos_librarian.validation import codes
+from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
@@ -52,9 +53,10 @@ def _capabilities(
     materialize_hevc_video: bool = True,
     materialize_hdr_video: bool = True,
     materialize_resolution_switch_video: bool = True,
+    materialize_audio_recipes: bool = True,
 ) -> Capabilities:
     return Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -67,6 +69,7 @@ def _capabilities(
             materialize_hevc_video=materialize_hevc_video,
             materialize_hdr_video=materialize_hdr_video,
             materialize_resolution_switch_video=materialize_resolution_switch_video,
+            materialize_audio_recipes=materialize_audio_recipes,
         ),
     )
 
@@ -103,6 +106,32 @@ def _patch_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(synthesis_mod, "probe_file", fake_probe)
 
 
+def test_materialize_refuses_audio_noise_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        run_mod,
+        "detect_capabilities",
+        lambda: _capabilities(materialize_audio_recipes=False),
+    )
+    monkeypatch.setattr(
+        synthesis_mod,
+        "run_ffmpeg",
+        lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
+    )
+    scenario_path = tmp_path / "audio-noise.yaml"
+    scenario_path.write_text(AUDIO_NOISE_SCENARIO, encoding="utf-8")
+    out = tmp_path / "run-001"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        materialize_scenario(scenario_path, out)
+
+    assert exc.value.field == "ready_for.materialize_audio_recipes"
+    assert exc.value.asset_id == "asset_noise"
+    assert not out.exists()
+
+
 def test_materialize_filesystem_only_timeline_runs_phase_b(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -130,7 +159,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 17\n"
+        "schema_version: 18\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -493,7 +522,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 17
+schema_version: 18
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -535,7 +564,7 @@ timeline: []
 """
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 17
+schema_version: 18
 scenario_id: resolution-switch-capability-test
 seed: 133
 duration_scale: short

@@ -213,12 +213,33 @@
       "title": "AudioChannelLayout",
       "type": "string"
     },
+    "AudioNoiseColor": {
+      "description": "Supported deterministic audio noise colors.",
+      "enum": [
+        "white",
+        "pink",
+        "brown"
+      ],
+      "title": "AudioNoiseColor",
+      "type": "string"
+    },
+    "AudioSampleFormat": {
+      "description": "Author-facing sample formats for probe-verifiable audio outputs.",
+      "enum": [
+        "s16",
+        "s24",
+        "flt"
+      ],
+      "title": "AudioSampleFormat",
+      "type": "string"
+    },
     "AudioSource": {
       "description": "Synthesis recipe for an audio stream.",
       "enum": [
         "sine",
         "silence",
-        "channel_tones"
+        "channel_tones",
+        "noise"
       ],
       "title": "AudioSource",
       "type": "string"
@@ -236,6 +257,41 @@
         "language": {
           "title": "Language",
           "type": "string"
+        },
+        "noise_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioNoiseColor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioSampleFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_rate": {
+          "default": 48000,
+          "enum": [
+            8000,
+            22050,
+            44100,
+            48000,
+            88200,
+            96000
+          ],
+          "title": "Sample Rate",
+          "type": "integer"
         },
         "source": {
           "$ref": "#/$defs/AudioSource",
@@ -2127,7 +2183,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 17,
+      "const": 18,
       "title": "Schema Version",
       "type": "integer"
     },

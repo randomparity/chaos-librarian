@@ -62,7 +62,7 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 @pytest.fixture(autouse=True)
 def fake_tool_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -75,6 +75,7 @@ def fake_tool_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
