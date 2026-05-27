@@ -375,7 +375,7 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
     - one ``ManifestSidecar`` per declared subtitle with ``mode=sidecar``,
       id ``sidecar_<asset.id>_<language>`` next to the rendered media
       path. Embedded subtitles are skipped. This mirrors the validator's
-      ``_seed_projection_from_declared``
+      ``seed_sidecar_projection``
       projection so Sprint 7 handlers (``embed_subtitle``,
       ``update_sidecar``, ``remove_sidecar``, ``extract_subtitle``) can
       resolve a declared sidecar via ``sidecar_id_for_path`` instead of
