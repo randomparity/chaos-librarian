@@ -343,12 +343,6 @@ def _audio_metadata_args(audios: Sequence[AudioTrack]) -> list[str]:
     return args
 
 
-def _mp4_moov_args(placement: Mp4MoovPlacement | None) -> list[str]:
-    if placement is Mp4MoovPlacement.MOOV_AT_START:
-        return ["-movflags", "+faststart"]
-    return []
-
-
 def build_resolution_switch_segment_command(
     *,
     video_input: FFmpegInput,
@@ -403,7 +397,8 @@ def _build_video_command(
     argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.extend(_audio_metadata_args(audios))
-    argv.extend(_mp4_moov_args(mp4_moov_placement))
+    if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
+        argv.extend(["-movflags", "+faststart"])
     argv.append("-shortest")
     argv.append(str(output_path))
     return argv
