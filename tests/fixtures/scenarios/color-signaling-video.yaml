@@ -1,4 +1,4 @@
-schema_version: 16
+schema_version: 17
 scenario_id: color-signaling-video
 seed: 131
 duration_scale: short

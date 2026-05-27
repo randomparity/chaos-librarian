@@ -1,4 +1,4 @@
-schema_version: 16
+schema_version: 17
 scenario_id: sc_move_between_roots
 seed: 42
 duration_scale: short

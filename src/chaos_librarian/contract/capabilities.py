@@ -39,6 +39,7 @@ class ReadyFor(BaseModel):
     materialize_media_mutations: bool
     materialize_hevc_video: bool
     materialize_hdr_video: bool
+    materialize_resolution_switch_video: bool
 
 
 class Capabilities(BaseModel):
@@ -46,7 +47,7 @@ class Capabilities(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     ffmpeg: ToolStatus
     ffprobe: ToolStatus
     mkvtoolnix: ToolStatus

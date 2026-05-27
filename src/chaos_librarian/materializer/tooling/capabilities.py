@@ -185,12 +185,14 @@ def detect_capabilities() -> Capabilities:
     ffmpeg_ok = ffmpeg.meets_minimum
     ffprobe_ok = ffprobe.meets_minimum
     mkv_ok = mkv.meets_minimum
+    libx264_available = _ffmpeg_encoder_available(ffmpeg, "libx264")
     libx265_available = _ffmpeg_encoder_available(ffmpeg, "libx265")
     hdr_video_available = _ffmpeg_hdr_signaling_available(
         ffmpeg,
         ffprobe,
         libx265_available=libx265_available,
     )
+    resolution_switch_available = ffmpeg_ok and ffprobe_ok and libx264_available
     return Capabilities(
         schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ffmpeg,
@@ -200,6 +202,7 @@ def detect_capabilities() -> Capabilities:
         content_sources=collect_content_source_capabilities(
             ffmpeg_available=ffmpeg_ok,
             hdr_available=hdr_video_available,
+            resolution_sequence_available=resolution_switch_available,
         ),
         ready_for=ReadyFor(
             materialize_static=ffmpeg_ok and ffprobe_ok,
@@ -207,6 +210,7 @@ def detect_capabilities() -> Capabilities:
             materialize_media_mutations=ffmpeg_ok and ffprobe_ok and mkv_ok,
             materialize_hevc_video=ffmpeg_ok and ffprobe_ok and libx265_available,
             materialize_hdr_video=hdr_video_available,
+            materialize_resolution_switch_video=resolution_switch_available,
         ),
     )
 

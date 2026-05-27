@@ -2,14 +2,34 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
 
 
+@dataclass(frozen=True)
+class ResolutionSwitchCase:
+    name: str
+    field_suffix: str
+    container: str = "ts"
+    video_source: str = "color_bars"
+    video_codec: str = "h264"
+    video_resolution: str = "sd"
+    audio: bool = False
+    subtitles: bool = False
+    vfr_cadence: str | None = None
+    field_order: str | None = None
+    color_space: str | None = None
+    color_range: str | None = None
+    hdr_mode: str | None = None
+
+
 def _write_track_scenario(path: Path, *, container: str, codec: str) -> None:
     path.write_text(
-        f"""schema_version: 16
+        f"""schema_version: 17
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -77,7 +97,7 @@ def _write_movie_scenario(
     color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     hdr_mode_line = f"                hdr_mode: {hdr_mode}\n" if hdr_mode else ""
     path.write_text(
-        f"""schema_version: 16
+        f"""schema_version: 17
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -119,6 +139,195 @@ timeline: []
 """,
         encoding="utf-8",
     )
+
+
+def _write_resolution_switch_scenario(
+    path: Path,
+    *,
+    container: str = "ts",
+    video_source: str = "color_bars",
+    video_codec: str = "h264",
+    video_resolution: str = "sd",
+    audio: bool = False,
+    subtitles: bool = False,
+    vfr_cadence: str | None = None,
+    field_order: str | None = None,
+    color_space: str | None = None,
+    color_range: str | None = None,
+    hdr_mode: str | None = None,
+) -> None:
+    optional_video_lines = []
+    if vfr_cadence is not None:
+        optional_video_lines.append(f"                vfr_cadence: {vfr_cadence}")
+    if field_order is not None:
+        optional_video_lines.append(f"                field_order: {field_order}")
+    if color_space is not None:
+        optional_video_lines.append(f"                color_space: {color_space}")
+    if color_range is not None:
+        optional_video_lines.append(f"                color_range: {color_range}")
+    if hdr_mode is not None:
+        optional_video_lines.append(f"                hdr_mode: {hdr_mode}")
+    optional_video = "\n".join(optional_video_lines)
+    optional_video = f"\n{optional_video}" if optional_video else ""
+    audio_block = (
+        """              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+"""
+        if audio
+        else ""
+    )
+    subtitles_block = (
+        """              subtitles:
+                - source: generated_srt
+                  codec: srt
+                  language: eng
+                  mode: embedded
+"""
+        if subtitles
+        else ""
+    )
+    path.write_text(
+        f"""schema_version: 17
+scenario_id: resolution-switch-validation-smoke
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: movie_switch
+    title: Resolution Switch Validation Smoke Test
+    layout: movie_flat
+    variants:
+      - id: variant_switch
+        label: sd-to-hd
+        bundle:
+          id: bundle_switch
+          assets:
+            - id: asset_switch_main
+              role: main
+              container: {container}
+              duration_seconds: 2.0
+              video:
+                source: {video_source}
+                codec: {video_codec}
+                resolution: {video_resolution}
+                resolution_sequence: sd_to_hd{optional_video}
+{audio_block.rstrip()}
+{subtitles_block.rstrip()}
+series: []
+artists: []
+timeline: []
+""",
+        encoding="utf-8",
+    )
+
+
+def _first_materialize_issue_path(path: Path) -> str:
+    report = run_validation(prepare_run_input(path))
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    return issue.path
+
+
+def test_resolution_switch_video_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "resolution-switch.yaml"
+    _write_resolution_switch_scenario(scenario)
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        ResolutionSwitchCase(
+            name="container",
+            container="mkv",
+            field_suffix=".container",
+        ),
+        ResolutionSwitchCase(
+            name="codec",
+            video_codec="hevc",
+            field_suffix=".video.codec",
+        ),
+        ResolutionSwitchCase(
+            name="source",
+            video_source="mandelbrot",
+            field_suffix=".video.source",
+        ),
+        ResolutionSwitchCase(
+            name="resolution",
+            video_resolution="hd",
+            field_suffix=".video.resolution",
+        ),
+        ResolutionSwitchCase(
+            name="audio",
+            audio=True,
+            field_suffix=".audio",
+        ),
+        ResolutionSwitchCase(
+            name="subtitles",
+            subtitles=True,
+            field_suffix=".subtitles",
+        ),
+        ResolutionSwitchCase(
+            name="vfr",
+            vfr_cadence="24_to_30",
+            field_suffix=".video.vfr_cadence",
+        ),
+        ResolutionSwitchCase(
+            name="interlaced",
+            field_order="top_field_first",
+            field_suffix=".video.field_order",
+        ),
+        ResolutionSwitchCase(
+            name="color-space",
+            color_space="bt709",
+            field_suffix=".video.color_space",
+        ),
+        ResolutionSwitchCase(
+            name="color-range",
+            color_range="full",
+            field_suffix=".video.color_range",
+        ),
+        ResolutionSwitchCase(
+            name="hdr",
+            hdr_mode="hdr10",
+            field_suffix=".video.hdr_mode",
+        ),
+    ],
+)
+def test_resolution_switch_video_rejects_unsupported_combinations(
+    tmp_path: Path,
+    case: ResolutionSwitchCase,
+) -> None:
+    scenario = tmp_path / f"resolution-switch-{case.name}.yaml"
+    _write_resolution_switch_scenario(
+        scenario,
+        container=case.container,
+        video_source=case.video_source,
+        video_codec=case.video_codec,
+        video_resolution=case.video_resolution,
+        audio=case.audio,
+        subtitles=case.subtitles,
+        vfr_cadence=case.vfr_cadence,
+        field_order=case.field_order,
+        color_space=case.color_space,
+        color_range=case.color_range,
+        hdr_mode=case.hdr_mode,
+    )
+
+    issue_path = _first_materialize_issue_path(scenario)
+
+    assert issue_path.endswith(case.field_suffix)
 
 
 def test_unsupported_video_resolution_names_field(tmp_path: Path) -> None:
@@ -176,7 +385,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 16
+        """schema_version: 17
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short

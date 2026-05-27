@@ -104,7 +104,7 @@ def _renderable_context(context: AssetContext, root_path: str) -> RenderableAsse
 
 def _capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -116,6 +116,7 @@ def _capabilities() -> Capabilities:
             materialize_media_mutations=False,
             materialize_hevc_video=True,
             materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
         ),
     )
 

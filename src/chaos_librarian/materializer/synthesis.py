@@ -13,6 +13,7 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
@@ -45,9 +46,20 @@ from chaos_librarian.materializer.errors import (
 from chaos_librarian.materializer.manifest_build import augment_manifest
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preflight import iter_assets
-from chaos_librarian.materializer.tooling.ffmpeg import build_command, run_ffmpeg
+from chaos_librarian.materializer.tooling.ffmpeg import (
+    build_command,
+    build_resolution_switch_concat_command,
+    build_resolution_switch_segment_command,
+    run_ffmpeg,
+)
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
+from chaos_librarian.media_matrix import (
+    RESOLUTION_SWITCH_VIDEO_CODEC,
+    RESOLUTION_SWITCH_VIDEO_CONTAINER,
+    RESOLUTION_SWITCH_VIDEO_RESOLUTION,
+    RESOLUTION_SWITCH_VIDEO_SOURCE,
+)
 from chaos_librarian.path_rendering import (
     RenderableAssetContext,
     render_asset_path,
@@ -74,6 +86,7 @@ class MaterializeAssetResult:
     probed: ProbedMedia
     sidecar_hashes: dict[tuple[str, str], str]
     content_sources: tuple[ContentSourceEvidence, ...]
+    prelude_invocations: tuple[ToolInvocation, ...] = ()
 
 
 @dataclass(slots=True)
@@ -112,10 +125,10 @@ def materialize_assets_phase_a(
     materialize = materialize_one_asset if materialize_asset is None else materialize_asset
     primary_root_path = scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(scenario)
-    start_index = len(phase_a.invocations)
-    for invocation_index, context in enumerate(iter_asset_contexts(scenario), start=start_index):
+    for context in iter_asset_contexts(scenario):
         asset = context.asset
         skip_languages = skip_by_asset.get(asset.id, frozenset())
+        invocation_index = len(phase_a.invocations)
         asset_result = materialize(
             asset,
             artifacts.replay_bundle.resolved_seed,
@@ -127,8 +140,12 @@ def materialize_assets_phase_a(
             ),
             skip_languages=skip_languages,
         )
+        phase_a.invocations.extend(asset_result.prelude_invocations)
+        materialized_asset = asset_result.materialized_asset.model_copy(
+            update={"invocation_index": len(phase_a.invocations)}
+        )
         phase_a.invocations.append(asset_result.invocation)
-        phase_a.materialized_assets.append(asset_result.materialized_asset)
+        phase_a.materialized_assets.append(materialized_asset)
         phase_a.content_sources.extend(asset_result.content_sources)
         phase_a.probed_by_asset[asset.id] = asset_result.probed
         phase_a.sidecar_hashes_by_asset[asset.id] = asset_result.sidecar_hashes
@@ -193,6 +210,15 @@ def materialize_one_asset(
     library_dir = out_dir / "library"
     output_path = library_dir / rendered_relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    if asset.video is not None and asset.video.resolution_sequence is not None:
+        return _materialize_resolution_switch_asset(
+            asset=asset,
+            seed=seed,
+            output_path=output_path,
+            out_dir=out_dir,
+            caps=caps,
+            invocation_index=invocation_index,
+        )
     resolved_inputs = _resolve_media_inputs(asset, seed)
     argv = build_command(
         video=asset.video,
@@ -203,15 +229,10 @@ def materialize_one_asset(
     )
     invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
     if invocation.exit_code != 0:
-        raise ToolFailedError(
-            f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
-            asset_id=asset.id,
-            field=None,
-            payload={
-                "stderr_tail": stderr_tail,
-                "exit_code": invocation.exit_code,
-            },
+        raise _tool_failed(
+            asset=asset,
             invocation=invocation,
+            stderr_tail=stderr_tail,
             content_sources=resolved_inputs.content_sources,
         )
     sidecar_hashes = write_sidecars(
@@ -245,6 +266,231 @@ def materialize_one_asset(
     )
 
 
+def _materialize_resolution_switch_asset(
+    *,
+    asset: Asset,
+    seed: int,
+    output_path: Path,
+    out_dir: Path,
+    caps: Capabilities,
+    invocation_index: int,
+) -> MaterializeAssetResult:
+    video = asset.video
+    if video is None or video.resolution_sequence is None:
+        raise UnsupportedMaterializationError(
+            "resolution-switch asset requires a video resolution_sequence",
+            field="video.resolution_sequence",
+            asset_id=asset.id,
+            payload={},
+        )
+    _validate_resolution_switch_asset(asset)
+    content_sources, segment_inputs = _resolve_resolution_switch_inputs(asset, seed)
+    with TemporaryDirectory(prefix=f".{output_path.stem}-", dir=output_path.parent) as temp_dir:
+        temp_path = Path(temp_dir)
+        segment_paths = (temp_path / "segment-sd.ts", temp_path / "segment-hd.ts")
+        prelude_invocations = _run_resolution_switch_segments(
+            asset=asset,
+            caps=caps,
+            content_sources=content_sources,
+            segment_inputs=segment_inputs,
+            segment_paths=segment_paths,
+        )
+        concat_list = temp_path / "concat.txt"
+        _write_concat_list(concat_list, segment_paths)
+        argv = build_resolution_switch_concat_command(
+            concat_list_path=concat_list,
+            output_path=output_path,
+        )
+        invocation, stderr_tail = run_ffmpeg(
+            argv,
+            ffmpeg_version=caps.ffmpeg.version or "unknown",
+        )
+        if invocation.exit_code != 0:
+            raise _tool_failed(
+                asset=asset,
+                invocation=invocation,
+                stderr_tail=stderr_tail,
+                content_sources=content_sources,
+            )
+    try:
+        probed = probe_file(output_path)
+    except ProbeParseError as exc:
+        exc.content_sources = content_sources
+        raise
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=content_sources,
+        prelude_invocations=prelude_invocations,
+    )
+
+
+def _resolve_resolution_switch_inputs(
+    asset: Asset,
+    seed: int,
+) -> tuple[tuple[ContentSourceEvidence, ...], tuple[FFmpegInput, FFmpegInput]]:
+    video = asset.video
+    if video is None or video.resolution_sequence is None:
+        raise UnsupportedMaterializationError(
+            "resolution-switch asset requires a video resolution_sequence",
+            field="video.resolution_sequence",
+            asset_id=asset.id,
+            payload={},
+        )
+    segment_duration = asset.duration_seconds / 2
+    sd_width, sd_height = RESOLUTION_PIXELS["sd"]
+    hd_width, hd_height = RESOLUTION_PIXELS["hd"]
+    sd_resolution = resolve_video_source(
+        source=video.source,
+        request=VideoSourceRequest(
+            asset_id=asset.id,
+            seed=seed,
+            duration_s=segment_duration,
+            width=sd_width,
+            height=sd_height,
+            fps=FPS_DEFAULT,
+            resolution_sequence=video.resolution_sequence,
+        ),
+    )
+    hd_resolution = resolve_video_source(
+        source=video.source,
+        request=VideoSourceRequest(
+            asset_id=asset.id,
+            seed=seed,
+            duration_s=segment_duration,
+            width=hd_width,
+            height=hd_height,
+            fps=FPS_DEFAULT,
+            resolution_sequence=video.resolution_sequence,
+        ),
+    )
+    return (sd_resolution.evidence,), (sd_resolution.ffmpeg_input, hd_resolution.ffmpeg_input)
+
+
+def _run_resolution_switch_segments(
+    *,
+    asset: Asset,
+    caps: Capabilities,
+    content_sources: tuple[ContentSourceEvidence, ...],
+    segment_inputs: tuple[FFmpegInput, FFmpegInput],
+    segment_paths: tuple[Path, Path],
+) -> tuple[ToolInvocation, ...]:
+    invocations: list[ToolInvocation] = []
+    for video_input, segment_path in zip(segment_inputs, segment_paths, strict=True):
+        argv = build_resolution_switch_segment_command(
+            video_input=video_input,
+            output_path=segment_path,
+        )
+        invocation, stderr_tail = run_ffmpeg(
+            argv,
+            ffmpeg_version=caps.ffmpeg.version or "unknown",
+        )
+        if invocation.exit_code != 0:
+            raise _tool_failed(
+                asset=asset,
+                invocation=invocation,
+                stderr_tail=stderr_tail,
+                content_sources=content_sources,
+            )
+        invocations.append(invocation)
+    return tuple(invocations)
+
+
+def _write_concat_list(concat_list: Path, segment_paths: tuple[Path, Path]) -> None:
+    lines = [f"file '{_escape_concat_path(path)}'\n" for path in segment_paths]
+    concat_list.write_text("".join(lines), encoding="utf-8")
+
+
+def _escape_concat_path(path: Path) -> str:
+    return str(path).replace("'", "'\\''")
+
+
+def _tool_failed(
+    *,
+    asset: Asset,
+    invocation: ToolInvocation,
+    stderr_tail: str,
+    content_sources: tuple[ContentSourceEvidence, ...],
+) -> ToolFailedError:
+    return ToolFailedError(
+        f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
+        asset_id=asset.id,
+        field=None,
+        payload={
+            "stderr_tail": stderr_tail,
+            "exit_code": invocation.exit_code,
+        },
+        invocation=invocation,
+        content_sources=content_sources,
+    )
+
+
+def _validate_resolution_switch_asset(asset: Asset) -> None:
+    video = asset.video
+    if video is None:
+        raise UnsupportedMaterializationError(
+            "resolution-switch asset requires a video track",
+            field="video",
+            asset_id=asset.id,
+            payload={},
+        )
+    for value, expected, field_name in (
+        (asset.container, RESOLUTION_SWITCH_VIDEO_CONTAINER, "container"),
+        (video.source.value, RESOLUTION_SWITCH_VIDEO_SOURCE, "video.source"),
+        (video.codec, RESOLUTION_SWITCH_VIDEO_CODEC, "video.codec"),
+        (video.resolution, RESOLUTION_SWITCH_VIDEO_RESOLUTION, "video.resolution"),
+    ):
+        if value == expected:
+            continue
+        raise UnsupportedMaterializationError(
+            f"resolution-switch video materialization requires {field_name}={expected!r}",
+            field=field_name,
+            asset_id=asset.id,
+            payload={"expected": expected, "actual": value},
+        )
+    if asset.audio:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization does not support audio streams",
+            field="audio",
+            asset_id=asset.id,
+            payload={"count": len(asset.audio)},
+        )
+    if asset.subtitles:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization does not support subtitles",
+            field="subtitles",
+            asset_id=asset.id,
+            payload={"count": len(asset.subtitles)},
+        )
+    for field_name, value in (
+        ("vfr_cadence", video.vfr_cadence),
+        ("field_order", video.field_order),
+        ("color_space", video.color_space),
+        ("color_range", video.color_range),
+        ("hdr_mode", video.hdr_mode),
+    ):
+        if value is None:
+            continue
+        raise UnsupportedMaterializationError(
+            f"resolution-switch video materialization cannot combine {field_name}",
+            field=f"video.{field_name}",
+            asset_id=asset.id,
+            payload={field_name: value.value},
+        )
+
+
 def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
     """Resolve source recipes into FFmpeg inputs and content-source evidence."""
     video_input = None
@@ -266,6 +512,7 @@ def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
                 color_space=video.color_space,
                 color_range=video.color_range,
                 hdr_mode=video.hdr_mode,
+                resolution_sequence=video.resolution_sequence,
             ),
         )
         video_input = video_resolution.ffmpeg_input

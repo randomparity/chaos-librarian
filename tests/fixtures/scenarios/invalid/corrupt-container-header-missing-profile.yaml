@@ -1,5 +1,5 @@
 # expected: E_PROFILE_REQUIRED
-schema_version: 16
+schema_version: 17
 scenario_id: corrupt-container-header-missing-profile
 seed: 42
 duration_scale: short

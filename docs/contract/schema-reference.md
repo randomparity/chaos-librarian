@@ -46,14 +46,14 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 16 |
+| scenario | 17 |
 | manifest | 7 |
 | journal | 1 |
-| replay bundle | 8 |
+| replay bundle | 9 |
 | validation | 1 |
-| materialization | 10 |
+| materialization | 11 |
 | run sentinel | 2 |
-| capabilities | 4 |
+| capabilities | 5 |
 | asset report | 7 |
 | variant report | 2 |
 | bundle report | 1 |
@@ -67,6 +67,15 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 2 |
 | divergence | 1 |
+
+Scenario v17 adds optional mid-stream video resolution sequence selection on
+video tracks (`resolution_sequence`) with `sd_to_hd`. Capabilities v5 adds
+`ready_for.materialize_resolution_switch_video`. Materialization v11 and
+replay-bundle v9 add the selected `resolution_sequence` to video
+content-source evidence.
+
+Scenario v16 adds optional HDR signaling on video tracks (`hdr_mode`) with
+`hdr10` and `hlg`. Capabilities v4 adds `ready_for.materialize_hdr_video`.
 
 Scenario v15 adds optional SDR video color-space and color-range signaling on
 video tracks (`color_space`, `color_range`) with `bt601`, `bt709`, `bt2020`,

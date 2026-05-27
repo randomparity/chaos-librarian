@@ -1,4 +1,4 @@
-schema_version: 16
+schema_version: 17
 scenario_id: bundle-sidecars
 seed: 99
 duration_scale: short

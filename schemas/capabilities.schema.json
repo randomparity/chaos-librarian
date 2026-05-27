@@ -120,6 +120,10 @@
           "title": "Materialize Media Mutations",
           "type": "boolean"
         },
+        "materialize_resolution_switch_video": {
+          "title": "Materialize Resolution Switch Video",
+          "type": "boolean"
+        },
         "materialize_static": {
           "title": "Materialize Static",
           "type": "boolean"
@@ -130,7 +134,8 @@
         "materialize_filesystem_mutations",
         "materialize_media_mutations",
         "materialize_hevc_video",
-        "materialize_hdr_video"
+        "materialize_hdr_video",
+        "materialize_resolution_switch_video"
       ],
       "title": "ReadyFor",
       "type": "object"
@@ -203,7 +208,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 4,
+      "const": 5,
       "title": "Schema Version",
       "type": "integer"
     }

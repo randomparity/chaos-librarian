@@ -155,7 +155,7 @@ def _build_minimal_scenario(
             asset.
 
     Returns:
-        A fully-validated Scenario at ``schema_version=16``.
+        A fully-validated Scenario at ``schema_version=17``.
     """
     library: dict[str, object] = {
         "roots": [{"id": root_id, "path": path} for root_id, path in roots],
@@ -206,7 +206,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 16,
+            "schema_version": 17,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -594,7 +594,7 @@ def _minimal_scenario_for_action(
 def _build_minimal_series_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 16,
+            "schema_version": 17,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -654,7 +654,7 @@ def _build_minimal_series_scenario() -> Scenario:
 def _build_minimal_music_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 16,
+            "schema_version": 17,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",

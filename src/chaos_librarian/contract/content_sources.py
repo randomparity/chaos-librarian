@@ -6,7 +6,11 @@ import enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from chaos_librarian.contract.scenario import VideoColorRange, VideoColorSpace
+from chaos_librarian.contract.scenario import (
+    VideoColorRange,
+    VideoColorSpace,
+    VideoResolutionSequence,
+)
 
 SHA256_URI_PATTERN = r"^sha256:[0-9a-f]{64}$"
 
@@ -39,6 +43,7 @@ class ContentSourceEvidence(BaseModel):
     recipe_digest: str = Field(pattern=SHA256_URI_PATTERN)
     color_space: VideoColorSpace | None = None
     color_range: VideoColorRange | None = None
+    resolution_sequence: VideoResolutionSequence | None = None
     track_index: int | None = Field(default=None, ge=0)
     cache_disposition: CacheDisposition
     cache_key: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)

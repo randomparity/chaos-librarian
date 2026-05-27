@@ -8,6 +8,11 @@ from typing import TYPE_CHECKING
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.media_matrix import (
     HEVC_VIDEO_CODECS,
+    RESOLUTION_SWITCH_VIDEO_CODEC,
+    RESOLUTION_SWITCH_VIDEO_CONTAINER,
+    RESOLUTION_SWITCH_VIDEO_RESOLUTION,
+    RESOLUTION_SWITCH_VIDEO_SEQUENCE,
+    RESOLUTION_SWITCH_VIDEO_SOURCE,
     SUPPORTED_AUDIO_CODECS,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
     SUPPORTED_RESOLUTIONS,
@@ -54,13 +59,6 @@ def _check_asset_context(context: RawAssetContext, reporter: Reporter) -> None:
 def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
     asset = context.asset
     asset_loc = context.asset_loc
-    _check_string_field(
-        asset,
-        field_name="container",
-        supported=SUPPORTED_VIDEO_CONTAINERS,
-        loc=(*asset_loc, "container"),
-        reporter=reporter,
-    )
     video = _as_mapping(asset.get("video"))
     if video is None:
         reporter.error(
@@ -69,6 +67,22 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             loc=(*asset_loc, "video"),
         )
     else:
+        if isinstance(video.get("resolution_sequence"), str):
+            _check_resolution_switch_video(
+                asset=asset,
+                video=video,
+                asset_loc=asset_loc,
+                video_loc=(*asset_loc, "video"),
+                reporter=reporter,
+            )
+            return
+        _check_string_field(
+            asset,
+            field_name="container",
+            supported=SUPPORTED_VIDEO_CONTAINERS,
+            loc=(*asset_loc, "container"),
+            reporter=reporter,
+        )
         _check_video(
             video=video,
             video_loc=(*asset_loc, "video"),
@@ -84,6 +98,62 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             supported=SUPPORTED_AUDIO_CODECS,
             loc=(*asset_loc, "audio", index, "codec"),
             reporter=reporter,
+        )
+
+
+def _check_resolution_switch_video(
+    *,
+    asset: Mapping[str, object],
+    video: Mapping[str, object],
+    asset_loc: _Loc,
+    video_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    _check_expected_string_field(
+        asset,
+        field_name="container",
+        expected=RESOLUTION_SWITCH_VIDEO_CONTAINER,
+        loc=(*asset_loc, "container"),
+        reporter=reporter,
+    )
+    for field_name, expected in (
+        ("source", RESOLUTION_SWITCH_VIDEO_SOURCE),
+        ("codec", RESOLUTION_SWITCH_VIDEO_CODEC),
+        ("resolution", RESOLUTION_SWITCH_VIDEO_RESOLUTION),
+        ("resolution_sequence", RESOLUTION_SWITCH_VIDEO_SEQUENCE),
+    ):
+        _check_expected_string_field(
+            video,
+            field_name=field_name,
+            expected=expected,
+            loc=(*video_loc, field_name),
+            reporter=reporter,
+        )
+    if _as_list(asset.get("audio")):
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="resolution-switch video materialization does not support audio streams",
+            loc=(*asset_loc, "audio"),
+        )
+    if _as_list(asset.get("subtitles")):
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="resolution-switch video materialization does not support subtitle tracks",
+            loc=(*asset_loc, "subtitles"),
+        )
+    for field_name in (
+        "vfr_cadence",
+        "field_order",
+        "color_space",
+        "color_range",
+        "hdr_mode",
+    ):
+        if field_name not in video or video.get(field_name) is None:
+            continue
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message=f"resolution-switch video materialization cannot combine {field_name}",
+            loc=(*video_loc, field_name),
         )
 
 
@@ -254,5 +324,23 @@ def _check_string_field(
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
         message=f"{field_name} {value!r} is not supported by materialize synthesis",
+        loc=loc,
+    )
+
+
+def _check_expected_string_field(
+    data: Mapping[str, object],
+    *,
+    field_name: str,
+    expected: str,
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    value = data.get(field_name)
+    if not isinstance(value, str) or value == expected:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=(f"resolution-switch video materialization requires {field_name} {expected!r}"),
         loc=loc,
     )

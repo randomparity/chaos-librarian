@@ -48,6 +48,39 @@ _INPUT_HASH = "sha256:" + "1" * 64
 _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
+_RESOLUTION_SWITCH_SCENARIO = b"""\
+schema_version: 17
+scenario_id: run-replay-resolution-switch-capability-test
+seed: 133
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_switch
+    title: Resolution Switch
+    layout: movie_flat
+    variants:
+      - id: variant_switch
+        label: sd-to-hd
+        bundle:
+          id: bundle_switch
+          assets:
+            - id: asset_main
+              role: main
+              container: ts
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+                resolution_sequence: sd_to_hd
+series: []
+artists: []
+timeline: []
+"""
+
 
 def _scenario_bytes(
     *,
@@ -58,7 +91,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 16
+schema_version: 17
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -97,7 +130,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 16
+schema_version: 17
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -139,7 +172,7 @@ timeline:
     bytes: 64
 """
 _HDR_SCENARIO = b"""\
-schema_version: 16
+schema_version: 17
 scenario_id: run-replay-hdr-capability-test
 seed: 7
 duration_scale: short
@@ -281,7 +314,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -293,6 +326,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
             materialize_media_mutations=True,
             materialize_hevc_video=True,
             materialize_hdr_video=False,
+            materialize_resolution_switch_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -308,6 +342,42 @@ def test_run_replay_refuses_hdr_when_capability_missing(
         replay_run_bundle(_run_bundle_for(_HDR_SCENARIO, applied_events=0), out)
 
     assert exc.value.field == "ready_for.materialize_hdr_video"
+    assert not out.exists()
+
+
+def test_run_replay_refuses_resolution_switch_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caps = Capabilities(
+        schema_version=5,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=False,
+        ),
+    )
+    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(
+        replay_mod,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("resolution-switch gate should run first"),
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        replay_run_bundle(_run_bundle_for(_RESOLUTION_SWITCH_SCENARIO, applied_events=0), out)
+
+    assert exc.value.field == "ready_for.materialize_resolution_switch_video"
     assert not out.exists()
 
 
@@ -497,7 +567,7 @@ def _patch_replay_materializer(
     patch_corruption: bool = True,
 ) -> None:
     caps = Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -509,6 +579,7 @@ def _patch_replay_materializer(
             materialize_media_mutations=True,
             materialize_hevc_video=True,
             materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)

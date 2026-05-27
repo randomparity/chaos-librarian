@@ -31,3 +31,8 @@ AUDIO_ENCODER_BY_CODEC: Final[dict[str, str]] = {
     "mp3": "libmp3lame",
 }
 HEVC_VIDEO_CODECS: Final[frozenset[str]] = frozenset({"h265", "hevc"})
+RESOLUTION_SWITCH_VIDEO_CONTAINER: Final = "ts"
+RESOLUTION_SWITCH_VIDEO_CODEC: Final = "h264"
+RESOLUTION_SWITCH_VIDEO_SOURCE: Final = "color_bars"
+RESOLUTION_SWITCH_VIDEO_RESOLUTION: Final = "sd"
+RESOLUTION_SWITCH_VIDEO_SEQUENCE: Final = "sd_to_hd"
