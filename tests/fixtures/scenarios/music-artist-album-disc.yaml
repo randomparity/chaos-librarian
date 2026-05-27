@@ -1,4 +1,4 @@
-schema_version: 20
+schema_version: 21
 scenario_id: music-artist-album-disc
 seed: 10602
 duration_scale: short
