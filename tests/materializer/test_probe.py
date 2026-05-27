@@ -72,6 +72,42 @@ def test_probe_file_parses_video_and_audio_streams(
     assert audio.language == "eng"
 
 
+def test_probe_file_parses_audio_layout_title_and_role_metadata(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    probe = json.loads(_GOOD_PROBE)
+    probe["streams"][0]["tags"] = {"handler_name": "VideoHandler"}
+    probe["streams"][1]["channel_layout"] = "3.0"
+    probe["streams"][1]["tags"] = {
+        "language": "eng",
+        "title": "Commentary",
+        "ROLE": "commentary",
+    }
+    _patch_run(monkeypatch, json.dumps(probe))
+
+    media = probe_file(tmp_path / "fake.mkv")
+
+    video = next(s for s in media.streams if s.kind == "video")
+    assert video.title is None
+    audio = next(s for s in media.streams if s.kind == "audio")
+    assert audio.channel_layout == "3.0"
+    assert audio.title == "Commentary"
+    assert audio.role == "commentary"
+
+
+def test_probe_file_uses_audio_handler_name_as_title_fallback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    probe = json.loads(_GOOD_PROBE)
+    probe["streams"][1]["tags"] = {"language": "eng", "handler_name": "Commentary"}
+    _patch_run(monkeypatch, json.dumps(probe))
+
+    media = probe_file(tmp_path / "fake.mp4")
+
+    audio = next(s for s in media.streams if s.kind == "audio")
+    assert audio.title == "Commentary"
+
+
 def test_probe_file_raises_on_non_zero_exit(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
