@@ -218,8 +218,9 @@ def test_mp4_moov_placement_asset_round_trip() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.movies[0].variants[0].bundle.assets[0].mp4_moov_placement.value == (
-        "moov_at_start"
+    assert (
+        scenario.movies[0].variants[0].bundle.assets[0].mp4_moov_placement
+        is scenario_contract.Mp4MoovPlacement.MOOV_AT_START
     )
 
 
