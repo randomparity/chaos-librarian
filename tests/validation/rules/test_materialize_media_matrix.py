@@ -99,23 +99,28 @@ timeline: []
 def _write_movie_scenario(
     path: Path,
     *,
+    container: str = "mkv",
     audio_codec: str = "aac",
     video_source: str = "color_bars",
     video_codec: str = "h264",
     video_resolution: str = "sd",
+    mp4_moov_placement: str | None = None,
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
     color_range: str | None = None,
     hdr_mode: str | None = None,
 ) -> None:
+    moov_line = (
+        f"              mp4_moov_placement: {mp4_moov_placement}\n" if mp4_moov_placement else ""
+    )
     vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
     field_order_line = f"                field_order: {field_order}\n" if field_order else ""
     color_space_line = f"                color_space: {color_space}\n" if color_space else ""
     color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     hdr_mode_line = f"                hdr_mode: {hdr_mode}\n" if hdr_mode else ""
     path.write_text(
-        f"""schema_version: 19
+        f"""schema_version: 20
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -135,7 +140,8 @@ movies:
           assets:
             - id: asset_sd_main
               role: main
-              container: mkv
+              container: {container}
+{moov_line.rstrip()}
               duration_seconds: 2.0
               video:
                 source: {video_source}
@@ -359,6 +365,19 @@ def test_unsupported_video_resolution_names_field(tmp_path: Path) -> None:
     assert issue.path is not None
     assert issue.path.endswith(".video.resolution")
     assert "small" in issue.message
+
+
+def test_mp4_moov_placement_rejected_on_non_mp4(tmp_path: Path) -> None:
+    scenario = tmp_path / "mp4-moov-on-mkv.yaml"
+    _write_movie_scenario(
+        scenario,
+        container="mkv",
+        mp4_moov_placement="moov_at_start",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].mp4_moov_placement")
 
 
 def test_unsupported_video_codec_names_field(tmp_path: Path) -> None:

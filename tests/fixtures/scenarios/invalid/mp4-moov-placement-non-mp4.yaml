@@ -1,0 +1,26 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 20
+scenario_id: invalid-mp4-moov-placement-non-mp4
+seed: 136
+duration_scale: short
+library: {roots: [{id: root_main, path: library}]}
+movies:
+  - id: movie_bad
+    title: Bad Moov
+    layout: movie_flat
+    variants:
+      - id: variant_bad
+        label: mkv
+        bundle:
+          id: bundle_bad
+          assets:
+            - id: asset_bad
+              role: main
+              container: mkv
+              mp4_moov_placement: moov_at_start
+              duration_seconds: 1.0
+              video: {source: color_bars, codec: h264, resolution: sd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+series: []
+artists: []
+timeline: []

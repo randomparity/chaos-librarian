@@ -62,6 +62,7 @@ def _check_asset_context(context: RawAssetContext, reporter: Reporter) -> None:
 def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
     asset = context.asset
     asset_loc = context.asset_loc
+    _check_mp4_moov_placement(asset=asset, asset_loc=asset_loc, reporter=reporter)
     video = _as_mapping(asset.get("video"))
     if video is None:
         reporter.error(
@@ -112,6 +113,24 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             loc=(*asset_loc, "audio", index, "sample_format"),
             reporter=reporter,
         )
+
+
+def _check_mp4_moov_placement(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    placement = asset.get("mp4_moov_placement")
+    if not isinstance(placement, str):
+        return
+    if asset.get("container") == "mp4":
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="mp4_moov_placement is only supported for mp4 assets",
+        loc=(*asset_loc, "mp4_moov_placement"),
+    )
 
 
 def _check_resolution_switch_video(
@@ -173,6 +192,7 @@ def _check_resolution_switch_video(
 def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
     asset = context.asset
     asset_loc = context.asset_loc
+    _check_mp4_moov_placement(asset=asset, asset_loc=asset_loc, reporter=reporter)
     if _as_mapping(asset.get("video")) is not None:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
