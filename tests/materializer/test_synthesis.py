@@ -23,6 +23,7 @@ from chaos_librarian.contract.scenario import (
     AudioTrack,
     EmbeddedChapters,
     EmbeddedCoverArt,
+    MatroskaMuxingProfile,
     Mp4MoovPlacement,
     SubtitleMode,
     SubtitleTrack,
@@ -488,6 +489,92 @@ def test_materialize_one_asset_threads_embedded_metadata_inputs(
     }
 
 
+def test_materialize_one_asset_uses_mkvmerge_final_invocation_for_profile(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        id="asset_muxed",
+        role="main",
+        container="mkv",
+        duration_seconds=1.0,
+        matroska_muxing_profile=MatroskaMuxingProfile.SHORT_CLUSTERS,
+        video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+        audio=(
+            AudioTrack(
+                source=AudioSource.SINE,
+                codec="aac",
+                channels=AudioChannelLayout.STEREO,
+                language="eng",
+            ),
+        ),
+    )
+    final_path = tmp_path / "run" / "library" / "r" / "A.mkv"
+    calls: list[list[str]] = []
+
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        calls.append(argv)
+        output = Path(argv[-1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"temp media")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    def fake_run_mkvmerge(argv: list[str], *, mkvmerge_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        calls.append(argv)
+        output = Path(argv[argv.index("-o") + 1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"final media")
+        return (
+            ToolInvocation(
+                tool="mkvmerge",
+                version=mkvmerge_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(synthesis_mod, "run_mkvmerge", fake_run_mkvmerge)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda path: ProbedMedia(
+            container="matroska,webm",
+            duration_seconds=1.0,
+            size_bytes=path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+        ),
+    )
+
+    result = materialize_one_asset(
+        asset,
+        138,
+        tmp_path / "run",
+        _caps(mkvtoolnix=True),
+        0,
+        rendered_relative_path="r/A.mkv",
+    )
+
+    assert result.invocation.tool == "mkvmerge"
+    assert result.prelude_invocations[0].tool == "ffmpeg"
+    assert calls[0][-1] != str(final_path)
+    assert calls[1][calls[1].index("-o") + 1] == str(final_path)
+    assert any(source.track_kind is ContentTrackKind.MUXING for source in result.content_sources)
+
+
 def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
     tmp_path: Path,
 ) -> None:
@@ -779,12 +866,17 @@ def _patch_successful_ffmpeg(monkeypatch: pytest.MonkeyPatch, final_path: Path) 
     )
 
 
-def _caps() -> Capabilities:
+def _caps(*, mkvtoolnix: bool = False) -> Capabilities:
     return Capabilities(
         schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
-        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        mkvtoolnix=ToolStatus(
+            found=mkvtoolnix,
+            version="98.0" if mkvtoolnix else None,
+            path="/x/mkvmerge" if mkvtoolnix else None,
+            meets_minimum=mkvtoolnix,
+        ),
         platform="test",
         content_sources=ContentSourceCapabilities(),
         ready_for=ReadyFor(
