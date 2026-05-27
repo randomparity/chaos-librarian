@@ -73,7 +73,7 @@ def test_track_audio_only_cells_build_ffmpeg_command(
     map_values = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-map"]
     assert map_values == ["0:a:0"]
     assert argv[argv.index("-c:a") + 1] == encoder
-    assert argv[argv.index("-ac") + 1] == "2"
+    assert argv[argv.index("-channel_layout:a:0") + 1] == "stereo"
     for flag in BITEXACT_FLAGS:
         assert flag in argv
     assert argv[-1] == str(output_path)

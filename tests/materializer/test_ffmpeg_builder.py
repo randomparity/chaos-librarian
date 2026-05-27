@@ -12,6 +12,7 @@ from chaos_librarian.contract.scenario import (
     AudioSampleFormat,
     AudioSource,
     AudioTrack,
+    AudioTrackRole,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -60,15 +61,21 @@ def _audio(
     codec: str = "aac",
     sample_rate: int = 48000,
     sample_format: AudioSampleFormat | None = None,
+    role: AudioTrackRole = AudioTrackRole.MAIN,
 ) -> AudioTrack:
     return AudioTrack(
         source=AudioSource.SINE,
         codec=codec,
         channels=channels,
         language="eng",
+        role=role,
         sample_rate=cast("AudioSampleRate", sample_rate),
         sample_format=sample_format,
     )
+
+
+def _arg_value(argv: list[str], flag: str) -> str:
+    return argv[argv.index(flag) + 1]
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4"])
@@ -383,6 +390,39 @@ def test_build_command_maps_multiple_audio_inputs_explicitly(tmp_path: Path) -> 
     assert max(input_indexes) < first_map_index < video_codec_index
 
 
+def test_build_command_writes_audio_role_metadata_and_layouts(tmp_path: Path) -> None:
+    output = tmp_path / "asset.mkv"
+
+    argv = build_command(
+        video=_video(),
+        video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+        audios=[
+            _audio(channels=AudioChannelLayout.FOUR_ZERO, role=AudioTrackRole.MAIN),
+            _audio(channels=AudioChannelLayout.LCR, role=AudioTrackRole.COMMENTARY),
+            _audio(channels=AudioChannelLayout.STEREO, role=AudioTrackRole.ALTERNATE),
+        ],
+        audio_inputs=[
+            recipe_sine(channels="4.0", duration_s=1.0, seed=1),
+            recipe_sine(channels="lcr", duration_s=1.0, seed=2),
+            recipe_sine(channels="stereo", duration_s=1.0, seed=3),
+        ],
+        output_path=output,
+    )
+
+    assert _arg_value(argv, "-channel_layout:a:0") == "4.0"
+    assert _arg_value(argv, "-channel_layout:a:1") == "3.0"
+    assert _arg_value(argv, "-channel_layout:a:2") == "stereo"
+    metadata_pairs = [
+        (arg, argv[index + 1]) for index, arg in enumerate(argv) if arg.startswith("-metadata:s:a:")
+    ]
+    assert ("-metadata:s:a:0", "role=main") in metadata_pairs
+    assert ("-metadata:s:a:1", "role=commentary") in metadata_pairs
+    assert ("-metadata:s:a:1", "title=Commentary") in metadata_pairs
+    assert ("-metadata:s:a:1", "handler_name=Commentary") in metadata_pairs
+    assert ("-metadata:s:a:2", "title=Alternate Audio") in metadata_pairs
+    assert _arg_value(argv, "-disposition:a:1") == "comment"
+
+
 @pytest.mark.parametrize(
     ("container", "codec", "sample_format", "encoder"),
     [
@@ -422,29 +462,31 @@ def test_audio_only_command_maps_audio_without_video_codec(
     map_values = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-map"]
     assert map_values == ["0:a:0"]
     assert argv[argv.index("-c:a") + 1] == encoder
-    assert argv[argv.index("-ac") + 1] == "2"
+    assert argv[argv.index("-channel_layout:a:0") + 1] == "stereo"
     for flag in BITEXACT_FLAGS:
         assert flag in argv
     assert argv[-1] == str(output)
     input_indexes = [index for index, arg in enumerate(argv) if arg == "-i"]
     first_map_index = argv.index("-map")
     audio_codec_index = argv.index("-c:a")
-    channel_count_index = argv.index("-ac")
-    assert max(input_indexes) < first_map_index < audio_codec_index < channel_count_index
-    assert channel_count_index < len(argv) - 1
+    channel_layout_index = argv.index("-channel_layout:a:0")
+    assert max(input_indexes) < first_map_index < audio_codec_index < channel_layout_index
+    assert channel_layout_index < len(argv) - 1
 
 
 @pytest.mark.parametrize(
-    ("channels", "expected_count"),
+    ("channels", "expected_layout"),
     [
-        (AudioChannelLayout.MONO, "1"),
-        (AudioChannelLayout.STEREO, "2"),
-        (AudioChannelLayout.FIVE_ONE, "6"),
+        (AudioChannelLayout.MONO, "mono"),
+        (AudioChannelLayout.STEREO, "stereo"),
+        (AudioChannelLayout.LCR, "3.0"),
+        (AudioChannelLayout.FIVE_ONE, "5.1"),
+        (AudioChannelLayout.SIX_ONE, "6.1"),
     ],
 )
-def test_audio_only_command_enforces_declared_channel_count(
+def test_audio_only_command_enforces_declared_channel_layout(
     channels: AudioChannelLayout,
-    expected_count: str,
+    expected_layout: str,
     tmp_path: Path,
 ) -> None:
     argv = build_command(
@@ -455,7 +497,7 @@ def test_audio_only_command_enforces_declared_channel_count(
         output_path=tmp_path / "asset.flac",
     )
 
-    assert argv[argv.index("-ac") + 1] == expected_count
+    assert argv[argv.index("-channel_layout:a:0") + 1] == expected_layout
 
 
 def test_audio_only_command_rejects_wrong_codec_for_container(tmp_path: Path) -> None:
