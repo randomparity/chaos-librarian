@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.codes import (
+    E_MATERIALIZE_UNSUPPORTED,
     E_SIDECAR_KIND_MISMATCH,
     E_SIDECAR_PATH_COLLISION,
     E_SIDECAR_TARGET_UNKNOWN,
@@ -60,6 +61,20 @@ class _SidecarProjectionRow:
     kind: str
     language: str | None
     renderer_derived: bool
+    codec: str = "srt"
+    source: str = "generated_srt"
+    encoding: str = "utf8"
+    timing_profile: str = "normal"
+
+    @property
+    def uses_default_subtitle_recipe(self) -> bool:
+        return (
+            self.kind == SidecarKind.SUBTITLE.value
+            and self.codec == "srt"
+            and self.source == "generated_srt"
+            and self.encoding == "utf8"
+            and self.timing_profile == "normal"
+        )
 
 
 def rule_sidecar_target(
@@ -223,6 +238,13 @@ def _handle_embed_subtitle(
             ),
             loc=("timeline", idx, "sidecar_path"),
         )
+    elif not entry.uses_default_subtitle_recipe:
+        _report_unsupported_subtitle_recipe(
+            action="embed_subtitle",
+            sidecar_path=sidecar_path,
+            loc=("timeline", idx, "sidecar_path"),
+            reporter=reporter,
+        )
     else:
         # embed consumes the sidecar — remove from projection.
         del projection[(target, sidecar_path)]
@@ -262,13 +284,24 @@ def _handle_update_sidecar(
 ) -> None:
     """Emit E_SIDECAR_TARGET_UNKNOWN; update_sidecar does not change projection."""
     sidecar_path = event.get("sidecar_path")
-    if isinstance(sidecar_path, str) and (target, sidecar_path) not in projection:
+    if not isinstance(sidecar_path, str):
+        return
+    entry = projection.get((target, sidecar_path))
+    if entry is None:
         reporter.error(
             code=E_SIDECAR_TARGET_UNKNOWN,
             message=(
                 f"update_sidecar references unknown sidecar {sidecar_path!r} on asset {target!r}"
             ),
             loc=("timeline", idx, "sidecar_path"),
+        )
+        return
+    if entry.kind == SidecarKind.SUBTITLE.value and not entry.uses_default_subtitle_recipe:
+        _report_unsupported_subtitle_recipe(
+            action="update_sidecar",
+            sidecar_path=sidecar_path,
+            loc=("timeline", idx, "sidecar_path"),
+            reporter=reporter,
         )
 
 
@@ -280,6 +313,10 @@ def _seed_projection_from_declared(raw: Mapping[str, object]) -> _Projection:
             kind=sidecar.kind,
             language=sidecar.language,
             renderer_derived=True,
+            codec=sidecar.codec,
+            source=sidecar.source,
+            encoding=sidecar.encoding,
+            timing_profile=sidecar.timing_profile,
         )
     return projection
 
@@ -300,10 +337,32 @@ def _project_declared_sidecars_for_hierarchy_mutation(
             if value.language is None:
                 continue
             try:
-                old_sidecar_path = render_declared_sidecar_path(old_media_path, value.language)
-                new_sidecar_path = render_declared_sidecar_path(new_media_path, value.language)
+                old_sidecar_path = render_declared_sidecar_path(
+                    old_media_path,
+                    value.language,
+                    codec=value.codec,
+                )
+                new_sidecar_path = render_declared_sidecar_path(
+                    new_media_path,
+                    value.language,
+                    codec=value.codec,
+                )
             except ValueError:
                 continue
             if sidecar_path == old_sidecar_path:
                 del projection[key]
                 projection[(asset_id, new_sidecar_path)] = value
+
+
+def _report_unsupported_subtitle_recipe(
+    *,
+    action: str,
+    sidecar_path: str,
+    loc: tuple[str | int, ...],
+    reporter: Reporter,
+) -> None:
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"{action} does not support non-default subtitle recipe {sidecar_path!r}",
+        loc=loc,
+    )

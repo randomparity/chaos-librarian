@@ -223,7 +223,7 @@ Run one adversarial review pass on the contract/path diff before continuing.
 - Test: `tests/validation/rules/test_sidecar_target.py`
 - Test: `tests/validation/rules/test_timeline_lifecycle.py`
 
-- [ ] **Step 1: Write failing validation matrix tests**
+- [x] **Step 1: Write failing validation matrix tests**
 
 Add to `tests/validation/rules/test_materialize_media_matrix.py`:
 
@@ -295,7 +295,7 @@ def test_subtitle_recipe_matrix_rejects_unsupported_combinations(
 Extend the local scenario writer helper with optional `subtitle_codec`,
 `subtitle_source`, `subtitle_encoding`, and `subtitle_timing_profile` arguments.
 
-- [ ] **Step 2: Write failing timeline target tests**
+- [x] **Step 2: Write failing timeline target tests**
 
 Add to `tests/validation/rules/test_sidecar_target.py`:
 
@@ -329,7 +329,7 @@ def test_non_default_declared_subtitle_recipe_rejects_mutating_timeline_action(a
 Add a hierarchy rerender assertion that a declared ASS sidecar path rerenders to
 `.ass` after a hierarchy move/rename.
 
-- [ ] **Step 3: Run tests to verify red**
+- [x] **Step 3: Run tests to verify red**
 
 Run:
 
@@ -343,7 +343,7 @@ uv run pytest --no-cov \
 
 Expected: helper/signature failures and missing validation errors.
 
-- [ ] **Step 4: Implement declared-sidecar metadata projection**
+- [x] **Step 4: Implement declared-sidecar metadata projection**
 
 In `src/chaos_librarian/validation/rules/_common.py`, extend `DeclaredSidecar`:
 
@@ -421,7 +421,7 @@ projection row.
 Seed the row from `DeclaredSidecar` so hierarchy-projected declared sidecars
 retain their codec/source/encoding/timing metadata.
 
-- [ ] **Step 5: Implement subtitle materialize matrix validation**
+- [x] **Step 5: Implement subtitle materialize matrix validation**
 
 In `materialize_media_matrix.py`, add constants:
 
@@ -479,7 +479,7 @@ def _check_subtitles(
             )
 ```
 
-- [ ] **Step 6: Run green tests and commit**
+- [x] **Step 6: Run green tests and commit**
 
 Run:
 

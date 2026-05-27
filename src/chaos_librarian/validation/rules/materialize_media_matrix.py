@@ -50,6 +50,16 @@ _WEBM_REJECTED_VIDEO_FIELDS: Final[tuple[str, ...]] = (
     "hdr_mode",
     "resolution_sequence",
 )
+_SRT_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset(
+    {"utf8", "utf8_bom", "utf16_le", "iso_8859_1"}
+)
+_ASS_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset({"utf8", "utf8_bom"})
+_SUBTITLE_RECIPE_MATRIX: Final[dict[tuple[str, str], frozenset[str]]] = {
+    ("srt", "generated_srt"): _SRT_SUBTITLE_ENCODINGS,
+    ("ass", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
+    ("ssa", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
+}
+_SUBTITLE_TIMING_PROFILES: Final[frozenset[str]] = frozenset({"normal", "overlap", "out_of_range"})
 
 
 def rule_materialize_media_matrix(
@@ -120,6 +130,7 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             video_loc=(*asset_loc, "video"),
             reporter=reporter,
         )
+    _check_subtitles(asset=asset, asset_loc=asset_loc, reporter=reporter)
     for index, audio_obj in enumerate(_as_list(asset.get("audio")) or []):
         audio = _as_mapping(audio_obj)
         if audio is None:
@@ -551,6 +562,82 @@ def _check_video(
         video=video,
         video_loc=video_loc,
         reporter=reporter,
+    )
+
+
+def _check_subtitles(
+    *,
+    asset: Mapping[str, object],
+    asset_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    for index, sub_obj in enumerate(_as_list(asset.get("subtitles")) or []):
+        subtitle = _as_mapping(sub_obj)
+        if subtitle is None:
+            continue
+        loc = (*asset_loc, "subtitles", index)
+        _check_subtitle_mode(subtitle=subtitle, loc=loc, reporter=reporter)
+        _check_subtitle_timing(subtitle=subtitle, loc=loc, reporter=reporter)
+        _check_subtitle_recipe(subtitle=subtitle, loc=loc, reporter=reporter)
+
+
+def _check_subtitle_mode(
+    *,
+    subtitle: Mapping[str, object],
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    mode = subtitle.get("mode")
+    if not isinstance(mode, str) or mode == "sidecar":
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="static materialization supports only sidecar subtitle tracks",
+        loc=(*loc, "mode"),
+    )
+
+
+def _check_subtitle_timing(
+    *,
+    subtitle: Mapping[str, object],
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    timing = subtitle.get("timing_profile", "normal")
+    if not isinstance(timing, str) or timing in _SUBTITLE_TIMING_PROFILES:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="subtitle timing_profile is not supported by materialize synthesis",
+        loc=(*loc, "timing_profile"),
+    )
+
+
+def _check_subtitle_recipe(
+    *,
+    subtitle: Mapping[str, object],
+    loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    codec = subtitle.get("codec")
+    source = subtitle.get("source", "generated_srt")
+    encoding = subtitle.get("encoding", "utf8")
+    if not isinstance(codec, str) or not isinstance(source, str):
+        return
+    supported_encodings = _SUBTITLE_RECIPE_MATRIX.get((codec, source))
+    if supported_encodings is None:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="subtitle codec/source recipe combination is not supported",
+            loc=(*loc, "source"),
+        )
+        return
+    if not isinstance(encoding, str) or encoding in supported_encodings:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message="subtitle encoding is not supported for this codec/source recipe",
+        loc=(*loc, "encoding"),
     )
 
 

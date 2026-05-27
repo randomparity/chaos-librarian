@@ -6,6 +6,7 @@ from typing import cast
 
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import (
+    E_MATERIALIZE_UNSUPPORTED,
     E_SIDECAR_KIND_MISMATCH,
     E_SIDECAR_PATH_COLLISION,
     E_SIDECAR_TARGET_UNKNOWN,
@@ -14,8 +15,10 @@ from chaos_librarian.validation.pipeline import IssueCollector
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 
 DECLARED_SIDECAR_PATH = "library/r0/T - l.eng.srt"
+DECLARED_ASS_SIDECAR_PATH = "library/r0/T - l.jpn.ass"
 SERIES_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E01 - Pilot - HD.eng.srt"
 REN_NUMBERED_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.eng.srt"
+REN_NUMBERED_ASS_SIDECAR_PATH = "TV/Starline/Season 01/Starline - S01E02 - Pilot - HD.jpn.ass"
 
 
 def _run(raw):
@@ -28,7 +31,7 @@ def _minimal(timeline, *, asset_subtitles=None):
     """Build a raw dict for one asset with optional declared subtitles."""
     subtitles = asset_subtitles or []
     return {
-        "schema_version": 22,
+        "schema_version": 23,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",
@@ -151,6 +154,58 @@ def test_embed_subtitle_against_declared_subtitle_valid():
     assert not any(i.code in {E_SIDECAR_TARGET_UNKNOWN, E_SIDECAR_KIND_MISMATCH} for i in issues)
 
 
+def test_non_default_declared_subtitle_recipe_rejects_update_sidecar():
+    raw = _minimal(
+        timeline=[
+            {
+                "id": "e0",
+                "at": "1s",
+                "action": "update_sidecar",
+                "target": "a0",
+                "sidecar_path": DECLARED_ASS_SIDECAR_PATH,
+            },
+        ],
+        asset_subtitles=[
+            {
+                "codec": "ass",
+                "source": "styled_ass",
+                "language": "jpn",
+                "mode": "sidecar",
+            },
+        ],
+    )
+
+    issues = _run(raw)
+
+    assert any(i.code == E_MATERIALIZE_UNSUPPORTED for i in issues)
+
+
+def test_non_default_declared_subtitle_recipe_rejects_embed_subtitle():
+    raw = _minimal(
+        timeline=[
+            {
+                "id": "e0",
+                "at": "1s",
+                "action": "embed_subtitle",
+                "target": "a0",
+                "sidecar_path": DECLARED_ASS_SIDECAR_PATH,
+            },
+        ],
+        asset_subtitles=[
+            {
+                "codec": "ass",
+                "source": "styled_ass",
+                "language": "jpn",
+                "mode": "sidecar",
+            },
+        ],
+    )
+
+    issues = _run(raw)
+
+    assert any(i.code == E_MATERIALIZE_UNSUPPORTED for i in issues)
+
+
 def test_hierarchy_rerender_accepts_current_declared_sidecar_path(series_scenario):
     raw = series_scenario(
         timeline=[
@@ -172,6 +227,40 @@ def test_hierarchy_rerender_accepts_current_declared_sidecar_path(series_scenari
     )
     asset = _series_asset(raw)
     asset["subtitles"] = [{"codec": "srt", "language": "eng", "mode": "sidecar"}]
+
+    issues = _run(raw)
+
+    assert not any(i.code == E_SIDECAR_TARGET_UNKNOWN for i in issues)
+
+
+def test_hierarchy_rerender_accepts_current_declared_ass_sidecar_path(series_scenario):
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "renumber",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            },
+            {
+                "id": "remove",
+                "at": "2s",
+                "action": "remove_sidecar",
+                "target": "asset_episode",
+                "sidecar_path": REN_NUMBERED_ASS_SIDECAR_PATH,
+            },
+        ]
+    )
+    asset = _series_asset(raw)
+    asset["subtitles"] = [
+        {
+            "codec": "ass",
+            "source": "styled_ass",
+            "language": "jpn",
+            "mode": "sidecar",
+        }
+    ]
 
     issues = _run(raw)
 
@@ -261,6 +350,32 @@ def test_embed_subtitle_against_poster_sidecar():
     )
     issues = _run(raw)
     assert any(i.code == E_SIDECAR_KIND_MISMATCH for i in issues)
+
+
+def test_update_sidecar_against_created_poster_sidecar_valid():
+    raw = _minimal(
+        [
+            {
+                "id": "e_cs",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "a0",
+                "to": "a0.poster.png",
+                "kind": "poster",
+            },
+            {
+                "id": "e_us",
+                "at": "2s",
+                "action": "update_sidecar",
+                "target": "a0",
+                "sidecar_path": "a0.poster.png",
+            },
+        ]
+    )
+
+    issues = _run(raw)
+
+    assert not any(i.code == E_MATERIALIZE_UNSUPPORTED for i in issues)
 
 
 def test_extract_subtitle_to_collides_with_declared_subtitle():

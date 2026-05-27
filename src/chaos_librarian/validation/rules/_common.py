@@ -133,6 +133,20 @@ class DeclaredSidecar:
     path: str
     kind: str
     language: str | None
+    codec: str = "srt"
+    source: str = "generated_srt"
+    encoding: str = "utf8"
+    timing_profile: str = "normal"
+
+    @property
+    def uses_default_subtitle_recipe(self) -> bool:
+        return (
+            self.kind == SidecarKind.SUBTITLE.value
+            and self.codec == "srt"
+            and self.source == "generated_srt"
+            and self.encoding == "utf8"
+            and self.timing_profile == "normal"
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -198,6 +212,12 @@ def _as_list(node: object) -> list[object] | None:
     if isinstance(node, list):
         return cast("list[object]", node)
     return None
+
+
+def _str_or_default(node: object, default: str) -> str:
+    if isinstance(node, str):
+        return node
+    return default
 
 
 def _list_at_path(raw: _RawMapping, path_parts: tuple[str, ...]) -> list[object] | None:
@@ -339,9 +359,13 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
             language = sub.get("language")
             if not isinstance(language, str):
                 continue
+            codec = _str_or_default(sub.get("codec"), "srt")
+            source = _str_or_default(sub.get("source"), "generated_srt")
+            encoding = _str_or_default(sub.get("encoding"), "utf8")
+            timing_profile = _str_or_default(sub.get("timing_profile"), "normal")
             try:
                 media_path = render_asset_path(renderable)
-                path = render_declared_sidecar_path(media_path, language)
+                path = render_declared_sidecar_path(media_path, language, codec=codec)
             except ValueError:
                 continue
             yield DeclaredSidecar(
@@ -349,6 +373,10 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
                 path=path,
                 kind=SidecarKind.SUBTITLE.value,
                 language=language,
+                codec=codec,
+                source=source,
+                encoding=encoding,
+                timing_profile=timing_profile,
             )
 
 
