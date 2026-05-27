@@ -76,13 +76,18 @@ def _opt_str(blob: dict[str, object], key: str) -> str | None:
 
 
 def _language_tag(blob: dict[str, object]) -> str | None:
+    return _tag_value(blob, "language")
+
+
+def _tag_value(blob: dict[str, object], key: str) -> str | None:
     tags = _coerce_blob(blob.get("tags"))
     if tags is None:
         return None
-    raw = tags.get("language")
-    if raw is None:
-        return None
-    return str(raw)
+    key = key.casefold()
+    for tag_key, tag_value in tags.items():
+        if tag_key.casefold() == key:
+            return str(tag_value)
+    return None
 
 
 def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
@@ -101,14 +106,18 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
             height=_opt_int(blob, "height"),
             fps=_fps_from_rate(_opt_str(blob, "r_frame_rate")),
             language=_language_tag(blob),
+            title=_tag_value(blob, "title"),
         )
     if codec_type == "audio":
         return ProbedStream(
             kind=StreamKind.AUDIO,
             codec=codec,
             channels=_opt_int(blob, "channels"),
+            channel_layout=_opt_str(blob, "channel_layout"),
             sample_rate=_opt_int(blob, "sample_rate"),
             language=_language_tag(blob),
+            title=_tag_value(blob, "title") or _tag_value(blob, "handler_name"),
+            role=_tag_value(blob, "role"),
         )
     # subtitle (and any unknown codec_type) streams are dropped — see module docstring.
     return None

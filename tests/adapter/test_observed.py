@@ -13,7 +13,7 @@ from chaos_librarian.adapter.observed import load_observed_state
 def _observed_payload() -> str:
     return """
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "consumer": {"name": "voom-v2", "version": "0.9.0"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",

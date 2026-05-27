@@ -319,6 +319,18 @@
       "additionalProperties": false,
       "description": "One stream from ``ffprobe -show_streams``.\n\nOptional fields are populated only for the matching ``kind``; ffprobe\nsilently omits the others, and ``exclude_none=True`` keeps the serialized\noutput compact.",
       "properties": {
+        "channel_layout": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Channel Layout"
+        },
         "channels": {
           "anyOf": [
             {
@@ -398,6 +410,18 @@
           "default": null,
           "title": "Language"
         },
+        "role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Role"
+        },
         "sample_rate": {
           "anyOf": [
             {
@@ -409,6 +433,18 @@
           ],
           "default": null,
           "title": "Sample Rate"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
         },
         "width": {
           "anyOf": [
@@ -652,7 +688,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 7,
+      "const": 8,
       "title": "Schema Version",
       "type": "integer"
     },

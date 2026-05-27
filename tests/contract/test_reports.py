@@ -102,7 +102,7 @@ class TestAssetReport:
 
     def _report(self, current: AssetSnapshot | None) -> AssetReport:
         return AssetReport(
-            schema_version=7,
+            schema_version=8,
             asset_id="asset_hd_main",
             parent_kind=ParentKind.MOVIE,
             parent_id="movie_blazar",
@@ -133,7 +133,7 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 7,
+            "schema_version": 8,
             "asset_id": "asset_hd_main",
             "parent_kind": "movie",
             "parent_id": "movie_blazar",
@@ -155,9 +155,9 @@ class TestAssetReport:
         with pytest.raises(ValidationError):
             AssetReport.model_validate(payload)
 
-    def test_schema_version_constant_is_seven(self) -> None:
+    def test_schema_version_constant_is_eight(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 7
+        assert ASSET_REPORT_SCHEMA_VERSION == 8
 
 
 class TestOtherReports:
@@ -328,8 +328,8 @@ def test_asset_snapshot_round_trips_corruption_metadata() -> None:
     assert loaded.corruption.event_id == "corrupt_header_001"
 
 
-def test_asset_report_schema_version_is_seven() -> None:
-    assert ASSET_REPORT_SCHEMA_VERSION == 7
+def test_asset_report_schema_version_is_eight() -> None:
+    assert ASSET_REPORT_SCHEMA_VERSION == 8
 
 
 def test_domain_report_constants_start_at_one() -> None:
@@ -342,7 +342,7 @@ def test_domain_report_constants_start_at_one() -> None:
     assert DISC_REPORT_SCHEMA_VERSION == 1
     assert TRACK_REPORT_SCHEMA_VERSION == 1
     assert VARIANT_REPORT_SCHEMA_VERSION == 2
-    assert ASSET_REPORT_SCHEMA_VERSION == 7
+    assert ASSET_REPORT_SCHEMA_VERSION == 8
     assert BUNDLE_REPORT_SCHEMA_VERSION == 1
 
 
@@ -360,10 +360,10 @@ def test_variant_report_uses_parent_kind_and_parent_id() -> None:
     assert VariantReport.model_validate_json(report.model_dump_json()) == report
 
 
-def test_asset_report_v7_carries_topology_fields() -> None:
+def test_asset_report_v8_carries_topology_fields() -> None:
     snapshot = AssetSnapshot(location_path=None, version_id="version_0001", version_index=0)
     report = AssetReport(
-        schema_version=7,
+        schema_version=8,
         asset_id="asset_episode",
         parent_kind=ParentKind.EPISODE,
         parent_id="episode_01",
@@ -406,7 +406,7 @@ def test_path_history_entry_round_trip() -> None:
 
 def test_asset_report_path_history_defaults_to_empty_list() -> None:
     payload = {
-        "schema_version": 7,
+        "schema_version": 8,
         "asset_id": "asset_hd_main",
         **_asset_report_topology_payload(),
         "initial": {
@@ -425,9 +425,9 @@ def test_asset_report_path_history_defaults_to_empty_list() -> None:
     assert report.path_history == []
 
 
-def test_asset_report_v7_round_trip_with_path_history() -> None:
+def test_asset_report_v8_round_trip_with_path_history() -> None:
     payload = {
-        "schema_version": 7,
+        "schema_version": 8,
         "asset_id": "asset_hd_main",
         **_asset_report_topology_payload(),
         "initial": {
@@ -479,14 +479,14 @@ def test_version_history_entry_extract_no_versions():
     assert entry.output_version_id is None
 
 
-def test_asset_report_v7_default_version_history_empty():
+def test_asset_report_v8_default_version_history_empty():
     snapshot = AssetSnapshot(
         location_path="movies/x.mkv",
         version_id="v0",
         version_index=0,
     )
     report = AssetReport(
-        schema_version=7,
+        schema_version=8,
         asset_id="asset_main",
         parent_kind=ParentKind.TRACK,
         parent_id="track_main",
@@ -504,4 +504,4 @@ def test_asset_report_v7_default_version_history_empty():
         current=snapshot,
     )
     assert report.version_history == []
-    assert report.schema_version == 7
+    assert report.schema_version == 8

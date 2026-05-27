@@ -1,0 +1,75 @@
+schema_version: 19
+scenario_id: audio-layout-roles
+seed: 135
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: movie_audio_roles
+    title: Audio Role Matrix
+    layout: movie_flat
+    variants:
+      - id: variant_audio_roles
+        label: roles
+        bundle:
+          id: bundle_audio_roles
+          assets:
+            - id: asset_audio_roles_movie
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: "4.0"
+                  language: eng
+                  role: main
+                - source: channel_tones
+                  codec: aac
+                  channels: lcr
+                  language: eng
+                  role: commentary
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: spa
+                  role: alternate
+series: []
+artists:
+  - id: artist_layouts
+    name: Layout Lab
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_layouts
+        title: Expanded Channels
+        discs:
+          - id: disc_layouts_1
+            disc_number: 1
+            tracks:
+              - id: track_six_one
+                track_number: 1
+                title: Six One Tone
+                variants:
+                  - id: variant_six_one
+                    label: flac
+                    bundle:
+                      id: bundle_six_one
+                      assets:
+                        - id: asset_audio_roles_track
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 1.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: "6.1"
+                              language: zxx
+                              role: main
+timeline: []

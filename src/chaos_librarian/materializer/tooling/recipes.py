@@ -15,6 +15,8 @@ from typing import Final
 
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
+    AUDIO_CHANNEL_ORDER_BY_NAME,
+    AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME,
     AudioNoiseColor,
     AudioSampleFormat,
     VideoFieldOrder,
@@ -154,6 +156,34 @@ def _frequency_from_seed(seed: int) -> int:
     return 100 + (abs(seed) % 901)
 
 
+def _ffmpeg_layout(channels: str) -> str:
+    return AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME[channels]
+
+
+def _channel_order(channels: str) -> tuple[str, ...]:
+    return AUDIO_CHANNEL_ORDER_BY_NAME[channels]
+
+
+def _pan_mono_to_layout(lavfi: str, channels: str) -> str:
+    order = _channel_order(channels)
+    if len(order) == 1:
+        return lavfi
+    mappings = "|".join(f"{channel}=c0" for channel in order)
+    return f"{lavfi},pan={_ffmpeg_layout(channels)}|{mappings}"
+
+
+def _join_channel_tone_sources(sources: list[str], channels: str) -> str:
+    order = _channel_order(channels)
+    labeled = [f"{source}[a{index}]" for index, source in enumerate(sources)]
+    merge_inputs = "".join(f"[a{index}]" for index in range(len(sources)))
+    maps = "|".join(f"{index}.0-{channel}" for index, channel in enumerate(order))
+    join = (
+        f"{merge_inputs}join=inputs={len(sources)}:"
+        f"channel_layout={_ffmpeg_layout(channels)}:map={maps}"
+    )
+    return ";".join([*labeled, join])
+
+
 def recipe_sine(
     *,
     channels: str,
@@ -164,14 +194,15 @@ def recipe_sine(
     sample_format: AudioSampleFormat | None = None,
 ) -> FFmpegInput:
     """A single sine tone — frequency derived from seed; channel layout
-    set via the lavfi source so the muxer sees the right channel count."""
-    del channels, noise_color  # sine is mono-by-construction; ffmpeg upmixes later
+    set via the lavfi source so the muxer sees the requested layout."""
+    del noise_color
     freq = _frequency_from_seed(seed)
+    lavfi = _pan_mono_to_layout(
+        f"sine=frequency={freq}:duration={duration_s}:sample_rate={sample_rate}",
+        channels,
+    )
     return FFmpegInput(
-        lavfi=_apply_audio_sample_format(
-            f"sine=frequency={freq}:duration={duration_s}:sample_rate={sample_rate}",
-            sample_format,
-        ),
+        lavfi=_apply_audio_sample_format(lavfi, sample_format),
         extra_flags=(),
     )
 
@@ -189,7 +220,7 @@ def recipe_silence(
     del seed, noise_color  # silence is fully determined by channels + duration/rate
     return FFmpegInput(
         lavfi=_apply_audio_sample_format(
-            f"anullsrc=channel_layout={channels}:sample_rate={sample_rate}",
+            f"anullsrc=channel_layout={_ffmpeg_layout(channels)}:sample_rate={sample_rate}",
             sample_format,
         ),
         extra_flags=("-t", str(duration_s)),
@@ -209,7 +240,7 @@ def recipe_channel_tones(
 
     Frequencies start from the seed-derived base and double per channel.
     Multi-channel layouts build a filtergraph with one sine source per
-    channel linked into ``amerge=inputs=N``.
+    channel linked into FFmpeg's ``join`` filter with an explicit layout.
     """
     del noise_color
     count = _CHANNEL_COUNTS[channels]
@@ -218,12 +249,7 @@ def recipe_channel_tones(
     for offset in range(count):
         freq = _CHANNEL_TONE_BASE[(base_index + offset) % len(_CHANNEL_TONE_BASE)]
         sources.append(f"sine=frequency={freq}:duration={duration_s}:sample_rate={sample_rate}")
-    if count == 1:
-        lavfi = sources[0]
-    else:
-        labeled = [f"{src}[a{i}]" for i, src in enumerate(sources)]
-        merge_inputs = "".join(f"[a{i}]" for i in range(count))
-        lavfi = ";".join([*labeled, f"{merge_inputs}amerge=inputs={count}"])
+    lavfi = sources[0] if count == 1 else _join_channel_tone_sources(sources, channels)
     return FFmpegInput(lavfi=_apply_audio_sample_format(lavfi, sample_format), extra_flags=())
 
 
@@ -237,12 +263,12 @@ def recipe_noise(
     sample_format: AudioSampleFormat | None = None,
 ) -> FFmpegInput:
     """Seeded anoisesrc using the requested noise color."""
-    del channels
     color = AudioNoiseColor.WHITE if noise_color is None else noise_color
     lavfi = (
         f"anoisesrc=color={color.value}:duration={duration_s}:"
         f"sample_rate={sample_rate}:seed={abs(seed)}"
     )
+    lavfi = _pan_mono_to_layout(lavfi, channels)
     return FFmpegInput(lavfi=_apply_audio_sample_format(lavfi, sample_format), extra_flags=())
 
 

@@ -40,7 +40,10 @@ def _compare_stream(
         "width",
         "height",
         "channels",
+        "channel_layout",
         "sample_rate",
+        "title",
+        "role",
         "default",
         "forced",
     ):

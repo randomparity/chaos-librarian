@@ -61,6 +61,37 @@ def test_compare_probed_media_reports_stream_field_paths() -> None:
     assert ("streams.1.sample_rate", 48_000, 44_100) in differences
 
 
+def test_compare_probed_media_reports_audio_layout_title_and_role_mismatch() -> None:
+    expected = _media(
+        streams=[
+            ProbedStream(
+                kind=StreamKind.AUDIO,
+                codec="aac",
+                channel_layout="3.0",
+                title="Commentary",
+                role="commentary",
+            )
+        ]
+    )
+    observed = _media(
+        streams=[
+            ProbedStream(
+                kind=StreamKind.AUDIO,
+                codec="aac",
+                channel_layout="2.1",
+                title="Main Audio",
+                role="main",
+            )
+        ]
+    )
+
+    differences = compare_probed_media(expected, observed)
+
+    assert ("streams.0.channel_layout", "3.0", "2.1") in differences
+    assert ("streams.0.title", "Commentary", "Main Audio") in differences
+    assert ("streams.0.role", "commentary", "main") in differences
+
+
 def test_compare_probed_media_treats_audio_video_unknown_language_as_equivalent() -> None:
     expected = _media(
         streams=[

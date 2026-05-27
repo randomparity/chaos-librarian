@@ -19,8 +19,9 @@ from typing import Final
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
-    AUDIO_CHANNEL_COUNTS_BY_NAME,
+    AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME,
     AudioTrack,
+    AudioTrackRole,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -116,6 +117,11 @@ _HDR_X265_PARAMS: Final[dict[VideoHdrMode, tuple[str, ...]]] = {
         "colormatrix=bt2020nc",
         "range=limited",
     ),
+}
+_AUDIO_TITLE_BY_ROLE: Final[dict[AudioTrackRole, str]] = {
+    AudioTrackRole.MAIN: "Main Audio",
+    AudioTrackRole.COMMENTARY: "Commentary",
+    AudioTrackRole.ALTERNATE: "Alternate Audio",
 }
 
 
@@ -312,6 +318,30 @@ def _map_args(audio_inputs: Sequence[FFmpegInput], *, first_audio_input_index: i
     return args
 
 
+def _audio_channel_layout_args(audios: Sequence[AudioTrack]) -> list[str]:
+    """Argv slice forcing each output audio stream to its declared layout."""
+    args: list[str] = []
+    for index, audio in enumerate(audios):
+        layout = AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME[audio.channels.value]
+        args.extend([f"-channel_layout:a:{index}", layout])
+    return args
+
+
+def _audio_metadata_args(audios: Sequence[AudioTrack]) -> list[str]:
+    """Argv slice writing stable per-audio stream metadata."""
+    args: list[str] = []
+    for index, audio in enumerate(audios):
+        selector = f"-metadata:s:a:{index}"
+        title = _AUDIO_TITLE_BY_ROLE[audio.role]
+        args.extend([selector, f"language={audio.language}"])
+        args.extend([selector, f"title={title}"])
+        args.extend([selector, f"handler_name={title}"])
+        args.extend([selector, f"role={audio.role.value}"])
+        if audio.role is AudioTrackRole.COMMENTARY:
+            args.extend([f"-disposition:a:{index}", "comment"])
+    return args
+
+
 def build_resolution_switch_segment_command(
     *,
     video_input: FFmpegInput,
@@ -362,7 +392,9 @@ def _build_video_command(
     argv.extend(_interlaced_video_args(video))
     argv.extend(_color_signal_args(video))
     argv.extend(["-c:a", "aac"])
+    argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.extend(_audio_metadata_args(audios))
     argv.append("-shortest")
     argv.append(str(output_path))
     return argv
@@ -382,9 +414,9 @@ def _build_audio_only_command(
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=0))
     argv.extend(["-c:a", AUDIO_ENCODER_BY_CODEC[audios[0].codec]])
-    channel_count = AUDIO_CHANNEL_COUNTS_BY_NAME[audios[0].channels.value]
-    argv.extend(["-ac", str(channel_count)])
+    argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.extend(_audio_metadata_args(audios))
     argv.append("-shortest")
     argv.append(str(output_path))
     return argv

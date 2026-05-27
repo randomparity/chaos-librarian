@@ -46,15 +46,15 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 18 |
-| manifest | 7 |
+| scenario | 19 |
+| manifest | 8 |
 | journal | 1 |
 | replay bundle | 10 |
 | validation | 1 |
 | materialization | 12 |
 | run sentinel | 2 |
 | capabilities | 6 |
-| asset report | 7 |
+| asset report | 8 |
 | variant report | 2 |
 | bundle report | 1 |
 | movie report | 1 |
@@ -65,8 +65,13 @@ Current checked-in contract versions:
 | album report | 1 |
 | disc report | 1 |
 | track report | 1 |
-| observed state | 2 |
+| observed state | 3 |
 | divergence | 1 |
+
+Scenario v19 adds expanded audio layouts (`4.0`, `lcr`, `6.1`) and audio
+track roles (`main`, `commentary`, `alternate`). Manifest v8, asset-report v8,
+and observed-state v3 carry ffprobe-visible audio stream `channel_layout`,
+`title`, and `role` metadata.
 
 Scenario v18 adds audio noise recipes plus audio `sample_rate` and
 `sample_format` selection. Capabilities v6 adds

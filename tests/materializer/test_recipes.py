@@ -8,6 +8,7 @@ import pytest
 
 from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
+    AudioNoiseColor,
     VideoFieldOrder,
     VideoVfrCadence,
 )
@@ -18,6 +19,7 @@ from chaos_librarian.materializer.tooling.recipes import (
     recipe_channel_tones,
     recipe_color_bars,
     recipe_mandelbrot,
+    recipe_noise,
     recipe_silence,
     recipe_sine,
     recipe_solid_color,
@@ -145,10 +147,41 @@ def test_sine_frequency_derives_from_seed():
     assert ":duration=2.0" in fi.lavfi
 
 
+def test_sine_expands_mono_source_to_lcr_layout() -> None:
+    fi = recipe_sine(channels="lcr", duration_s=1.0, seed=1)
+
+    assert fi.lavfi is not None
+    assert "pan=3.0|FL=c0|FR=c0|FC=c0" in fi.lavfi
+
+
 def test_silence_uses_channel_layout():
     fi = recipe_silence(channels="5.1", duration_s=1.0, seed=0)
     assert fi.lavfi == "anullsrc=channel_layout=5.1:sample_rate=48000"
     assert ("-t", "1.0") in tuple(_pairs(fi.extra_flags))
+
+
+def test_silence_maps_author_lcr_to_ffmpeg_3_0_layout() -> None:
+    fi = recipe_silence(channels="lcr", duration_s=1.0, seed=0)
+
+    assert fi.lavfi == "anullsrc=channel_layout=3.0:sample_rate=48000"
+
+
+def test_silence_uses_six_one_channel_layout() -> None:
+    fi = recipe_silence(channels="6.1", duration_s=1.0, seed=0)
+
+    assert fi.lavfi == "anullsrc=channel_layout=6.1:sample_rate=48000"
+
+
+def test_noise_expands_mono_source_to_requested_layout() -> None:
+    fi = recipe_noise(
+        channels="4.0",
+        duration_s=1.0,
+        seed=11,
+        noise_color=AudioNoiseColor.WHITE,
+    )
+
+    assert fi.lavfi is not None
+    assert "pan=4.0|FL=c0|FR=c0|FC=c0|BC=c0" in fi.lavfi
 
 
 def test_channel_tones_emits_one_frequency_per_channel():
@@ -167,13 +200,24 @@ def test_channel_tones_5_1_emits_six_frequencies():
     assert fi.lavfi.count("sine=frequency=") == 6
 
 
+def test_channel_tones_4_0_uses_join_with_explicit_channel_map() -> None:
+    fi = recipe_channel_tones(channels="4.0", duration_s=1.0, seed=1)
+
+    assert fi.lavfi is not None
+    assert "join=inputs=4:channel_layout=4.0" in fi.lavfi
+    assert "0.0-FL|1.0-FR|2.0-FC|3.0-BC" in fi.lavfi
+
+
 @pytest.mark.parametrize(
     ("layout", "count"),
     [
         (AudioChannelLayout.MONO, 1),
         (AudioChannelLayout.STEREO, 2),
         (AudioChannelLayout.TWO_ONE, 3),
+        (AudioChannelLayout.FOUR_ZERO, 4),
+        (AudioChannelLayout.LCR, 3),
         (AudioChannelLayout.FIVE_ONE, 6),
+        (AudioChannelLayout.SIX_ONE, 7),
         (AudioChannelLayout.SEVEN_ONE, 8),
     ],
 )

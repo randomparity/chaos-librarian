@@ -170,6 +170,22 @@ def test_probed_stream_video_only_fields():
     assert stream.sample_rate is None
 
 
+def test_probed_stream_audio_role_metadata_fields() -> None:
+    stream = ProbedStream(
+        kind=StreamKind.AUDIO,
+        codec="aac",
+        channels=3,
+        sample_rate=48000,
+        channel_layout="3.0",
+        title="Commentary",
+        role="commentary",
+    )
+
+    assert stream.channel_layout == "3.0"
+    assert stream.title == "Commentary"
+    assert stream.role == "commentary"
+
+
 def test_probed_media_round_trip():
     media = ProbedMedia(
         container="matroska,webm",
@@ -207,8 +223,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_seven():
-    assert MANIFEST_SCHEMA_VERSION == 7
+def test_manifest_schema_version_is_eight():
+    assert MANIFEST_SCHEMA_VERSION == 8
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -260,9 +276,9 @@ def test_manifest_sidecar_kind_remains_free_form():
     assert sidecar.kind == "srt"
 
 
-def test_manifest_v7_schema_version():
+def test_manifest_v8_schema_version():
     manifest = Manifest(
-        schema_version=7,
+        schema_version=8,
         movies=[],
         series=[],
         seasons=[],
@@ -278,7 +294,7 @@ def test_manifest_v7_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 7
+    assert manifest.schema_version == 8
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:
