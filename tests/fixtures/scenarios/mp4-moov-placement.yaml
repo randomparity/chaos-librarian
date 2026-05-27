@@ -1,0 +1,54 @@
+schema_version: 20
+scenario_id: mp4-moov-placement
+seed: 136
+duration_scale: short
+library:
+  roots:
+    - id: root_movies
+      path: movies
+movies:
+  - id: movie_moov
+    title: Moov Placement
+    layout: movie_flat
+    variants:
+      - id: variant_moov_start
+        label: start
+        bundle:
+          id: bundle_moov_start
+          assets:
+            - id: asset_moov_start
+              role: main
+              container: mp4
+              mp4_moov_placement: moov_at_start
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_moov_end
+        label: end
+        bundle:
+          id: bundle_moov_end
+          assets:
+            - id: asset_moov_end
+              role: main
+              container: mp4
+              mp4_moov_placement: moov_at_end
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []
