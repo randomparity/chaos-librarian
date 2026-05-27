@@ -13,6 +13,7 @@ rendered hierarchy path under ``scenario.library.roots[0].path``.
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass, field
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
@@ -183,13 +184,21 @@ class WorldState:
         """Return True if hierarchy actions should rerender this asset."""
         return asset_id in self._renderer_managed_asset_ids
 
-    def renderer_derived_sidecars_for_asset(self, asset_id: str) -> list[ManifestSidecar]:
-        """Return renderer-derived declared sidecars for ``asset_id`` in manifest order."""
-        return [
-            sidecar
-            for sidecar_id, sidecar in self.sidecars.items()
-            if sidecar.asset_id == asset_id and sidecar_id in self._renderer_derived_sidecar_ids
-        ]
+    def renderer_derived_sidecars_by_asset(
+        self, asset_ids: Collection[str]
+    ) -> dict[str, list[ManifestSidecar]]:
+        """Group renderer-derived declared sidecars under each asset in ``asset_ids``.
+
+        Scans ``self.sidecars`` once, in manifest order, so each asset's list
+        keeps manifest order. Assets with no renderer-derived sidecars are
+        absent from the result.
+        """
+        wanted = set(asset_ids)
+        grouped: dict[str, list[ManifestSidecar]] = {}
+        for sidecar_id, sidecar in self.sidecars.items():
+            if sidecar.asset_id in wanted and sidecar_id in self._renderer_derived_sidecar_ids:
+                grouped.setdefault(sidecar.asset_id, []).append(sidecar)
+        return grouped
 
     def discard_renderer_sidecar(self, sidecar_id: str) -> None:
         """Mark a removed sidecar as no longer renderer-derived."""

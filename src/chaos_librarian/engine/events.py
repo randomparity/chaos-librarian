@@ -1416,6 +1416,7 @@ def _hierarchy_entry(
     path_moves: list[dict[str, str]] = []
     sidecar_moves: list[dict[str, str]] = []
     skipped_deleted_asset_ids: list[str] = []
+    sidecars_by_asset = state.renderer_derived_sidecars_by_asset(asset_ids)
     for asset_id in asset_ids:
         if not state.has_location(asset_id):
             skipped_deleted_asset_ids.append(asset_id)
@@ -1438,7 +1439,7 @@ def _hierarchy_entry(
                 "to_path": to_path,
             }
         )
-        for sidecar in state.renderer_derived_sidecars_for_asset(asset_id):
+        for sidecar in sidecars_by_asset.get(asset_id, []):
             if sidecar.language is None:
                 raise ChaosLibrarianValueError(
                     f"renderer-derived sidecar {sidecar.id!r} has no language"
