@@ -55,7 +55,7 @@ _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
     "+bitexact",
     "-flags",
     "+bitexact",
-    "-map_metadata",
+    "-map_metadata:g",
     "-1",
     "-metadata",
     "creation_time=1970-01-01T00:00:00Z",
@@ -429,7 +429,8 @@ def _build_video_command(
         argv.extend(["-c:v:1", "png", "-disposition:v:1", "attached_pic"])
     if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
         argv.extend(["-movflags", "+faststart"])
-    argv.append("-shortest")
+    if cover_index is None:
+        argv.append("-shortest")
     argv.append(str(output_path))
     return argv
 

@@ -457,6 +457,7 @@ def test_build_command_maps_chapters_and_cover_art_inputs(tmp_path: Path) -> Non
     assert chapter_metadata_index < argv.index("-map_chapters")
     assert argv[argv.index("-c:v:1") + 1] == "png"
     assert argv[argv.index("-disposition:v:1") + 1] == "attached_pic"
+    assert "-shortest" not in argv
 
 
 def test_audio_only_command_rejects_embedded_metadata_inputs(tmp_path: Path) -> None:
