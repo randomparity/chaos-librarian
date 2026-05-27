@@ -319,6 +319,19 @@ def _map_args(audio_inputs: Sequence[FFmpegInput], *, first_audio_input_index: i
     return args
 
 
+def _embedded_input_indexes(
+    *,
+    first_index: int,
+    chapters_input: FFmpegInput | None,
+    cover_art_input: FFmpegInput | None,
+) -> tuple[int | None, int | None]:
+    chapter_index = first_index if chapters_input is not None else None
+    cover_index = first_index
+    if chapters_input is not None:
+        cover_index += 1
+    return chapter_index, cover_index if cover_art_input is not None else None
+
+
 def _audio_channel_layout_args(audios: Sequence[AudioTrack]) -> list[str]:
     """Argv slice forcing each output audio stream to its declared layout."""
     args: list[str] = []
@@ -381,6 +394,8 @@ def _build_video_command(
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
     mp4_moov_placement: Mp4MoovPlacement | None,
+    chapters_input: FFmpegInput | None,
+    cover_art_input: FFmpegInput | None,
 ) -> list[str]:
     _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
     _validate_video(video)
@@ -388,7 +403,18 @@ def _build_video_command(
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
+    chapter_index, cover_index = _embedded_input_indexes(
+        first_index=1 + len(audio_inputs),
+        chapters_input=chapters_input,
+        cover_art_input=cover_art_input,
+    )
+    if chapters_input is not None:
+        argv.extend(_input_args(chapters_input, field="embedded_chapters"))
+    if cover_art_input is not None:
+        argv.extend(_input_args(cover_art_input, field="embedded_cover_art"))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
+    if cover_index is not None:
+        argv.extend(["-map", f"{cover_index}:v:0"])
     argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
     argv.extend(_hdr_video_args(video))
     argv.extend(_interlaced_video_args(video))
@@ -396,7 +422,11 @@ def _build_video_command(
     argv.extend(["-c:a", "aac"])
     argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    if chapter_index is not None:
+        argv.extend(["-map_metadata", str(chapter_index), "-map_chapters", str(chapter_index)])
     argv.extend(_audio_metadata_args(audios))
+    if cover_index is not None:
+        argv.extend(["-c:v:1", "png", "-disposition:v:1", "attached_pic"])
     if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
         argv.extend(["-movflags", "+faststart"])
     argv.append("-shortest")
@@ -434,6 +464,8 @@ def build_command(
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
     mp4_moov_placement: Mp4MoovPlacement | None = None,
+    chapters_input: FFmpegInput | None = None,
+    cover_art_input: FFmpegInput | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for one asset.
 
@@ -453,6 +485,18 @@ def build_command(
             payload={"container": container},
         )
     if video is None:
+        if chapters_input is not None:
+            raise UnsupportedMaterializationError(
+                "audio-only assets cannot embed chapters",
+                field="embedded_chapters",
+                payload={},
+            )
+        if cover_art_input is not None:
+            raise UnsupportedMaterializationError(
+                "audio-only assets cannot embed cover art",
+                field="embedded_cover_art",
+                payload={},
+            )
         if video_input is not None:
             raise UnsupportedMaterializationError(
                 "audio-only assets must not pass a video input",
@@ -479,6 +523,8 @@ def build_command(
         audio_inputs=audio_inputs,
         output_path=output_path,
         mp4_moov_placement=mp4_moov_placement,
+        chapters_input=chapters_input,
+        cover_art_input=cover_art_input,
     )
 
 

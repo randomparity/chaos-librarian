@@ -431,6 +431,48 @@ def test_build_command_maps_multiple_audio_inputs_explicitly(tmp_path: Path) -> 
     assert max(input_indexes) < first_map_index < video_codec_index
 
 
+def test_build_command_maps_chapters_and_cover_art_inputs(tmp_path: Path) -> None:
+    chapters = FFmpegInput(
+        file_path=tmp_path / "chapters.ffmeta",
+        extra_flags=("-f", "ffmetadata"),
+    )
+    cover = FFmpegInput(file_path=tmp_path / "cover.png")
+
+    argv = build_command(
+        video=_video(),
+        video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mp4",
+        chapters_input=chapters,
+        cover_art_input=cover,
+    )
+
+    map_values = [argv[index + 1] for index, arg in enumerate(argv) if arg == "-map"]
+    assert map_values == ["0:v:0", "1:a:0", "3:v:0"]
+    assert argv[argv.index("-map_chapters") + 1] == "2"
+    metadata_indexes = [index for index, arg in enumerate(argv) if arg == "-map_metadata"]
+    chapter_metadata_index = metadata_indexes[-1]
+    assert argv[chapter_metadata_index + 1] == "2"
+    assert chapter_metadata_index < argv.index("-map_chapters")
+    assert argv[argv.index("-c:v:1") + 1] == "png"
+    assert argv[argv.index("-disposition:v:1") + 1] == "attached_pic"
+
+
+def test_audio_only_command_rejects_embedded_metadata_inputs(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=None,
+            video_input=None,
+            audios=[_audio(codec="flac")],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.flac",
+            chapters_input=FFmpegInput(file_path=tmp_path / "chapters.ffmeta"),
+        )
+
+    assert exc.value.field == "embedded_chapters"
+
+
 def test_build_command_writes_audio_role_metadata_and_layouts(tmp_path: Path) -> None:
     output = tmp_path / "asset.mkv"
 

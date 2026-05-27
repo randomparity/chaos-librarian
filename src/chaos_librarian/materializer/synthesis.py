@@ -34,8 +34,13 @@ from chaos_librarian.materializer.content_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
     AudioSourceRequest,
+    ChapterSourceRequest,
+    ChapterSpec,
+    CoverArtSourceRequest,
     VideoSourceRequest,
     resolve_audio_source,
+    resolve_chapter_source,
+    resolve_cover_art_source,
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import (
@@ -108,6 +113,14 @@ class _ResolvedMediaInputs:
     video_input: FFmpegInput | None
     audio_inputs: tuple[FFmpegInput, ...]
     content_sources: tuple[ContentSourceEvidence, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _EmbeddedMetadataInputs:
+    chapters_input: FFmpegInput | None
+    cover_art_input: FFmpegInput | None
+    content_sources: tuple[ContentSourceEvidence, ...]
+    prelude_invocations: tuple[ToolInvocation, ...]
 
 
 def materialize_assets_phase_a(
@@ -220,22 +233,36 @@ def materialize_one_asset(
             invocation_index=invocation_index,
         )
     resolved_inputs = _resolve_media_inputs(asset, seed)
-    argv = build_command(
-        video=asset.video,
-        video_input=resolved_inputs.video_input,
-        audios=asset.audio,
-        audio_inputs=resolved_inputs.audio_inputs,
-        output_path=output_path,
-        mp4_moov_placement=asset.mp4_moov_placement,
-    )
-    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
-    if invocation.exit_code != 0:
-        raise _tool_failed(
+    with TemporaryDirectory(prefix=f".{output_path.stem}-", dir=output_path.parent) as temp_dir:
+        embedded_inputs = _prepare_embedded_metadata_inputs(
             asset=asset,
-            invocation=invocation,
-            stderr_tail=stderr_tail,
-            content_sources=resolved_inputs.content_sources,
+            seed=seed,
+            caps=caps,
+            temp_path=Path(temp_dir),
+            base_content_sources=resolved_inputs.content_sources,
         )
+        content_sources = resolved_inputs.content_sources + embedded_inputs.content_sources
+        argv = build_command(
+            video=asset.video,
+            video_input=resolved_inputs.video_input,
+            audios=asset.audio,
+            audio_inputs=resolved_inputs.audio_inputs,
+            output_path=output_path,
+            mp4_moov_placement=asset.mp4_moov_placement,
+            chapters_input=embedded_inputs.chapters_input,
+            cover_art_input=embedded_inputs.cover_art_input,
+        )
+        invocation, stderr_tail = run_ffmpeg(
+            argv,
+            ffmpeg_version=caps.ffmpeg.version or "unknown",
+        )
+        if invocation.exit_code != 0:
+            raise _tool_failed(
+                asset=asset,
+                invocation=invocation,
+                stderr_tail=stderr_tail,
+                content_sources=content_sources,
+            )
     sidecar_hashes = write_sidecars(
         asset,
         library_dir,
@@ -246,7 +273,7 @@ def materialize_one_asset(
     try:
         probed = probe_file(output_path)
     except ProbeParseError as exc:
-        exc.content_sources = resolved_inputs.content_sources
+        exc.content_sources = content_sources
         raise
     with output_path.open("rb") as fh:
         content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
@@ -264,8 +291,111 @@ def materialize_one_asset(
         materialized_asset=materialized_asset,
         probed=probed,
         sidecar_hashes=sidecar_hashes,
-        content_sources=resolved_inputs.content_sources,
+        content_sources=content_sources,
+        prelude_invocations=embedded_inputs.prelude_invocations,
     )
+
+
+def _prepare_embedded_metadata_inputs(
+    *,
+    asset: Asset,
+    seed: int,
+    caps: Capabilities,
+    temp_path: Path,
+    base_content_sources: tuple[ContentSourceEvidence, ...],
+) -> _EmbeddedMetadataInputs:
+    content_sources: list[ContentSourceEvidence] = []
+    prelude_invocations: list[ToolInvocation] = []
+    chapters_input = None
+    cover_art_input = None
+    if asset.embedded_chapters is not None:
+        chapter_resolution = resolve_chapter_source(
+            ChapterSourceRequest(
+                asset_id=asset.id,
+                seed=seed,
+                duration_s=asset.duration_seconds,
+                chapters=asset.embedded_chapters,
+            )
+        )
+        chapter_path = temp_path / "chapters.ffmeta"
+        _write_chapter_metadata(chapter_path, chapter_resolution.chapters)
+        chapters_input = FFmpegInput(
+            file_path=chapter_path,
+            extra_flags=("-f", "ffmetadata"),
+        )
+        content_sources.append(chapter_resolution.evidence)
+    if asset.embedded_cover_art is not None:
+        cover_resolution = resolve_cover_art_source(
+            CoverArtSourceRequest(
+                asset_id=asset.id,
+                seed=seed,
+                cover_art=asset.embedded_cover_art,
+            )
+        )
+        cover_path = temp_path / f"cover.{asset.embedded_cover_art.image_format.value}"
+        invocation = _run_cover_art_prelude(
+            asset=asset,
+            caps=caps,
+            color=cover_resolution.color,
+            output_path=cover_path,
+            content_sources=(*base_content_sources, *content_sources, cover_resolution.evidence),
+        )
+        cover_art_input = FFmpegInput(file_path=cover_path)
+        content_sources.append(cover_resolution.evidence)
+        prelude_invocations.append(invocation)
+    return _EmbeddedMetadataInputs(
+        chapters_input=chapters_input,
+        cover_art_input=cover_art_input,
+        content_sources=tuple(content_sources),
+        prelude_invocations=tuple(prelude_invocations),
+    )
+
+
+def _write_chapter_metadata(path: Path, chapters: tuple[ChapterSpec, ...]) -> None:
+    lines = [";FFMETADATA1\n"]
+    for chapter in chapters:
+        escaped_title = chapter.title.replace("\\", "\\\\").replace("\n", " ")
+        lines.extend(
+            [
+                "[CHAPTER]\n",
+                "TIMEBASE=1/1000\n",
+                f"START={chapter.start_ms}\n",
+                f"END={chapter.end_ms}\n",
+                f"title={escaped_title}\n",
+            ]
+        )
+    path.write_text("".join(lines), encoding="utf-8")
+
+
+def _run_cover_art_prelude(
+    *,
+    asset: Asset,
+    caps: Capabilities,
+    color: str,
+    output_path: Path,
+    content_sources: tuple[ContentSourceEvidence, ...],
+) -> ToolInvocation:
+    argv = [
+        "ffmpeg",
+        "-hide_banner",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        f"color=c={color}:s=320x320",
+        "-frames:v",
+        "1",
+        str(output_path),
+    ]
+    invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
+    if invocation.exit_code != 0:
+        raise _tool_failed(
+            asset=asset,
+            invocation=invocation,
+            stderr_tail=stderr_tail,
+            content_sources=content_sources,
+        )
+    return invocation
 
 
 def _materialize_resolution_switch_asset(
@@ -475,6 +605,20 @@ def _validate_resolution_switch_asset(asset: Asset) -> None:
             field="subtitles",
             asset_id=asset.id,
             payload={"count": len(asset.subtitles)},
+        )
+    if asset.embedded_chapters is not None:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization cannot embed chapters",
+            field="embedded_chapters",
+            asset_id=asset.id,
+            payload={},
+        )
+    if asset.embedded_cover_art is not None:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization cannot embed cover art",
+            field="embedded_cover_art",
+            asset_id=asset.id,
+            payload={},
         )
     for field_name, value in (
         ("vfr_cadence", video.vfr_cadence),
