@@ -135,7 +135,7 @@ test fails before cue density silently applies to the wrong track.
 
 Add `ContentTrackKind.MUXING` and muxing-profile evidence fields:
 
-- `matroska_muxing_profile`
+- `matroska_muxing_profile: MatroskaMuxingProfile`
 - `container`
 
 The evidence provider is `builtin-mkvmerge`, source is the profile value, and
