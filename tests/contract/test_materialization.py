@@ -154,8 +154,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_fourteen() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 14
+def test_materialization_schema_version_is_fifteen() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 15
 
 
 def test_materialized_asset_records_mp4_moov_placement() -> None:
@@ -406,6 +406,25 @@ def test_materialization_report_carries_content_source_evidence() -> None:
     report = _minimal_report()
 
     assert report.content_sources[0].provider == "builtin-lavfi"
+
+
+def test_materialization_content_source_carries_muxing_profile() -> None:
+    evidence = ContentSourceEvidence(
+        asset_id="asset_main",
+        track_kind=ContentTrackKind.MUXING,
+        source="short_clusters",
+        provider="builtin-mkvmerge",
+        recipe_digest="sha256:" + "1" * 64,
+        matroska_muxing_profile=scenario_contract.MatroskaMuxingProfile.SHORT_CLUSTERS,
+        container="mkv",
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+
+    loaded = ContentSourceEvidence.model_validate(evidence.model_dump(mode="json"))
+
+    assert loaded.track_kind is ContentTrackKind.MUXING
+    assert loaded.matroska_muxing_profile is scenario_contract.MatroskaMuxingProfile.SHORT_CLUSTERS
+    assert loaded.container == "mkv"
 
 
 def test_corruption_probe_outcome_accepts_declared_values_only() -> None:

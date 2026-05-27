@@ -1,0 +1,43 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 22
+scenario_id: invalid-matroska-profile-audio-track
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies: []
+series: []
+artists:
+  - id: artist_bad
+    name: Bad Muxing Track
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_bad
+        title: Bad Album
+        discs:
+          - id: disc_bad
+            disc_number: 1
+            tracks:
+              - id: track_bad
+                track_number: 1
+                title: Bad Track
+                variants:
+                  - id: variant_bad
+                    label: flac
+                    bundle:
+                      id: bundle_bad
+                      assets:
+                        - id: asset_bad
+                          role: main
+                          container: flac
+                          duration_seconds: 1.0
+                          matroska_muxing_profile: short_clusters
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+timeline: []

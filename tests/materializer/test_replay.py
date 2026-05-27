@@ -11,7 +11,7 @@ from typing import cast
 
 import pytest
 
-from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION
+from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -50,7 +50,7 @@ _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 _RESOLUTION_SWITCH_SCENARIO = b"""\
-schema_version: 21
+schema_version: 22
 scenario_id: run-replay-resolution-switch-capability-test
 seed: 133
 duration_scale: short
@@ -82,6 +82,77 @@ artists: []
 timeline: []
 """
 
+_MKV_MUXING_PROFILE_SCENARIO = b"""\
+schema_version: 22
+scenario_id: run-replay-muxing-profile-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_mux
+    title: Replay Mux Profile
+    layout: movie_flat
+    variants:
+      - id: variant_mux
+        label: mkv
+        bundle:
+          id: bundle_mux
+          assets:
+            - id: asset_mux
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              matroska_muxing_profile: dense_cues
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []
+"""
+
+_WEBM_PROFILE_SCENARIO = b"""\
+schema_version: 22
+scenario_id: run-replay-webm-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_webm
+    title: Replay WebM Profile
+    layout: movie_flat
+    variants:
+      - id: variant_webm
+        label: webm
+        bundle:
+          id: bundle_webm
+          assets:
+            - id: asset_webm
+              role: main
+              container: webm
+              duration_seconds: 1.0
+              matroska_muxing_profile: short_clusters
+              video:
+                source: color_bars
+                codec: vp9
+                resolution: sd
+series: []
+artists: []
+timeline: []
+"""
+
 
 def _scenario_bytes(
     *,
@@ -92,7 +163,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 21
+schema_version: 22
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -131,7 +202,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 21
+schema_version: 22
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -173,7 +244,7 @@ timeline:
     bytes: 64
 """
 _HDR_SCENARIO = b"""\
-schema_version: 21
+schema_version: 22
 scenario_id: run-replay-hdr-capability-test
 seed: 7
 duration_scale: short
@@ -315,7 +386,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -329,6 +400,8 @@ def test_run_replay_refuses_hdr_when_capability_missing(
             materialize_hdr_video=False,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -352,7 +425,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -366,6 +439,8 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
             materialize_hdr_video=True,
             materialize_resolution_switch_video=False,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -389,7 +464,7 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -403,6 +478,8 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=False,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
@@ -419,6 +496,70 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
 
     assert exc.value.field == "ready_for.materialize_audio_recipes"
     assert exc.value.asset_id == "asset_noise"
+    assert not out.exists()
+
+
+@pytest.mark.parametrize(
+    ("scenario", "muxing_ready", "webm_ready", "field", "asset_id"),
+    [
+        (
+            _MKV_MUXING_PROFILE_SCENARIO,
+            False,
+            True,
+            "ready_for.materialize_matroska_muxing_profiles",
+            "asset_mux",
+        ),
+        (
+            _WEBM_PROFILE_SCENARIO,
+            True,
+            False,
+            "ready_for.materialize_webm_video",
+            "asset_webm",
+        ),
+    ],
+)
+def test_run_replay_refuses_muxing_profile_capability_regressions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scenario: bytes,
+    muxing_ready: bool,
+    webm_ready: bool,
+    field: str,
+    asset_id: str,
+) -> None:
+    caps = Capabilities(
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=True, version="80.0", path="/x/mkvmerge", meets_minimum=True),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=muxing_ready,
+            materialize_webm_video=webm_ready,
+        ),
+    )
+    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(
+        replay_mod,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        replay_run_bundle(_run_bundle_for(scenario, applied_events=0), out)
+
+    assert exc.value.field == field
+    assert exc.value.asset_id == asset_id
     assert not out.exists()
 
 
@@ -608,7 +749,7 @@ def _patch_replay_materializer(
     patch_corruption: bool = True,
 ) -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -622,6 +763,8 @@ def _patch_replay_materializer(
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)

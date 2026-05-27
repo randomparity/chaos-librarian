@@ -21,6 +21,7 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     EmbeddedChapters,
     EmbeddedCoverArt,
+    MatroskaMuxingProfile,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -54,6 +55,7 @@ RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
 PROVIDER_NAME: Final = "builtin-lavfi"
 CHAPTER_PROVIDER_NAME: Final = "builtin-chapters"
 COVER_ART_PROVIDER_NAME: Final = "builtin-cover-art"
+MUXING_PROVIDER_NAME: Final = "builtin-mkvmerge"
 
 VideoRecipe = Callable[..., FFmpegInput]
 AudioRecipe = Callable[..., FFmpegInput]
@@ -151,6 +153,14 @@ class CoverArtSourceRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class MuxingSourceRequest:
+    asset_id: str
+    seed: int
+    container: str
+    profile: MatroskaMuxingProfile
+
+
+@dataclass(frozen=True, slots=True)
 class SourceResolution:
     ffmpeg_input: FFmpegInput
     evidence: ContentSourceEvidence
@@ -165,6 +175,12 @@ class ChapterSourceResolution:
 @dataclass(frozen=True, slots=True)
 class CoverArtSourceResolution:
     color: str
+    evidence: ContentSourceEvidence
+
+
+@dataclass(frozen=True, slots=True)
+class MuxingSourceResolution:
+    deterministic_seed: int
     evidence: ContentSourceEvidence
 
 
@@ -409,6 +425,25 @@ def resolve_cover_art_source(request: CoverArtSourceRequest) -> CoverArtSourceRe
     return CoverArtSourceResolution(color=color, evidence=evidence)
 
 
+def resolve_muxing_source(request: MuxingSourceRequest) -> MuxingSourceResolution:
+    """Resolve deterministic mkvmerge profile evidence."""
+    deterministic_seed = _muxing_deterministic_seed(request)
+    evidence = ContentSourceEvidence(
+        asset_id=request.asset_id,
+        track_kind=ContentTrackKind.MUXING,
+        source=request.profile.value,
+        provider=MUXING_PROVIDER_NAME,
+        recipe_digest=_muxing_recipe_digest(
+            request=request,
+            deterministic_seed=deterministic_seed,
+        ),
+        matroska_muxing_profile=request.profile,
+        container=request.container,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+    return MuxingSourceResolution(deterministic_seed=deterministic_seed, evidence=evidence)
+
+
 def _recipe_fps(request: VideoSourceRequest) -> int:
     if request.vfr_cadence is not None:
         return VFR_BASE_FPS
@@ -573,6 +608,17 @@ def _cover_art_color(request: CoverArtSourceRequest) -> str:
     return f"#{_sha256_hex(payload)[:6]}"
 
 
+def _muxing_deterministic_seed(request: MuxingSourceRequest) -> int:
+    payload = {
+        "asset_id": request.asset_id,
+        "container": request.container,
+        "profile": request.profile.value,
+        "provider": MUXING_PROVIDER_NAME,
+        "seed": request.seed,
+    }
+    return int(_sha256_hex(payload)[:8], 16)
+
+
 def _chapter_recipe_digest(
     *,
     request: ChapterSourceRequest,
@@ -612,6 +658,25 @@ def _cover_art_recipe_digest(*, request: CoverArtSourceRequest, color: str) -> s
             "seed": request.seed,
             "source": request.cover_art.source.value,
             "track_kind": ContentTrackKind.COVER_ART.value,
+        },
+    }
+    return f"sha256:{_sha256_hex(payload)}"
+
+
+def _muxing_recipe_digest(
+    *,
+    request: MuxingSourceRequest,
+    deterministic_seed: int,
+) -> str:
+    payload = {
+        "deterministic_seed": deterministic_seed,
+        "provider": MUXING_PROVIDER_NAME,
+        "request": {
+            "asset_id": request.asset_id,
+            "container": request.container,
+            "profile": request.profile.value,
+            "seed": request.seed,
+            "track_kind": ContentTrackKind.MUXING.value,
         },
     }
     return f"sha256:{_sha256_hex(payload)}"

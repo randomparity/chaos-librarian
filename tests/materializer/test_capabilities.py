@@ -9,6 +9,7 @@ from typing import Final
 import pytest
 from packaging.version import Version
 
+from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.materializer.errors import CapabilityGateError
@@ -25,6 +26,7 @@ OK_FFPROBE: Final = "ffprobe version 7.1.1 Copyright (c) 2000-2024 the FFmpeg de
 OK_MKV: Final = "mkvmerge v80.0 ('Roundabout') 64-bit"
 OLD_FFMPEG: Final = "ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers"
 ENCODERS_WITH_X265: Final = "Encoders:\n V....D libx264\n V....D libx265"
+ENCODERS_WITH_X265_AND_VP9: Final = ENCODERS_WITH_X265 + "\n V....D libvpx-vp9"
 ENCODERS_WITHOUT_X265: Final = "Encoders:\n V....D libx264"
 ENCODERS_WITHOUT_X264: Final = "Encoders:\n V....D libx265"
 FILTERS_WITH_SETPARAMS: Final = "Filters:\n .. setparams         V->V\n .. anoisesrc         |->A"
@@ -112,7 +114,7 @@ def test_detect_capabilities_all_present_above_minimum(
         _stub_subprocess_run(
             {
                 "ffmpeg": OK_FFMPEG,
-                "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-encoders": ENCODERS_WITH_X265_AND_VP9,
                 "ffmpeg-filters": FILTERS_WITH_SETPARAMS,
                 "ffmpeg-libx265-help": X265_HELP_10BIT,
                 "ffprobe": OK_FFPROBE,
@@ -130,6 +132,8 @@ def test_detect_capabilities_all_present_above_minimum(
     assert caps.ready_for.materialize_hdr_video
     assert caps.ready_for.materialize_resolution_switch_video
     assert caps.ready_for.materialize_audio_recipes
+    assert caps.ready_for.materialize_matroska_muxing_profiles
+    assert caps.ready_for.materialize_webm_video
     provider = caps.content_sources.providers[0]
     assert provider.name == "builtin-lavfi"
     assert provider.available
@@ -169,6 +173,41 @@ def test_detect_capabilities_requires_libx265_for_hevc_video(
     assert not caps.ready_for.materialize_hdr_video
     assert caps.ready_for.materialize_resolution_switch_video
     assert "video:hdr:hdr10" not in caps.content_sources.providers[0].sources
+
+
+def test_detect_capabilities_reports_muxing_ready_without_vp9(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which(
+            {
+                "ffmpeg": "/usr/bin/ffmpeg",
+                "ffprobe": "/usr/bin/ffprobe",
+                "mkvmerge": "/usr/bin/mkvmerge",
+            }
+        ),
+    )
+    monkeypatch.setattr(
+        cap_mod.subprocess,
+        "run",
+        _stub_subprocess_run(
+            {
+                "ffmpeg": OK_FFMPEG,
+                "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-filters": FILTERS_WITH_SETPARAMS,
+                "ffmpeg-libx265-help": X265_HELP_10BIT,
+                "ffprobe": OK_FFPROBE,
+                "mkvmerge": OK_MKV,
+            }
+        ),
+    )
+
+    caps = detect_capabilities()
+
+    assert caps.ready_for.materialize_matroska_muxing_profiles
+    assert not caps.ready_for.materialize_webm_video
 
 
 def test_detect_capabilities_requires_libx264_for_resolution_switch_video(
@@ -327,6 +366,7 @@ def test_detect_capabilities_mkvtoolnix_missing_static_still_ready(
     caps = detect_capabilities()
     assert caps.ready_for.materialize_static
     assert not caps.ready_for.materialize_media_mutations
+    assert not caps.ready_for.materialize_matroska_muxing_profiles
     assert not caps.mkvtoolnix.found
 
 
@@ -370,7 +410,7 @@ def test_detect_capabilities_ffmpeg_missing_marks_content_sources_unavailable(
 
 def test_assert_capable_raises_on_regression() -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=False, meets_minimum=False),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -384,6 +424,8 @@ def test_assert_capable_raises_on_regression() -> None:
             materialize_hdr_video=False,
             materialize_resolution_switch_video=False,
             materialize_audio_recipes=False,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
         ),
     )
     with pytest.raises(CapabilityGateError):

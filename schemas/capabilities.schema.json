@@ -120,6 +120,10 @@
           "title": "Materialize Hevc Video",
           "type": "boolean"
         },
+        "materialize_matroska_muxing_profiles": {
+          "title": "Materialize Matroska Muxing Profiles",
+          "type": "boolean"
+        },
         "materialize_media_mutations": {
           "title": "Materialize Media Mutations",
           "type": "boolean"
@@ -131,6 +135,10 @@
         "materialize_static": {
           "title": "Materialize Static",
           "type": "boolean"
+        },
+        "materialize_webm_video": {
+          "title": "Materialize Webm Video",
+          "type": "boolean"
         }
       },
       "required": [
@@ -140,7 +148,9 @@
         "materialize_hevc_video",
         "materialize_hdr_video",
         "materialize_resolution_switch_video",
-        "materialize_audio_recipes"
+        "materialize_audio_recipes",
+        "materialize_matroska_muxing_profiles",
+        "materialize_webm_video"
       ],
       "title": "ReadyFor",
       "type": "object"
@@ -213,7 +223,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 6,
+      "const": 7,
       "title": "Schema Version",
       "type": "integer"
     }

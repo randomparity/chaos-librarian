@@ -28,7 +28,7 @@ from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.run import materialize_scenario
 
 _REENCODE_SCENARIO_BODY = """\
-schema_version: 21
+schema_version: 22
 scenario_id: sc_test
 seed: 42
 duration_scale: short
@@ -78,7 +78,7 @@ def _write_scenario(tmp_path: Path, body: str) -> Path:
 
 def _fake_capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -92,6 +92,8 @@ def _fake_capabilities() -> Capabilities:
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
 

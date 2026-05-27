@@ -56,12 +56,46 @@ def test_capabilities_round_trip():
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
         ),
     )
     payload = caps.model_dump_json(indent=2, exclude_none=True)
     loaded = Capabilities.model_validate_json(payload)
     assert loaded == caps
     assert loaded.content_sources.providers[0].name == "builtin-lavfi"
+
+
+def test_capabilities_ready_for_muxing_profiles_round_trips() -> None:
+    caps = Capabilities(
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
+        ffmpeg=_ok_tool(),
+        ffprobe=_ok_tool(path="/usr/bin/ffprobe"),
+        mkvtoolnix=ToolStatus(
+            found=True,
+            version="98",
+            path="/usr/bin/mkvmerge",
+            meets_minimum=True,
+        ),
+        platform="darwin-arm64",
+        content_sources=_content_source_caps(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
+        ),
+    )
+
+    loaded = Capabilities.model_validate_json(caps.model_dump_json())
+
+    assert loaded.ready_for.materialize_matroska_muxing_profiles
+    assert loaded.ready_for.materialize_webm_video
 
 
 def test_tool_status_optional_fields_omitted_when_none():
@@ -89,6 +123,8 @@ def test_capabilities_schema_version_pinned():
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
         ).model_dump(),
     }
     with pytest.raises(ValidationError):

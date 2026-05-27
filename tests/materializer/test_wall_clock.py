@@ -51,7 +51,7 @@ _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 21
+schema_version: 22
 scenario_id: resolution-switch-wall-clock-capability-test
 seed: 133
 duration_scale: short
@@ -78,6 +78,77 @@ movies:
                 codec: h264
                 resolution: sd
                 resolution_sequence: sd_to_hd
+series: []
+artists: []
+timeline: []
+"""
+
+_MKV_MUXING_PROFILE_SCENARIO = """\
+schema_version: 22
+scenario_id: wall-clock-muxing-profile-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_mux
+    title: Wall Clock Mux Profile
+    layout: movie_flat
+    variants:
+      - id: variant_mux
+        label: mkv
+        bundle:
+          id: bundle_mux
+          assets:
+            - id: asset_mux
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              matroska_muxing_profile: no_cues
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []
+"""
+
+_WEBM_PROFILE_SCENARIO = """\
+schema_version: 22
+scenario_id: wall-clock-webm-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_webm
+    title: Wall Clock WebM Profile
+    layout: movie_flat
+    variants:
+      - id: variant_webm
+        label: webm
+        bundle:
+          id: bundle_webm
+          assets:
+            - id: asset_webm
+              role: main
+              container: webm
+              duration_seconds: 1.0
+              matroska_muxing_profile: short_clusters
+              video:
+                source: color_bars
+                codec: vp9
+                resolution: sd
 series: []
 artists: []
 timeline: []
@@ -114,7 +185,7 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 @pytest.fixture(autouse=True)
 def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -128,6 +199,8 @@ def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -142,7 +215,7 @@ def test_wall_clock_refuses_hdr_when_capability_missing(
 ) -> None:
     del fake_clock
     caps = Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -156,6 +229,8 @@ def test_wall_clock_refuses_hdr_when_capability_missing(
             materialize_hdr_video=False,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -181,7 +256,7 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
 ) -> None:
     del fake_clock
     caps = Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -195,6 +270,8 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
             materialize_hdr_video=True,
             materialize_resolution_switch_video=False,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -209,6 +286,73 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
     assert not out_dir.exists()
 
 
+@pytest.mark.parametrize(
+    ("scenario_text", "muxing_ready", "webm_ready", "field", "asset_id"),
+    [
+        (
+            _MKV_MUXING_PROFILE_SCENARIO,
+            False,
+            True,
+            "ready_for.materialize_matroska_muxing_profiles",
+            "asset_mux",
+        ),
+        (
+            _WEBM_PROFILE_SCENARIO,
+            True,
+            False,
+            "ready_for.materialize_webm_video",
+            "asset_webm",
+        ),
+    ],
+)
+def test_wall_clock_refuses_muxing_profile_capability_regressions(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scenario_text: str,
+    muxing_ready: bool,
+    webm_ready: bool,
+    field: str,
+    asset_id: str,
+) -> None:
+    del fake_clock
+    caps = Capabilities(
+        schema_version=7,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=True, version="80.0", path="/x/mkvmerge", meets_minimum=True),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=muxing_ready,
+            materialize_webm_video=webm_ready,
+        ),
+    )
+    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(
+        wall_clock,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
+    )
+    scenario = tmp_path / "muxing-profile-wall-clock.yaml"
+    scenario.write_text(scenario_text, encoding="utf-8")
+    out_dir = tmp_path / "run"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    assert exc.value.field == field
+    assert exc.value.asset_id == asset_id
+    assert not out_dir.exists()
+
+
 def test_wall_clock_refuses_audio_noise_when_capability_missing(
     fake_clock: FakeClock,
     monkeypatch: pytest.MonkeyPatch,
@@ -216,7 +360,7 @@ def test_wall_clock_refuses_audio_noise_when_capability_missing(
 ) -> None:
     del fake_clock
     caps = Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -230,6 +374,8 @@ def test_wall_clock_refuses_audio_noise_when_capability_missing(
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=False,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -328,7 +474,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 21
+            schema_version: 22
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -384,7 +530,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 21
+            schema_version: 22
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short

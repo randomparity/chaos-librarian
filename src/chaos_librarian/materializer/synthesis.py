@@ -37,10 +37,12 @@ from chaos_librarian.materializer.content_sources import (
     ChapterSourceRequest,
     ChapterSpec,
     CoverArtSourceRequest,
+    MuxingSourceRequest,
     VideoSourceRequest,
     resolve_audio_source,
     resolve_chapter_source,
     resolve_cover_art_source,
+    resolve_muxing_source,
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import (
@@ -56,6 +58,10 @@ from chaos_librarian.materializer.tooling.ffmpeg import (
     build_resolution_switch_concat_command,
     build_resolution_switch_segment_command,
     run_ffmpeg,
+)
+from chaos_librarian.materializer.tooling.mkvmerge import (
+    build_mkvmerge_command,
+    run_mkvmerge,
 )
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
@@ -119,6 +125,13 @@ class _ResolvedMediaInputs:
 class _EmbeddedMetadataInputs:
     chapters_input: FFmpegInput | None
     cover_art_input: FFmpegInput | None
+    content_sources: tuple[ContentSourceEvidence, ...]
+    prelude_invocations: tuple[ToolInvocation, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class _MediaInvocationResult:
+    invocation: ToolInvocation
     content_sources: tuple[ContentSourceEvidence, ...]
     prelude_invocations: tuple[ToolInvocation, ...]
 
@@ -241,28 +254,17 @@ def materialize_one_asset(
             temp_path=Path(temp_dir),
             base_content_sources=resolved_inputs.content_sources,
         )
-        content_sources = resolved_inputs.content_sources + embedded_inputs.content_sources
-        argv = build_command(
-            video=asset.video,
-            video_input=resolved_inputs.video_input,
-            audios=asset.audio,
-            audio_inputs=resolved_inputs.audio_inputs,
+        media_result = _run_media_invocation(
+            asset=asset,
+            seed=seed,
             output_path=output_path,
-            mp4_moov_placement=asset.mp4_moov_placement,
-            chapters_input=embedded_inputs.chapters_input,
-            cover_art_input=embedded_inputs.cover_art_input,
+            caps=caps,
+            temp_path=Path(temp_dir),
+            resolved_inputs=resolved_inputs,
+            embedded_inputs=embedded_inputs,
         )
-        invocation, stderr_tail = run_ffmpeg(
-            argv,
-            ffmpeg_version=caps.ffmpeg.version or "unknown",
-        )
-        if invocation.exit_code != 0:
-            raise _tool_failed(
-                asset=asset,
-                invocation=invocation,
-                stderr_tail=stderr_tail,
-                content_sources=content_sources,
-            )
+    invocation = media_result.invocation
+    content_sources = media_result.content_sources
     sidecar_hashes = write_sidecars(
         asset,
         library_dir,
@@ -292,7 +294,107 @@ def materialize_one_asset(
         probed=probed,
         sidecar_hashes=sidecar_hashes,
         content_sources=content_sources,
+        prelude_invocations=media_result.prelude_invocations,
+    )
+
+
+def _run_media_invocation(
+    *,
+    asset: Asset,
+    seed: int,
+    output_path: Path,
+    caps: Capabilities,
+    temp_path: Path,
+    resolved_inputs: _ResolvedMediaInputs,
+    embedded_inputs: _EmbeddedMetadataInputs,
+) -> _MediaInvocationResult:
+    content_sources = resolved_inputs.content_sources + embedded_inputs.content_sources
+    profile = asset.matroska_muxing_profile
+    ffmpeg_output_path = output_path if profile is None else temp_path / f"media.{asset.container}"
+    argv = build_command(
+        video=asset.video,
+        video_input=resolved_inputs.video_input,
+        audios=asset.audio,
+        audio_inputs=resolved_inputs.audio_inputs,
+        output_path=ffmpeg_output_path,
+        mp4_moov_placement=asset.mp4_moov_placement,
+        chapters_input=embedded_inputs.chapters_input,
+        cover_art_input=embedded_inputs.cover_art_input,
+    )
+    invocation, stderr_tail = run_ffmpeg(
+        argv,
+        ffmpeg_version=caps.ffmpeg.version or "unknown",
+    )
+    if invocation.exit_code != 0:
+        raise _tool_failed(
+            asset=asset,
+            invocation=invocation,
+            stderr_tail=stderr_tail,
+            content_sources=content_sources,
+        )
+    if profile is None:
+        return _MediaInvocationResult(
+            invocation=invocation,
+            content_sources=content_sources,
+            prelude_invocations=embedded_inputs.prelude_invocations,
+        )
+    return _run_mkvmerge_finalization(
+        asset=asset,
+        seed=seed,
+        output_path=output_path,
+        input_path=ffmpeg_output_path,
+        caps=caps,
+        ffmpeg_invocation=invocation,
         prelude_invocations=embedded_inputs.prelude_invocations,
+        content_sources=content_sources,
+    )
+
+
+def _run_mkvmerge_finalization(
+    *,
+    asset: Asset,
+    seed: int,
+    output_path: Path,
+    input_path: Path,
+    caps: Capabilities,
+    ffmpeg_invocation: ToolInvocation,
+    prelude_invocations: tuple[ToolInvocation, ...],
+    content_sources: tuple[ContentSourceEvidence, ...],
+) -> _MediaInvocationResult:
+    profile = asset.matroska_muxing_profile
+    if profile is None:
+        raise ChaosLibrarianValueError("mkvmerge finalization requires a muxing profile")
+    muxing_resolution = resolve_muxing_source(
+        MuxingSourceRequest(
+            asset_id=asset.id,
+            seed=seed,
+            container=asset.container,
+            profile=profile,
+        )
+    )
+    content_sources = (*content_sources, muxing_resolution.evidence)
+    argv = build_mkvmerge_command(
+        input_path=input_path,
+        output_path=output_path,
+        container=asset.container,
+        profile=profile,
+        deterministic_seed=muxing_resolution.deterministic_seed,
+    )
+    invocation, stderr_tail = run_mkvmerge(
+        argv,
+        mkvmerge_version=caps.mkvtoolnix.version or "unknown",
+    )
+    if invocation.exit_code != 0:
+        raise _tool_failed(
+            asset=asset,
+            invocation=invocation,
+            stderr_tail=stderr_tail,
+            content_sources=content_sources,
+        )
+    return _MediaInvocationResult(
+        invocation=invocation,
+        content_sources=content_sources,
+        prelude_invocations=(*prelude_invocations, ffmpeg_invocation),
     )
 
 
@@ -557,7 +659,7 @@ def _tool_failed(
     content_sources: tuple[ContentSourceEvidence, ...],
 ) -> ToolFailedError:
     return ToolFailedError(
-        f"ffmpeg exit {invocation.exit_code} for asset {asset.id}",
+        f"{invocation.tool} exit {invocation.exit_code} for asset {asset.id}",
         asset_id=asset.id,
         field=None,
         payload={

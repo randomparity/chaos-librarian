@@ -6,6 +6,7 @@ import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
+from typing import cast
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -316,7 +317,7 @@ def _materialize_payload(**overrides: object) -> dict[str, object]:
     base: dict[str, object] = {
         "schema_version": REPLAY_BUNDLE_SCHEMA_VERSION,
         "chaos_librarian_version": "0.1.0",
-        "scenario": "schema_version: 21\nscenario_id: x\n",
+        "scenario": "schema_version: 22\nscenario_id: x\n",
         "run_id": "00000000-0000-4000-8000-000000000000",
         "resolved_seed": 1,
         "applied_events": 0,
@@ -384,11 +385,29 @@ def test_materialize_bundle_toolchain_rejects_unknown_tool():
         MaterializeReplayBundle.model_validate(payload)
 
 
-def test_replay_bundle_schema_version_is_eleven() -> None:
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 11
+def test_replay_bundle_schema_version_is_twelve() -> None:
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
 
 
 def test_materialize_bundle_carries_content_source_evidence() -> None:
-    bundle = MaterializeReplayBundle.model_validate(_materialize_payload())
+    payload = _materialize_payload()
+    content_sources = cast("list[dict[str, object]]", payload["content_sources"])
+    assert isinstance(content_sources, list)
+    content_sources.append(
+        {
+            "asset_id": "asset_main",
+            "track_kind": "muxing",
+            "source": "no_cues",
+            "provider": "builtin-mkvmerge",
+            "recipe_digest": "sha256:" + "2" * 64,
+            "matroska_muxing_profile": "no_cues",
+            "container": "webm",
+            "cache_disposition": "not_cacheable",
+        }
+    )
+    bundle = MaterializeReplayBundle.model_validate(payload)
 
     assert bundle.content_sources[0].source == "color_bars"
+    assert bundle.content_sources[1].source == "no_cues"
+    assert bundle.content_sources[1].matroska_muxing_profile is not None
+    assert bundle.content_sources[1].matroska_muxing_profile.value == "no_cues"

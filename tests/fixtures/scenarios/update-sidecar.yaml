@@ -1,4 +1,4 @@
-schema_version: 21
+schema_version: 22
 scenario_id: sc_update_sidecar_001
 seed: 42
 duration_scale: short

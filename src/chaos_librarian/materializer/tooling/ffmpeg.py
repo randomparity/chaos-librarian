@@ -42,6 +42,7 @@ from chaos_librarian.media_matrix import (
     SUPPORTED_CONTAINERS,
     SUPPORTED_RESOLUTIONS,
     SUPPORTED_VIDEO_CODECS,
+    SUPPORTED_VIDEO_CODECS_BY_CONTAINER,
     SUPPORTED_VIDEO_CONTAINERS,
     VIDEO_ENCODER_BY_CODEC,
 )
@@ -69,6 +70,7 @@ _CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {
     ".mp3": "mp3",
     ".mp4": "mp4",
     ".wav": "wav",
+    ".webm": "webm",
 }
 _X264_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
     VideoFieldOrder.TOP_FIELD_FIRST: "tff=1",
@@ -154,9 +156,9 @@ def _resolve_container(output_path: Path) -> str:
     return container
 
 
-def _validate_video(video: VideoTrack) -> None:
+def _validate_video(*, container: str, video: VideoTrack) -> None:
     """Reject video tracks outside the codec/resolution matrix."""
-    _require(video.codec, SUPPORTED_VIDEO_CODECS, "video.codec")
+    _require(video.codec, SUPPORTED_VIDEO_CODECS_BY_CONTAINER[container], "video.codec")
     _require(video.resolution, SUPPORTED_RESOLUTIONS, "video.resolution")
 
 
@@ -343,6 +345,16 @@ def _audio_metadata_args(audios: Sequence[AudioTrack]) -> list[str]:
     return args
 
 
+def _video_encoder_args(video: VideoTrack) -> list[str]:
+    encoder = VIDEO_ENCODER_BY_CODEC[video.codec]
+    args = ["-c:v", encoder]
+    if encoder in {"libx264", "libx265"}:
+        args.extend(["-preset", "medium"])
+    if encoder == "libvpx-vp9":
+        args.extend(["-deadline", "good", "-cpu-used", "4", "-b:v", "600k"])
+    return args
+
+
 def build_resolution_switch_segment_command(
     *,
     video_input: FFmpegInput,
@@ -385,7 +397,13 @@ def _build_video_command(
     cover_art_input: FFmpegInput | None,
 ) -> list[str]:
     _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
-    _validate_video(video)
+    _validate_video(container=container, video=video)
+    if container == "webm" and audios:
+        raise UnsupportedMaterializationError(
+            "webm materialization does not support audio streams",
+            field="audio",
+            payload={"count": len(audios)},
+        )
     _validate_audio(audios)
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
@@ -403,16 +421,18 @@ def _build_video_command(
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
     if cover_index is not None:
         argv.extend(["-map", f"{cover_index}:v:0"])
-    argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
+    argv.extend(_video_encoder_args(video))
     argv.extend(_hdr_video_args(video))
     argv.extend(_interlaced_video_args(video))
     argv.extend(_color_signal_args(video))
-    argv.extend(["-c:a", "aac"])
-    argv.extend(_audio_channel_layout_args(audios))
+    if audios:
+        argv.extend(["-c:a", "aac"])
+        argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     if chapter_index is not None:
         argv.extend(["-map_metadata", str(chapter_index), "-map_chapters", str(chapter_index)])
-    argv.extend(_audio_metadata_args(audios))
+    if audios:
+        argv.extend(_audio_metadata_args(audios))
     if cover_index is not None:
         argv.extend(["-c:v:1", "png", "-disposition:v:1", "attached_pic"])
     if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:

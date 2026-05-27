@@ -18,6 +18,7 @@ from chaos_librarian.contract.scenario import (
     CoverArtResolution,
     EmbeddedChapters,
     EmbeddedCoverArt,
+    MatroskaMuxingProfile,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -32,11 +33,13 @@ from chaos_librarian.materializer.content_sources import (
     AudioSourceRequest,
     ChapterSourceRequest,
     CoverArtSourceRequest,
+    MuxingSourceRequest,
     VideoSourceRequest,
     collect_content_source_capabilities,
     resolve_audio_source,
     resolve_chapter_source,
     resolve_cover_art_source,
+    resolve_muxing_source,
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
@@ -353,6 +356,24 @@ def test_resolve_cover_art_source_is_deterministic_and_records_recipe() -> None:
     assert first.evidence.cover_art_resolution is CoverArtResolution.SQUARE_320
     assert first.evidence.cover_art_color == second.color
     assert first.color.startswith("#")
+
+
+def test_resolve_muxing_source_records_profile_and_seed() -> None:
+    resolution = resolve_muxing_source(
+        MuxingSourceRequest(
+            asset_id="asset_1",
+            seed=138,
+            container="mkv",
+            profile=MatroskaMuxingProfile.NO_CUES,
+        )
+    )
+
+    assert resolution.deterministic_seed >= 0
+    assert resolution.evidence.track_kind is ContentTrackKind.MUXING
+    assert resolution.evidence.source == "no_cues"
+    assert resolution.evidence.provider == "builtin-mkvmerge"
+    assert resolution.evidence.matroska_muxing_profile is MatroskaMuxingProfile.NO_CUES
+    assert resolution.evidence.container == "mkv"
 
 
 def test_resolve_audio_source_records_track_index() -> None:

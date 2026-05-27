@@ -38,6 +38,7 @@ def _write_track_scenario(
     sample_format: str | None = None,
     embedded_chapters: bool = False,
     embedded_cover_art: bool = False,
+    matroska_muxing_profile: str | None = None,
 ) -> None:
     noise_color_line = (
         f"                              noise_color: {noise_color}\n" if noise_color else ""
@@ -60,8 +61,13 @@ def _write_track_scenario(
         if embedded_cover_art
         else ""
     )
+    muxing_profile_line = (
+        f"                          matroska_muxing_profile: {matroska_muxing_profile}\n"
+        if matroska_muxing_profile
+        else ""
+    )
     path.write_text(
-        f"""schema_version: 21
+        f"""schema_version: 22
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -99,6 +105,7 @@ artists:
                           role: main
                           container: {container}
                           duration_seconds: 2.0
+{muxing_profile_line.rstrip()}
 {chapters_block.rstrip()}
 {cover_block.rstrip()}
                           audio:
@@ -120,22 +127,30 @@ def _write_movie_scenario(
     *,
     container: str = "mkv",
     duration_seconds: float = 2.0,
-    audio_codec: str = "aac",
+    audio_codec: str | None = "aac",
     video_source: str = "color_bars",
     video_codec: str = "h264",
     video_resolution: str = "sd",
     mp4_moov_placement: str | None = None,
+    matroska_muxing_profile: str | None = None,
     embedded_chapters: bool = False,
     embedded_chapter_count: int = 2,
     embedded_cover_art: bool = False,
+    subtitles: bool = False,
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
     color_range: str | None = None,
     hdr_mode: str | None = None,
+    resolution_sequence: str | None = None,
 ) -> None:
     moov_line = (
         f"              mp4_moov_placement: {mp4_moov_placement}\n" if mp4_moov_placement else ""
+    )
+    muxing_profile_line = (
+        f"              matroska_muxing_profile: {matroska_muxing_profile}\n"
+        if matroska_muxing_profile
+        else ""
     )
     chapters_block = (
         "              embedded_chapters:\n"
@@ -152,13 +167,38 @@ def _write_movie_scenario(
         if embedded_cover_art
         else ""
     )
+    subtitles_block = (
+        """              subtitles:
+                - source: generated_srt
+                  codec: srt
+                  language: eng
+                  mode: embedded
+"""
+        if subtitles
+        else ""
+    )
     vfr_line = f"                vfr_cadence: {vfr_cadence}\n" if vfr_cadence else ""
     field_order_line = f"                field_order: {field_order}\n" if field_order else ""
     color_space_line = f"                color_space: {color_space}\n" if color_space else ""
     color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     hdr_mode_line = f"                hdr_mode: {hdr_mode}\n" if hdr_mode else ""
+    resolution_sequence_line = (
+        f"                resolution_sequence: {resolution_sequence}\n"
+        if resolution_sequence
+        else ""
+    )
+    audio_block = (
+        f"""              audio:
+                - source: sine
+                  codec: {audio_codec}
+                  channels: stereo
+                  language: eng
+"""
+        if audio_codec is not None
+        else ""
+    )
     path.write_text(
-        f"""schema_version: 21
+        f"""schema_version: 22
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -180,6 +220,7 @@ movies:
               role: main
               container: {container}
 {moov_line.rstrip()}
+{muxing_profile_line.rstrip()}
               duration_seconds: {duration_seconds}
 {chapters_block.rstrip()}
 {cover_block.rstrip()}
@@ -192,11 +233,9 @@ movies:
 {color_space_line.rstrip()}
 {color_range_line.rstrip()}
 {hdr_mode_line.rstrip()}
-              audio:
-                - source: sine
-                  codec: {audio_codec}
-                  channels: stereo
-                  language: eng
+{resolution_sequence_line.rstrip()}
+{audio_block.rstrip()}
+{subtitles_block.rstrip()}
 series: []
 artists: []
 timeline: []
@@ -216,6 +255,7 @@ def _write_resolution_switch_scenario(
     subtitles: bool = False,
     embedded_chapters: bool = False,
     embedded_cover_art: bool = False,
+    matroska_muxing_profile: str | None = None,
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
@@ -270,8 +310,13 @@ def _write_resolution_switch_scenario(
         if embedded_cover_art
         else ""
     )
+    muxing_profile_line = (
+        f"              matroska_muxing_profile: {matroska_muxing_profile}\n"
+        if matroska_muxing_profile
+        else ""
+    )
     path.write_text(
-        f"""schema_version: 21
+        f"""schema_version: 22
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -293,6 +338,7 @@ movies:
               role: main
               container: {container}
               duration_seconds: 2.0
+{muxing_profile_line.rstrip()}
 {chapters_block.rstrip()}
 {cover_block.rstrip()}
               video:
@@ -512,6 +558,47 @@ def test_embedded_chapters_rejects_zero_length_intervals(tmp_path: Path) -> None
     assert path.endswith(".assets[0].embedded_chapters.count")
 
 
+@pytest.mark.parametrize("profile", ["no_cues", "dense_cues", "short_clusters"])
+def test_matroska_muxing_profile_validates_for_mkv(
+    tmp_path: Path,
+    profile: str,
+) -> None:
+    scenario = tmp_path / f"mkv-{profile}.yaml"
+    _write_movie_scenario(scenario, container="mkv", matroska_muxing_profile=profile)
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+def test_matroska_muxing_profile_rejects_mp4(tmp_path: Path) -> None:
+    scenario = tmp_path / "mp4-muxing-profile.yaml"
+    _write_movie_scenario(
+        scenario,
+        container="mp4",
+        matroska_muxing_profile="no_cues",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].matroska_muxing_profile")
+
+
+def test_matroska_muxing_profile_rejects_audio_only_track(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-muxing-profile.yaml"
+    _write_track_scenario(
+        scenario,
+        container="flac",
+        codec="flac",
+        matroska_muxing_profile="short_clusters",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].matroska_muxing_profile")
+
+
 @pytest.mark.parametrize(
     ("field", "field_suffix"),
     [
@@ -536,6 +623,79 @@ def test_resolution_switch_rejects_embedded_metadata(
     assert path.endswith(field_suffix)
 
 
+def test_resolution_switch_rejects_matroska_muxing_profile(tmp_path: Path) -> None:
+    scenario = tmp_path / "resolution-switch-muxing-profile.yaml"
+    _write_resolution_switch_scenario(
+        scenario,
+        matroska_muxing_profile="dense_cues",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].matroska_muxing_profile")
+
+
+def test_webm_muxing_profile_validates_for_vp9_video_only(tmp_path: Path) -> None:
+    scenario = tmp_path / "webm-vp9.yaml"
+    _write_movie_scenario(
+        scenario,
+        container="webm",
+        video_codec="vp9",
+        audio_codec=None,
+        matroska_muxing_profile="short_clusters",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+@pytest.mark.parametrize(
+    ("field", "field_suffix"),
+    [
+        ("missing_profile", ".matroska_muxing_profile"),
+        ("h264_video", ".video.codec"),
+        ("audio", ".audio"),
+        ("subtitles", ".subtitles"),
+        ("embedded_chapters", ".embedded_chapters"),
+        ("embedded_cover_art", ".embedded_cover_art"),
+        ("vfr_cadence", ".video.vfr_cadence"),
+        ("field_order", ".video.field_order"),
+        ("color_space", ".video.color_space"),
+        ("color_range", ".video.color_range"),
+        ("hdr_mode", ".video.hdr_mode"),
+        ("resolution_sequence", ".video.resolution_sequence"),
+    ],
+)
+def test_webm_muxing_profile_rejects_unsupported_combinations(
+    tmp_path: Path,
+    field: str,
+    field_suffix: str,
+) -> None:
+    scenario = tmp_path / f"webm-{field}.yaml"
+    _write_movie_scenario(
+        scenario,
+        container="webm",
+        video_codec="h264" if field == "h264_video" else "vp9",
+        audio_codec="aac" if field == "audio" else None,
+        matroska_muxing_profile=None if field == "missing_profile" else "no_cues",
+        vfr_cadence="24_to_30" if field == "vfr_cadence" else None,
+        field_order="top_field_first" if field == "field_order" else None,
+        color_space="bt709" if field == "color_space" else None,
+        color_range="full" if field == "color_range" else None,
+        hdr_mode="hdr10" if field == "hdr_mode" else None,
+        resolution_sequence="sd_to_hd" if field == "resolution_sequence" else None,
+        subtitles=field == "subtitles",
+        embedded_chapters=field == "embedded_chapters",
+        embedded_cover_art=field == "embedded_cover_art",
+    )
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(field_suffix)
+
+
 def test_unsupported_video_codec_names_field(tmp_path: Path) -> None:
     scenario = tmp_path / "materialize-video-codec-av1.yaml"
     _write_movie_scenario(scenario, video_codec="av1")
@@ -547,6 +707,15 @@ def test_unsupported_video_codec_names_field(tmp_path: Path) -> None:
     assert issue.path is not None
     assert issue.path.endswith(".video.codec")
     assert "av1" in issue.message
+
+
+def test_mp4_rejects_webm_only_vp9_codec(tmp_path: Path) -> None:
+    scenario = tmp_path / "mp4-vp9.yaml"
+    _write_movie_scenario(scenario, container="mp4", video_codec="vp9")
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].video.codec")
 
 
 def test_unsupported_video_source_names_field(tmp_path: Path) -> None:
@@ -578,7 +747,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 21
+        """schema_version: 22
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short

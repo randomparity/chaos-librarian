@@ -136,6 +136,14 @@ class Mp4MoovPlacement(enum.StrEnum):
     MOOV_AT_END = "moov_at_end"
 
 
+class MatroskaMuxingProfile(enum.StrEnum):
+    """Matroska/WebM muxing profile for cue and cluster parser surfaces."""
+
+    NO_CUES = "no_cues"
+    DENSE_CUES = "dense_cues"
+    SHORT_CLUSTERS = "short_clusters"
+
+
 class CoverArtSource(enum.StrEnum):
     """Synthesis recipe for embedded cover art."""
 
@@ -377,6 +385,7 @@ class Asset(BaseModel):
     container: str
     duration_seconds: float
     mp4_moov_placement: Mp4MoovPlacement | None = None
+    matroska_muxing_profile: MatroskaMuxingProfile | None = None
     embedded_chapters: EmbeddedChapters | None = None
     embedded_cover_art: EmbeddedCoverArt | None = None
     video: VideoTrack | None = None
@@ -850,7 +859,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[21]
+    schema_version: Literal[22]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

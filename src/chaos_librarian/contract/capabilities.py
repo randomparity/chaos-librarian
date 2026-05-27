@@ -41,6 +41,8 @@ class ReadyFor(BaseModel):
     materialize_hdr_video: bool
     materialize_resolution_switch_video: bool
     materialize_audio_recipes: bool
+    materialize_matroska_muxing_profiles: bool
+    materialize_webm_video: bool
 
 
 class Capabilities(BaseModel):
@@ -48,7 +50,7 @@ class Capabilities(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[6]
+    schema_version: Literal[7]
     ffmpeg: ToolStatus
     ffprobe: ToolStatus
     mkvtoolnix: ToolStatus

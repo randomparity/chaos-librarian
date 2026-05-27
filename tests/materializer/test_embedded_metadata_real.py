@@ -100,7 +100,7 @@ def test_materialize_mkv_embedded_chapters_are_probe_visible(tmp_path: Path) -> 
 
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -114,5 +114,7 @@ def _caps() -> Capabilities:
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
             materialize_audio_recipes=True,
+            materialize_matroska_muxing_profiles=True,
+            materialize_webm_video=True,
         ),
     )

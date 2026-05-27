@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 21
+schema_version: 22
 scenario_id: invalid-embedded-chapters-audio-track
 seed: 137
 duration_scale: short

@@ -37,7 +37,7 @@ _REPORT_DIRS = [
 ]
 
 _IDENTITY_MOVE_RENAME = b"""\
-schema_version: 21
+schema_version: 22
 scenario_id: identity-move-rename
 seed: 42
 duration_scale: short
@@ -88,7 +88,7 @@ timeline:
 """
 
 _ACTIVE_LIBRARY_CHURN = b"""\
-schema_version: 21
+schema_version: 22
 scenario_id: active-library-churn
 seed: 17
 duration_scale: short
@@ -222,7 +222,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
     bundle = PlanOnlyReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version="0.0.0",
-        scenario="schema_version: 21\n",
+        scenario="schema_version: 22\n",
         run_id=_RUN_ID,
         resolved_seed=1,
         applied_events=0,
@@ -245,7 +245,7 @@ def _empty_artifacts() -> tuple[PlanArtifacts, bytes]:
         sentinel=sentinel,
         reports=_empty_report_set(),
     )
-    return artifacts, b"schema_version: 21\n"
+    return artifacts, b"schema_version: 22\n"
 
 
 class TestWriteFixtureFileSet:
