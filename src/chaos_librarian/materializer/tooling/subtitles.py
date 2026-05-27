@@ -61,13 +61,22 @@ def subtitle_payload_bytes(
     return _encode_text(text, encoding=encoding)
 
 
+def supported_subtitle_encodings(
+    *,
+    codec: SubtitleCodec,
+    source: SubtitleSource,
+) -> frozenset[SubtitleEncoding] | None:
+    """Return supported encodings for a declared subtitle recipe."""
+    return _RECIPE_MATRIX.get((codec, source))
+
+
 def _validate_recipe(
     *,
     codec: SubtitleCodec,
     source: SubtitleSource,
     encoding: SubtitleEncoding,
 ) -> None:
-    supported_encodings = _RECIPE_MATRIX.get((codec, source))
+    supported_encodings = supported_subtitle_encodings(codec=codec, source=source)
     if supported_encodings is None:
         raise UnsupportedMaterializationError(
             "unsupported subtitle codec/source recipe combination",

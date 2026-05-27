@@ -138,16 +138,6 @@ class DeclaredSidecar:
     encoding: str = "utf8"
     timing_profile: str = "normal"
 
-    @property
-    def uses_default_subtitle_recipe(self) -> bool:
-        return (
-            self.kind == SidecarKind.SUBTITLE.value
-            and self.codec == "srt"
-            and self.source == "generated_srt"
-            and self.encoding == "utf8"
-            and self.timing_profile == "normal"
-        )
-
 
 @dataclass(frozen=True, slots=True)
 class RawAssetContext:

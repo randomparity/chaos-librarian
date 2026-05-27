@@ -22,10 +22,7 @@ from chaos_librarian.contract.scenario import (
     Asset,
     AudioTrack,
     Scenario,
-    SubtitleCodec,
-    SubtitleEncoding,
     SubtitleMode,
-    SubtitleSource,
     SubtitleTrack,
     VideoTrack,
 )
@@ -50,6 +47,7 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.tooling.ffmpeg import build_command
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
+from chaos_librarian.materializer.tooling.subtitles import supported_subtitle_encodings
 from chaos_librarian.media_matrix import (
     RESOLUTION_SWITCH_VIDEO_CODEC,
     RESOLUTION_SWITCH_VIDEO_CONTAINER,
@@ -71,21 +69,6 @@ __all__ = [
     "preflight_asset",
     "preflight_timeline",
 ]
-
-_SRT_SUBTITLE_ENCODINGS = frozenset(
-    {
-        SubtitleEncoding.UTF8,
-        SubtitleEncoding.UTF8_BOM,
-        SubtitleEncoding.UTF16_LE,
-        SubtitleEncoding.ISO_8859_1,
-    }
-)
-_ASS_SUBTITLE_ENCODINGS = frozenset({SubtitleEncoding.UTF8, SubtitleEncoding.UTF8_BOM})
-_SUBTITLE_RECIPE_MATRIX = {
-    (SubtitleCodec.SRT, SubtitleSource.GENERATED_SRT): _SRT_SUBTITLE_ENCODINGS,
-    (SubtitleCodec.ASS, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
-    (SubtitleCodec.SSA, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
-}
 
 
 def iter_assets(scenario: Scenario) -> Iterator[Asset]:
@@ -322,7 +305,7 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
                 field=f"subtitle[{index}].mode",
                 payload={"supported": ["sidecar"]},
             )
-        supported_encodings = _SUBTITLE_RECIPE_MATRIX.get((sub.codec, sub.source))
+        supported_encodings = supported_subtitle_encodings(codec=sub.codec, source=sub.source)
         if supported_encodings is None:
             raise UnsupportedMaterializationError(
                 f"subtitle codec/source recipe {sub.codec.value}/{sub.source.value} not supported",

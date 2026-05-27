@@ -990,7 +990,7 @@ continuing.
 **Files:**
 - Entire branch diff against `origin/main`
 
-- [ ] **Step 1: Run adversarial code review**
+- [x] **Step 1: Run adversarial code review**
 
 Review:
 
@@ -1001,7 +1001,7 @@ git diff origin/main...HEAD
 Address material findings. Run no more than three adversarial code review
 passes for this implementation cycle.
 
-- [ ] **Step 2: Run simplification review**
+- [x] **Step 2: Run simplification review**
 
 Use the simplification-review workflow on the branch diff. Address only
 simplifications that reduce risk without widening scope.
