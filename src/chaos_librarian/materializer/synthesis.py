@@ -265,6 +265,7 @@ def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
                 field_order=video.field_order,
                 color_space=video.color_space,
                 color_range=video.color_range,
+                hdr_mode=video.hdr_mode,
             ),
         )
         video_input = video_resolution.ffmpeg_input

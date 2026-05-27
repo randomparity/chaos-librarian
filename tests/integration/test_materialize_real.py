@@ -245,6 +245,49 @@ def test_materialize_color_signaling_reports_metadata(
     assert metadata == {"color_space": expected_space, "color_range": expected_range}
 
 
+@pytest.mark.parametrize(
+    ("hdr_mode", "expected_transfer", "expect_static_metadata"),
+    [
+        ("hdr10", "smpte2084", True),
+        ("hlg", "arib-std-b67", False),
+    ],
+)
+def test_materialize_hdr_video_reports_metadata(
+    hdr_mode: str,
+    expected_transfer: str,
+    expect_static_metadata: bool,
+    tmp_path: Path,
+) -> None:
+    """WHY: #132 needs scanner-visible HDR signaling. ffprobe proves encoded
+    streams carry BT.2020 plus the mode-specific transfer and static metadata."""
+    caps = detect_capabilities()
+    if not caps.ready_for.materialize_hdr_video:
+        pytest.skip("FFmpeg libx265 10-bit HDR signaling support not available")
+    scenario_path = _hdr_scenario_for(hdr_mode, tmp_path)
+    out = tmp_path / "hdr"
+    result = runner.invoke(
+        app,
+        ["materialize", str(scenario_path), "--out", str(out), "--json"],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    media_path = next((out / "library").rglob("*.mkv"))
+
+    assert _video_hdr_metadata(media_path) == {
+        "color_space": "bt2020nc",
+        "color_transfer": expected_transfer,
+        "color_primaries": "bt2020",
+        "color_range": "tv",
+        "pix_fmt": "yuv420p10le",
+    }
+    side_data = _video_side_data_types(media_path)
+    if expect_static_metadata:
+        assert "Mastering display metadata" in side_data
+        assert "Content light level metadata" in side_data
+    else:
+        assert "Mastering display metadata" not in side_data
+        assert "Content light level metadata" not in side_data
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -348,6 +391,74 @@ def _video_color_metadata(path: Path) -> dict[str, str]:
     }
 
 
+def _video_hdr_metadata(path: Path) -> dict[str, str]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "stream=color_space,color_transfer,color_primaries,color_range,pix_fmt",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    streams = payload["streams"]
+    assert len(streams) == 1
+    stream = streams[0]
+    return {
+        "color_space": stream["color_space"],
+        "color_transfer": stream["color_transfer"],
+        "color_primaries": stream["color_primaries"],
+        "color_range": stream["color_range"],
+        "pix_fmt": stream["pix_fmt"],
+    }
+
+
+def _video_side_data_types(path: Path) -> set[str]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-read_intervals",
+            "%+#1",
+            "-show_frames",
+            "-show_entries",
+            "frame=side_data_list",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    types: set[str] = set()
+    for frame in payload.get("frames", []):
+        for item in frame.get("side_data_list", []):
+            side_data_type = item.get("side_data_type")
+            if isinstance(side_data_type, str):
+                types.add(side_data_type)
+    return types
+
+
 def _assert_color_evidence(path: Path, color_space: str, color_range: str) -> None:
     payload = json.loads(path.read_text())
     video_sources = [
@@ -391,6 +502,19 @@ def _color_signaling_scenario_for(color_space: str, color_range: str, tmp_path: 
     scenario = scenario.replace("color_space: bt601", f"color_space: {color_space}")
     scenario = scenario.replace("color_range: limited", f"color_range: {color_range}")
     scenario_path = tmp_path / f"color-signaling-{color_space}-{color_range}.yaml"
+    scenario_path.write_text(scenario)
+    return scenario_path
+
+
+def _hdr_scenario_for(hdr_mode: str, tmp_path: Path) -> Path:
+    scenario = (FIXTURE_DIR / "hdr-video.yaml").read_text()
+    scenario = scenario.replace("scenario_id: hdr-video", f"scenario_id: hdr-video-{hdr_mode}")
+    scenario = scenario.replace("id: variant_hdr10", f"id: variant_{hdr_mode}")
+    scenario = scenario.replace("label: hdr10", f"label: {hdr_mode}")
+    scenario = scenario.replace("id: bundle_hdr10", f"id: bundle_{hdr_mode}")
+    scenario = scenario.replace("id: asset_hdr10_main", f"id: asset_{hdr_mode}_main")
+    scenario = scenario.replace("hdr_mode: hdr10", f"hdr_mode: {hdr_mode}")
+    scenario_path = tmp_path / f"hdr-{hdr_mode}.yaml"
     scenario_path.write_text(scenario)
     return scenario_path
 

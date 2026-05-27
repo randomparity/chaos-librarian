@@ -19,6 +19,7 @@ from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.materializer.capability_gates import assert_capable_for_hdr_video
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     CorruptionActionError,
@@ -108,6 +109,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
     _assert_capable_for_hevc_video(scenario, caps)
+    assert_capable_for_hdr_video(scenario, caps)
     run_id = uuid.uuid4()
     # materialize executes the whole timeline; pass ``steps_limit=None`` so
     # ``run_materializer_plan`` applies every resolved event. Sprint 5 capped this at 0

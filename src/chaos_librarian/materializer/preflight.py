@@ -121,6 +121,7 @@ def preflight_asset(
             field_order=video.field_order,
             color_space=video.color_space,
             color_range=video.color_range,
+            hdr_mode=video.hdr_mode,
         ),
     )
     build_command(

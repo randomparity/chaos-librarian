@@ -60,6 +60,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
+    VideoHdrMode,
     VideoSource,
     VideoTrack,
     VideoVfrCadence,
@@ -179,7 +180,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v15_payload() -> None:
+def test_movie_only_scenario_v16_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -192,7 +193,7 @@ def test_movie_only_scenario_v15_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 15
+    assert scenario.schema_version == 16
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -691,8 +692,44 @@ def test_video_track_rejects_unknown_color_range() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_fifteen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 15
+def test_video_hdr_mode_enum_values() -> None:
+    assert VideoHdrMode.HDR10.value == "hdr10"
+    assert VideoHdrMode.HLG.value == "hlg"
+
+
+def test_video_track_hdr_mode_defaults_to_none() -> None:
+    track = VideoTrack.model_validate({"source": "color_bars", "codec": "hevc", "resolution": "sd"})
+
+    assert track.hdr_mode is None
+
+
+def test_video_track_accepts_supported_hdr_mode() -> None:
+    track = VideoTrack.model_validate(
+        {
+            "source": "color_bars",
+            "codec": "hevc",
+            "resolution": "sd",
+            "hdr_mode": "hdr10",
+        }
+    )
+
+    assert track.hdr_mode is VideoHdrMode.HDR10
+
+
+def test_video_track_rejects_unknown_hdr_mode() -> None:
+    payload = {
+        "source": "color_bars",
+        "codec": "hevc",
+        "resolution": "sd",
+        "hdr_mode": "pqish",
+    }
+
+    with pytest.raises(ValidationError):
+        VideoTrack.model_validate(payload)
+
+
+def test_scenario_schema_version_is_sixteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 16
 
 
 def test_scenario_accepts_profile_labels() -> None:

@@ -1887,6 +1887,15 @@
       "title": "VideoFieldOrder",
       "type": "string"
     },
+    "VideoHdrMode": {
+      "description": "Supported HDR video signaling modes.",
+      "enum": [
+        "hdr10",
+        "hlg"
+      ],
+      "title": "VideoHdrMode",
+      "type": "string"
+    },
     "VideoSource": {
       "description": "Synthesis recipe for the video stream of an asset.",
       "enum": [
@@ -1931,6 +1940,17 @@
           "anyOf": [
             {
               "$ref": "#/$defs/VideoFieldOrder"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "hdr_mode": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoHdrMode"
             },
             {
               "type": "null"
@@ -2088,7 +2108,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 15,
+      "const": 16,
       "title": "Schema Version",
       "type": "integer"
     },

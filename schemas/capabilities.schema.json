@@ -102,10 +102,14 @@
     },
     "ReadyFor": {
       "additionalProperties": false,
-      "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nThe current CLI only consults ``materialize_static``. The other two\nflags are populated so adapter authors can skip the corresponding\nmutation-mode tests cleanly.",
+      "description": "Forward-looking signals \u2014 which materialize modes the toolchain supports.\n\nThe current CLI only consults ``materialize_static``. The other\nflags are populated so adapter authors can skip the corresponding\nmutation-mode tests cleanly.",
       "properties": {
         "materialize_filesystem_mutations": {
           "title": "Materialize Filesystem Mutations",
+          "type": "boolean"
+        },
+        "materialize_hdr_video": {
+          "title": "Materialize Hdr Video",
           "type": "boolean"
         },
         "materialize_hevc_video": {
@@ -125,7 +129,8 @@
         "materialize_static",
         "materialize_filesystem_mutations",
         "materialize_media_mutations",
-        "materialize_hevc_video"
+        "materialize_hevc_video",
+        "materialize_hdr_video"
       ],
       "title": "ReadyFor",
       "type": "object"
@@ -198,7 +203,7 @@
       "$ref": "#/$defs/ReadyFor"
     },
     "schema_version": {
-      "const": 3,
+      "const": 4,
       "title": "Schema Version",
       "type": "integer"
     }

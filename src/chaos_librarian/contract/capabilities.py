@@ -27,7 +27,7 @@ class ToolStatus(BaseModel):
 class ReadyFor(BaseModel):
     """Forward-looking signals — which materialize modes the toolchain supports.
 
-    The current CLI only consults ``materialize_static``. The other two
+    The current CLI only consults ``materialize_static``. The other
     flags are populated so adapter authors can skip the corresponding
     mutation-mode tests cleanly.
     """
@@ -38,6 +38,7 @@ class ReadyFor(BaseModel):
     materialize_filesystem_mutations: bool
     materialize_media_mutations: bool
     materialize_hevc_video: bool
+    materialize_hdr_video: bool
 
 
 class Capabilities(BaseModel):
@@ -45,7 +46,7 @@ class Capabilities(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[3]
+    schema_version: Literal[4]
     ffmpeg: ToolStatus
     ffprobe: ToolStatus
     mkvtoolnix: ToolStatus

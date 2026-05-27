@@ -68,7 +68,7 @@ def test_report_and_finalize_builders_require_explicit_content_sources() -> None
 
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -79,6 +79,7 @@ def _caps() -> Capabilities:
             materialize_filesystem_mutations=True,
             materialize_media_mutations=True,
             materialize_hevc_video=True,
+            materialize_hdr_video=True,
         ),
     )
 

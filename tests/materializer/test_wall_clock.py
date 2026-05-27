@@ -34,6 +34,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import phase_b, wall_clock
 from chaos_librarian.materializer.errors import (
+    CapabilityGateError,
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
@@ -79,7 +80,7 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 @pytest.fixture(autouse=True)
 def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -90,11 +91,49 @@ def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_filesystem_mutations=True,
             materialize_media_mutations=True,
             materialize_hevc_video=True,
+            materialize_hdr_video=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
+
+
+def test_wall_clock_refuses_hdr_when_capability_missing(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del fake_clock
+    caps = Capabilities(
+        schema_version=4,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=False,
+        ),
+    )
+    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    scenario = tmp_path / "hdr-wall-clock.yaml"
+    scenario.write_text(
+        (_FIXTURE_DIR / "hevc-mkv.yaml")
+        .read_text()
+        .replace("resolution: sd", "resolution: sd\n                hdr_mode: hdr10")
+    )
+    out_dir = tmp_path / "run"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    assert exc.value.field == "ready_for.materialize_hdr_video"
+    assert not out_dir.exists()
 
 
 def _fake_materialize_one_asset(
@@ -175,7 +214,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 15
+            schema_version: 16
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -231,7 +270,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 15
+            schema_version: 16
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
