@@ -1029,7 +1029,7 @@ class HierarchyProjection:
         current_path = self.current_paths.get(target)
         if current_path is None:
             return
-        self.current_paths[target] = _swap_extension(current_path, to_container)
+        self.current_paths[target] = swap_extension(current_path, to_container)
 
     def _refresh_paths(
         self, asset_ids: set[str], before: Mapping[str, str | None]
@@ -1164,12 +1164,84 @@ class HierarchyProjection:
             destination.append(value)
 
 
-def _swap_extension(path: str, new_ext: str) -> str:
+def swap_extension(path: str, new_ext: str) -> str:
+    """Replace the path's file extension with ``new_ext`` (no leading dot)."""
     basename = path.rsplit("/", 1)[-1]
     if "." in basename:
         base = path.rsplit(".", 1)[0]
         return f"{base}.{new_ext}"
     return f"{path}.{new_ext}"
+
+
+def current_root_for_path(path: str, roots: Mapping[str, str]) -> str:
+    """Return the longest declared root that ``path`` lives under, or raise."""
+    root_paths: list[str] = list(roots.values())
+    root_paths.sort(key=len, reverse=True)
+    for root_path in root_paths:
+        if path == root_path or path.startswith(f"{root_path}/"):
+            return root_path
+    raise ValueError("current path does not start with a declared root")
+
+
+def archive_base_path(raw: _RawMapping, declared_roots: Mapping[str, str]) -> str | None:
+    """Resolve the archive base path, mirroring ``build_initial_state``.
+
+    Sentinel ``"archive"`` and ``None`` both resolve to ``<primary>/archive``; a
+    named ``archive_root`` resolves to that declared root's path. ``None`` when
+    the library subtree is too malformed to resolve (other rules report that).
+    """
+    primary_path = primary_root_path(raw)
+    if primary_path is None:
+        return None
+    library = _as_mapping(raw.get("library"))
+    archive_root = library.get("archive_root") if library is not None else None
+    if archive_root is None or archive_root == "archive":
+        return f"{primary_path}/archive"
+    if isinstance(archive_root, str):
+        return declared_roots.get(archive_root)
+    return None
+
+
+def project_to_field_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    """Project move_asset / rename_file / add_file: set ``current[target] = to``."""
+    target = event.get("target")
+    path = event.get("to")
+    if isinstance(target, str) and isinstance(path, str):
+        current_paths[target] = path
+
+
+def project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
+    """Project delete_file: drop ``target`` from the current-path map."""
+    target = event.get("target")
+    if isinstance(target, str):
+        current_paths.pop(target, None)
+
+
+def project_slow_copy_start(
+    event: _RawMapping, pending_slow_copies: dict[str, tuple[str, str]]
+) -> None:
+    """Record a slow_copy_start's ``(target, final_path)`` under its event id."""
+    event_id = event.get("id")
+    target = event.get("target")
+    final_path = event.get("to")
+    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
+        pending_slow_copies[event_id] = (target, final_path)
+
+
+def project_slow_copy_commit(
+    event: _RawMapping,
+    pending_slow_copies: dict[str, tuple[str, str]],
+    current_paths: dict[str, str],
+) -> None:
+    """Project slow_copy_commit: move ``target`` to its recorded final path."""
+    start_id = event.get("for")
+    if not isinstance(start_id, str):
+        return
+    pending = pending_slow_copies.pop(start_id, None)
+    if pending is None:
+        return
+    target, final_path = pending
+    current_paths[target] = final_path
 
 
 def build_hierarchy_projection(raw: Mapping[str, object]) -> HierarchyProjection:

@@ -22,14 +22,19 @@ from chaos_librarian.validation.codes import (
 )
 from chaos_librarian.validation.rules._common import (
     Reporter,
-    _as_mapping,
     _iter_timeline_events,
     _RawMapping,
+    archive_base_path,
     build_hierarchy_projection,
+    current_root_for_path,
     is_hierarchy_action,
     iter_declared_roots,
-    primary_root_path,
+    project_deleted_path,
+    project_slow_copy_commit,
+    project_slow_copy_start,
+    project_to_field_path,
     rendered_asset_paths,
+    swap_extension,
     try_parse_duration,
 )
 
@@ -207,7 +212,7 @@ def rule_slow_copy_path_collision(
     declared_roots = {
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
-    archive_base = _archive_base_path(raw, declared_roots)
+    archive_base = archive_base_path(raw, declared_roots)
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         if action == TimelineActionName.SLOW_COPY_START:
@@ -219,15 +224,15 @@ def rule_slow_copy_path_collision(
                 reporter=reporter,
             )
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
-            _project_slow_copy_commit(event, pending_slow_copies, current_paths)
+            project_slow_copy_commit(event, pending_slow_copies, current_paths)
         elif action in {
             TimelineActionName.MOVE_ASSET,
             TimelineActionName.RENAME_FILE,
             TimelineActionName.ADD_FILE,
         }:
-            _project_to_field_path(event, current_paths)
+            project_to_field_path(event, current_paths)
         elif action == TimelineActionName.DELETE_FILE:
-            _project_deleted_path(event, current_paths)
+            project_deleted_path(event, current_paths)
         elif action == TimelineActionName.ARCHIVE_FILE:
             _project_archive_file(
                 event,
@@ -260,7 +265,7 @@ def _check_slow_copy_start_path_collision(
     if not isinstance(target, str) or not isinstance(temp_path, str):
         return
     if isinstance(final_path, str):
-        _project_slow_copy_start(event, pending_slow_copies)
+        project_slow_copy_start(event, pending_slow_copies)
         if _normalize(temp_path) == _normalize(final_path):
             reporter.error(
                 code=E_SLOW_COPY_PATH_COLLISION,
@@ -287,45 +292,6 @@ def _check_slow_copy_start_path_collision(
         )
 
 
-def _project_to_field_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    path = event.get("to")
-    if isinstance(target, str) and isinstance(path, str):
-        current_paths[target] = path
-
-
-def _project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    if isinstance(target, str):
-        current_paths.pop(target, None)
-
-
-def _project_slow_copy_start(
-    event: _RawMapping,
-    pending_slow_copies: dict[str, tuple[str, str]],
-) -> None:
-    event_id = event.get("id")
-    target = event.get("target")
-    final_path = event.get("to")
-    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
-        pending_slow_copies[event_id] = (target, final_path)
-
-
-def _project_slow_copy_commit(
-    event: _RawMapping,
-    pending_slow_copies: dict[str, tuple[str, str]],
-    current_paths: dict[str, str],
-) -> None:
-    start_id = event.get("for")
-    if not isinstance(start_id, str):
-        return
-    pending = pending_slow_copies.pop(start_id, None)
-    if pending is None:
-        return
-    target, final_path = pending
-    current_paths[target] = final_path
-
-
 def _project_archive_file(
     event: _RawMapping,
     *,
@@ -340,7 +306,7 @@ def _project_archive_file(
     if current_path is None:
         return
     try:
-        current_root = _current_root_for_path(current_path, roots)
+        current_root = current_root_for_path(current_path, roots)
         current_paths[target] = replace_root_prefix(
             current_path,
             from_root=current_root,
@@ -386,7 +352,7 @@ def _project_remux_container(event: _RawMapping, current_paths: dict[str, str]) 
     current_path = current_paths.get(target)
     if current_path is None:
         return
-    current_paths[target] = _swap_extension(current_path, to_container)
+    current_paths[target] = swap_extension(current_path, to_container)
 
 
 def _project_hierarchy_action(event, hierarchy_projection, current_paths: dict[str, str]) -> None:
@@ -397,33 +363,3 @@ def _project_hierarchy_action(event, hierarchy_projection, current_paths: dict[s
             current_paths.pop(asset_id, None)
         else:
             current_paths[asset_id] = path
-
-
-def _current_root_for_path(path: str, roots: Mapping[str, str]) -> str:
-    root_paths: list[str] = list(roots.values())
-    root_paths.sort(key=len, reverse=True)
-    for root_path in root_paths:
-        if path == root_path or path.startswith(f"{root_path}/"):
-            return root_path
-    raise ValueError("current path does not start with a declared root")
-
-
-def _archive_base_path(raw: _RawMapping, declared_roots: Mapping[str, str]) -> str | None:
-    primary_path = primary_root_path(raw)
-    if primary_path is None:
-        return None
-    library = _as_mapping(raw.get("library"))
-    archive_root = library.get("archive_root") if library is not None else None
-    if archive_root is None or archive_root == "archive":
-        return f"{primary_path}/archive"
-    if isinstance(archive_root, str):
-        return declared_roots.get(archive_root)
-    return None
-
-
-def _swap_extension(path: str, new_ext: str) -> str:
-    basename = path.rsplit("/", 1)[-1]
-    if "." in basename:
-        base = path.rsplit(".", 1)[0]
-        return f"{base}.{new_ext}"
-    return f"{path}.{new_ext}"
