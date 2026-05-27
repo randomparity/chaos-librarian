@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from chaos_librarian.contract.scenario import (
     AudioNoiseColor,
     AudioSampleFormat,
+    CoverArtImageFormat,
+    CoverArtResolution,
     VideoColorRange,
     VideoColorSpace,
     VideoResolutionSequence,
@@ -23,6 +25,8 @@ class ContentTrackKind(enum.StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     SUBTITLE = "subtitle"
+    CHAPTERS = "chapters"
+    COVER_ART = "cover_art"
 
 
 class CacheDisposition(enum.StrEnum):
@@ -49,6 +53,11 @@ class ContentSourceEvidence(BaseModel):
     noise_color: AudioNoiseColor | None = None
     sample_rate: int | None = None
     sample_format: AudioSampleFormat | None = None
+    chapter_count: int | None = Field(default=None, ge=1)
+    chapter_title_prefix: str | None = None
+    cover_art_image_format: CoverArtImageFormat | None = None
+    cover_art_resolution: CoverArtResolution | None = None
+    cover_art_color: str | None = Field(default=None, pattern=r"^#[0-9a-f]{6}$")
     track_index: int | None = Field(default=None, ge=0)
     cache_disposition: CacheDisposition
     cache_key: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)

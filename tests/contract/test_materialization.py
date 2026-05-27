@@ -154,8 +154,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_thirteen() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 13
+def test_materialization_schema_version_is_fourteen() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 14
 
 
 def test_materialized_asset_records_mp4_moov_placement() -> None:

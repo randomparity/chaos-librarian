@@ -136,6 +136,24 @@ class Mp4MoovPlacement(enum.StrEnum):
     MOOV_AT_END = "moov_at_end"
 
 
+class CoverArtSource(enum.StrEnum):
+    """Synthesis recipe for embedded cover art."""
+
+    SOLID_COLOR = "solid_color"
+
+
+class CoverArtImageFormat(enum.StrEnum):
+    """Image format for embedded cover art."""
+
+    PNG = "png"
+
+
+class CoverArtResolution(enum.StrEnum):
+    """Pixel geometry for embedded cover art."""
+
+    SQUARE_320 = "square_320"
+
+
 class SubtitleMode(enum.StrEnum):
     """How a subtitle track is delivered."""
 
@@ -334,6 +352,21 @@ class SubtitleTrack(BaseModel):
     mode: SubtitleMode
 
 
+class EmbeddedChapters(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    count: int = Field(ge=1, le=20)
+    title_prefix: str = Field(default="Chapter", min_length=1, max_length=64)
+
+
+class EmbeddedCoverArt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: CoverArtSource = CoverArtSource.SOLID_COLOR
+    image_format: CoverArtImageFormat = CoverArtImageFormat.PNG
+    resolution: CoverArtResolution = CoverArtResolution.SQUARE_320
+
+
 # ---- Asset / Bundle / Variant / Domain hierarchy ----------------------------
 
 
@@ -344,6 +377,8 @@ class Asset(BaseModel):
     container: str
     duration_seconds: float
     mp4_moov_placement: Mp4MoovPlacement | None = None
+    embedded_chapters: EmbeddedChapters | None = None
+    embedded_cover_art: EmbeddedCoverArt | None = None
     video: VideoTrack | None = None
     audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
     subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
@@ -815,7 +850,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[20]
+    schema_version: Literal[21]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

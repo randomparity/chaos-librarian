@@ -24,6 +24,17 @@ class StreamKind(enum.StrEnum):
     SUBTITLE = "subtitle"
 
 
+class ProbedChapter(BaseModel):
+    """One chapter from ``ffprobe -show_chapters``."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    index: int = Field(ge=0)
+    start_ms: int = Field(ge=0)
+    end_ms: int = Field(ge=0)
+    title: str | None = None
+
+
 class ProbedStream(BaseModel):
     """One stream from ``ffprobe -show_streams``.
 
@@ -45,12 +56,13 @@ class ProbedStream(BaseModel):
     sample_rate: int | None = None  # audio-only
     title: str | None = None  # stream metadata
     role: str | None = None  # audio-only stream metadata
+    attached_pic: bool | None = None  # video-only
     default: bool | None = None  # subtitle-only
     forced: bool | None = None  # subtitle-only
 
 
 class ProbedMedia(BaseModel):
-    """Output of ``ffprobe -show_format -show_streams`` mapped into a model."""
+    """Output of ``ffprobe`` mapped into a model."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -58,6 +70,7 @@ class ProbedMedia(BaseModel):
     duration_seconds: float
     size_bytes: int
     streams: list[ProbedStream]
+    chapters: list[ProbedChapter] = Field(default_factory=list)
 
 
 class ManifestMovie(BaseModel):
@@ -187,7 +200,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[8]
+    schema_version: Literal[9]
     movies: list[ManifestMovie]
     series: list[ManifestSeries]
     seasons: list[ManifestSeason]

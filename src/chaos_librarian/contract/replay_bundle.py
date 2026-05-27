@@ -99,7 +99,7 @@ class _ReplayBundleBase(BaseModel):
     # replay bundle against a v3 scenario model fails at re-validation.
     # The version bump lets consumers detect the incompatibility cleanly
     # instead of running into the embedded validation error later.
-    schema_version: Literal[10]
+    schema_version: Literal[11]
     chaos_librarian_version: str
     scenario: str  # verbatim YAML
     run_id: uuid.UUID

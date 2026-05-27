@@ -183,7 +183,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v20_payload() -> None:
+def test_movie_only_scenario_v21_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -196,7 +196,7 @@ def test_movie_only_scenario_v20_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 20
+    assert scenario.schema_version == 21
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -240,6 +240,37 @@ def test_mp4_moov_placement_rejects_unknown_value() -> None:
 
     with pytest.raises(ValidationError):
         Scenario.model_validate(payload)
+
+
+def test_embedded_chapters_and_cover_art_asset_round_trip() -> None:
+    payload = _base_payload()
+    asset = _video_asset_payload("asset_embedded_metadata")
+    asset["container"] = "mp4"
+    asset["embedded_chapters"] = {"count": 3, "title_prefix": "Scene"}
+    asset["embedded_cover_art"] = {
+        "source": "solid_color",
+        "image_format": "png",
+        "resolution": "square_320",
+    }
+    payload["movies"] = [
+        {
+            "id": "movie_embedded_metadata",
+            "title": "Embedded Metadata",
+            "layout": "movie_flat",
+            "variants": [_variant_payload(asset)],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+    asset_model = scenario.movies[0].variants[0].bundle.assets[0]
+
+    assert asset_model.embedded_chapters is not None
+    assert asset_model.embedded_chapters.count == 3
+    assert asset_model.embedded_chapters.title_prefix == "Scene"
+    assert asset_model.embedded_cover_art is not None
+    assert asset_model.embedded_cover_art.source.value == "solid_color"
+    assert asset_model.embedded_cover_art.image_format.value == "png"
+    assert asset_model.embedded_cover_art.resolution.value == "square_320"
 
 
 def test_tv_only_scenario_accepts_season_zero_specials() -> None:
@@ -884,8 +915,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 20
+def test_scenario_schema_version_is_twenty_one() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 21
 
 
 def test_scenario_accepts_profile_labels() -> None:

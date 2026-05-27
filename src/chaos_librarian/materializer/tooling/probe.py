@@ -1,7 +1,7 @@
 """ffprobe wrapper.
 
-Runs ``ffprobe -show_format -show_streams -of json`` and maps the result
-into ``ProbedMedia``. Unparseable output raises ``ProbeParseError``.
+Runs ``ffprobe -show_format -show_streams -show_chapters -of json`` and maps
+the result into ``ProbedMedia``. Unparseable output raises ``ProbeParseError``.
 Subtitle streams are dropped (sidecars are tracked separately; embedded
 subtitle support is not implemented).
 """
@@ -13,7 +13,12 @@ import subprocess
 from pathlib import Path
 from typing import Final
 
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
+from chaos_librarian.contract.manifest import (
+    ProbedChapter,
+    ProbedMedia,
+    ProbedStream,
+    StreamKind,
+)
 from chaos_librarian.materializer.errors import ProbeParseError
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
@@ -75,6 +80,20 @@ def _opt_str(blob: dict[str, object], key: str) -> str | None:
     return str(value)
 
 
+def _opt_bool(blob: dict[str, object], key: str) -> bool | None:
+    value = blob.get(key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        if value == "1" or value.casefold() == "true":
+            return True
+        if value == "0" or value.casefold() == "false":
+            return False
+    return None
+
+
 def _language_tag(blob: dict[str, object]) -> str | None:
     return _tag_value(blob, "language")
 
@@ -88,6 +107,13 @@ def _tag_value(blob: dict[str, object], key: str) -> str | None:
         if tag_key.casefold() == key:
             return str(tag_value)
     return None
+
+
+def _attached_pic(blob: dict[str, object]) -> bool | None:
+    disposition = _coerce_blob(blob.get("disposition"))
+    if disposition is None:
+        return None
+    return _opt_bool(disposition, "attached_pic")
 
 
 def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
@@ -107,6 +133,7 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
             fps=_fps_from_rate(_opt_str(blob, "r_frame_rate")),
             language=_language_tag(blob),
             title=_tag_value(blob, "title"),
+            attached_pic=_attached_pic(blob),
         )
     if codec_type == "audio":
         return ProbedStream(
@@ -137,8 +164,52 @@ def _parse_streams(streams_raw: object) -> list[ProbedStream]:
     return parsed
 
 
+def _milliseconds_from_chapter_time(blob: dict[str, object], prefix: str) -> int | None:
+    integer_value = _opt_int(blob, prefix)
+    if integer_value is not None and _opt_str(blob, "time_base") == "1/1000":
+        return integer_value
+    seconds = _opt_str(blob, f"{prefix}_time")
+    if seconds is None:
+        return None
+    try:
+        return round(float(seconds) * 1000)
+    except ValueError:
+        return None
+
+
+def _chapter_from_json(index: int, blob: dict[str, object]) -> ProbedChapter | None:
+    start_ms = _milliseconds_from_chapter_time(blob, "start")
+    end_ms = _milliseconds_from_chapter_time(blob, "end")
+    if start_ms is None or end_ms is None:
+        return None
+    chapter_id = _opt_int(blob, "id")
+    return ProbedChapter(
+        index=index if chapter_id is None else chapter_id,
+        start_ms=start_ms,
+        end_ms=end_ms,
+        title=_tag_value(blob, "title"),
+    )
+
+
+def _parse_chapters(chapters_raw: object) -> list[ProbedChapter]:
+    if not isinstance(chapters_raw, list):
+        return []
+    parsed: list[ProbedChapter] = []
+    for index, entry in enumerate(chapters_raw):
+        blob = _coerce_blob(entry)
+        if blob is None:
+            continue
+        chapter = _chapter_from_json(index, blob)
+        if chapter is not None:
+            parsed.append(chapter)
+    return parsed
+
+
 def _build_probed_media(
-    fmt: dict[str, object], streams: list[ProbedStream], path: Path
+    fmt: dict[str, object],
+    streams: list[ProbedStream],
+    chapters: list[ProbedChapter],
+    path: Path,
 ) -> ProbedMedia:
     try:
         return ProbedMedia(
@@ -146,6 +217,7 @@ def _build_probed_media(
             duration_seconds=float(_opt_str(fmt, "duration") or 0.0),
             size_bytes=int(_opt_str(fmt, "size") or 0),
             streams=streams,
+            chapters=chapters,
         )
     except (ValueError, TypeError) as exc:
         raise ProbeParseError(
@@ -169,6 +241,7 @@ def probe_file(path: Path) -> ProbedMedia:
         "error",
         "-show_format",
         "-show_streams",
+        "-show_chapters",
         "-of",
         "json",
         str(path),
@@ -207,4 +280,5 @@ def probe_file(path: Path) -> ProbedMedia:
         )
     fmt = _coerce_blob(blob.get("format")) or {}
     streams = _parse_streams(blob.get("streams"))
-    return _build_probed_media(fmt, streams, path)
+    chapters = _parse_chapters(blob.get("chapters"))
+    return _build_probed_media(fmt, streams, chapters, path)

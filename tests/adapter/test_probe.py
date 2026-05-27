@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from chaos_librarian.adapter.probe import compare_probed_media
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
+from chaos_librarian.contract.manifest import ProbedChapter, ProbedMedia, ProbedStream, StreamKind
 
 
 def _media(
@@ -59,6 +59,38 @@ def test_compare_probed_media_reports_stream_field_paths() -> None:
     assert ("streams.0.width", 1920, 1280) in differences
     assert ("streams.1.language", "eng", "fra") in differences
     assert ("streams.1.sample_rate", 48_000, 44_100) in differences
+
+
+def test_compare_probed_media_reports_chapter_and_attached_picture_mismatch() -> None:
+    expected = _media(
+        streams=[ProbedStream(kind=StreamKind.VIDEO, codec="png", attached_pic=True)],
+    )
+    expected.chapters.append(
+        ProbedChapter(index=0, start_ms=0, end_ms=1000, title="Scene 01 abc123")
+    )
+    observed = _media(
+        streams=[ProbedStream(kind=StreamKind.VIDEO, codec="png", attached_pic=False)],
+    )
+
+    differences = compare_probed_media(expected, observed)
+
+    assert ("chapters.length", 1, 0) in differences
+    assert ("streams.0.attached_pic", True, False) in differences
+
+
+def test_compare_probed_media_reports_chapter_field_paths() -> None:
+    expected = _media()
+    expected.chapters.append(
+        ProbedChapter(index=0, start_ms=0, end_ms=1000, title="Scene 01 abc123")
+    )
+    observed = _media()
+    observed.chapters.append(
+        ProbedChapter(index=0, start_ms=0, end_ms=1000, title="Scene 01 def456")
+    )
+
+    differences = compare_probed_media(expected, observed)
+
+    assert ("chapters.0.title", "Scene 01 abc123", "Scene 01 def456") in differences
 
 
 def test_compare_probed_media_reports_audio_layout_title_and_role_mismatch() -> None:

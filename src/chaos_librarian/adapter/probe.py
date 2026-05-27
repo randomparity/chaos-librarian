@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
+from chaos_librarian.contract.manifest import ProbedChapter, ProbedMedia, ProbedStream, StreamKind
 
 _DURATION_TOLERANCE_SECONDS = 0.05
 _UNKNOWN_LANGUAGE_VALUES = frozenset({None, "und"})
@@ -26,6 +26,12 @@ def compare_probed_media(
         zip(expected.streams, observed.streams, strict=False)
     ):
         differences.extend(_compare_stream(index, expected_stream, observed_stream))
+    if len(expected.chapters) != len(observed.chapters):
+        differences.append(("chapters.length", len(expected.chapters), len(observed.chapters)))
+    for index, (expected_chapter, observed_chapter) in enumerate(
+        zip(expected.chapters, observed.chapters, strict=False)
+    ):
+        differences.extend(_compare_chapter(index, expected_chapter, observed_chapter))
     return differences
 
 
@@ -44,6 +50,7 @@ def _compare_stream(
         "sample_rate",
         "title",
         "role",
+        "attached_pic",
         "default",
         "forced",
     ):
@@ -59,6 +66,18 @@ def _compare_stream(
             continue
         if expected_value != observed_value:
             differences.append((f"streams.{index}.{field_name}", expected_value, observed_value))
+    return differences
+
+
+def _compare_chapter(
+    index: int, expected: ProbedChapter, observed: ProbedChapter
+) -> list[tuple[str, object, object]]:
+    differences: list[tuple[str, object, object]] = []
+    for field_name in ("index", "start_ms", "end_ms", "title"):
+        expected_value = getattr(expected, field_name)
+        observed_value = getattr(observed, field_name)
+        if expected_value != observed_value:
+            differences.append((f"chapters.{index}.{field_name}", expected_value, observed_value))
     return differences
 
 
