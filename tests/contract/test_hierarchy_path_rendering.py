@@ -254,6 +254,15 @@ def test_render_declared_sidecar_path_stays_next_to_media_stem() -> None:
     )
 
 
+def test_render_declared_sidecar_path_uses_codec_extension() -> None:
+    assert render_declared_sidecar_path("TV/Starline/Pilot.mkv", "jpn", codec="ass") == (
+        "TV/Starline/Pilot.jpn.ass"
+    )
+    assert render_declared_sidecar_path("TV/Starline/Pilot.mkv", "spa", codec="ssa") == (
+        "TV/Starline/Pilot.spa.ssa"
+    )
+
+
 def test_render_declared_sidecar_path_rejects_invalid_media_path() -> None:
     with pytest.raises(ValueError, match="relative POSIX"):
         render_declared_sidecar_path("/TV/Starline/Pilot.mkv", "eng")

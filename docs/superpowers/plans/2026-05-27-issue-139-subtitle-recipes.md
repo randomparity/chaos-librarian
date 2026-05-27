@@ -36,7 +36,7 @@
 - Test: `tests/contract/test_contract_constants.py`
 - Test: `tests/contract/test_hierarchy_path_rendering.py`
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 Add to `tests/contract/test_scenario.py`:
 
@@ -88,7 +88,7 @@ def test_issue_139_schema_versions() -> None:
 Update existing v22-specific contract tests and names to v23 where they assert
 the current scenario version.
 
-- [ ] **Step 2: Write failing path-rendering tests**
+- [x] **Step 2: Write failing path-rendering tests**
 
 Add to `tests/contract/test_hierarchy_path_rendering.py`:
 
@@ -102,7 +102,7 @@ def test_declared_sidecar_path_uses_codec_extension() -> None:
     )
 ```
 
-- [ ] **Step 3: Run tests to verify red**
+- [x] **Step 3: Run tests to verify red**
 
 Run:
 
@@ -117,7 +117,7 @@ uv run pytest --no-cov \
 
 Expected: missing enum/fields and path-rendering signature failures.
 
-- [ ] **Step 4: Implement contract enums and path rendering**
+- [x] **Step 4: Implement contract enums and path rendering**
 
 In `src/chaos_librarian/contract/scenario.py`, add:
 
@@ -186,7 +186,7 @@ def render_declared_sidecar_path(media_path: str, language: str, *, codec: str =
 
 In `src/chaos_librarian/engine/state.py`, pass `codec=subtitle.codec.value` when rendering declared sidecars.
 
-- [ ] **Step 5: Run green tests and commit**
+- [x] **Step 5: Run green tests and commit**
 
 Run:
 

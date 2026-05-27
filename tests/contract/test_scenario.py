@@ -52,8 +52,11 @@ from chaos_librarian.contract.scenario import (
     SidecarKind,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
+    SubtitleCodec,
+    SubtitleEncoding,
     SubtitleMode,
     SubtitleSource,
+    SubtitleTimingProfile,
     SubtitleTrack,
     TimelineActionName,
     Track,
@@ -183,7 +186,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v22_payload() -> None:
+def test_movie_only_scenario_v23_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -196,7 +199,7 @@ def test_movie_only_scenario_v22_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 22
+    assert scenario.schema_version == 23
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -698,6 +701,38 @@ def test_subtitle_track_source_defaults_to_generated_srt() -> None:
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
+def test_subtitle_track_defaults_to_plain_utf8_srt() -> None:
+    track = SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR)
+
+    assert track.codec is SubtitleCodec.SRT
+    assert track.source is SubtitleSource.GENERATED_SRT
+    assert track.encoding is SubtitleEncoding.UTF8
+    assert track.timing_profile is SubtitleTimingProfile.NORMAL
+
+
+def test_subtitle_track_accepts_new_recipe_fields() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    asset = payload["movies"][0]["variants"][0]["bundle"]["assets"][0]
+    asset["subtitles"] = [
+        {
+            "codec": "ass",
+            "source": "styled_ass",
+            "language": "jpn",
+            "mode": "sidecar",
+            "encoding": "utf8_bom",
+            "timing_profile": "overlap",
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+    loaded = scenario.movies[0].variants[0].bundle.assets[0].subtitles[0]
+
+    assert loaded.codec is SubtitleCodec.ASS
+    assert loaded.source is SubtitleSource.STYLED_ASS
+    assert loaded.encoding is SubtitleEncoding.UTF8_BOM
+    assert loaded.timing_profile is SubtitleTimingProfile.OVERLAP
+
+
 def test_video_vfr_cadence_enum_values() -> None:
     assert VideoVfrCadence.TWENTY_FOUR_TO_THIRTY.value == "24_to_30"
     assert VideoVfrCadence.THIRTY_TO_SIXTY.value == "30_to_60"
@@ -927,8 +962,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_two() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 22
+def test_scenario_schema_version_is_twenty_three() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 23
 
 
 def test_scenario_accepts_profile_labels() -> None:

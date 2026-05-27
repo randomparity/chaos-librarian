@@ -519,7 +519,11 @@ def _seed_asset_context(
             id=sidecar_id,
             asset_id=asset.id,
             kind=SidecarKind.SUBTITLE.value,
-            path=render_declared_sidecar_path(media_path, subtitle.language),
+            path=render_declared_sidecar_path(
+                media_path,
+                subtitle.language,
+                codec=subtitle.codec.value,
+            ),
             language=subtitle.language,
         )
         state._renderer_derived_sidecar_ids.add(sidecar_id)
