@@ -191,6 +191,17 @@
           "title": "Id",
           "type": "string"
         },
+        "matroska_muxing_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MatroskaMuxingProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "mp4_moov_placement": {
           "anyOf": [
             {
@@ -987,6 +998,16 @@
       ],
       "title": "LibraryRoot",
       "type": "object"
+    },
+    "MatroskaMuxingProfile": {
+      "description": "Matroska/WebM muxing profile for cue and cluster parser surfaces.",
+      "enum": [
+        "no_cues",
+        "dense_cues",
+        "short_clusters"
+      ],
+      "title": "MatroskaMuxingProfile",
+      "type": "string"
     },
     "MoveAssetEvent": {
       "additionalProperties": false,
@@ -2308,7 +2329,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 21,
+      "const": 22,
       "title": "Schema Version",
       "type": "integer"
     },

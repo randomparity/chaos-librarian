@@ -101,6 +101,18 @@
           ],
           "default": null
         },
+        "container": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Container"
+        },
         "content_hash": {
           "anyOf": [
             {
@@ -160,6 +172,17 @@
           ],
           "default": null,
           "title": "License"
+        },
+        "matroska_muxing_profile": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MatroskaMuxingProfile"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "noise_color": {
           "anyOf": [
@@ -266,7 +289,8 @@
         "audio",
         "subtitle",
         "chapters",
-        "cover_art"
+        "cover_art",
+        "muxing"
       ],
       "title": "ContentTrackKind",
       "type": "string"
@@ -721,6 +745,16 @@
       ],
       "title": "MaterializedAsset",
       "type": "object"
+    },
+    "MatroskaMuxingProfile": {
+      "description": "Matroska/WebM muxing profile for cue and cluster parser surfaces.",
+      "enum": [
+        "no_cues",
+        "dense_cues",
+        "short_clusters"
+      ],
+      "title": "MatroskaMuxingProfile",
+      "type": "string"
     },
     "MediaAction": {
       "additionalProperties": false,
@@ -1303,7 +1337,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 14,
+      "const": 15,
       "title": "Schema Version",
       "type": "integer"
     },

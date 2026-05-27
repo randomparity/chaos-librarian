@@ -176,7 +176,7 @@ def write_plan_fixture(tmp_path: Path, scenario_name: str = "identity-move-renam
 
 
 def _scenario_bytes_from_id(scenario_id: str) -> bytes:
-    return f"""schema_version: 21
+    return f"""schema_version: 22
 scenario_id: {scenario_id}
 seed: 1
 duration_scale: short

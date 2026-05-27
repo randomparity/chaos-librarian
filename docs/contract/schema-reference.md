@@ -46,14 +46,14 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 21 |
+| scenario | 22 |
 | manifest | 9 |
 | journal | 1 |
-| replay bundle | 11 |
+| replay bundle | 12 |
 | validation | 1 |
-| materialization | 14 |
+| materialization | 15 |
 | run sentinel | 2 |
-| capabilities | 6 |
+| capabilities | 7 |
 | asset report | 9 |
 | variant report | 2 |
 | bundle report | 1 |
@@ -67,6 +67,11 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 4 |
 | divergence | 1 |
+
+Scenario v22 adds `matroska_muxing_profile` for MKV/WebM cue and cluster
+profiles. Capabilities v7 reports readiness for mkvmerge-backed muxing profiles
+and minimal WebM VP9 synthesis. Materialization v15 and replay-bundle v12 carry
+selected muxing profile evidence.
 
 Scenario v21 adds `embedded_chapters` and `embedded_cover_art` asset recipes.
 Manifest v9, asset-report v9, and observed-state v4 carry probe-visible
