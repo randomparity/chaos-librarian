@@ -10,7 +10,9 @@ from chaos_librarian.materializer.preflight import iter_assets
 __all__ = [
     "assert_capable_for_audio_recipes",
     "assert_capable_for_hdr_video",
+    "assert_capable_for_matroska_muxing_profiles",
     "assert_capable_for_resolution_switch_video",
+    "assert_capable_for_webm_video",
 ]
 
 
@@ -37,6 +39,45 @@ def assert_capable_for_audio_recipes(scenario: Scenario, caps: Capabilities) -> 
                     ),
                 },
             )
+
+
+def assert_capable_for_matroska_muxing_profiles(
+    scenario: Scenario,
+    caps: Capabilities,
+) -> None:
+    """Raise before run-dir allocation when a muxing profile needs mkvmerge."""
+    for asset in iter_assets(scenario):
+        if asset.matroska_muxing_profile is None:
+            continue
+        if caps.ready_for.materialize_matroska_muxing_profiles:
+            return
+        raise CapabilityGateError(
+            "Matroska/WebM muxing profiles require mkvmerge",
+            asset_id=asset.id,
+            field="ready_for.materialize_matroska_muxing_profiles",
+            payload={
+                "capability": "ready_for.materialize_matroska_muxing_profiles",
+                "required_tool": "mkvmerge",
+            },
+        )
+
+
+def assert_capable_for_webm_video(scenario: Scenario, caps: Capabilities) -> None:
+    """Raise before run-dir allocation when WebM needs libvpx-vp9."""
+    for asset in iter_assets(scenario):
+        if asset.container != "webm":
+            continue
+        if caps.ready_for.materialize_webm_video:
+            return
+        raise CapabilityGateError(
+            "WebM materialization requires FFmpeg with libvpx-vp9",
+            asset_id=asset.id,
+            field="ready_for.materialize_webm_video",
+            payload={
+                "capability": "ready_for.materialize_webm_video",
+                "required_encoder": "libvpx-vp9",
+            },
+        )
 
 
 def assert_capable_for_hdr_video(scenario: Scenario, caps: Capabilities) -> None:

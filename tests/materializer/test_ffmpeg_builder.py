@@ -357,7 +357,7 @@ def test_hdr_video_rejects_non_hevc_codec(tmp_path: Path) -> None:
 
 def test_unsupported_container_rejected(tmp_path: Path) -> None:
     video = _video()
-    output = tmp_path / "asset.webm"
+    output = tmp_path / "asset.avi"
     with pytest.raises(UnsupportedMaterializationError) as exc:
         build_command(
             video=video,
@@ -367,6 +367,47 @@ def test_unsupported_container_rejected(tmp_path: Path) -> None:
             output_path=output,
         )
     assert exc.value.field == "container"
+
+
+def test_webm_vp9_video_only_command_uses_libvpx_without_preset(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(codec="vp9"),
+        video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+        audios=[],
+        audio_inputs=[],
+        output_path=tmp_path / "asset.webm",
+    )
+
+    assert argv[argv.index("-c:v") + 1] == "libvpx-vp9"
+    assert "-preset" not in argv
+    assert argv[argv.index("-deadline") + 1] == "good"
+    assert argv[argv.index("-cpu-used") + 1] == "4"
+
+
+def test_webm_rejects_audio_inputs(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=_video(codec="vp9"),
+            video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+            audios=[_audio()],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.webm",
+        )
+
+    assert exc.value.field == "audio"
+
+
+def test_mp4_rejects_vp9_codec(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=_video(codec="vp9"),
+            video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+            audios=[],
+            audio_inputs=[],
+            output_path=tmp_path / "asset.mp4",
+        )
+
+    assert exc.value.field == "video.codec"
 
 
 def test_unsupported_resolution_rejected(tmp_path: Path) -> None:

@@ -39,7 +39,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
         meets_minimum=all_ok,
     )
     return Capabilities(
-        schema_version=6,
+        schema_version=7,
         ffmpeg=ffmpeg,
         ffprobe=ffprobe,
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -77,6 +77,8 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
             materialize_hdr_video=all_ok,
             materialize_resolution_switch_video=all_ok,
             materialize_audio_recipes=all_ok,
+            materialize_matroska_muxing_profiles=all_ok,
+            materialize_webm_video=all_ok,
         ),
     )
 

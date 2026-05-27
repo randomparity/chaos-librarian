@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import (
     Capabilities,
     ReadyFor,
@@ -40,6 +41,75 @@ from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
 
+_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 22
+scenario_id: muxing-profile-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_mux
+    title: Mux Profile
+    layout: movie_flat
+    variants:
+      - id: variant_mux
+        label: mkv
+        bundle:
+          id: bundle_mux
+          assets:
+            - id: asset_mux
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              matroska_muxing_profile: no_cues
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []
+"""
+
+_WEBM_PROFILE_SCENARIO = """schema_version: 22
+scenario_id: webm-capability-test
+seed: 138
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_webm
+    title: WebM Profile
+    layout: movie_flat
+    variants:
+      - id: variant_webm
+        label: webm
+        bundle:
+          id: bundle_webm
+          assets:
+            - id: asset_webm
+              role: main
+              container: webm
+              duration_seconds: 1.0
+              matroska_muxing_profile: short_clusters
+              video:
+                source: color_bars
+                codec: vp9
+                resolution: sd
+series: []
+artists: []
+timeline: []
+"""
+
 
 @pytest.fixture(autouse=True)
 def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -54,9 +124,11 @@ def _capabilities(
     materialize_hdr_video: bool = True,
     materialize_resolution_switch_video: bool = True,
     materialize_audio_recipes: bool = True,
+    materialize_matroska_muxing_profiles: bool = True,
+    materialize_webm_video: bool = True,
 ) -> Capabilities:
     return Capabilities(
-        schema_version=6,
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -70,6 +142,8 @@ def _capabilities(
             materialize_hdr_video=materialize_hdr_video,
             materialize_resolution_switch_video=materialize_resolution_switch_video,
             materialize_audio_recipes=materialize_audio_recipes,
+            materialize_matroska_muxing_profiles=materialize_matroska_muxing_profiles,
+            materialize_webm_video=materialize_webm_video,
         ),
     )
 
@@ -132,6 +206,53 @@ def test_materialize_refuses_audio_noise_when_capability_missing(
     assert not out.exists()
 
 
+@pytest.mark.parametrize(
+    ("scenario_text", "capability_kwarg", "field", "asset_id"),
+    [
+        (
+            _MKV_MUXING_PROFILE_SCENARIO,
+            "materialize_matroska_muxing_profiles",
+            "ready_for.materialize_matroska_muxing_profiles",
+            "asset_mux",
+        ),
+        (
+            _WEBM_PROFILE_SCENARIO,
+            "materialize_webm_video",
+            "ready_for.materialize_webm_video",
+            "asset_webm",
+        ),
+    ],
+)
+def test_materialize_refuses_muxing_profile_capability_regressions(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    scenario_text: str,
+    capability_kwarg: str,
+    field: str,
+    asset_id: str,
+) -> None:
+    monkeypatch.setattr(
+        run_mod,
+        "detect_capabilities",
+        lambda: _capabilities(**{capability_kwarg: False}),
+    )
+    monkeypatch.setattr(
+        synthesis_mod,
+        "run_ffmpeg",
+        lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
+    )
+    scenario_path = tmp_path / "profile.yaml"
+    scenario_path.write_text(scenario_text, encoding="utf-8")
+    out = tmp_path / "run-001"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        materialize_scenario(scenario_path, out)
+
+    assert exc.value.field == field
+    assert exc.value.asset_id == asset_id
+    assert not out.exists()
+
+
 def test_materialize_filesystem_only_timeline_runs_phase_b(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -159,7 +280,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 21\n"
+        "schema_version: 22\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -522,7 +643,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 21
+schema_version: 22
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -564,7 +685,7 @@ timeline: []
 """
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 21
+schema_version: 22
 scenario_id: resolution-switch-capability-test
 seed: 133
 duration_scale: short

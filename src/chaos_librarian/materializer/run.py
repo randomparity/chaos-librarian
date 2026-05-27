@@ -22,7 +22,9 @@ from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.materializer.capability_gates import (
     assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
+    assert_capable_for_matroska_muxing_profiles,
     assert_capable_for_resolution_switch_video,
+    assert_capable_for_webm_video,
 )
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
@@ -112,6 +114,8 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     preflight_timeline(scenario)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    assert_capable_for_matroska_muxing_profiles(scenario, caps)
+    assert_capable_for_webm_video(scenario, caps)
     assert_capable_for_audio_recipes(scenario, caps)
     assert_capable_for_resolution_switch_video(scenario, caps)
     _assert_capable_for_hevc_video(scenario, caps)

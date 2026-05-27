@@ -187,6 +187,7 @@ def detect_capabilities() -> Capabilities:
     mkv_ok = mkv.meets_minimum
     libx264_available = _ffmpeg_encoder_available(ffmpeg, "libx264")
     libx265_available = _ffmpeg_encoder_available(ffmpeg, "libx265")
+    libvpx_vp9_available = _ffmpeg_encoder_available(ffmpeg, "libvpx-vp9")
     hdr_video_available = _ffmpeg_hdr_signaling_available(
         ffmpeg,
         ffprobe,
@@ -216,6 +217,8 @@ def detect_capabilities() -> Capabilities:
             materialize_hdr_video=hdr_video_available,
             materialize_resolution_switch_video=resolution_switch_available,
             materialize_audio_recipes=audio_recipes_available,
+            materialize_matroska_muxing_profiles=ffmpeg_ok and ffprobe_ok and mkv_ok,
+            materialize_webm_video=ffmpeg_ok and ffprobe_ok and libvpx_vp9_available,
         ),
     )
 

@@ -20,6 +20,7 @@ from chaos_librarian.media_matrix import (
     SUPPORTED_AUDIO_SAMPLE_RATES,
     SUPPORTED_RESOLUTIONS,
     SUPPORTED_VIDEO_CODECS,
+    SUPPORTED_VIDEO_CODECS_BY_CONTAINER,
     SUPPORTED_VIDEO_CONTAINERS,
     SUPPORTED_VIDEO_SOURCES,
 )
@@ -114,6 +115,7 @@ def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
             reporter=reporter,
         )
         _check_video(
+            container=asset.get("container"),
             video=video,
             video_loc=(*asset_loc, "video"),
             reporter=reporter,
@@ -517,13 +519,20 @@ def _check_audio_sample_format(
 
 def _check_video(
     *,
+    container: object,
     video: Mapping[str, object],
     video_loc: _Loc,
     reporter: Reporter,
 ) -> None:
+    supported_codecs = SUPPORTED_VIDEO_CODECS
+    if isinstance(container, str):
+        supported_codecs = SUPPORTED_VIDEO_CODECS_BY_CONTAINER.get(
+            container,
+            SUPPORTED_VIDEO_CODECS,
+        )
     for field_name, supported in (
         ("source", SUPPORTED_VIDEO_SOURCES),
-        ("codec", SUPPORTED_VIDEO_CODECS),
+        ("codec", supported_codecs),
         ("resolution", SUPPORTED_RESOLUTIONS),
     ):
         _check_string_field(

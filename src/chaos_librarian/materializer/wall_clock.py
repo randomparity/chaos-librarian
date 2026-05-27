@@ -35,7 +35,9 @@ from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.capability_gates import (
     assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
+    assert_capable_for_matroska_muxing_profiles,
     assert_capable_for_resolution_switch_video,
+    assert_capable_for_webm_video,
 )
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
@@ -183,6 +185,8 @@ def run_wall_clock_scenario(
     _preflight_wall_clock_slow_copies(resolved_timeline)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    assert_capable_for_matroska_muxing_profiles(scenario, caps)
+    assert_capable_for_webm_video(scenario, caps)
     assert_capable_for_audio_recipes(scenario, caps)
     assert_capable_for_resolution_switch_video(scenario, caps)
     assert_capable_for_hdr_video(scenario, caps)

@@ -709,6 +709,15 @@ def test_unsupported_video_codec_names_field(tmp_path: Path) -> None:
     assert "av1" in issue.message
 
 
+def test_mp4_rejects_webm_only_vp9_codec(tmp_path: Path) -> None:
+    scenario = tmp_path / "mp4-vp9.yaml"
+    _write_movie_scenario(scenario, container="mp4", video_codec="vp9")
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].video.codec")
+
+
 def test_unsupported_video_source_names_field(tmp_path: Path) -> None:
     scenario = tmp_path / "materialize-video-source-noise.yaml"
     _write_movie_scenario(scenario, video_source="noise")
