@@ -1006,7 +1006,7 @@ passes for this implementation cycle.
 Use the simplification-review workflow on the branch diff. Address only
 simplifications that reduce risk without widening scope.
 
-- [ ] **Step 3: Final verification**
+- [x] **Step 3: Final verification**
 
 Run:
 

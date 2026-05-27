@@ -31,7 +31,6 @@ from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     ScenarioValidationError,
     ToolFailedError,
-    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
@@ -574,25 +573,35 @@ def test_orchestrator_rejects_embedded_subtitle_mode(
     scenario = tmp_path / "embedded.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_EMBEDDED_SUBS)
     out = tmp_path / "run"
-    with pytest.raises(UnsupportedMaterializationError) as exc:
+    with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    assert exc.value.field == "subtitle[0].mode"
+    issue = next(
+        issue
+        for issue in exc.value.validation_report.issues
+        if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+    )
+    assert issue.path is not None
+    assert issue.path.endswith(".subtitles[0].mode")
     assert not out.exists()
 
 
-def test_orchestrator_rejects_unsupported_subtitle_codec(
+def test_orchestrator_rejects_unsupported_subtitle_recipe(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Finding 2 — Sprint 5 supports SRT only; ASS/SSA would otherwise
-    fall through preflight and ``write_text`` SRT bytes under an ``.ass``
-    filename, silently producing wrong content."""
+    """WHY: validation must reject unsupported declared subtitle recipes before writes."""
     _patch_success(monkeypatch)
     scenario = tmp_path / "ass.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_ASS_SUBS)
     out = tmp_path / "run"
-    with pytest.raises(UnsupportedMaterializationError) as exc:
+    with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    assert exc.value.field == "subtitle[0].codec"
+    issue = next(
+        issue
+        for issue in exc.value.validation_report.issues
+        if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+    )
+    assert issue.path is not None
+    assert issue.path.endswith(".subtitles[0].source")
     assert not out.exists()
 
 
