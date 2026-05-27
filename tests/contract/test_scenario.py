@@ -12,6 +12,7 @@ from chaos_librarian.contract import scenario as scenario_contract
 from chaos_librarian.contract.profiles import FuzzProfileName
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
+    AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME,
     FUZZ_GENERATION_PROFILE_VERSION,
     Album,
     ArchiveFileEvent,
@@ -21,6 +22,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    AudioTrackRole,
     Bundle,
     CorruptContainerHeaderEvent,
     CreateSidecarEvent,
@@ -181,7 +183,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v18_payload() -> None:
+def test_movie_only_scenario_v19_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -194,7 +196,7 @@ def test_movie_only_scenario_v18_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 18
+    assert scenario.schema_version == 19
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -528,6 +530,21 @@ def test_audio_track_accepts_noise_recipe_parameters() -> None:
     assert track.sample_format is scenario_contract.AudioSampleFormat.S24
 
 
+def test_audio_track_accepts_expanded_channel_layouts_and_roles() -> None:
+    track = AudioTrack.model_validate(
+        {"codec": "aac", "channels": "lcr", "language": "eng", "role": "commentary"}
+    )
+
+    assert track.channels is AudioChannelLayout.LCR
+    assert track.role is AudioTrackRole.COMMENTARY
+
+
+def test_audio_track_role_defaults_to_main() -> None:
+    track = AudioTrack.model_validate({"codec": "aac", "channels": "4.0", "language": "eng"})
+
+    assert track.role is AudioTrackRole.MAIN
+
+
 def test_audio_track_noise_requires_noise_color() -> None:
     payload = {"source": "noise", "codec": "flac", "channels": "stereo", "language": "eng"}
     with pytest.raises(ValidationError):
@@ -550,19 +567,32 @@ def test_audio_channel_layout_enum_values() -> None:
     assert AudioChannelLayout.MONO.value == "mono"
     assert AudioChannelLayout.STEREO.value == "stereo"
     assert AudioChannelLayout.TWO_ONE.value == "2.1"
+    assert AudioChannelLayout.FOUR_ZERO.value == "4.0"
+    assert AudioChannelLayout.LCR.value == "lcr"
     assert AudioChannelLayout.FIVE_ONE.value == "5.1"
+    assert AudioChannelLayout.SIX_ONE.value == "6.1"
     assert AudioChannelLayout.SEVEN_ONE.value == "7.1"
     assert AUDIO_CHANNEL_COUNTS_BY_NAME == {
         "mono": 1,
         "stereo": 2,
         "2.1": 3,
+        "4.0": 4,
+        "lcr": 3,
         "5.1": 6,
+        "6.1": 7,
         "7.1": 8,
     }
+    assert AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME["lcr"] == "3.0"
 
 
 def test_audio_track_channels_rejects_unknown_value() -> None:
     payload = {"codec": "aac", "channels": "quad", "language": "eng"}
+    with pytest.raises(ValidationError):
+        AudioTrack.model_validate(payload)
+
+
+def test_audio_track_role_rejects_unknown_value() -> None:
+    payload = {"codec": "aac", "channels": "stereo", "language": "eng", "role": "dub"}
     with pytest.raises(ValidationError):
         AudioTrack.model_validate(payload)
 
@@ -814,8 +844,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_eighteen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 18
+def test_scenario_schema_version_is_nineteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 19
 
 
 def test_scenario_accepts_profile_labels() -> None:

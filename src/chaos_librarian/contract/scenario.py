@@ -169,13 +169,24 @@ class AudioSampleFormat(enum.StrEnum):
     FLT = "flt"
 
 
+class AudioTrackRole(enum.StrEnum):
+    """Author-facing role for an audio stream."""
+
+    MAIN = "main"
+    COMMENTARY = "commentary"
+    ALTERNATE = "alternate"
+
+
 class AudioChannelLayout(enum.StrEnum):
     """Supported author-facing audio channel layouts."""
 
     MONO = "mono"
     STEREO = "stereo"
     TWO_ONE = "2.1"
+    FOUR_ZERO = "4.0"
+    LCR = "lcr"
     FIVE_ONE = "5.1"
+    SIX_ONE = "6.1"
     SEVEN_ONE = "7.1"
 
 
@@ -183,8 +194,31 @@ AUDIO_CHANNEL_COUNTS_BY_NAME: Final[dict[str, int]] = {
     AudioChannelLayout.MONO.value: 1,
     AudioChannelLayout.STEREO.value: 2,
     AudioChannelLayout.TWO_ONE.value: 3,
+    AudioChannelLayout.FOUR_ZERO.value: 4,
+    AudioChannelLayout.LCR.value: 3,
     AudioChannelLayout.FIVE_ONE.value: 6,
+    AudioChannelLayout.SIX_ONE.value: 7,
     AudioChannelLayout.SEVEN_ONE.value: 8,
+}
+AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME: Final[dict[str, str]] = {
+    AudioChannelLayout.MONO.value: "mono",
+    AudioChannelLayout.STEREO.value: "stereo",
+    AudioChannelLayout.TWO_ONE.value: "2.1",
+    AudioChannelLayout.FOUR_ZERO.value: "4.0",
+    AudioChannelLayout.LCR.value: "3.0",
+    AudioChannelLayout.FIVE_ONE.value: "5.1",
+    AudioChannelLayout.SIX_ONE.value: "6.1",
+    AudioChannelLayout.SEVEN_ONE.value: "7.1",
+}
+AUDIO_CHANNEL_ORDER_BY_NAME: Final[dict[str, tuple[str, ...]]] = {
+    AudioChannelLayout.MONO.value: ("FC",),
+    AudioChannelLayout.STEREO.value: ("FL", "FR"),
+    AudioChannelLayout.TWO_ONE.value: ("FL", "FR", "LFE"),
+    AudioChannelLayout.FOUR_ZERO.value: ("FL", "FR", "FC", "BC"),
+    AudioChannelLayout.LCR.value: ("FL", "FR", "FC"),
+    AudioChannelLayout.FIVE_ONE.value: ("FL", "FR", "FC", "LFE", "BL", "BR"),
+    AudioChannelLayout.SIX_ONE.value: ("FL", "FR", "FC", "LFE", "BC", "SL", "SR"),
+    AudioChannelLayout.SEVEN_ONE.value: ("FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR"),
 }
 
 
@@ -278,6 +312,7 @@ class AudioTrack(BaseModel):
     codec: str
     channels: AudioChannelLayout
     language: str
+    role: AudioTrackRole = AudioTrackRole.MAIN
     noise_color: AudioNoiseColor | None = None
     sample_rate: Literal[8000, 22050, 44100, 48000, 88200, 96000] = 48000
     sample_format: AudioSampleFormat | None = None
@@ -779,7 +814,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[18]
+    schema_version: Literal[19]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

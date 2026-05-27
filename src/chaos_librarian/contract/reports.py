@@ -6,7 +6,7 @@ parallel entity sub-trees. External consumers (voom-v2) key on
 
 Asset reports carry content hashes, probed media facts, a typed
 projection of filesystem-affecting events, and a typed projection of
-version-affecting events at ``schema_version: 7``; hierarchy reports
+version-affecting events at ``schema_version: 8``; hierarchy reports
 start at ``schema_version: 1`` because they describe manifest topology
 only.
 """
@@ -97,7 +97,7 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[7]
+    schema_version: Literal[8]
     asset_id: str
     parent_kind: ParentKind
     parent_id: str
