@@ -13,12 +13,12 @@ from typing import Final
 # Literal[1]`` or ``Literal[2]``) rather than referencing the constant —
 # ``ty`` rejects indirect ``Literal[]`` forms. The test in
 # test_contract_constants.py asserts ``isinstance(v, int)``.
-SCENARIO_SCHEMA_VERSION: Final = 19
+SCENARIO_SCHEMA_VERSION: Final = 20
 MANIFEST_SCHEMA_VERSION: Final = 8
 JOURNAL_SCHEMA_VERSION: Final = 1
 REPLAY_BUNDLE_SCHEMA_VERSION: Final = 10
 VALIDATION_SCHEMA_VERSION: Final = 1
-MATERIALIZATION_SCHEMA_VERSION: Final = 12
+MATERIALIZATION_SCHEMA_VERSION: Final = 13
 RUN_SENTINEL_SCHEMA_VERSION: Final = 2
 ASSET_REPORT_SCHEMA_VERSION: Final = 8
 VARIANT_REPORT_SCHEMA_VERSION: Final = 2

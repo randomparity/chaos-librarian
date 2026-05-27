@@ -129,6 +129,13 @@ class VideoResolutionSequence(enum.StrEnum):
     SD_TO_HD = "sd_to_hd"
 
 
+class Mp4MoovPlacement(enum.StrEnum):
+    """MP4 top-level moov atom placement requested at mux time."""
+
+    MOOV_AT_START = "moov_at_start"
+    MOOV_AT_END = "moov_at_end"
+
+
 class SubtitleMode(enum.StrEnum):
     """How a subtitle track is delivered."""
 
@@ -336,6 +343,7 @@ class Asset(BaseModel):
     role: str
     container: str
     duration_seconds: float
+    mp4_moov_placement: Mp4MoovPlacement | None = None
     video: VideoTrack | None = None
     audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
     subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
@@ -807,7 +815,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[19]
+    schema_version: Literal[20]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
