@@ -74,3 +74,61 @@ class TestRuleAssetPathSafety:
         collector = IssueCollector()
         run_semantic_pass(raw, empty_index, collector)
         assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+
+class TestRuleRemuxContainerSafe:
+    """remux_container.to_container must obey the initial-container constraint.
+
+    WHY: the projection state machine swaps the path extension to the raw
+    ``to_container`` with no validation. A target carrying path syntax escapes
+    containment for every later projection consumer, exactly like an unsafe
+    initial ``container`` would. The same constraint must guard both.
+    """
+
+    def _remux(self, to_container: object) -> dict[str, object]:
+        return {
+            "id": "e1",
+            "action": "remux_container",
+            "target": "a",
+            "to_container": to_container,
+        }
+
+    def test_traversal_target_flagged(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux("mp4/../../etc")])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        issues = [i for i in collector.issues if i.code == codes.E_PATH_CONTAINMENT]
+        assert any(i.path == "$.timeline[0].to_container" for i in issues)
+
+    def test_separator_target_flagged(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux("foo/bar")])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(
+            i.code == codes.E_PATH_CONTAINMENT and i.path == "$.timeline[0].to_container"
+            for i in collector.issues
+        )
+
+    def test_backslash_target_flagged(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux("foo\\bar")])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+    def test_embedded_dot_target_flagged(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux("tar.gz")])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+    def test_safe_target_passes(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux("mp4")])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)
+
+    def test_non_string_target_ignored(self, minimal_scenario, empty_index) -> None:
+        raw = minimal_scenario(timeline=[self._remux(123)])
+        collector = IssueCollector()
+        run_semantic_pass(raw, empty_index, collector)
+        assert not any(i.code == codes.E_PATH_CONTAINMENT for i in collector.issues)

@@ -13,7 +13,10 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.validation.rules._common import Rule
-from chaos_librarian.validation.rules.asset_path_safety import rule_asset_id_container_safe
+from chaos_librarian.validation.rules.asset_path_safety import (
+    rule_asset_id_container_safe,
+    rule_remux_container_safe,
+)
 from chaos_librarian.validation.rules.duration_syntax import rule_duration_syntax
 from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
@@ -71,6 +74,7 @@ _RULES: list[Rule] = [
     rule_timeline_lifecycle,
     rule_hierarchy_timeline,
     rule_asset_id_container_safe,
+    rule_remux_container_safe,
     rule_materialize_media_matrix,
     rule_media_action_compatible_with_parent,
     rule_sidecar_language_consistent,

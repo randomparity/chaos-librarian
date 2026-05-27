@@ -1,11 +1,13 @@
-"""Rule 9: E_PATH_CONTAINMENT on rendered initial asset paths."""
+"""Rule: E_PATH_CONTAINMENT on rendered initial asset paths and remux targets."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.path_rendering import (
+    clean_asset_container,
     clean_display_component,
     render_asset_path,
     render_declared_sidecar_path,
@@ -16,6 +18,7 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _as_list,
     _as_mapping,
+    _iter_timeline_events,
     _Loc,
     iter_asset_contexts,
     primary_root_path,
@@ -26,7 +29,7 @@ if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.pipeline import IssueCollector
 
-__all__ = ["rule_asset_id_container_safe"]
+__all__ = ["rule_asset_id_container_safe", "rule_remux_container_safe"]
 
 
 def rule_asset_id_container_safe(
@@ -55,6 +58,34 @@ def rule_asset_id_container_safe(
             )
             continue
         _check_declared_sidecar_paths(context.asset, context.asset_loc, media_path, reporter)
+
+
+def rule_remux_container_safe(
+    raw: Mapping[str, object],
+    line_index: LineIndex,
+    collector: IssueCollector,
+) -> None:
+    """Reject remux targets that make a projected path escape containment.
+
+    ``remux_container`` swaps an asset's path extension to ``to_container``;
+    the projection applies it verbatim. Hold it to the same constraint as an
+    initial ``container`` so a target carrying path syntax cannot escape.
+    """
+    reporter = Reporter(collector=collector, line_index=line_index)
+    for idx, event in _iter_timeline_events(raw):
+        if event.get("action") != TimelineActionName.REMUX_CONTAINER:
+            continue
+        to_container = event.get("to_container")
+        if not isinstance(to_container, str):
+            continue
+        try:
+            clean_asset_container(to_container)
+        except ValueError as error:
+            reporter.error(
+                code=E_PATH_CONTAINMENT,
+                message=f"remux_container target container is invalid: {error}",
+                loc=("timeline", idx, "to_container"),
+            )
 
 
 def _check_display_fields(context: RawAssetContext, reporter: Reporter) -> bool:

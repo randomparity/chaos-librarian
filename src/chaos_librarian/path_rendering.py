@@ -75,7 +75,7 @@ def render_declared_sidecar_path(media_path: str, language: str, *, codec: str =
     """Render the declared sidecar path next to the media stem."""
     media_path = _validate_relative_posix_path(media_path)
     language = clean_display_component(language)
-    codec = _clean_asset_container(codec)
+    codec = clean_asset_container(codec)
     directory, directory_separator, filename = media_path.rpartition("/")
     stem, separator, extension = filename.rpartition(".")
     if not separator or not extension:
@@ -122,11 +122,17 @@ def _filename(stem: str, ctx: RenderableAssetContext) -> str:
     role_suffix = ""
     if ctx.bundle_asset_count > 1:
         role_suffix = f" - {clean_display_component(ctx.asset_role)}"
-    container = _clean_asset_container(ctx.asset_container)
+    container = clean_asset_container(ctx.asset_container)
     return f"{stem} - {label}{role_suffix}.{container}"
 
 
-def _clean_asset_container(container: str) -> str:
+def clean_asset_container(container: str) -> str:
+    """Normalize a media container token or raise ValueError.
+
+    The token names a file extension ("mp4", "mkv"); it must carry no path
+    syntax. Shared by path rendering and the remux-target validation rule so
+    initial and remuxed containers obey one constraint.
+    """
     if any(char in container for char in (".", "/", "\\", "\x00")):
         raise ValueError("asset_container must not contain dot or path syntax")
     return clean_display_component(container)
