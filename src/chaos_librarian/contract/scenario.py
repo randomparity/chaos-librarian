@@ -190,16 +190,6 @@ class AudioChannelLayout(enum.StrEnum):
     SEVEN_ONE = "7.1"
 
 
-AUDIO_CHANNEL_COUNTS_BY_NAME: Final[dict[str, int]] = {
-    AudioChannelLayout.MONO.value: 1,
-    AudioChannelLayout.STEREO.value: 2,
-    AudioChannelLayout.TWO_ONE.value: 3,
-    AudioChannelLayout.FOUR_ZERO.value: 4,
-    AudioChannelLayout.LCR.value: 3,
-    AudioChannelLayout.FIVE_ONE.value: 6,
-    AudioChannelLayout.SIX_ONE.value: 7,
-    AudioChannelLayout.SEVEN_ONE.value: 8,
-}
 AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME: Final[dict[str, str]] = {
     AudioChannelLayout.MONO.value: "mono",
     AudioChannelLayout.STEREO.value: "stereo",
@@ -219,6 +209,9 @@ AUDIO_CHANNEL_ORDER_BY_NAME: Final[dict[str, tuple[str, ...]]] = {
     AudioChannelLayout.FIVE_ONE.value: ("FL", "FR", "FC", "LFE", "BL", "BR"),
     AudioChannelLayout.SIX_ONE.value: ("FL", "FR", "FC", "LFE", "BC", "SL", "SR"),
     AudioChannelLayout.SEVEN_ONE.value: ("FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR"),
+}
+AUDIO_CHANNEL_COUNTS_BY_NAME: Final[dict[str, int]] = {
+    name: len(order) for name, order in AUDIO_CHANNEL_ORDER_BY_NAME.items()
 }
 
 
