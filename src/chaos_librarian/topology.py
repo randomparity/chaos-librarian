@@ -10,23 +10,31 @@ from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     Album,
     Artist,
+    ArtistLayout,
     Asset,
     Bundle,
     Disc,
     Episode,
+    EpisodeNaming,
     Movie,
+    MovieLayout,
     Scenario,
     Season,
     Series,
+    SeriesLayout,
     Track,
+    TrackNaming,
     Variant,
 )
+from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.path_rendering import RenderableAssetContext
 
 __all__ = [
     "AssetContext",
     "asset_contexts_by_id",
     "asset_ids_under_target",
     "iter_asset_contexts",
+    "renderable_asset_context",
 ]
 
 
@@ -172,3 +180,52 @@ def asset_ids_under_target(
 def _context_matches_target(context: AssetContext, *, target_kind: str, target_id: str) -> bool:
     target = _TARGET_GETTERS[target_kind](context)
     return target is not None and target.id == target_id
+
+
+def renderable_asset_context(context: AssetContext, root_path: str) -> RenderableAssetContext:
+    """Convert a typed ``AssetContext`` plus ``root_path`` to a renderer input.
+
+    The single source of the ``AssetContext -> RenderableAssetContext`` field
+    copy, shared by engine initial-state and materializer synthesis so the two
+    cannot drift. Path shape itself stays owned by ``path_rendering``.
+    """
+    return RenderableAssetContext(
+        parent_kind=context.parent_kind,
+        root_path=root_path,
+        layout=_layout_for_context(context),
+        naming=_naming_for_context(context),
+        movie_title=context.movie.title if context.movie is not None else None,
+        series_title=context.series.title if context.series is not None else None,
+        season_number=context.season.season_number if context.season is not None else None,
+        episode_number=context.episode.episode_number if context.episode is not None else None,
+        episode_title=context.episode.title if context.episode is not None else None,
+        aired_on=context.episode.aired_on if context.episode is not None else None,
+        absolute_number=context.episode.absolute_number if context.episode is not None else None,
+        artist_name=context.artist.name if context.artist is not None else None,
+        album_title=context.album.title if context.album is not None else None,
+        disc_number=context.disc.disc_number if context.disc is not None else None,
+        track_number=context.track.track_number if context.track is not None else None,
+        track_title=context.track.title if context.track is not None else None,
+        variant_label=context.variant.label,
+        asset_role=context.asset.role,
+        asset_container=context.asset.container,
+        bundle_asset_count=context.bundle_asset_count,
+    )
+
+
+def _layout_for_context(context: AssetContext) -> MovieLayout | SeriesLayout | ArtistLayout:
+    if context.movie is not None:
+        return context.movie.layout
+    if context.series is not None:
+        return context.series.layout
+    if context.artist is not None:
+        return context.artist.layout
+    raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
+
+
+def _naming_for_context(context: AssetContext) -> EpisodeNaming | TrackNaming | None:
+    if context.series is not None:
+        return context.series.episode_naming
+    if context.artist is not None:
+        return context.artist.track_naming
+    return None
