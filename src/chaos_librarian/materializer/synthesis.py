@@ -19,15 +19,7 @@ from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
-from chaos_librarian.contract.scenario import (
-    ArtistLayout,
-    Asset,
-    EpisodeNaming,
-    MovieLayout,
-    Scenario,
-    SeriesLayout,
-    TrackNaming,
-)
+from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content_sources import (
@@ -72,12 +64,8 @@ from chaos_librarian.media_matrix import (
     RESOLUTION_SWITCH_VIDEO_RESOLUTION,
     RESOLUTION_SWITCH_VIDEO_SOURCE,
 )
-from chaos_librarian.path_rendering import (
-    RenderableAssetContext,
-    render_asset_path,
-    render_declared_sidecar_path,
-)
-from chaos_librarian.topology import AssetContext, iter_asset_contexts
+from chaos_librarian.path_rendering import render_asset_path, render_declared_sidecar_path
+from chaos_librarian.topology import iter_asset_contexts, renderable_asset_context
 
 __all__ = [
     "MaterializeAssetResult",
@@ -163,7 +151,7 @@ def materialize_assets_phase_a(
             caps,
             invocation_index,
             rendered_relative_path=render_asset_path(
-                _renderable_asset_context(context, primary_root_path)
+                renderable_asset_context(context, primary_root_path)
             ),
             skip_languages=skip_languages,
         )
@@ -797,52 +785,6 @@ def _resolve_media_inputs(asset: Asset, seed: int) -> _ResolvedMediaInputs:
         audio_inputs=tuple(audio_inputs),
         content_sources=tuple(content_sources),
     )
-
-
-def _renderable_asset_context(
-    context: AssetContext,
-    root_path: str,
-) -> RenderableAssetContext:
-    return RenderableAssetContext(
-        parent_kind=context.parent_kind,
-        root_path=root_path,
-        layout=_layout_for_context(context),
-        naming=_naming_for_context(context),
-        movie_title=context.movie.title if context.movie is not None else None,
-        series_title=context.series.title if context.series is not None else None,
-        season_number=context.season.season_number if context.season is not None else None,
-        episode_number=context.episode.episode_number if context.episode is not None else None,
-        episode_title=context.episode.title if context.episode is not None else None,
-        aired_on=context.episode.aired_on if context.episode is not None else None,
-        absolute_number=context.episode.absolute_number if context.episode is not None else None,
-        artist_name=context.artist.name if context.artist is not None else None,
-        album_title=context.album.title if context.album is not None else None,
-        disc_number=context.disc.disc_number if context.disc is not None else None,
-        track_number=context.track.track_number if context.track is not None else None,
-        track_title=context.track.title if context.track is not None else None,
-        variant_label=context.variant.label,
-        asset_role=context.asset.role,
-        asset_container=context.asset.container,
-        bundle_asset_count=context.bundle_asset_count,
-    )
-
-
-def _layout_for_context(context: AssetContext) -> MovieLayout | SeriesLayout | ArtistLayout:
-    if context.movie is not None:
-        return context.movie.layout
-    if context.series is not None:
-        return context.series.layout
-    if context.artist is not None:
-        return context.artist.layout
-    raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
-
-
-def _naming_for_context(context: AssetContext) -> EpisodeNaming | TrackNaming | None:
-    if context.series is not None:
-        return context.series.episode_naming
-    if context.artist is not None:
-        return context.artist.track_naming
-    return None
 
 
 def write_sidecars(
