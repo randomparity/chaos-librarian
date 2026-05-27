@@ -31,9 +31,12 @@ from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
     AUDIO_ENCODER_BY_CODEC,
+    AUDIO_SAMPLE_FORMATS_BY_CODEC,
     HEVC_VIDEO_CODECS,
+    MP3_SAMPLE_RATES,
     SUPPORTED_AUDIO_CODECS,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
+    SUPPORTED_AUDIO_SAMPLE_RATES,
     SUPPORTED_CONTAINERS,
     SUPPORTED_RESOLUTIONS,
     SUPPORTED_VIDEO_CODECS,
@@ -63,6 +66,7 @@ _CONTAINER_FROM_EXTENSION: Final[dict[str, str]] = {
     ".mkv": "mkv",
     ".mp3": "mp3",
     ".mp4": "mp4",
+    ".wav": "wav",
 }
 _X264_FIELD_ORDER_PARAMS: Final[dict[VideoFieldOrder, str]] = {
     VideoFieldOrder.TOP_FIELD_FIRST: "tff=1",
@@ -153,6 +157,8 @@ def _validate_audio(audios: Sequence[AudioTrack]) -> None:
     """Reject any audio track outside the codec matrix."""
     for index, audio in enumerate(audios):
         _require(audio.codec, SUPPORTED_AUDIO_CODECS, f"audio[{index}].codec")
+        _validate_audio_sample_rate(audio, field=f"audio[{index}].sample_rate")
+        _validate_audio_sample_format(audio, field=f"audio[{index}].sample_format")
 
 
 def _interlaced_video_args(video: VideoTrack) -> list[str]:
@@ -226,6 +232,26 @@ def _validate_audio_only(container: str, audios: Sequence[AudioTrack]) -> None:
     supported_codecs = SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER[container]
     for index, audio in enumerate(audios):
         _require(audio.codec, supported_codecs, f"audio[{index}].codec")
+        _validate_audio_sample_rate(audio, field=f"audio[{index}].sample_rate")
+        _validate_audio_sample_format(audio, field=f"audio[{index}].sample_format")
+
+
+def _validate_audio_sample_rate(audio: AudioTrack, *, field: str) -> None:
+    supported_rates = MP3_SAMPLE_RATES if audio.codec == "mp3" else SUPPORTED_AUDIO_SAMPLE_RATES
+    _require(audio.sample_rate, supported_rates, field)
+
+
+def _validate_audio_sample_format(audio: AudioTrack, *, field: str) -> None:
+    if audio.sample_format is None:
+        return
+    supported_formats = AUDIO_SAMPLE_FORMATS_BY_CODEC.get(audio.codec)
+    if supported_formats is None:
+        raise UnsupportedMaterializationError(
+            f"{field}={audio.sample_format.value!r} is not supported for codec {audio.codec!r}",
+            field=field,
+            payload={"supported": []},
+        )
+    _require(audio.sample_format.value, supported_formats, field)
 
 
 def _require_audio_only_track_counts(

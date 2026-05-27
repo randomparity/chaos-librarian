@@ -50,6 +50,7 @@ def _render_capabilities_human(caps: Capabilities) -> None:
         "  materialize_resolution_switch_video: "
         f"{caps.ready_for.materialize_resolution_switch_video}"
     )
+    typer.echo(f"  materialize_audio_recipes:        {caps.ready_for.materialize_audio_recipes}")
     typer.echo("content_sources:")
     for provider in caps.content_sources.providers:
         status = "OK" if provider.available else "UNAVAILABLE"

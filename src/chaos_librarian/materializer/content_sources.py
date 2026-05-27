@@ -16,6 +16,8 @@ from chaos_librarian.contract.content_sources import (
     ContentTrackKind,
 )
 from chaos_librarian.contract.scenario import (
+    AudioNoiseColor,
+    AudioSampleFormat,
     AudioSource,
     VideoColorRange,
     VideoColorSpace,
@@ -34,10 +36,12 @@ from chaos_librarian.materializer.tooling.recipes import (
     recipe_channel_tones,
     recipe_color_bars,
     recipe_mandelbrot,
+    recipe_noise,
     recipe_silence,
     recipe_sine,
     recipe_solid_color,
 )
+from chaos_librarian.media_matrix import SUPPORTED_AUDIO_SAMPLE_RATES
 
 FPS_DEFAULT: Final = 24
 RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
@@ -59,7 +63,17 @@ AUDIO_RECIPES: Final[dict[AudioSource, AudioRecipe]] = {
     AudioSource.SINE: recipe_sine,
     AudioSource.SILENCE: recipe_silence,
     AudioSource.CHANNEL_TONES: recipe_channel_tones,
+    AudioSource.NOISE: recipe_noise,
 }
+AUDIO_NOISE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"audio:noise:{color.value}" for color in AudioNoiseColor
+)
+AUDIO_SAMPLE_RATE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"audio:sample_rate:{rate}" for rate in SUPPORTED_AUDIO_SAMPLE_RATES
+)
+AUDIO_SAMPLE_FORMAT_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"audio:sample_format:{sample_format.value}" for sample_format in AudioSampleFormat
+)
 VFR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
     f"video:vfr:{cadence.value}" for cadence in VideoVfrCadence
 )
@@ -104,6 +118,9 @@ class AudioSourceRequest:
     seed: int
     duration_s: float
     channels: str
+    noise_color: AudioNoiseColor | None = None
+    sample_rate: int = 48000
+    sample_format: AudioSampleFormat | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,6 +168,7 @@ class ContentSourceProvider(Protocol):
         ffmpeg_available: bool,
         hdr_available: bool,
         resolution_sequence_available: bool,
+        audio_recipes_available: bool,
     ) -> ContentSourceProviderCapability:
         """Report provider capability for the current host."""
 
@@ -246,6 +264,9 @@ class _BuiltinLavfiProvider:
             channels=request.channels,
             duration_s=request.duration_s,
             seed=request.seed,
+            noise_color=request.noise_color,
+            sample_rate=request.sample_rate,
+            sample_format=request.sample_format,
         )
 
     def capability(
@@ -254,15 +275,32 @@ class _BuiltinLavfiProvider:
         ffmpeg_available: bool,
         hdr_available: bool,
         resolution_sequence_available: bool,
+        audio_recipes_available: bool,
     ) -> ContentSourceProviderCapability:
         hdr_sources = HDR_CAPABILITY_SOURCES if hdr_available else ()
         resolution_sequence_sources = (
             RESOLUTION_SEQUENCE_CAPABILITY_SOURCES if resolution_sequence_available else ()
         )
+        audio_sources = [
+            f"audio:{source.value}"
+            for source in self.audio_source_keys
+            if source is not AudioSource.NOISE
+        ]
+        audio_recipe_sources = (
+            (
+                f"audio:{AudioSource.NOISE.value}",
+                *AUDIO_NOISE_CAPABILITY_SOURCES,
+                *AUDIO_SAMPLE_RATE_CAPABILITY_SOURCES,
+                *AUDIO_SAMPLE_FORMAT_CAPABILITY_SOURCES,
+            )
+            if audio_recipes_available
+            else ()
+        )
         return _builtin_capability(
             ffmpeg_available=ffmpeg_available,
             sources=[
-                *(f"audio:{source.value}" for source in self.audio_source_keys),
+                *audio_sources,
+                *audio_recipe_sources,
                 *(f"video:{source.value}" for source in self.video_source_keys),
                 *VFR_CAPABILITY_SOURCES,
                 *INTERLACED_CAPABILITY_SOURCES,
@@ -328,6 +366,7 @@ def collect_content_source_capabilities(
     *,
     hdr_available: bool = False,
     resolution_sequence_available: bool = False,
+    audio_recipes_available: bool = False,
 ) -> ContentSourceCapabilities:
     """Collect content-source capabilities for all registered providers."""
     return ContentSourceCapabilities(
@@ -336,6 +375,7 @@ def collect_content_source_capabilities(
                 ffmpeg_available=ffmpeg_available,
                 hdr_available=hdr_available,
                 resolution_sequence_available=resolution_sequence_available,
+                audio_recipes_available=audio_recipes_available,
             )
         ],
     )
@@ -364,6 +404,9 @@ def _builtin_evidence(
         resolution_sequence=(
             request.resolution_sequence if isinstance(request, VideoSourceRequest) else None
         ),
+        noise_color=(request.noise_color if isinstance(request, AudioSourceRequest) else None),
+        sample_rate=(request.sample_rate if isinstance(request, AudioSourceRequest) else None),
+        sample_format=(request.sample_format if isinstance(request, AudioSourceRequest) else None),
         track_index=request.track_index,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
@@ -452,6 +495,11 @@ def _request_payload(
                 "height": None,
                 "fps": None,
                 "channels": request.channels,
+                "noise_color": None if request.noise_color is None else request.noise_color.value,
+                "sample_rate": request.sample_rate,
+                "sample_format": None
+                if request.sample_format is None
+                else request.sample_format.value,
             }
         )
     return payload

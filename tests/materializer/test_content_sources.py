@@ -11,6 +11,8 @@ from chaos_librarian.contract.content_sources import (
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
+    AudioNoiseColor,
+    AudioSampleFormat,
     AudioSource,
     AudioTrack,
     VideoColorRange,
@@ -61,13 +63,21 @@ def _video_request(
     )
 
 
-def _audio_request() -> AudioSourceRequest:
+def _audio_request(
+    *,
+    noise_color: AudioNoiseColor | None = None,
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
+) -> AudioSourceRequest:
     return AudioSourceRequest(
         asset_id="asset_main",
         track_index=0,
         seed=42,
         duration_s=2.0,
         channels="stereo",
+        noise_color=noise_color,
+        sample_rate=sample_rate,
+        sample_format=sample_format,
     )
 
 
@@ -109,6 +119,38 @@ def test_resolve_video_source_returns_input_and_evidence() -> None:
     assert resolution.evidence.asset_id == "asset_main"
     assert resolution.evidence.provider == "builtin-lavfi"
     assert resolution.evidence.cache_disposition == CacheDisposition.NOT_CACHEABLE
+
+
+def test_resolve_audio_source_records_recipe_parameters() -> None:
+    resolution = resolve_audio_source(
+        source=AudioSource.NOISE,
+        request=_audio_request(
+            noise_color=AudioNoiseColor.PINK,
+            sample_rate=88200,
+            sample_format=AudioSampleFormat.S24,
+        ),
+    )
+
+    assert resolution.evidence.track_kind is ContentTrackKind.AUDIO
+    assert resolution.evidence.source == "noise"
+    assert resolution.evidence.noise_color is AudioNoiseColor.PINK
+    assert resolution.evidence.sample_rate == 88200
+    assert resolution.evidence.sample_format is AudioSampleFormat.S24
+
+
+def test_audio_recipe_parameters_change_digest() -> None:
+    default = resolve_audio_source(source=AudioSource.SINE, request=_audio_request())
+    rate_changed = resolve_audio_source(
+        source=AudioSource.SINE,
+        request=_audio_request(sample_rate=96000),
+    )
+    format_changed = resolve_audio_source(
+        source=AudioSource.SINE,
+        request=_audio_request(sample_format=AudioSampleFormat.S16),
+    )
+
+    assert rate_changed.evidence.recipe_digest != default.evidence.recipe_digest
+    assert format_changed.evidence.recipe_digest != default.evidence.recipe_digest
 
 
 def test_resolve_video_source_digest_changes_with_recipe_output(
@@ -371,11 +413,25 @@ def test_collect_content_source_capabilities_omits_resolution_sequence_when_unav
     assert "video:resolution_sequence:sd_to_hd" not in provider.sources
 
 
+def test_collect_content_source_capabilities_omits_audio_recipe_markers_when_unavailable() -> None:
+    capabilities = collect_content_source_capabilities(
+        ffmpeg_available=True,
+        audio_recipes_available=False,
+    )
+
+    provider = capabilities.providers[0]
+    assert "audio:noise" not in provider.sources
+    assert "audio:noise:pink" not in provider.sources
+    assert "audio:sample_rate:96000" not in provider.sources
+    assert "audio:sample_format:flt" not in provider.sources
+
+
 def test_collect_content_source_capabilities_reports_registered_source_union() -> None:
     capabilities = collect_content_source_capabilities(
         ffmpeg_available=True,
         hdr_available=True,
         resolution_sequence_available=True,
+        audio_recipes_available=True,
     )
 
     assert len(capabilities.providers) == 1
@@ -383,6 +439,19 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
     assert provider.name == "builtin-lavfi"
     assert provider.sources == (
         "audio:channel_tones",
+        "audio:noise",
+        "audio:noise:brown",
+        "audio:noise:pink",
+        "audio:noise:white",
+        "audio:sample_format:flt",
+        "audio:sample_format:s16",
+        "audio:sample_format:s24",
+        "audio:sample_rate:22050",
+        "audio:sample_rate:44100",
+        "audio:sample_rate:48000",
+        "audio:sample_rate:8000",
+        "audio:sample_rate:88200",
+        "audio:sample_rate:96000",
         "audio:silence",
         "audio:sine",
         "video:color_bars",

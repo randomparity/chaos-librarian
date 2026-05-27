@@ -318,6 +318,53 @@ def test_materialize_resolution_switch_video_reports_frame_dimensions(tmp_path: 
     assert replay["content_sources"][0]["resolution_sequence"] == "sd_to_hd"
 
 
+def test_materialize_audio_noise_recipes_report_probe_and_evidence(tmp_path: Path) -> None:
+    """WHY: #134 needs generated audio recipe parameters to survive both
+    real media probing and content-source replay evidence."""
+    caps = detect_capabilities()
+    if not caps.ready_for.materialize_audio_recipes:
+        pytest.skip("FFmpeg anoisesrc audio recipe support not available")
+    out = tmp_path / "audio-noise"
+    result = runner.invoke(
+        app,
+        [
+            "materialize",
+            str(FIXTURE_DIR / "audio-noise-recipes.yaml"),
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+
+    manifest = Manifest.model_validate_json((out / "manifest.current.json").read_text())
+    library_root = out / "library"
+    location_by_asset = {location.asset_id: location.path for location in manifest.locations}
+    version_by_asset = {version.asset_id: version for version in manifest.versions}
+    expected = {
+        "asset_noise_flac": ("flac", 44100, "s16", None),
+        "asset_noise_wav": ("pcm_f32le", 96000, "flt", None),
+        "asset_noise_mp3": ("mp3", 22050, None, None),
+        "asset_noise_wav24": ("pcm_s24le", 88200, "s32", 24),
+    }
+    for asset_id, (codec, sample_rate, sample_format, bit_depth) in expected.items():
+        version = version_by_asset[asset_id]
+        assert version.probed is not None
+        audio_stream = next(stream for stream in version.probed.streams if stream.kind == "audio")
+        assert audio_stream.codec == codec
+        assert audio_stream.sample_rate == sample_rate
+        raw_metadata = _audio_stream_metadata(library_root / location_by_asset[asset_id])
+        if sample_format is not None:
+            assert raw_metadata["sample_fmt"] == sample_format
+        if bit_depth is not None:
+            assert raw_metadata["bits_per_sample"] == bit_depth
+
+    materialization = json.loads((out / "materialization.json").read_text())
+    replay = json.loads((out / "replay.json").read_text())
+    _assert_audio_recipe_evidence(materialization["content_sources"])
+    _assert_audio_recipe_evidence(replay["content_sources"])
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -331,6 +378,47 @@ def test_capabilities_real() -> None:
     )
     assert completed.returncode == 0, completed.stderr
     Capabilities.model_validate_json(completed.stdout)
+
+
+def _assert_audio_recipe_evidence(content_sources: list[dict[str, object]]) -> None:
+    evidence_by_asset = {str(evidence["asset_id"]): evidence for evidence in content_sources}
+    expected = {
+        "asset_noise_flac": ("white", 44100, "s16"),
+        "asset_noise_wav": ("pink", 96000, "flt"),
+        "asset_noise_mp3": ("brown", 22050, None),
+        "asset_noise_wav24": ("brown", 88200, "s24"),
+    }
+    for asset_id, (noise_color, sample_rate, sample_format) in expected.items():
+        evidence = evidence_by_asset[asset_id]
+        assert evidence["source"] == "noise"
+        assert evidence["noise_color"] == noise_color
+        assert evidence["sample_rate"] == sample_rate
+        assert evidence.get("sample_format") == sample_format
+
+
+def _audio_stream_metadata(path: Path) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "stream=codec_name,sample_rate,sample_fmt,bits_per_sample",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    return payload["streams"][0]
 
 
 def _video_packet_deltas(path: Path) -> list[int]:

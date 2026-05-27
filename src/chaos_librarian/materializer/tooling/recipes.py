@@ -15,6 +15,8 @@ from typing import Final
 
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
+    AudioNoiseColor,
+    AudioSampleFormat,
     VideoFieldOrder,
     VideoVfrCadence,
 )
@@ -140,6 +142,11 @@ def _select_expression(*, mods: tuple[int, ...], segment_s: float) -> str:
 _CHANNEL_COUNTS = AUDIO_CHANNEL_COUNTS_BY_NAME
 # Distinct base frequencies; all stay below the 48 kHz sample rate's Nyquist limit.
 _CHANNEL_TONE_BASE = (220, 440, 880, 1760, 3520, 7040, 10560, 14080)
+_FFMPEG_SAMPLE_FORMATS: Final[dict[AudioSampleFormat, str]] = {
+    AudioSampleFormat.S16: "s16",
+    AudioSampleFormat.S24: "s32",
+    AudioSampleFormat.FLT: "flt",
+}
 
 
 def _frequency_from_seed(seed: int) -> int:
@@ -147,46 +154,105 @@ def _frequency_from_seed(seed: int) -> int:
     return 100 + (abs(seed) % 901)
 
 
-def recipe_sine(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+def recipe_sine(
+    *,
+    channels: str,
+    duration_s: float,
+    seed: int,
+    noise_color: AudioNoiseColor | None = None,
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
+) -> FFmpegInput:
     """A single sine tone — frequency derived from seed; channel layout
     set via the lavfi source so the muxer sees the right channel count."""
-    del channels  # sine is mono-by-construction; ffmpeg upmixes via the muxer
+    del channels, noise_color  # sine is mono-by-construction; ffmpeg upmixes later
     freq = _frequency_from_seed(seed)
     return FFmpegInput(
-        lavfi=f"sine=frequency={freq}:duration={duration_s}:sample_rate=48000",
+        lavfi=_apply_audio_sample_format(
+            f"sine=frequency={freq}:duration={duration_s}:sample_rate={sample_rate}",
+            sample_format,
+        ),
         extra_flags=(),
     )
 
 
-def recipe_silence(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+def recipe_silence(
+    *,
+    channels: str,
+    duration_s: float,
+    seed: int,
+    noise_color: AudioNoiseColor | None = None,
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
+) -> FFmpegInput:
     """anullsrc — zero-amplitude audio at the requested channel layout."""
-    del seed  # silence is fully determined by channels + duration
+    del seed, noise_color  # silence is fully determined by channels + duration/rate
     return FFmpegInput(
-        lavfi=f"anullsrc=channel_layout={channels}:sample_rate=48000",
+        lavfi=_apply_audio_sample_format(
+            f"anullsrc=channel_layout={channels}:sample_rate={sample_rate}",
+            sample_format,
+        ),
         extra_flags=("-t", str(duration_s)),
     )
 
 
-def recipe_channel_tones(*, channels: str, duration_s: float, seed: int) -> FFmpegInput:
+def recipe_channel_tones(
+    *,
+    channels: str,
+    duration_s: float,
+    seed: int,
+    noise_color: AudioNoiseColor | None = None,
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
+) -> FFmpegInput:
     """One distinct sine frequency per channel — debugging signal.
 
     Frequencies start from the seed-derived base and double per channel.
     Multi-channel layouts build a filtergraph with one sine source per
     channel linked into ``amerge=inputs=N``.
     """
+    del noise_color
     count = _CHANNEL_COUNTS[channels]
     base_index = abs(seed) % len(_CHANNEL_TONE_BASE)
     sources: list[str] = []
     for offset in range(count):
         freq = _CHANNEL_TONE_BASE[(base_index + offset) % len(_CHANNEL_TONE_BASE)]
-        sources.append(f"sine=frequency={freq}:duration={duration_s}:sample_rate=48000")
+        sources.append(f"sine=frequency={freq}:duration={duration_s}:sample_rate={sample_rate}")
     if count == 1:
         lavfi = sources[0]
     else:
         labeled = [f"{src}[a{i}]" for i, src in enumerate(sources)]
         merge_inputs = "".join(f"[a{i}]" for i in range(count))
         lavfi = ";".join([*labeled, f"{merge_inputs}amerge=inputs={count}"])
-    return FFmpegInput(lavfi=lavfi, extra_flags=())
+    return FFmpegInput(lavfi=_apply_audio_sample_format(lavfi, sample_format), extra_flags=())
+
+
+def recipe_noise(
+    *,
+    channels: str,
+    duration_s: float,
+    seed: int,
+    noise_color: AudioNoiseColor | None = None,
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
+) -> FFmpegInput:
+    """Seeded anoisesrc using the requested noise color."""
+    del channels
+    color = AudioNoiseColor.WHITE if noise_color is None else noise_color
+    lavfi = (
+        f"anoisesrc=color={color.value}:duration={duration_s}:"
+        f"sample_rate={sample_rate}:seed={abs(seed)}"
+    )
+    return FFmpegInput(lavfi=_apply_audio_sample_format(lavfi, sample_format), extra_flags=())
+
+
+def _apply_audio_sample_format(
+    lavfi: str,
+    sample_format: AudioSampleFormat | None,
+) -> str:
+    if sample_format is None:
+        return lavfi
+    return f"{lavfi},aformat=sample_fmts={_FFMPEG_SAMPLE_FORMATS[sample_format]}"
 
 
 def _srt_timestamp(seconds: float) -> str:

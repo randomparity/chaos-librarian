@@ -27,9 +27,24 @@ class ResolutionSwitchCase:
     hdr_mode: str | None = None
 
 
-def _write_track_scenario(path: Path, *, container: str, codec: str) -> None:
+def _write_track_scenario(
+    path: Path,
+    *,
+    container: str,
+    codec: str,
+    source: str = "sine",
+    noise_color: str | None = None,
+    sample_rate: int = 48000,
+    sample_format: str | None = None,
+) -> None:
+    noise_color_line = (
+        f"                              noise_color: {noise_color}\n" if noise_color else ""
+    )
+    sample_format_line = (
+        f"                              sample_format: {sample_format}\n" if sample_format else ""
+    )
     path.write_text(
-        f"""schema_version: 17
+        f"""schema_version: 18
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -68,10 +83,13 @@ artists:
                           container: {container}
                           duration_seconds: 2.0
                           audio:
-                            - source: sine
+                            - source: {source}
+{noise_color_line.rstrip()}
                               codec: {codec}
                               channels: stereo
                               language: eng
+                              sample_rate: {sample_rate}
+{sample_format_line.rstrip()}
 timeline: []
 """,
         encoding="utf-8",
@@ -97,7 +115,7 @@ def _write_movie_scenario(
     color_range_line = f"                color_range: {color_range}\n" if color_range else ""
     hdr_mode_line = f"                hdr_mode: {hdr_mode}\n" if hdr_mode else ""
     path.write_text(
-        f"""schema_version: 17
+        f"""schema_version: 18
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -190,7 +208,7 @@ def _write_resolution_switch_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 17
+        f"""schema_version: 18
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -385,7 +403,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 17
+        """schema_version: 18
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -616,3 +634,52 @@ def test_audio_only_m4a_track_validates_clean(tmp_path: Path) -> None:
 
     assert report.ok is True
     assert report.issues == []
+
+
+def test_audio_only_noise_wav_pcm_float_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "track-noise-wav.yaml"
+    _write_track_scenario(
+        scenario,
+        container="wav",
+        codec="pcm_f32le",
+        source="noise",
+        noise_color="pink",
+        sample_rate=96000,
+        sample_format="flt",
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+@pytest.mark.parametrize(
+    ("container", "codec", "sample_rate", "sample_format", "field_suffix"),
+    [
+        ("mp3", "mp3", 96000, None, ".audio[0].sample_rate"),
+        ("m4a", "aac", 48000, "s16", ".audio[0].sample_format"),
+        ("flac", "flac", 48000, "flt", ".audio[0].sample_format"),
+        ("wav", "pcm_s16le", 48000, "flt", ".audio[0].sample_format"),
+    ],
+)
+def test_audio_only_rejects_unsupported_sample_rate_or_format(
+    tmp_path: Path,
+    container: str,
+    codec: str,
+    sample_rate: int,
+    sample_format: str | None,
+    field_suffix: str,
+) -> None:
+    scenario = tmp_path / f"track-{container}-{codec}.yaml"
+    _write_track_scenario(
+        scenario,
+        container=container,
+        codec=codec,
+        sample_rate=sample_rate,
+        sample_format=sample_format,
+    )
+
+    issue_path = _first_materialize_issue_path(scenario)
+
+    assert issue_path.endswith(field_suffix)

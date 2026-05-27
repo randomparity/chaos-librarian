@@ -55,6 +55,7 @@ def test_capabilities_round_trip():
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     payload = caps.model_dump_json(indent=2, exclude_none=True)
@@ -87,6 +88,7 @@ def test_capabilities_schema_version_pinned():
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ).model_dump(),
     }
     with pytest.raises(ValidationError):
@@ -121,6 +123,19 @@ def test_ready_for_requires_resolution_switch_video_flag() -> None:
         "materialize_media_mutations": True,
         "materialize_hevc_video": True,
         "materialize_hdr_video": True,
+    }
+    with pytest.raises(ValidationError):
+        ReadyFor.model_validate(payload)
+
+
+def test_ready_for_requires_audio_recipes_flag() -> None:
+    payload = {
+        "materialize_static": True,
+        "materialize_filesystem_mutations": True,
+        "materialize_media_mutations": True,
+        "materialize_hevc_video": True,
+        "materialize_hdr_video": True,
+        "materialize_resolution_switch_video": True,
     }
     with pytest.raises(ValidationError):
         ReadyFor.model_validate(payload)

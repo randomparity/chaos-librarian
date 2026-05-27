@@ -1,5 +1,5 @@
 # expected: E_PROFILE_REQUIRED
-schema_version: 17
+schema_version: 18
 scenario_id: truncate-file-missing-profile
 seed: 42
 duration_scale: short

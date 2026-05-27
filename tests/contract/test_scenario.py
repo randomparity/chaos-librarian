@@ -181,7 +181,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v17_payload() -> None:
+def test_movie_only_scenario_v18_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -194,7 +194,7 @@ def test_movie_only_scenario_v17_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 17
+    assert scenario.schema_version == 18
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -494,6 +494,56 @@ def test_audio_track_source_defaults_to_sine() -> None:
     track = AudioTrack.model_validate({"codec": "aac", "channels": "stereo", "language": "eng"})
     assert track.source is AudioSource.SINE
     assert track.channels is AudioChannelLayout.STEREO
+    assert track.sample_rate == 48000
+    assert track.sample_format is None
+    assert track.noise_color is None
+
+
+def test_audio_noise_and_sample_format_enum_values() -> None:
+    assert AudioSource.NOISE.value == "noise"
+    assert scenario_contract.AudioNoiseColor.WHITE.value == "white"
+    assert scenario_contract.AudioNoiseColor.PINK.value == "pink"
+    assert scenario_contract.AudioNoiseColor.BROWN.value == "brown"
+    assert scenario_contract.AudioSampleFormat.S16.value == "s16"
+    assert scenario_contract.AudioSampleFormat.S24.value == "s24"
+    assert scenario_contract.AudioSampleFormat.FLT.value == "flt"
+
+
+def test_audio_track_accepts_noise_recipe_parameters() -> None:
+    track = AudioTrack.model_validate(
+        {
+            "source": "noise",
+            "noise_color": "pink",
+            "codec": "flac",
+            "channels": "stereo",
+            "language": "eng",
+            "sample_rate": 96000,
+            "sample_format": "s24",
+        }
+    )
+
+    assert track.source is AudioSource.NOISE
+    assert track.noise_color is scenario_contract.AudioNoiseColor.PINK
+    assert track.sample_rate == 96000
+    assert track.sample_format is scenario_contract.AudioSampleFormat.S24
+
+
+def test_audio_track_noise_requires_noise_color() -> None:
+    payload = {"source": "noise", "codec": "flac", "channels": "stereo", "language": "eng"}
+    with pytest.raises(ValidationError):
+        AudioTrack.model_validate(payload)
+
+
+def test_audio_track_noise_color_requires_noise_source() -> None:
+    payload = {
+        "source": "sine",
+        "noise_color": "white",
+        "codec": "flac",
+        "channels": "stereo",
+        "language": "eng",
+    }
+    with pytest.raises(ValidationError):
+        AudioTrack.model_validate(payload)
 
 
 def test_audio_channel_layout_enum_values() -> None:
@@ -764,8 +814,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_seventeen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 17
+def test_scenario_schema_version_is_eighteen() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 18
 
 
 def test_scenario_accepts_profile_labels() -> None:

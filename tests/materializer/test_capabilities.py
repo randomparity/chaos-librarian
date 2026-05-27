@@ -27,8 +27,9 @@ OLD_FFMPEG: Final = "ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg dev
 ENCODERS_WITH_X265: Final = "Encoders:\n V....D libx264\n V....D libx265"
 ENCODERS_WITHOUT_X265: Final = "Encoders:\n V....D libx264"
 ENCODERS_WITHOUT_X264: Final = "Encoders:\n V....D libx265"
-FILTERS_WITH_SETPARAMS: Final = "Filters:\n .. setparams         V->V"
+FILTERS_WITH_SETPARAMS: Final = "Filters:\n .. setparams         V->V\n .. anoisesrc         |->A"
 FILTERS_WITHOUT_SETPARAMS: Final = "Filters:\n TS colorspace        V->V"
+FILTERS_WITHOUT_ANOISESRC: Final = "Filters:\n .. setparams         V->V"
 X265_HELP_10BIT: Final = "Supported pixel formats: yuv420p yuv420p10le"
 X265_HELP_8BIT: Final = "Supported pixel formats: yuv420p"
 
@@ -128,12 +129,17 @@ def test_detect_capabilities_all_present_above_minimum(
     assert caps.ready_for.materialize_hevc_video
     assert caps.ready_for.materialize_hdr_video
     assert caps.ready_for.materialize_resolution_switch_video
+    assert caps.ready_for.materialize_audio_recipes
     provider = caps.content_sources.providers[0]
     assert provider.name == "builtin-lavfi"
     assert provider.available
     assert "video:color_bars" in provider.sources
     assert "video:hdr:hdr10" in provider.sources
     assert "video:resolution_sequence:sd_to_hd" in provider.sources
+    assert "audio:noise" in provider.sources
+    assert "audio:noise:pink" in provider.sources
+    assert "audio:sample_rate:96000" in provider.sources
+    assert "audio:sample_format:flt" in provider.sources
 
 
 def test_detect_capabilities_requires_libx265_for_hevc_video(
@@ -190,6 +196,38 @@ def test_detect_capabilities_requires_libx264_for_resolution_switch_video(
     assert caps.ready_for.materialize_static
     assert not caps.ready_for.materialize_resolution_switch_video
     assert "video:resolution_sequence:sd_to_hd" not in caps.content_sources.providers[0].sources
+
+
+def test_detect_capabilities_requires_anoisesrc_for_audio_recipes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which({"ffmpeg": "/usr/bin/ffmpeg", "ffprobe": "/usr/bin/ffprobe"}),
+    )
+    monkeypatch.setattr(
+        cap_mod.subprocess,
+        "run",
+        _stub_subprocess_run(
+            {
+                "ffmpeg": OK_FFMPEG,
+                "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-filters": FILTERS_WITHOUT_ANOISESRC,
+                "ffmpeg-libx265-help": X265_HELP_10BIT,
+                "ffprobe": OK_FFPROBE,
+            }
+        ),
+    )
+    caps = detect_capabilities()
+    provider = caps.content_sources.providers[0]
+
+    assert caps.ready_for.materialize_static
+    assert not caps.ready_for.materialize_audio_recipes
+    assert "audio:noise" not in provider.sources
+    assert "audio:noise:pink" not in provider.sources
+    assert "audio:sample_rate:96000" not in provider.sources
+    assert "audio:sample_format:flt" not in provider.sources
 
 
 def test_detect_capabilities_requires_setparams_for_hdr_video(
@@ -332,7 +370,7 @@ def test_detect_capabilities_ffmpeg_missing_marks_content_sources_unavailable(
 
 def test_assert_capable_raises_on_regression() -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=False, meets_minimum=False),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -345,6 +383,7 @@ def test_assert_capable_raises_on_regression() -> None:
             materialize_hevc_video=False,
             materialize_hdr_video=False,
             materialize_resolution_switch_video=False,
+            materialize_audio_recipes=False,
         ),
     )
     with pytest.raises(CapabilityGateError):

@@ -26,6 +26,7 @@ from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_mate
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.capability_gates import (
+    assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
     assert_capable_for_resolution_switch_video,
 )
@@ -134,6 +135,7 @@ def _materialize_verified_run_prefix(
     preflight_timeline(scenario, allow_network_lag=True)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
+    assert_capable_for_audio_recipes(scenario, caps)
     assert_capable_for_resolution_switch_video(scenario, caps)
     assert_capable_for_hdr_video(scenario, caps)
     for context in iter_asset_contexts(scenario):

@@ -265,7 +265,14 @@ def _preflight_track_asset(
             field="audio[0].codec",
             payload={"supported": sorted(supported_codecs)},
         )
-    _preflight_audio_inputs(audios)
+    audio_inputs = _preflight_audio_inputs(audios)
+    build_command(
+        video=None,
+        video_input=None,
+        audios=audios,
+        audio_inputs=audio_inputs,
+        output_path=Path(f"preflight.{container}"),
+    )
 
 
 def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
@@ -280,6 +287,9 @@ def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
                 seed=0,
                 duration_s=1.0,
                 channels=audio.channels.value,
+                noise_color=audio.noise_color,
+                sample_rate=audio.sample_rate,
+                sample_format=audio.sample_format,
             ),
         )
         inputs.append(audio_input)

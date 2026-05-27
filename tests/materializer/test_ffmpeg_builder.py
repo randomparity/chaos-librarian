@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal, cast
 
 import pytest
 
 from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
+    AudioSampleFormat,
     AudioSource,
     AudioTrack,
     VideoColorRange,
@@ -29,6 +31,8 @@ from chaos_librarian.materializer.tooling.recipes import (
     recipe_color_bars,
     recipe_sine,
 )
+
+AudioSampleRate = Literal[8000, 22050, 44100, 48000, 88200, 96000]
 
 
 def _video(
@@ -54,8 +58,17 @@ def _audio(
     channels: AudioChannelLayout = AudioChannelLayout.STEREO,
     *,
     codec: str = "aac",
+    sample_rate: int = 48000,
+    sample_format: AudioSampleFormat | None = None,
 ) -> AudioTrack:
-    return AudioTrack(source=AudioSource.SINE, codec=codec, channels=channels, language="eng")
+    return AudioTrack(
+        source=AudioSource.SINE,
+        codec=codec,
+        channels=channels,
+        language="eng",
+        sample_rate=cast("AudioSampleRate", sample_rate),
+        sample_format=sample_format,
+    )
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4"])
@@ -371,19 +384,37 @@ def test_build_command_maps_multiple_audio_inputs_explicitly(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
-    ("container", "codec", "encoder"),
-    [("flac", "flac", "flac"), ("mp3", "mp3", "libmp3lame"), ("m4a", "aac", "aac")],
+    ("container", "codec", "sample_format", "encoder"),
+    [
+        ("flac", "flac", AudioSampleFormat.S24, "flac"),
+        ("mp3", "mp3", None, "libmp3lame"),
+        ("m4a", "aac", None, "aac"),
+        ("wav", "pcm_s16le", AudioSampleFormat.S16, "pcm_s16le"),
+        ("wav", "pcm_s24le", AudioSampleFormat.S24, "pcm_s24le"),
+        ("wav", "pcm_f32le", AudioSampleFormat.FLT, "pcm_f32le"),
+    ],
 )
 def test_audio_only_command_maps_audio_without_video_codec(
-    container: str, codec: str, encoder: str, tmp_path: Path
+    container: str,
+    codec: str,
+    sample_format: AudioSampleFormat | None,
+    encoder: str,
+    tmp_path: Path,
 ) -> None:
     output = tmp_path / f"asset.{container}"
 
     argv = build_command(
         video=None,
         video_input=None,
-        audios=[_audio(codec=codec)],
-        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        audios=[_audio(codec=codec, sample_format=sample_format)],
+        audio_inputs=[
+            recipe_sine(
+                channels="stereo",
+                duration_s=1.0,
+                seed=1,
+                sample_format=sample_format,
+            )
+        ],
         output_path=output,
     )
 
@@ -438,6 +469,49 @@ def test_audio_only_command_rejects_wrong_codec_for_container(tmp_path: Path) ->
         )
 
     assert exc.value.field == "audio[0].codec"
+
+
+@pytest.mark.parametrize(
+    ("container", "codec", "sample_rate", "sample_format", "field"),
+    [
+        ("mp3", "mp3", 96000, None, "audio[0].sample_rate"),
+        ("m4a", "aac", 48000, AudioSampleFormat.S16, "audio[0].sample_format"),
+        ("flac", "flac", 48000, AudioSampleFormat.FLT, "audio[0].sample_format"),
+        ("wav", "pcm_s16le", 48000, AudioSampleFormat.FLT, "audio[0].sample_format"),
+    ],
+)
+def test_audio_only_command_rejects_unsupported_sample_rate_or_format(
+    container: str,
+    codec: str,
+    sample_rate: int,
+    sample_format: AudioSampleFormat | None,
+    field: str,
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=None,
+            video_input=None,
+            audios=[
+                _audio(
+                    codec=codec,
+                    sample_rate=sample_rate,
+                    sample_format=sample_format,
+                )
+            ],
+            audio_inputs=[
+                recipe_sine(
+                    channels="stereo",
+                    duration_s=1.0,
+                    seed=1,
+                    sample_rate=sample_rate,
+                    sample_format=sample_format,
+                )
+            ],
+            output_path=tmp_path / f"asset.{container}",
+        )
+
+    assert exc.value.field == field
 
 
 @pytest.mark.parametrize(

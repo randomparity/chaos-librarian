@@ -1,5 +1,25 @@
 {
   "$defs": {
+    "AudioNoiseColor": {
+      "description": "Supported deterministic audio noise colors.",
+      "enum": [
+        "white",
+        "pink",
+        "brown"
+      ],
+      "title": "AudioNoiseColor",
+      "type": "string"
+    },
+    "AudioSampleFormat": {
+      "description": "Author-facing sample formats for probe-verifiable audio outputs.",
+      "enum": [
+        "s16",
+        "s24",
+        "flt"
+      ],
+      "title": "AudioSampleFormat",
+      "type": "string"
+    },
     "CacheDisposition": {
       "description": "How a provider used the content-source cache for one resolution.",
       "enum": [
@@ -81,6 +101,17 @@
           "default": null,
           "title": "License"
         },
+        "noise_color": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioNoiseColor"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "origin_uri": {
           "anyOf": [
             {
@@ -112,6 +143,29 @@
             }
           ],
           "default": null
+        },
+        "sample_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioSampleFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "sample_rate": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sample Rate"
         },
         "source": {
           "title": "Source",
@@ -1151,7 +1205,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 11,
+      "const": 12,
       "title": "Schema Version",
       "type": "integer"
     },

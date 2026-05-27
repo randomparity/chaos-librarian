@@ -3,11 +3,40 @@
 from __future__ import annotations
 
 from chaos_librarian.contract.capabilities import Capabilities
-from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.contract.scenario import AudioSource, Scenario
 from chaos_librarian.materializer.errors import CapabilityGateError
 from chaos_librarian.materializer.preflight import iter_assets
 
-__all__ = ["assert_capable_for_hdr_video", "assert_capable_for_resolution_switch_video"]
+__all__ = [
+    "assert_capable_for_audio_recipes",
+    "assert_capable_for_hdr_video",
+    "assert_capable_for_resolution_switch_video",
+]
+
+
+def assert_capable_for_audio_recipes(scenario: Scenario, caps: Capabilities) -> None:
+    """Raise before run-dir allocation when scenario needs optional audio recipes."""
+    for asset in iter_assets(scenario):
+        for audio in asset.audio:
+            if audio.source is not AudioSource.NOISE:
+                continue
+            if caps.ready_for.materialize_audio_recipes:
+                return
+            raise CapabilityGateError(
+                "audio noise materialization requires FFmpeg with the anoisesrc filter",
+                asset_id=asset.id,
+                field="ready_for.materialize_audio_recipes",
+                payload={
+                    "capability": "ready_for.materialize_audio_recipes",
+                    "required_filter": "anoisesrc",
+                    "audio_source": audio.source.value,
+                    "noise_color": None if audio.noise_color is None else audio.noise_color.value,
+                    "sample_rate": audio.sample_rate,
+                    "sample_format": (
+                        None if audio.sample_format is None else audio.sample_format.value
+                    ),
+                },
+            )
 
 
 def assert_capable_for_hdr_video(scenario: Scenario, caps: Capabilities) -> None:

@@ -41,6 +41,7 @@ from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
 )
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)
 _CORRUPTED_HASH = "sha256:" + "2" * 64
@@ -50,7 +51,7 @@ _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 17
+schema_version: 18
 scenario_id: resolution-switch-wall-clock-capability-test
 seed: 133
 duration_scale: short
@@ -113,7 +114,7 @@ def fake_clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 @pytest.fixture(autouse=True)
 def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -126,6 +127,7 @@ def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -140,7 +142,7 @@ def test_wall_clock_refuses_hdr_when_capability_missing(
 ) -> None:
     del fake_clock
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -153,6 +155,7 @@ def test_wall_clock_refuses_hdr_when_capability_missing(
             materialize_hevc_video=True,
             materialize_hdr_video=False,
             materialize_resolution_switch_video=True,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -178,7 +181,7 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
 ) -> None:
     del fake_clock
     caps = Capabilities(
-        schema_version=5,
+        schema_version=6,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -191,6 +194,7 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
             materialize_hevc_video=True,
             materialize_hdr_video=True,
             materialize_resolution_switch_video=False,
+            materialize_audio_recipes=True,
         ),
     )
     monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
@@ -202,6 +206,47 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 
     assert exc.value.field == "ready_for.materialize_resolution_switch_video"
+    assert not out_dir.exists()
+
+
+def test_wall_clock_refuses_audio_noise_when_capability_missing(
+    fake_clock: FakeClock,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    del fake_clock
+    caps = Capabilities(
+        schema_version=6,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
+            materialize_audio_recipes=False,
+        ),
+    )
+    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(
+        wall_clock,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
+    )
+    scenario = tmp_path / "audio-noise-wall-clock.yaml"
+    scenario.write_text(AUDIO_NOISE_SCENARIO, encoding="utf-8")
+    out_dir = tmp_path / "run"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
+
+    assert exc.value.field == "ready_for.materialize_audio_recipes"
+    assert exc.value.asset_id == "asset_noise"
     assert not out_dir.exists()
 
 
@@ -283,7 +328,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 17
+            schema_version: 18
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -339,7 +384,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 17
+            schema_version: 18
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
