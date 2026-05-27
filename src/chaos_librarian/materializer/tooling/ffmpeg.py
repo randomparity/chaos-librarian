@@ -319,19 +319,6 @@ def _map_args(audio_inputs: Sequence[FFmpegInput], *, first_audio_input_index: i
     return args
 
 
-def _embedded_input_indexes(
-    *,
-    first_index: int,
-    chapters_input: FFmpegInput | None,
-    cover_art_input: FFmpegInput | None,
-) -> tuple[int | None, int | None]:
-    chapter_index = first_index if chapters_input is not None else None
-    cover_index = first_index
-    if chapters_input is not None:
-        cover_index += 1
-    return chapter_index, cover_index if cover_art_input is not None else None
-
-
 def _audio_channel_layout_args(audios: Sequence[AudioTrack]) -> list[str]:
     """Argv slice forcing each output audio stream to its declared layout."""
     args: list[str] = []
@@ -403,14 +390,15 @@ def _build_video_command(
     argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
     argv.extend(_video_input_args(video_input))
     argv.extend(_audio_input_args(audio_inputs))
-    chapter_index, cover_index = _embedded_input_indexes(
-        first_index=1 + len(audio_inputs),
-        chapters_input=chapters_input,
-        cover_art_input=cover_art_input,
-    )
+    next_input_index = 1 + len(audio_inputs)
+    chapter_index = None
     if chapters_input is not None:
+        chapter_index = next_input_index
+        next_input_index += 1
         argv.extend(_input_args(chapters_input, field="embedded_chapters"))
+    cover_index = None
     if cover_art_input is not None:
+        cover_index = next_input_index
         argv.extend(_input_args(cover_art_input, field="embedded_cover_art"))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
     if cover_index is not None:
