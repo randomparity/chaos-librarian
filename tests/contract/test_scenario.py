@@ -697,12 +697,12 @@ def test_reencode_audio_event_channels_reject_unknown_value() -> None:
 
 
 def test_subtitle_track_source_defaults_to_generated_srt() -> None:
-    track = SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR)
+    track = SubtitleTrack(codec=SubtitleCodec.SRT, language="eng", mode=SubtitleMode.SIDECAR)
     assert track.source is SubtitleSource.GENERATED_SRT
 
 
 def test_subtitle_track_defaults_to_plain_utf8_srt() -> None:
-    track = SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR)
+    track = SubtitleTrack(codec=SubtitleCodec.SRT, language="eng", mode=SubtitleMode.SIDECAR)
 
     assert track.codec is SubtitleCodec.SRT
     assert track.source is SubtitleSource.GENERATED_SRT

@@ -1,4 +1,4 @@
-schema_version: 22
+schema_version: 23
 scenario_id: fuzz-regression-core-fs-seed-456
 seed: 456
 duration_scale: short

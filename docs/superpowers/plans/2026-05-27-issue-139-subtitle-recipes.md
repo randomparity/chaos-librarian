@@ -909,7 +909,7 @@ Run one adversarial review pass on the materializer diff before continuing.
 - Test: `tests/validation/test_invalid_corpus.py`
 - Test: `tests/contract/test_sample_scenarios.py`
 
-- [ ] **Step 1: Add invalid corpus fixtures**
+- [x] **Step 1: Add invalid corpus fixtures**
 
 Add:
 
@@ -928,7 +928,7 @@ Use a minimal movie scenario at `schema_version: 23`. The first two fixtures
 exercise matrix rejection; the last two declare an ASS sidecar and then target
 its `.ass` path with `update_sidecar` or `embed_subtitle`.
 
-- [ ] **Step 2: Update schema-version snippets**
+- [x] **Step 2: Update schema-version snippets**
 
 Run:
 
@@ -939,7 +939,7 @@ rg --files tests src -g '*.py' -g '*.yaml' | xargs perl -0pi -e 's/schema_versio
 Manually review the diff and restore any historical version assertions that
 must stay old. Do not edit generated schema files by hand.
 
-- [ ] **Step 3: Regenerate schemas and update docs**
+- [x] **Step 3: Regenerate schemas and update docs**
 
 Run:
 
@@ -958,7 +958,7 @@ fields. Declared subtitle sidecars can now generate UTF-8/BOM, UTF-16 LE,
 ISO-8859-1 SRT, and styled ASS/SSA parser-surface fixtures.
 ```
 
-- [ ] **Step 4: Run schema and corpus verification**
+- [x] **Step 4: Run schema and corpus verification**
 
 Run:
 
@@ -973,7 +973,7 @@ uv run pytest --no-cov \
 uv run ruff check src tests
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add docs/contract/schema-reference.md schemas tests src

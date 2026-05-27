@@ -1839,6 +1839,27 @@
       "title": "SlowCopyStartEvent",
       "type": "object"
     },
+    "SubtitleCodec": {
+      "description": "Sidecar subtitle codec/format.",
+      "enum": [
+        "srt",
+        "ass",
+        "ssa"
+      ],
+      "title": "SubtitleCodec",
+      "type": "string"
+    },
+    "SubtitleEncoding": {
+      "description": "Text encoding for generated sidecar subtitle bytes.",
+      "enum": [
+        "utf8",
+        "utf8_bom",
+        "utf16_le",
+        "iso_8859_1"
+      ],
+      "title": "SubtitleEncoding",
+      "type": "string"
+    },
     "SubtitleMode": {
       "description": "How a subtitle track is delivered.",
       "enum": [
@@ -1851,17 +1872,31 @@
     "SubtitleSource": {
       "description": "Synthesis recipe for a subtitle track.",
       "enum": [
-        "generated_srt"
+        "generated_srt",
+        "styled_ass"
       ],
       "title": "SubtitleSource",
+      "type": "string"
+    },
+    "SubtitleTimingProfile": {
+      "description": "Timing profile for generated subtitle cues.",
+      "enum": [
+        "normal",
+        "overlap",
+        "out_of_range"
+      ],
+      "title": "SubtitleTimingProfile",
       "type": "string"
     },
     "SubtitleTrack": {
       "additionalProperties": false,
       "properties": {
         "codec": {
-          "title": "Codec",
-          "type": "string"
+          "$ref": "#/$defs/SubtitleCodec"
+        },
+        "encoding": {
+          "$ref": "#/$defs/SubtitleEncoding",
+          "default": "utf8"
         },
         "language": {
           "title": "Language",
@@ -1873,6 +1908,10 @@
         "source": {
           "$ref": "#/$defs/SubtitleSource",
           "default": "generated_srt"
+        },
+        "timing_profile": {
+          "$ref": "#/$defs/SubtitleTimingProfile",
+          "default": "normal"
         }
       },
       "required": [
@@ -2329,7 +2368,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 22,
+      "const": 23,
       "title": "Schema Version",
       "type": "integer"
     },
