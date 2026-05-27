@@ -67,7 +67,7 @@ def _write_track_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 22
+        f"""schema_version: 23
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -137,6 +137,11 @@ def _write_movie_scenario(
     embedded_chapter_count: int = 2,
     embedded_cover_art: bool = False,
     subtitles: bool = False,
+    subtitle_codec: str = "srt",
+    subtitle_source: str = "generated_srt",
+    subtitle_encoding: str | None = None,
+    subtitle_timing_profile: str | None = None,
+    subtitle_mode: str = "sidecar",
     vfr_cadence: str | None = None,
     field_order: str | None = None,
     color_space: str | None = None,
@@ -167,12 +172,22 @@ def _write_movie_scenario(
         if embedded_cover_art
         else ""
     )
+    subtitle_encoding_line = (
+        f"                  encoding: {subtitle_encoding}\n" if subtitle_encoding else ""
+    )
+    subtitle_timing_line = (
+        f"                  timing_profile: {subtitle_timing_profile}\n"
+        if subtitle_timing_profile
+        else ""
+    )
     subtitles_block = (
-        """              subtitles:
-                - source: generated_srt
-                  codec: srt
+        f"""              subtitles:
+                - source: {subtitle_source}
+                  codec: {subtitle_codec}
                   language: eng
-                  mode: embedded
+                  mode: {subtitle_mode}
+{subtitle_encoding_line.rstrip()}
+{subtitle_timing_line.rstrip()}
 """
         if subtitles
         else ""
@@ -198,7 +213,7 @@ def _write_movie_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 22
+        f"""schema_version: 23
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -316,7 +331,7 @@ def _write_resolution_switch_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 22
+        f"""schema_version: 23
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -747,7 +762,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 22
+        """schema_version: 23
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -799,6 +814,84 @@ def test_vfr_video_cadence_validates_clean(tmp_path: Path) -> None:
 
     assert report.ok is True
     assert report.issues == []
+
+
+@pytest.mark.parametrize(
+    ("codec", "source", "encoding", "timing_profile"),
+    [
+        ("srt", "generated_srt", "utf8_bom", "normal"),
+        ("srt", "generated_srt", "utf16_le", "overlap"),
+        ("srt", "generated_srt", "iso_8859_1", "out_of_range"),
+        ("ass", "styled_ass", "utf8", "overlap"),
+        ("ssa", "styled_ass", "utf8_bom", "out_of_range"),
+    ],
+)
+def test_subtitle_recipe_matrix_accepts_supported_combinations(
+    tmp_path: Path,
+    codec: str,
+    source: str,
+    encoding: str,
+    timing_profile: str,
+) -> None:
+    scenario = tmp_path / "subtitle-recipe-valid.yaml"
+    _write_movie_scenario(
+        scenario,
+        subtitles=True,
+        subtitle_codec=codec,
+        subtitle_source=source,
+        subtitle_encoding=encoding,
+        subtitle_timing_profile=timing_profile,
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+@pytest.mark.parametrize(
+    ("codec", "source", "encoding", "field_suffix"),
+    [
+        ("srt", "styled_ass", "utf8", ".subtitles[0].source"),
+        ("ass", "generated_srt", "utf8", ".subtitles[0].source"),
+        ("ass", "styled_ass", "utf16_le", ".subtitles[0].encoding"),
+        ("ssa", "styled_ass", "iso_8859_1", ".subtitles[0].encoding"),
+    ],
+)
+def test_subtitle_recipe_matrix_rejects_unsupported_combinations(
+    tmp_path: Path,
+    codec: str,
+    source: str,
+    encoding: str,
+    field_suffix: str,
+) -> None:
+    scenario = tmp_path / "subtitle-recipe-invalid.yaml"
+    _write_movie_scenario(
+        scenario,
+        subtitles=True,
+        subtitle_codec=codec,
+        subtitle_source=source,
+        subtitle_encoding=encoding,
+    )
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    assert issue.path.endswith(field_suffix)
+
+
+def test_subtitle_recipe_matrix_rejects_embedded_mode(tmp_path: Path) -> None:
+    scenario = tmp_path / "subtitle-embedded.yaml"
+    _write_movie_scenario(scenario, subtitles=True, subtitle_mode="embedded")
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is False
+    issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
+    assert issue.path is not None
+    assert issue.path.endswith(".subtitles[0].mode")
 
 
 def test_interlaced_video_field_order_validates_clean(tmp_path: Path) -> None:

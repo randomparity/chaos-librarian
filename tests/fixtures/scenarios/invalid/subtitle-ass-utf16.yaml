@@ -1,0 +1,27 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 23
+scenario_id: invalid-subtitle-ass-utf16
+seed: 139
+duration_scale: short
+library: {roots: [{id: root_main, path: library/movies}]}
+movies:
+  - id: movie_bad
+    title: T
+    layout: movie_flat
+    variants:
+      - id: variant_bad
+        label: hd
+        bundle:
+          id: bundle_bad
+          assets:
+            - id: asset_bad
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+              subtitles:
+                - {codec: ass, source: styled_ass, encoding: utf16_le, language: jpn, mode: sidecar}
+series: []
+artists: []
+timeline: []

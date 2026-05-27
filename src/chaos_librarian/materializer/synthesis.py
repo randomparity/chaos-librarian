@@ -64,7 +64,8 @@ from chaos_librarian.materializer.tooling.mkvmerge import (
     run_mkvmerge,
 )
 from chaos_librarian.materializer.tooling.probe import probe_file
-from chaos_librarian.materializer.tooling.recipes import FFmpegInput, srt_payload
+from chaos_librarian.materializer.tooling.recipes import FFmpegInput
+from chaos_librarian.materializer.tooling.subtitles import subtitle_payload_bytes
 from chaos_librarian.media_matrix import (
     RESOLUTION_SWITCH_VIDEO_CODEC,
     RESOLUTION_SWITCH_VIDEO_CONTAINER,
@@ -852,7 +853,7 @@ def write_sidecars(
     rendered_relative_path: str,
     skip_languages: frozenset[str] = frozenset(),
 ) -> dict[tuple[str, str], str]:
-    """Write each declared SRT sidecar and return its sha256 hash.
+    """Write each declared subtitle sidecar and return its sha256 hash.
 
     Preflight already rejected non-sidecar modes, so every subtitle here
     is sidecar; hash the bytes so ``augment_manifest`` can populate
@@ -862,13 +863,13 @@ def write_sidecars(
     will write in phase B; declared sidecars for those languages are
     skipped here so phase A does not leave an orphan file on disk.
 
-    The SRT body is written directly to ``library_dir`` (not via a staging
+    The sidecar body is written directly to ``library_dir`` (not via a staging
     tempdir + ``Path.replace``). Materialize mode's recovery model is
     whole-run replay, not per-file atomicity, so a partial sidecar from an
     interrupted run is harmless — the next ``run`` rebuilds the library
     from scratch. See issue #24 for the canonical reference; if the
     recovery model ever moves to per-file atomicity, replace this with the
-    ``replace_atomic_text`` helper that journal/manifest writers use.
+    byte-oriented atomic replacement helper.
     """
     sidecar_hashes: dict[tuple[str, str], str] = {}
     for sub in asset.subtitles:
@@ -877,11 +878,18 @@ def write_sidecars(
         sidecar_path = library_dir / render_declared_sidecar_path(
             rendered_relative_path,
             sub.language,
+            codec=sub.codec.value,
         )
         sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-        body = srt_payload(language=sub.language, duration_s=asset.duration_seconds, seed=seed)
-        sidecar_path.write_text(body)
-        sidecar_hashes[(asset.id, sub.language)] = (
-            "sha256:" + hashlib.sha256(body.encode()).hexdigest()
+        body = subtitle_payload_bytes(
+            codec=sub.codec,
+            source=sub.source,
+            encoding=sub.encoding,
+            timing_profile=sub.timing_profile,
+            language=sub.language,
+            duration_s=asset.duration_seconds,
+            seed=seed,
         )
+        sidecar_path.write_bytes(body)
+        sidecar_hashes[(asset.id, sub.language)] = "sha256:" + hashlib.sha256(body).hexdigest()
     return sidecar_hashes

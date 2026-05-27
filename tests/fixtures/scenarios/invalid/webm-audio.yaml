@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 22
+schema_version: 23
 scenario_id: invalid-webm-audio
 seed: 140
 duration_scale: short

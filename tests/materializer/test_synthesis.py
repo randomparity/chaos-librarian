@@ -25,7 +25,11 @@ from chaos_librarian.contract.scenario import (
     EmbeddedCoverArt,
     MatroskaMuxingProfile,
     Mp4MoovPlacement,
+    SubtitleCodec,
+    SubtitleEncoding,
     SubtitleMode,
+    SubtitleSource,
+    SubtitleTimingProfile,
     SubtitleTrack,
     VideoResolutionSequence,
     VideoSource,
@@ -45,13 +49,17 @@ from chaos_librarian.validation import prepare_run_input_from_bytes, run_validat
 _RECIPE_DIGEST = "sha256:" + "f" * 64
 
 
+def _sha256(data: bytes) -> str:
+    return "sha256:" + hashlib.sha256(data).hexdigest()
+
+
 def test_materialize_assets_phase_a_collects_and_stamps_manifest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 22
+schema_version: 23
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -165,7 +173,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 22
+schema_version: 23
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -269,6 +277,62 @@ def test_materialize_one_asset_writes_declared_sidecar_next_to_rendered_media(
     assert (tmp_path / "run" / "library" / "r" / "Rendered Safe - hd.eng.srt").exists()
     assert not (tmp_path / "run" / "escape.eng.srt").exists()
     assert result.sidecar_hashes.keys() == {("../../../escape", "eng")}
+
+
+def test_materialize_one_asset_writes_multiple_subtitle_recipe_sidecars(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        id="asset_subs",
+        role="main",
+        container="mkv",
+        duration_seconds=2.0,
+        video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+        subtitles=(
+            SubtitleTrack(
+                codec=SubtitleCodec.SRT,
+                language="eng",
+                mode=SubtitleMode.SIDECAR,
+                encoding=SubtitleEncoding.UTF8_BOM,
+            ),
+            SubtitleTrack(
+                codec=SubtitleCodec.SRT,
+                language="spa",
+                mode=SubtitleMode.SIDECAR,
+                encoding=SubtitleEncoding.UTF16_LE,
+                timing_profile=SubtitleTimingProfile.OUT_OF_RANGE,
+            ),
+            SubtitleTrack(
+                codec=SubtitleCodec.ASS,
+                source=SubtitleSource.STYLED_ASS,
+                language="jpn",
+                mode=SubtitleMode.SIDECAR,
+                timing_profile=SubtitleTimingProfile.OVERLAP,
+            ),
+        ),
+    )
+    output_path = tmp_path / "run" / "library" / "r" / "Movie.mkv"
+    _patch_successful_ffmpeg(monkeypatch, output_path)
+
+    result = materialize_one_asset(
+        asset,
+        139,
+        tmp_path / "run",
+        _caps(),
+        0,
+        rendered_relative_path="r/Movie.mkv",
+    )
+
+    srt_path = tmp_path / "run" / "library" / "r" / "Movie.eng.srt"
+    utf16_path = tmp_path / "run" / "library" / "r" / "Movie.spa.srt"
+    ass_path = tmp_path / "run" / "library" / "r" / "Movie.jpn.ass"
+    assert srt_path.read_bytes().startswith(b"\xef\xbb\xbf")
+    assert utf16_path.read_bytes().startswith(b"\xff\xfe")
+    assert b"[V4+ Styles]" in ass_path.read_bytes()
+    assert result.sidecar_hashes[(asset.id, "eng")] == _sha256(srt_path.read_bytes())
+    assert result.sidecar_hashes[(asset.id, "spa")] == _sha256(utf16_path.read_bytes())
+    assert result.sidecar_hashes[(asset.id, "jpn")] == _sha256(ass_path.read_bytes())
 
 
 def test_materialize_one_asset_writes_audio_only_track(
@@ -591,7 +655,13 @@ def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
                 language="eng",
             ),
         ),
-        subtitles=(SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR),),
+        subtitles=(
+            SubtitleTrack(
+                codec=SubtitleCodec.SRT,
+                language="eng",
+                mode=SubtitleMode.SIDECAR,
+            ),
+        ),
     )
 
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
@@ -667,7 +737,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 22
+schema_version: 23
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -726,7 +796,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 22
+schema_version: 23
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -774,7 +844,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 22
+schema_version: 23
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short

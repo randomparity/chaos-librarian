@@ -252,6 +252,32 @@ class SubtitleSource(enum.StrEnum):
     """Synthesis recipe for a subtitle track."""
 
     GENERATED_SRT = "generated_srt"
+    STYLED_ASS = "styled_ass"
+
+
+class SubtitleCodec(enum.StrEnum):
+    """Sidecar subtitle codec/format."""
+
+    SRT = "srt"
+    ASS = "ass"
+    SSA = "ssa"
+
+
+class SubtitleEncoding(enum.StrEnum):
+    """Text encoding for generated sidecar subtitle bytes."""
+
+    UTF8 = "utf8"
+    UTF8_BOM = "utf8_bom"
+    UTF16_LE = "utf16_le"
+    ISO_8859_1 = "iso_8859_1"
+
+
+class SubtitleTimingProfile(enum.StrEnum):
+    """Timing profile for generated subtitle cues."""
+
+    NORMAL = "normal"
+    OVERLAP = "overlap"
+    OUT_OF_RANGE = "out_of_range"
 
 
 class SidecarKind(enum.StrEnum):
@@ -355,9 +381,11 @@ class AudioTrack(BaseModel):
 class SubtitleTrack(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     source: SubtitleSource = SubtitleSource.GENERATED_SRT
-    codec: str
+    codec: SubtitleCodec
     language: str
     mode: SubtitleMode
+    encoding: SubtitleEncoding = SubtitleEncoding.UTF8
+    timing_profile: SubtitleTimingProfile = SubtitleTimingProfile.NORMAL
 
 
 class EmbeddedChapters(BaseModel):
@@ -859,7 +887,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[22]
+    schema_version: Literal[23]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

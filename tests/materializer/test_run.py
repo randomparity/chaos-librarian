@@ -31,7 +31,6 @@ from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     ScenarioValidationError,
     ToolFailedError,
-    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
@@ -41,7 +40,7 @@ from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
 
-_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 22
+_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 23
 scenario_id: muxing-profile-capability-test
 seed: 138
 duration_scale: short
@@ -78,7 +77,7 @@ artists: []
 timeline: []
 """
 
-_WEBM_PROFILE_SCENARIO = """schema_version: 22
+_WEBM_PROFILE_SCENARIO = """schema_version: 23
 scenario_id: webm-capability-test
 seed: 138
 duration_scale: short
@@ -280,7 +279,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 22\n"
+        "schema_version: 23\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -574,25 +573,35 @@ def test_orchestrator_rejects_embedded_subtitle_mode(
     scenario = tmp_path / "embedded.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_EMBEDDED_SUBS)
     out = tmp_path / "run"
-    with pytest.raises(UnsupportedMaterializationError) as exc:
+    with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    assert exc.value.field == "subtitle[0].mode"
+    issue = next(
+        issue
+        for issue in exc.value.validation_report.issues
+        if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+    )
+    assert issue.path is not None
+    assert issue.path.endswith(".subtitles[0].mode")
     assert not out.exists()
 
 
-def test_orchestrator_rejects_unsupported_subtitle_codec(
+def test_orchestrator_rejects_unsupported_subtitle_recipe(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Finding 2 — Sprint 5 supports SRT only; ASS/SSA would otherwise
-    fall through preflight and ``write_text`` SRT bytes under an ``.ass``
-    filename, silently producing wrong content."""
+    """WHY: validation must reject unsupported declared subtitle recipes before writes."""
     _patch_success(monkeypatch)
     scenario = tmp_path / "ass.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_ASS_SUBS)
     out = tmp_path / "run"
-    with pytest.raises(UnsupportedMaterializationError) as exc:
+    with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    assert exc.value.field == "subtitle[0].codec"
+    issue = next(
+        issue
+        for issue in exc.value.validation_report.issues
+        if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+    )
+    assert issue.path is not None
+    assert issue.path.endswith(".subtitles[0].source")
     assert not out.exists()
 
 
@@ -643,7 +652,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 22
+schema_version: 23
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -685,7 +694,7 @@ timeline: []
 """
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 22
+schema_version: 23
 scenario_id: resolution-switch-capability-test
 seed: 133
 duration_scale: short

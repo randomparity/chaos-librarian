@@ -71,16 +71,17 @@ def render_asset_path(ctx: RenderableAssetContext) -> str:
     return _join_path(*parts)
 
 
-def render_declared_sidecar_path(media_path: str, language: str) -> str:
+def render_declared_sidecar_path(media_path: str, language: str, *, codec: str = "srt") -> str:
     """Render the declared sidecar path next to the media stem."""
     media_path = _validate_relative_posix_path(media_path)
     language = clean_display_component(language)
+    codec = _clean_asset_container(codec)
     directory, directory_separator, filename = media_path.rpartition("/")
     stem, separator, extension = filename.rpartition(".")
     if not separator or not extension:
         raise ValueError("media_path must include a file extension")
     parent = f"{directory}{directory_separator}"
-    return _validate_relative_posix_path(f"{parent}{stem}.{language}.srt")
+    return _validate_relative_posix_path(f"{parent}{stem}.{language}.{codec}")
 
 
 def replace_root_prefix(path: str, *, from_root: str, to_root: str) -> str:

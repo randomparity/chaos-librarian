@@ -1,4 +1,4 @@
-schema_version: 22
+schema_version: 23
 scenario_id: hevc-mkv
 seed: 94
 duration_scale: short

@@ -1,5 +1,5 @@
 # expected: E_PATH_CONTAINMENT
-schema_version: 22
+schema_version: 23
 scenario_id: asset-id-traversal
 seed: 1
 duration_scale: short

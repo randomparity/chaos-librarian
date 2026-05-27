@@ -71,6 +71,22 @@ def test_regenerate_sidecar_subtitle_returns_srt_bytes():
     assert f"seed={expected_seed}".encode() in bytes_  # perturbed seed in body
 
 
+def test_regenerate_sidecar_subtitle_remains_default_utf8_srt() -> None:
+    bytes_, argv = regenerate_sidecar(
+        kind=SidecarKind.SUBTITLE,
+        language="eng",
+        sidecar_id="sidecar_0001",
+        resolved_seed=42,
+        event_id="ev_us_001",
+        duration_s=1.0,
+    )
+
+    assert argv is None
+    assert bytes_ is not None
+    assert bytes_.startswith(b"1\n")
+    assert b"[Script Info]" not in bytes_
+
+
 def test_regenerate_sidecar_subtitle_distinct_per_event_id():
     a_bytes, _ = regenerate_sidecar(
         kind=SidecarKind.SUBTITLE,

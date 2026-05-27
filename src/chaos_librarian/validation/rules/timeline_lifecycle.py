@@ -121,6 +121,10 @@ class _SidecarProjectionRow:
     kind: str
     language: str | None
     renderer_derived: bool
+    codec: str = "srt"
+    source: str = "generated_srt"
+    encoding: str = "utf8"
+    timing_profile: str = "normal"
 
 
 def rule_timeline_lifecycle(
@@ -346,8 +350,16 @@ def _project_declared_sidecars_for_hierarchy_mutation(
             if value.language is None:
                 continue
             try:
-                old_sidecar_path = render_declared_sidecar_path(old_media_path, value.language)
-                new_sidecar_path = render_declared_sidecar_path(new_media_path, value.language)
+                old_sidecar_path = render_declared_sidecar_path(
+                    old_media_path,
+                    value.language,
+                    codec=value.codec,
+                )
+                new_sidecar_path = render_declared_sidecar_path(
+                    new_media_path,
+                    value.language,
+                    codec=value.codec,
+                )
             except ValueError:
                 continue
             if sidecar_path == old_sidecar_path:
@@ -483,6 +495,10 @@ def _seed_sidecars_by_path(
             kind=sidecar.kind,
             language=sidecar.language,
             renderer_derived=True,
+            codec=sidecar.codec,
+            source=sidecar.source,
+            encoding=sidecar.encoding,
+            timing_profile=sidecar.timing_profile,
         )
         for sidecar in iter_declared_sidecars(raw)
     }

@@ -112,8 +112,10 @@ def _check_declared_sidecar_paths(
         language = subtitle.get("language")
         if not isinstance(language, str):
             continue
+        codec = subtitle.get("codec")
+        codec = codec if isinstance(codec, str) else "srt"
         try:
-            render_declared_sidecar_path(media_path, language)
+            render_declared_sidecar_path(media_path, language, codec=codec)
         except ValueError as error:
             reporter.error(
                 code=E_PATH_CONTAINMENT,
