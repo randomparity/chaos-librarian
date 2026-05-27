@@ -20,8 +20,13 @@ from chaos_librarian.validation.rules._common import (
     _list_at_path,
     _Loc,
     _RawMapping,
+    archive_base_path,
+    current_root_for_path,
     iter_declared_roots,
-    primary_root_path,
+    project_deleted_path,
+    project_slow_copy_commit,
+    project_slow_copy_start,
+    project_to_field_path,
     rendered_asset_paths,
 )
 
@@ -104,7 +109,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
     declared_roots = {
         root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
     }
-    archive_base = _archive_base_path(raw, declared_roots)
+    archive_base = archive_base_path(raw, declared_roots)
     current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
     pending_slow_copies: dict[str, tuple[str, str]] = {}
 
@@ -132,13 +137,13 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
             TimelineActionName.RENAME_FILE,
             TimelineActionName.ADD_FILE,
         }:
-            _project_to_field_path(event, current_paths)
+            project_to_field_path(event, current_paths)
         elif action == TimelineActionName.SLOW_COPY_START:
-            _project_slow_copy_start(event, pending_slow_copies)
+            project_slow_copy_start(event, pending_slow_copies)
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
-            _project_slow_copy_commit(event, pending_slow_copies, current_paths)
+            project_slow_copy_commit(event, pending_slow_copies, current_paths)
         elif action == TimelineActionName.DELETE_FILE:
-            _project_deleted_path(event, current_paths)
+            project_deleted_path(event, current_paths)
 
 
 def _check_archive_file(
@@ -158,7 +163,7 @@ def _check_archive_file(
     if current_path is None:
         return
     try:
-        current_root = _current_root_for_path(current_path, declared_roots)
+        current_root = current_root_for_path(current_path, declared_roots)
         synthesized = replace_root_prefix(
             current_path,
             from_root=current_root,
@@ -207,78 +212,6 @@ def _check_move_between_roots(
         return
     _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
     current_paths[target] = synthesized
-
-
-def _project_to_field_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    path = event.get("to")
-    if isinstance(target, str) and isinstance(path, str):
-        current_paths[target] = path
-
-
-def _project_deleted_path(event: _RawMapping, current_paths: dict[str, str]) -> None:
-    target = event.get("target")
-    if isinstance(target, str):
-        current_paths.pop(target, None)
-
-
-def _project_slow_copy_start(
-    event: _RawMapping,
-    pending_slow_copies: dict[str, tuple[str, str]],
-) -> None:
-    event_id = event.get("id")
-    target = event.get("target")
-    final_path = event.get("to")
-    if isinstance(event_id, str) and isinstance(target, str) and isinstance(final_path, str):
-        pending_slow_copies[event_id] = (target, final_path)
-
-
-def _project_slow_copy_commit(
-    event: _RawMapping,
-    pending_slow_copies: dict[str, tuple[str, str]],
-    current_paths: dict[str, str],
-) -> None:
-    start_id = event.get("for")
-    if not isinstance(start_id, str):
-        return
-    pending = pending_slow_copies.pop(start_id, None)
-    if pending is None:
-        return
-    target, final_path = pending
-    current_paths[target] = final_path
-
-
-def _current_root_for_path(path: str, declared_roots: Mapping[str, str]) -> str:
-    root_paths: list[str] = list(declared_roots.values())
-    root_paths.sort(key=len, reverse=True)
-    for root_path in root_paths:
-        if path == root_path or path.startswith(f"{root_path}/"):
-            return root_path
-    raise ValueError("current path does not start with a declared root")
-
-
-def _archive_base_path(
-    raw: _RawMapping,
-    declared_roots: Mapping[str, str],
-) -> str | None:
-    """Return the archive base path, mirroring ``build_initial_state``.
-
-    Sentinel ``"archive"`` and ``None`` both resolve to
-    ``<primary_root.path>/archive``. A named ``archive_root`` resolves to
-    that declared root's path. Returns ``None`` when the library subtree
-    is malformed enough to defeat the lookup — the shape pass (or
-    ``rule_root_unknown``) owns those error reports.
-    """
-    primary_path = primary_root_path(raw)
-    if primary_path is None:
-        return None
-    library = _as_mapping(raw.get("library"))
-    archive_root = library.get("archive_root") if library is not None else None
-    if archive_root is None or archive_root == "archive":
-        return f"{primary_path}/archive"
-    if isinstance(archive_root, str):
-        return declared_roots.get(archive_root)
-    return None
 
 
 def _check_containment(raw_path: str, *, loc: _Loc, reporter: Reporter) -> None:
