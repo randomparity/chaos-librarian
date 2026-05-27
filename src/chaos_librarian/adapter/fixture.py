@@ -22,6 +22,8 @@ from chaos_librarian.contract.replay_bundle import (
     compute_plan_only_run_id,
 )
 from chaos_librarian.contract.reports import (
+    REPORT_FAMILIES,
+    REPORT_FAMILY_NAMES,
     AlbumReport,
     ArtistReport,
     AssetHistoryEntry,
@@ -42,20 +44,6 @@ from chaos_librarian.validation import prepare_run_input_from_bytes
 
 _REPLAY_ADAPTER: TypeAdapter[ReplayBundle] = TypeAdapter(ReplayBundle)
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
-
-_REPORT_DIR_NAMES = (
-    "assets",
-    "movies",
-    "series",
-    "seasons",
-    "episodes",
-    "artists",
-    "albums",
-    "discs",
-    "tracks",
-    "variants",
-    "bundles",
-)
 
 
 @dataclass(frozen=True)
@@ -763,19 +751,11 @@ def _asset_ids_for_parents(
 
 
 def _reports_from_report_set(report_set: Any) -> OracleReports:
-    return OracleReports(
-        assets=_required_report_map(report_set, "assets", "asset_id"),
-        movies=_required_report_map(report_set, "movies", "movie_id"),
-        series=_required_report_map(report_set, "series", "series_id"),
-        seasons=_required_report_map(report_set, "seasons", "season_id"),
-        episodes=_required_report_map(report_set, "episodes", "episode_id"),
-        artists=_required_report_map(report_set, "artists", "artist_id"),
-        albums=_required_report_map(report_set, "albums", "album_id"),
-        discs=_required_report_map(report_set, "discs", "disc_id"),
-        tracks=_required_report_map(report_set, "tracks", "track_id"),
-        variants=_required_report_map(report_set, "variants", "variant_id"),
-        bundles=_required_report_map(report_set, "bundles", "bundle_id"),
-    )
+    maps = {
+        family.name: _required_report_map(report_set, family.name, family.id_field)
+        for family in REPORT_FAMILIES
+    }
+    return OracleReports(**maps)
 
 
 def _required_report_map(report_set: Any, name: str, id_field: str) -> dict[str, Any]:
@@ -786,7 +766,7 @@ def _required_report_map(report_set: Any, name: str, id_field: str) -> dict[str,
 
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:
     present_names = {path.name for path in reports_dir.iterdir() if path.is_dir()}
-    expected_names = set(_REPORT_DIR_NAMES)
+    expected_names = set(REPORT_FAMILY_NAMES)
     if present_names != expected_names:
         _fixture_invalid(
             "reports directory set does not match required report families",
@@ -796,10 +776,6 @@ def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> Orac
                 "extra": sorted(present_names - expected_names),
             },
         )
-    for name in _REPORT_DIR_NAMES:
-        directory = reports_dir / name
-        if not directory.is_dir():
-            _fixture_invalid(f"reports/{name} directory is missing", path=directory)
     reports = OracleReports(
         assets=_load_report_map(reports_dir / "assets", AssetReport, "asset_id"),
         movies=_load_report_map(reports_dir / "movies", MovieReport, "movie_id"),

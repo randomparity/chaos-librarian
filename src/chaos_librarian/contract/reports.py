@@ -13,6 +13,7 @@ only.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
@@ -253,3 +254,35 @@ class BundleReport(BaseModel):
     variant_id: str
     asset_ids: list[str]
     sidecar_ids: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ReportFamily:
+    """One per-entity report family: its on-disk layout and identity.
+
+    The ``reports/<name>/<id>.json`` directory layout is part of the consumer
+    contract. Producers (materializer persistence) and consumers (adapter
+    fixture loader) drive their directory, write, and parse loops from
+    ``REPORT_FAMILIES`` so adding a family is a single-table edit.
+    """
+
+    name: str
+    model: type[BaseModel]
+    id_field: str
+
+
+REPORT_FAMILIES: tuple[ReportFamily, ...] = (
+    ReportFamily("assets", AssetReport, "asset_id"),
+    ReportFamily("movies", MovieReport, "movie_id"),
+    ReportFamily("series", SeriesReport, "series_id"),
+    ReportFamily("seasons", SeasonReport, "season_id"),
+    ReportFamily("episodes", EpisodeReport, "episode_id"),
+    ReportFamily("artists", ArtistReport, "artist_id"),
+    ReportFamily("albums", AlbumReport, "album_id"),
+    ReportFamily("discs", DiscReport, "disc_id"),
+    ReportFamily("tracks", TrackReport, "track_id"),
+    ReportFamily("variants", VariantReport, "variant_id"),
+    ReportFamily("bundles", BundleReport, "bundle_id"),
+)
+
+REPORT_FAMILY_NAMES: tuple[str, ...] = tuple(family.name for family in REPORT_FAMILIES)
