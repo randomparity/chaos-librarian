@@ -21,6 +21,8 @@ from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.ffmpeg import (
     BITEXACT_FLAGS,
     build_command,
+    build_resolution_switch_concat_command,
+    build_resolution_switch_segment_command,
 )
 from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
@@ -524,3 +526,33 @@ def test_ffmpeg_input_rejects_missing_input() -> None:
 def test_ffmpeg_input_rejects_two_inputs(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="exactly one"):
         FFmpegInput(lavfi="color=s=1x1", file_path=tmp_path / "source.mp4")
+
+
+def test_resolution_switch_segment_command_uses_h264_mpegts(tmp_path: Path) -> None:
+    segment = build_resolution_switch_segment_command(
+        video_input=FFmpegInput(
+            lavfi="smptebars=size=640x480:rate=24",
+            extra_flags=("-t", "0.5"),
+        ),
+        output_path=tmp_path / "segment.ts",
+    )
+
+    assert segment[:3] == ["ffmpeg", "-hide_banner", "-y"]
+    assert "-f" in segment
+    assert "mpegts" in segment
+    assert segment[segment.index("-c:v") + 1] == "libx264"
+    assert segment[segment.index("-map") + 1] == "0:v:0"
+    for flag in BITEXACT_FLAGS:
+        assert flag in segment
+
+
+def test_resolution_switch_concat_command_stream_copies_segments(tmp_path: Path) -> None:
+    concat = build_resolution_switch_concat_command(
+        concat_list_path=tmp_path / "concat.txt",
+        output_path=tmp_path / "asset.ts",
+    )
+
+    assert concat[:7] == ["ffmpeg", "-hide_banner", "-y", "-f", "concat", "-safe", "0"]
+    assert concat[concat.index("-c") + 1] == "copy"
+    for flag in BITEXACT_FLAGS:
+        assert flag in concat

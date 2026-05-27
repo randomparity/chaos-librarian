@@ -286,6 +286,35 @@ def _map_args(audio_inputs: Sequence[FFmpegInput], *, first_audio_input_index: i
     return args
 
 
+def build_resolution_switch_segment_command(
+    *,
+    video_input: FFmpegInput,
+    output_path: Path,
+) -> list[str]:
+    """Build argv for one deterministic H.264 MPEG-TS resolution segment."""
+    argv: list[str] = ["ffmpeg", "-hide_banner", "-y"]
+    argv.extend(_video_input_args(video_input))
+    argv.extend(["-map", "0:v:0", "-c:v", "libx264", "-preset", "medium"])
+    argv.extend(["-x264-params", "keyint=12:min-keyint=12:scenecut=0"])
+    argv.extend(["-an", "-f", "mpegts"])
+    argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.append(str(output_path))
+    return argv
+
+
+def build_resolution_switch_concat_command(
+    *,
+    concat_list_path: Path,
+    output_path: Path,
+) -> list[str]:
+    """Build argv for stream-copy concatenation of MPEG-TS segments."""
+    argv = ["ffmpeg", "-hide_banner", "-y", "-f", "concat", "-safe", "0"]
+    argv.extend(["-i", str(concat_list_path), "-c", "copy"])
+    argv.extend(_BITEXACT_OUTPUT_FLAGS)
+    argv.append(str(output_path))
+    return argv
+
+
 def _build_video_command(
     *,
     container: str,

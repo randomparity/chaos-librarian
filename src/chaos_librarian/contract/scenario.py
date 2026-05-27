@@ -123,6 +123,12 @@ class VideoHdrMode(enum.StrEnum):
     HLG = "hlg"
 
 
+class VideoResolutionSequence(enum.StrEnum):
+    """Supported mid-stream video resolution transitions."""
+
+    SD_TO_HD = "sd_to_hd"
+
+
 class SubtitleMode(enum.StrEnum):
     """How a subtitle track is delivered."""
 
@@ -235,6 +241,7 @@ class VideoTrack(BaseModel):
     color_space: VideoColorSpace | None = None
     color_range: VideoColorRange | None = None
     hdr_mode: VideoHdrMode | None = None
+    resolution_sequence: VideoResolutionSequence | None = None
 
     @field_validator("vfr_cadence", mode="before")
     @classmethod
@@ -744,7 +751,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[16]
+    schema_version: Literal[17]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

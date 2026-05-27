@@ -48,10 +48,13 @@ def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def _capabilities(
-    *, materialize_hevc_video: bool = True, materialize_hdr_video: bool = True
+    *,
+    materialize_hevc_video: bool = True,
+    materialize_hdr_video: bool = True,
+    materialize_resolution_switch_video: bool = True,
 ) -> Capabilities:
     return Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -63,6 +66,7 @@ def _capabilities(
             materialize_media_mutations=False,
             materialize_hevc_video=materialize_hevc_video,
             materialize_hdr_video=materialize_hdr_video,
+            materialize_resolution_switch_video=materialize_resolution_switch_video,
         ),
     )
 
@@ -126,7 +130,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 16\n"
+        "schema_version: 17\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -306,6 +310,27 @@ def test_orchestrator_refuses_hdr_when_capability_missing(
     assert not out.exists()
 
 
+def test_orchestrator_refuses_resolution_switch_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WHY: sd_to_hd MPEG-TS requires libx264 support. The refusal must
+    happen before run-dir allocation so callers do not get partial files."""
+    monkeypatch.setattr(
+        run_mod,
+        "detect_capabilities",
+        lambda: _capabilities(materialize_resolution_switch_video=False),
+    )
+    scenario = tmp_path / "resolution-switch.yaml"
+    scenario.write_text(_RESOLUTION_SWITCH_SCENARIO)
+
+    out = tmp_path / "resolution-switch-no-support"
+    with pytest.raises(CapabilityGateError) as exc:
+        materialize_scenario(scenario, out)
+
+    assert exc.value.field == "ready_for.materialize_resolution_switch_video"
+    assert not out.exists()
+
+
 def test_orchestrator_records_ffmpeg_failure_and_wipes_library(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -468,7 +493,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 16
+schema_version: 17
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -504,6 +529,39 @@ movies:
                   language: eng
                   mode: sidecar
                   source: generated_srt
+series: []
+artists: []
+timeline: []
+"""
+
+_RESOLUTION_SWITCH_SCENARIO = """\
+schema_version: 17
+scenario_id: resolution-switch-capability-test
+seed: 133
+duration_scale: short
+library:
+  roots:
+    - id: r0
+      path: library
+movies:
+  - id: movie_switch
+    title: Resolution Switch
+    layout: movie_flat
+    variants:
+      - id: variant_switch
+        label: sd-to-hd
+        bundle:
+          id: bundle_switch
+          assets:
+            - id: asset_switch
+              role: main
+              container: ts
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+                resolution_sequence: sd_to_hd
 series: []
 artists: []
 timeline: []

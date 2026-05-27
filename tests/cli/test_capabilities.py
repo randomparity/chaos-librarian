@@ -39,7 +39,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
         meets_minimum=all_ok,
     )
     return Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ffmpeg,
         ffprobe=ffprobe,
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -60,6 +60,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
                         "video:color_space:bt709",
                         "video:color_range:full",
                         "video:hdr:hdr10",
+                        "video:resolution_sequence:sd_to_hd",
                     ),
                 )
             ]
@@ -70,6 +71,7 @@ def _caps(*, all_ok: bool = True) -> Capabilities:
             materialize_media_mutations=False,
             materialize_hevc_video=all_ok,
             materialize_hdr_video=all_ok,
+            materialize_resolution_switch_video=all_ok,
         ),
     )
 
@@ -86,6 +88,7 @@ def test_capabilities_exit_zero_on_minimum_met(monkeypatch):
     assert payload["ready_for"]["materialize_static"] is True
     assert payload["ready_for"]["materialize_hevc_video"] is True
     assert payload["ready_for"]["materialize_hdr_video"] is True
+    assert payload["ready_for"]["materialize_resolution_switch_video"] is True
 
 
 def test_capabilities_exit_four_when_ffmpeg_missing(monkeypatch):
@@ -121,6 +124,7 @@ def test_capabilities_human_output_formats_each_tool(monkeypatch):
     assert "mkvtoolnix" in result.stdout
     assert "materialize_hevc_video" in result.stdout
     assert "materialize_hdr_video" in result.stdout
+    assert "materialize_resolution_switch_video" in result.stdout
 
 
 def test_capabilities_human_output_formats_content_sources(monkeypatch):
@@ -141,3 +145,4 @@ def test_capabilities_human_output_formats_content_sources(monkeypatch):
     assert "video:color_space:bt709" in result.stdout
     assert "video:color_range:full" in result.stdout
     assert "video:hdr:hdr10" in result.stdout
+    assert "video:resolution_sequence:sd_to_hd" in result.stdout

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from chaos_librarian.contract import scenario as scenario_contract
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
     ContentSourceEvidence,
@@ -24,6 +25,7 @@ def test_content_source_evidence_round_trips_builtin_video() -> None:
         recipe_digest="sha256:" + "0" * 64,
         color_space=VideoColorSpace.BT709,
         color_range=VideoColorRange.FULL,
+        resolution_sequence=scenario_contract.VideoResolutionSequence.SD_TO_HD,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
         cache_key=None,
         content_hash=None,
@@ -36,6 +38,7 @@ def test_content_source_evidence_round_trips_builtin_video() -> None:
     assert loaded == evidence
     assert loaded.color_space is VideoColorSpace.BT709
     assert loaded.color_range is VideoColorRange.FULL
+    assert loaded.resolution_sequence is scenario_contract.VideoResolutionSequence.SD_TO_HD
 
 
 def test_content_source_evidence_round_trips_cached_audio() -> None:

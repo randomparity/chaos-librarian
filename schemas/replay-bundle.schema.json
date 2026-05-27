@@ -128,6 +128,17 @@
           "title": "Recipe Digest",
           "type": "string"
         },
+        "resolution_sequence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoResolutionSequence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source": {
           "title": "Source",
           "type": "string"
@@ -247,7 +258,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -365,7 +376,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 8,
+          "const": 9,
           "title": "Schema Version",
           "type": "integer"
         }
@@ -469,6 +480,14 @@
         "bt2020"
       ],
       "title": "VideoColorSpace",
+      "type": "string"
+    },
+    "VideoResolutionSequence": {
+      "description": "Supported mid-stream video resolution transitions.",
+      "enum": [
+        "sd_to_hd"
+      ],
+      "title": "VideoResolutionSequence",
       "type": "string"
     }
   },

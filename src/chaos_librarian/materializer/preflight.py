@@ -48,7 +48,13 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.tooling.ffmpeg import build_command
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
-from chaos_librarian.media_matrix import SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER
+from chaos_librarian.media_matrix import (
+    RESOLUTION_SWITCH_VIDEO_CODEC,
+    RESOLUTION_SWITCH_VIDEO_CONTAINER,
+    RESOLUTION_SWITCH_VIDEO_RESOLUTION,
+    RESOLUTION_SWITCH_VIDEO_SOURCE,
+    SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
+)
 from chaos_librarian.topology import iter_asset_contexts
 
 __all__ = [
@@ -105,6 +111,14 @@ def preflight_asset(
             field="video",
             payload={},
         )
+    if video.resolution_sequence is not None:
+        _preflight_resolution_switch_asset(
+            video=video,
+            audios=audios,
+            subtitles=subtitles,
+            container=container,
+        )
+        return
     audio_inputs = _preflight_audio_inputs(audios)
     _preflight_subtitles(subtitles)
     width, height = RESOLUTION_PIXELS.get(video.resolution, (1, 1))
@@ -130,6 +144,84 @@ def preflight_asset(
         audios=audios,
         audio_inputs=audio_inputs,
         output_path=Path(f"preflight.{container}"),
+    )
+
+
+def _preflight_resolution_switch_asset(
+    *,
+    video: VideoTrack,
+    audios: Sequence[AudioTrack],
+    subtitles: Sequence[SubtitleTrack],
+    container: str,
+) -> None:
+    _require_resolution_switch_value(
+        value=container,
+        expected=RESOLUTION_SWITCH_VIDEO_CONTAINER,
+        field="container",
+    )
+    _require_resolution_switch_value(
+        value=video.source.value,
+        expected=RESOLUTION_SWITCH_VIDEO_SOURCE,
+        field="video.source",
+    )
+    _require_resolution_switch_value(
+        value=video.codec,
+        expected=RESOLUTION_SWITCH_VIDEO_CODEC,
+        field="video.codec",
+    )
+    _require_resolution_switch_value(
+        value=video.resolution,
+        expected=RESOLUTION_SWITCH_VIDEO_RESOLUTION,
+        field="video.resolution",
+    )
+    if audios:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization does not support audio streams",
+            field="audio",
+            payload={"count": len(audios)},
+        )
+    if subtitles:
+        raise UnsupportedMaterializationError(
+            "resolution-switch video materialization does not support subtitles",
+            field="subtitles",
+            payload={"count": len(subtitles)},
+        )
+    for field_name, value in (
+        ("vfr_cadence", video.vfr_cadence),
+        ("field_order", video.field_order),
+        ("color_space", video.color_space),
+        ("color_range", video.color_range),
+        ("hdr_mode", video.hdr_mode),
+    ):
+        if value is None:
+            continue
+        raise UnsupportedMaterializationError(
+            f"resolution-switch video materialization cannot combine {field_name}",
+            field=f"video.{field_name}",
+            payload={field_name: value.value},
+        )
+    for width, height in (RESOLUTION_PIXELS["sd"], RESOLUTION_PIXELS["hd"]):
+        resolve_video_input(
+            source=video.source,
+            request=VideoSourceRequest(
+                asset_id="preflight",
+                seed=0,
+                duration_s=0.5,
+                width=width,
+                height=height,
+                fps=FPS_DEFAULT,
+                resolution_sequence=video.resolution_sequence,
+            ),
+        )
+
+
+def _require_resolution_switch_value(*, value: str, expected: str, field: str) -> None:
+    if value == expected:
+        return
+    raise UnsupportedMaterializationError(
+        f"resolution-switch video materialization requires {field}={expected!r}",
+        field=field,
+        payload={"expected": expected, "actual": value},
     )
 
 

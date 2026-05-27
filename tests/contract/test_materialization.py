@@ -153,8 +153,8 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_ten() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 10
+def test_materialization_schema_version_is_eleven() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 11
 
 
 def test_materialization_report_run_timing_defaults() -> None:

@@ -7,7 +7,7 @@ from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.materializer.errors import CapabilityGateError
 from chaos_librarian.materializer.preflight import iter_assets
 
-__all__ = ["assert_capable_for_hdr_video"]
+__all__ = ["assert_capable_for_hdr_video", "assert_capable_for_resolution_switch_video"]
 
 
 def assert_capable_for_hdr_video(scenario: Scenario, caps: Capabilities) -> None:
@@ -27,5 +27,27 @@ def assert_capable_for_hdr_video(scenario: Scenario, caps: Capabilities) -> None
                 "required_filter": "setparams",
                 "required_pixel_format": "yuv420p10le",
                 "hdr_mode": asset.video.hdr_mode.value,
+            },
+        )
+
+
+def assert_capable_for_resolution_switch_video(
+    scenario: Scenario,
+    caps: Capabilities,
+) -> None:
+    """Raise before run-dir allocation when scenario needs resolution switching."""
+    for asset in iter_assets(scenario):
+        if asset.video is None or asset.video.resolution_sequence is None:
+            continue
+        if caps.ready_for.materialize_resolution_switch_video:
+            return
+        raise CapabilityGateError(
+            "resolution-switch video materialization requires FFmpeg with libx264",
+            asset_id=asset.id,
+            field="ready_for.materialize_resolution_switch_video",
+            payload={
+                "capability": "ready_for.materialize_resolution_switch_video",
+                "required_encoder": "libx264",
+                "resolution_sequence": asset.video.resolution_sequence.value,
             },
         )

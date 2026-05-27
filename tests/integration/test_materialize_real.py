@@ -288,6 +288,36 @@ def test_materialize_hdr_video_reports_metadata(
         assert "Content light level metadata" not in side_data
 
 
+def test_materialize_resolution_switch_video_reports_frame_dimensions(tmp_path: Path) -> None:
+    """WHY: #133 needs probe-visible dimensions over time, not only a
+    scenario knob. ffprobe frame metadata proves both segment resolutions
+    survive in the final MPEG-TS file."""
+    caps = detect_capabilities()
+    if not caps.ready_for.materialize_resolution_switch_video:
+        pytest.skip("FFmpeg libx264 resolution-switch support not available")
+    out = tmp_path / "resolution-switch"
+    result = runner.invoke(
+        app,
+        [
+            "materialize",
+            str(FIXTURE_DIR / "resolution-switch-video.yaml"),
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.stdout + result.stderr
+    media_path = next((out / "library").rglob("*.ts"))
+    materialization = json.loads((out / "materialization.json").read_text())
+    replay = json.loads((out / "replay.json").read_text())
+
+    dimensions = _video_frame_dimensions(media_path)
+
+    assert {(640, 480), (1280, 720)} <= dimensions
+    assert materialization["content_sources"][0]["resolution_sequence"] == "sd_to_hd"
+    assert replay["content_sources"][0]["resolution_sequence"] == "sd_to_hd"
+
+
 def test_capabilities_real() -> None:
     """WHY: the capabilities CLI is the agent's entry point for capability
     probing — round-trip the JSON through Capabilities to lock the
@@ -457,6 +487,38 @@ def _video_side_data_types(path: Path) -> set[str]:
             if isinstance(side_data_type, str):
                 types.add(side_data_type)
     return types
+
+
+def _video_frame_dimensions(path: Path) -> set[tuple[int, int]]:
+    completed = subprocess.run(
+        [
+            "ffprobe",
+            "-hide_banner",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_frames",
+            "-show_entries",
+            "frame=width,height",
+            "-of",
+            "json",
+            str(path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    dimensions: set[tuple[int, int]] = set()
+    for frame in payload.get("frames", []):
+        width = frame.get("width")
+        height = frame.get("height")
+        if isinstance(width, int) and isinstance(height, int):
+            dimensions.add((width, height))
+    return dimensions
 
 
 def _assert_color_evidence(path: Path, color_space: str, color_range: str) -> None:

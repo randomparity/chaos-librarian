@@ -17,6 +17,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorSpace,
     VideoFieldOrder,
     VideoHdrMode,
+    VideoResolutionSequence,
     VideoSource,
     VideoTrack,
     VideoVfrCadence,
@@ -41,6 +42,7 @@ def _video_request(
     color_space: VideoColorSpace | None = None,
     color_range: VideoColorRange | None = None,
     hdr_mode: VideoHdrMode | None = None,
+    resolution_sequence: VideoResolutionSequence | None = None,
 ) -> VideoSourceRequest:
     return VideoSourceRequest(
         asset_id="asset_main",
@@ -55,6 +57,7 @@ def _video_request(
         color_space=color_space,
         color_range=color_range,
         hdr_mode=hdr_mode,
+        resolution_sequence=resolution_sequence,
     )
 
 
@@ -73,6 +76,7 @@ def _video(
     color_space: VideoColorSpace | None = None,
     color_range: VideoColorRange | None = None,
     hdr_mode: VideoHdrMode | None = None,
+    resolution_sequence: VideoResolutionSequence | None = None,
 ) -> VideoTrack:
     return VideoTrack(
         source=VideoSource.COLOR_BARS,
@@ -82,6 +86,7 @@ def _video(
         color_space=color_space,
         color_range=color_range,
         hdr_mode=hdr_mode,
+        resolution_sequence=resolution_sequence,
     )
 
 
@@ -243,6 +248,18 @@ def test_hdr_mode_changes_recipe_digest() -> None:
     assert hdr10.evidence.recipe_digest != hlg.evidence.recipe_digest
 
 
+def test_resolution_sequence_changes_recipe_digest_and_evidence() -> None:
+    default = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    switched = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(resolution_sequence=VideoResolutionSequence.SD_TO_HD),
+    )
+
+    assert switched.evidence.recipe_digest != default.evidence.recipe_digest
+    assert switched.evidence.resolution_sequence is VideoResolutionSequence.SD_TO_HD
+    assert default.evidence.resolution_sequence is None
+
+
 def test_resolve_audio_source_records_track_index() -> None:
     resolution = resolve_audio_source(
         source=AudioSource.SINE,
@@ -278,8 +295,41 @@ def test_preflight_asset_does_not_build_content_source_evidence(
     )
 
 
+def test_preflight_asset_accepts_resolution_switch_video() -> None:
+    preflight_asset(
+        parent_kind=ParentKind.MOVIE,
+        video=_video(resolution_sequence=VideoResolutionSequence.SD_TO_HD),
+        audios=[],
+        subtitles=[],
+        container="ts",
+    )
+
+
+def test_preflight_resolution_switch_rejects_vfr_cadence() -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        preflight_asset(
+            parent_kind=ParentKind.MOVIE,
+            video=VideoTrack(
+                source=VideoSource.COLOR_BARS,
+                codec="h264",
+                resolution="sd",
+                vfr_cadence=VideoVfrCadence.TWENTY_FOUR_TO_THIRTY,
+                resolution_sequence=VideoResolutionSequence.SD_TO_HD,
+            ),
+            audios=[],
+            subtitles=[],
+            container="ts",
+        )
+
+    assert exc.value.field == "video.vfr_cadence"
+
+
 def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
-    capabilities = collect_content_source_capabilities(ffmpeg_available=True, hdr_available=True)
+    capabilities = collect_content_source_capabilities(
+        ffmpeg_available=True,
+        hdr_available=True,
+        resolution_sequence_available=True,
+    )
 
     assert [provider.name for provider in capabilities.providers] == ["builtin-lavfi"]
     provider = capabilities.providers[0]
@@ -291,6 +341,7 @@ def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
     assert "video:color_range:full" in provider.sources
     assert "video:hdr:hdr10" in provider.sources
     assert "video:hdr:hlg" in provider.sources
+    assert "video:resolution_sequence:sd_to_hd" in provider.sources
 
 
 def test_collect_content_source_capabilities_marks_builtin_unavailable_without_ffmpeg() -> None:
@@ -310,8 +361,22 @@ def test_collect_content_source_capabilities_omits_hdr_when_unavailable() -> Non
     assert "video:hdr:hlg" not in provider.sources
 
 
+def test_collect_content_source_capabilities_omits_resolution_sequence_when_unavailable() -> None:
+    capabilities = collect_content_source_capabilities(
+        ffmpeg_available=True,
+        resolution_sequence_available=False,
+    )
+
+    provider = capabilities.providers[0]
+    assert "video:resolution_sequence:sd_to_hd" not in provider.sources
+
+
 def test_collect_content_source_capabilities_reports_registered_source_union() -> None:
-    capabilities = collect_content_source_capabilities(ffmpeg_available=True, hdr_available=True)
+    capabilities = collect_content_source_capabilities(
+        ffmpeg_available=True,
+        hdr_available=True,
+        resolution_sequence_available=True,
+    )
 
     assert len(capabilities.providers) == 1
     provider = capabilities.providers[0]
@@ -331,6 +396,7 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "video:interlaced:bottom_field_first",
         "video:interlaced:top_field_first",
         "video:mandelbrot",
+        "video:resolution_sequence:sd_to_hd",
         "video:solid_color",
         "video:vfr:24_30_60",
         "video:vfr:24_to_30",

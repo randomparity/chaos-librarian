@@ -23,6 +23,9 @@ from chaos_librarian.contract.scenario import (
     AudioTrack,
     SubtitleMode,
     SubtitleTrack,
+    VideoResolutionSequence,
+    VideoSource,
+    VideoTrack,
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer import synthesis as synthesis_mod
@@ -43,7 +46,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 16
+schema_version: 17
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -157,7 +160,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 16
+schema_version: 17
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -345,10 +348,124 @@ def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
     assert not sidecar_path.exists()
 
 
+def test_materialize_one_asset_writes_resolution_switch_video(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = _resolution_switch_asset()
+    output_path = tmp_path / "run" / "library" / "r" / "Resolution Switch - sd-to-hd.ts"
+    _patch_successful_ffmpeg(monkeypatch, output_path)
+
+    result = materialize_one_asset(
+        asset,
+        133,
+        tmp_path / "run",
+        _caps(),
+        2,
+        rendered_relative_path="r/Resolution Switch - sd-to-hd.ts",
+    )
+
+    assert len(result.prelude_invocations) == 2
+    assert result.invocation.command[result.invocation.command.index("-c") + 1] == "copy"
+    assert result.materialized_asset.invocation_index == 2
+    assert result.content_sources[0].resolution_sequence is VideoResolutionSequence.SD_TO_HD
+    assert output_path.exists()
+
+
+def test_materialize_one_asset_rejects_resolution_switch_audio_before_writing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    audio = AudioTrack(
+        source=AudioSource.SINE,
+        codec="aac",
+        channels=AudioChannelLayout.STEREO,
+        language="eng",
+    )
+    asset = _resolution_switch_asset().model_copy(update={"audio": (audio,)})
+    output_path = tmp_path / "run" / "library" / "r" / "Resolution Switch - sd-to-hd.ts"
+    _patch_successful_ffmpeg(monkeypatch, output_path)
+
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        materialize_one_asset(
+            asset,
+            133,
+            tmp_path / "run",
+            _caps(),
+            0,
+            rendered_relative_path="r/Resolution Switch - sd-to-hd.ts",
+        )
+
+    assert exc.value.field == "audio"
+    assert not output_path.exists()
+
+
+def test_phase_a_appends_resolution_switch_invocations_in_order(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=b"""\
+schema_version: 17
+scenario_id: resolution-switch-phase-a
+seed: 133
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+movies:
+  - id: movie_switch
+    title: Resolution Switch
+    layout: movie_flat
+    variants:
+      - id: variant_switch
+        label: sd-to-hd
+        bundle:
+          id: bundle_switch
+          assets:
+            - id: asset_switch
+              role: main
+              container: ts
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+                resolution_sequence: sd_to_hd
+series: []
+artists: []
+timeline: []
+""",
+        source_label="test:resolution-switch-phase-a.yaml",
+    )
+    validation_report = run_validation(run_input)
+    assert validation_report.ok
+    artifacts = run_plan(run_input=run_input, validation_report=validation_report)
+    _patch_successful_ffmpeg(
+        monkeypatch,
+        tmp_path / "run" / "library" / "r" / "Resolution Switch - sd-to-hd.ts",
+    )
+
+    phase_a = materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path / "run",
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+
+    assert len(phase_a.invocations) == 3
+    assert phase_a.invocations[0].command[-1].endswith("segment-sd.ts")
+    assert phase_a.invocations[1].command[-1].endswith("segment-hd.ts")
+    assert phase_a.invocations[2].command[phase_a.invocations[2].command.index("-c") + 1] == "copy"
+    assert phase_a.materialized_assets[0].invocation_index == 2
+
+
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 16
+schema_version: 17
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -396,7 +513,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 16
+schema_version: 17
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short
@@ -443,9 +560,54 @@ timeline: []
     return scenario.artists[0].albums[0].discs[0].tracks[0].variants[0].bundle.assets[0]
 
 
+def _resolution_switch_asset() -> Asset:
+    return Asset(
+        id="asset_switch",
+        role="main",
+        container="ts",
+        duration_seconds=1.0,
+        video=VideoTrack(
+            source=VideoSource.COLOR_BARS,
+            codec="h264",
+            resolution="sd",
+            resolution_sequence=VideoResolutionSequence.SD_TO_HD,
+        ),
+    )
+
+
+def _patch_successful_ffmpeg(monkeypatch: pytest.MonkeyPatch, final_path: Path) -> None:
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del timeout_s
+        output = Path(argv[-1])
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(b"media")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda _path: ProbedMedia(
+            container="mpegts",
+            duration_seconds=1.0,
+            size_bytes=final_path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=1280, height=720)],
+        ),
+    )
+
+
 def _caps() -> Capabilities:
     return Capabilities(
-        schema_version=4,
+        schema_version=5,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -457,6 +619,7 @@ def _caps() -> Capabilities:
             materialize_media_mutations=False,
             materialize_hevc_video=True,
             materialize_hdr_video=True,
+            materialize_resolution_switch_video=True,
         ),
     )
 

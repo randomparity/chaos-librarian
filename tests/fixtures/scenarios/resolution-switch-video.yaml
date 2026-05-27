@@ -1,0 +1,30 @@
+schema_version: 17
+scenario_id: resolution-switch-video
+seed: 133
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: movie_resolution_switch
+    title: Resolution Switch
+    layout: movie_flat
+    variants:
+      - id: variant_sd_to_hd
+        label: sd-to-hd
+        bundle:
+          id: bundle_sd_to_hd
+          assets:
+            - id: asset_resolution_switch_main
+              role: main
+              container: ts
+              duration_seconds: 1.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+                resolution_sequence: sd_to_hd
+series: []
+artists: []
+timeline: []

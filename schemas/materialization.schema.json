@@ -102,6 +102,17 @@
           "title": "Recipe Digest",
           "type": "string"
         },
+        "resolution_sequence": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/VideoResolutionSequence"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "source": {
           "title": "Source",
           "type": "string"
@@ -1013,6 +1024,14 @@
       ],
       "title": "VideoColorSpace",
       "type": "string"
+    },
+    "VideoResolutionSequence": {
+      "description": "Supported mid-stream video resolution transitions.",
+      "enum": [
+        "sd_to_hd"
+      ],
+      "title": "VideoResolutionSequence",
+      "type": "string"
     }
   },
   "additionalProperties": false,
@@ -1132,7 +1151,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 10,
+      "const": 11,
       "title": "Schema Version",
       "type": "integer"
     },

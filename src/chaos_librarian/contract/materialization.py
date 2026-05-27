@@ -238,7 +238,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[10]
+    schema_version: Literal[11]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str

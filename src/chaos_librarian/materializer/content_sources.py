@@ -21,6 +21,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorSpace,
     VideoFieldOrder,
     VideoHdrMode,
+    VideoResolutionSequence,
     VideoSource,
     VideoVfrCadence,
 )
@@ -74,6 +75,9 @@ COLOR_RANGE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
 HDR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
     f"video:hdr:{hdr_mode.value}" for hdr_mode in VideoHdrMode
 )
+RESOLUTION_SEQUENCE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:resolution_sequence:{sequence.value}" for sequence in VideoResolutionSequence
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,6 +93,7 @@ class VideoSourceRequest:
     color_space: VideoColorSpace | None = None
     color_range: VideoColorRange | None = None
     hdr_mode: VideoHdrMode | None = None
+    resolution_sequence: VideoResolutionSequence | None = None
     track_index: None = None
 
 
@@ -141,7 +146,11 @@ class ContentSourceProvider(Protocol):
         """Resolve an audio source to an FFmpeg input without replay evidence."""
 
     def capability(
-        self, *, ffmpeg_available: bool, hdr_available: bool
+        self,
+        *,
+        ffmpeg_available: bool,
+        hdr_available: bool,
+        resolution_sequence_available: bool,
     ) -> ContentSourceProviderCapability:
         """Report provider capability for the current host."""
 
@@ -240,9 +249,16 @@ class _BuiltinLavfiProvider:
         )
 
     def capability(
-        self, *, ffmpeg_available: bool, hdr_available: bool
+        self,
+        *,
+        ffmpeg_available: bool,
+        hdr_available: bool,
+        resolution_sequence_available: bool,
     ) -> ContentSourceProviderCapability:
         hdr_sources = HDR_CAPABILITY_SOURCES if hdr_available else ()
+        resolution_sequence_sources = (
+            RESOLUTION_SEQUENCE_CAPABILITY_SOURCES if resolution_sequence_available else ()
+        )
         return _builtin_capability(
             ffmpeg_available=ffmpeg_available,
             sources=[
@@ -253,6 +269,7 @@ class _BuiltinLavfiProvider:
                 *COLOR_SPACE_CAPABILITY_SOURCES,
                 *COLOR_RANGE_CAPABILITY_SOURCES,
                 *hdr_sources,
+                *resolution_sequence_sources,
             ],
         )
 
@@ -307,7 +324,10 @@ def resolve_audio_input(source: AudioSource, request: AudioSourceRequest) -> FFm
 
 
 def collect_content_source_capabilities(
-    ffmpeg_available: bool, *, hdr_available: bool = False
+    ffmpeg_available: bool,
+    *,
+    hdr_available: bool = False,
+    resolution_sequence_available: bool = False,
 ) -> ContentSourceCapabilities:
     """Collect content-source capabilities for all registered providers."""
     return ContentSourceCapabilities(
@@ -315,6 +335,7 @@ def collect_content_source_capabilities(
             _BUILTIN_PROVIDER.capability(
                 ffmpeg_available=ffmpeg_available,
                 hdr_available=hdr_available,
+                resolution_sequence_available=resolution_sequence_available,
             )
         ],
     )
@@ -340,6 +361,9 @@ def _builtin_evidence(
         ),
         color_space=(request.color_space if isinstance(request, VideoSourceRequest) else None),
         color_range=(request.color_range if isinstance(request, VideoSourceRequest) else None),
+        resolution_sequence=(
+            request.resolution_sequence if isinstance(request, VideoSourceRequest) else None
+        ),
         track_index=request.track_index,
         cache_disposition=CacheDisposition.NOT_CACHEABLE,
     )
@@ -413,6 +437,11 @@ def _request_payload(
                 "color_space": (None if request.color_space is None else request.color_space.value),
                 "color_range": (None if request.color_range is None else request.color_range.value),
                 "hdr_mode": (None if request.hdr_mode is None else request.hdr_mode.value),
+                "resolution_sequence": (
+                    None
+                    if request.resolution_sequence is None
+                    else request.resolution_sequence.value
+                ),
                 "channels": None,
             }
         )
