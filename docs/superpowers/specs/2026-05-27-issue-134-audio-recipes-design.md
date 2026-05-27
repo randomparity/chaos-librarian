@@ -110,6 +110,12 @@ embedded in materialization reports and replay bundles, bump
 `MATERIALIZATION_SCHEMA_VERSION` to 12 and `REPLAY_BUNDLE_SCHEMA_VERSION` to 10, then
 regenerate the matching schemas.
 
+Materialize, wall-clock run, and run replay should gate scenarios that request
+`source: noise` before run directory allocation when
+`ready_for.materialize_audio_recipes` is false. Sample-rate and sample-format requests
+do not need this gate; they are covered by the static FFmpeg/FFprobe gate plus the
+validation matrix.
+
 ## Tests
 
 Add tests for:
@@ -120,6 +126,8 @@ Add tests for:
   and the digest changes when each parameter changes.
 - Capabilities v6 includes `materialize_audio_recipes` and the provider markers only
   when `anoisesrc` is available.
+- Materialize/run/replay entry points reject `source: noise` when
+  `materialize_audio_recipes` is false.
 - Semantic validation accepts representative valid AAC, FLAC, MP3, and WAV cells and
   rejects unsupported rate/format combinations.
 - FFmpeg command builders emit per-stream `-ar` and `-sample_fmt` arguments.
