@@ -11,6 +11,7 @@ from chaos_librarian.contract.scenario import (
     AudioSampleFormat,
     CoverArtImageFormat,
     CoverArtResolution,
+    MatroskaMuxingProfile,
     VideoColorRange,
     VideoColorSpace,
     VideoResolutionSequence,
@@ -27,6 +28,7 @@ class ContentTrackKind(enum.StrEnum):
     SUBTITLE = "subtitle"
     CHAPTERS = "chapters"
     COVER_ART = "cover_art"
+    MUXING = "muxing"
 
 
 class CacheDisposition(enum.StrEnum):
@@ -58,6 +60,8 @@ class ContentSourceEvidence(BaseModel):
     cover_art_image_format: CoverArtImageFormat | None = None
     cover_art_resolution: CoverArtResolution | None = None
     cover_art_color: str | None = Field(default=None, pattern=r"^#[0-9a-f]{6}$")
+    matroska_muxing_profile: MatroskaMuxingProfile | None = None
+    container: str | None = None
     track_index: int | None = Field(default=None, ge=0)
     cache_disposition: CacheDisposition
     cache_key: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)

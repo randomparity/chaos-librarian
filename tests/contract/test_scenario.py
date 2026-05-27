@@ -183,7 +183,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v21_payload() -> None:
+def test_movie_only_scenario_v22_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -196,7 +196,7 @@ def test_movie_only_scenario_v21_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 21
+    assert scenario.schema_version == 22
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -222,6 +222,18 @@ def test_mp4_moov_placement_asset_round_trip() -> None:
         scenario.movies[0].variants[0].bundle.assets[0].mp4_moov_placement
         is scenario_contract.Mp4MoovPlacement.MOOV_AT_START
     )
+
+
+def test_asset_accepts_matroska_muxing_profile_values() -> None:
+    payload = _minimal_scenario().model_dump(mode="json")
+    asset = payload["movies"][0]["variants"][0]["bundle"]["assets"][0]
+    assert isinstance(asset, dict)
+    for profile in ("no_cues", "dense_cues", "short_clusters"):
+        asset["matroska_muxing_profile"] = profile
+        scenario = Scenario.model_validate(payload)
+        loaded = scenario.movies[0].variants[0].bundle.assets[0]
+        assert loaded.matroska_muxing_profile is not None
+        assert loaded.matroska_muxing_profile.value == profile
 
 
 def test_mp4_moov_placement_rejects_unknown_value() -> None:
@@ -915,8 +927,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_one() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 21
+def test_scenario_schema_version_is_twenty_two() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 22
 
 
 def test_scenario_accepts_profile_labels() -> None:
