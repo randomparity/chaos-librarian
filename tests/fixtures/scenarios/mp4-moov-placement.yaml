@@ -1,26 +1,26 @@
-# expected: E_ID_DUPLICATE
 schema_version: 20
-scenario_id: bad
-seed: 1
+scenario_id: mp4-moov-placement
+seed: 136
 duration_scale: short
 library:
   roots:
-    - id: r
-      path: r
+    - id: root_movies
+      path: movies
 movies:
-  - id: w
-    title: t
+  - id: movie_moov
+    title: Moov Placement
     layout: movie_flat
     variants:
-      - id: v1
-        label: l1
+      - id: variant_moov_start
+        label: start
         bundle:
-          id: b1
+          id: bundle_moov_start
           assets:
-            - id: main
-              role: primary_video
-              container: mkv
-              duration_seconds: 1
+            - id: asset_moov_start
+              role: main
+              container: mp4
+              mp4_moov_placement: moov_at_start
+              duration_seconds: 1.0
               video:
                 source: color_bars
                 codec: h264
@@ -30,15 +30,16 @@ movies:
                   codec: aac
                   channels: stereo
                   language: eng
-      - id: v2
-        label: l2
+      - id: variant_moov_end
+        label: end
         bundle:
-          id: b2
+          id: bundle_moov_end
           assets:
-            - id: main  # collides with b1's asset id across bundles
-              role: primary_video
-              container: mkv
-              duration_seconds: 1
+            - id: asset_moov_end
+              role: main
+              container: mp4
+              mp4_moov_placement: moov_at_end
+              duration_seconds: 1.0
               video:
                 source: color_bars
                 codec: h264

@@ -1,4 +1,4 @@
-schema_version: 19
+schema_version: 20
 scenario_id: interceptor-catalog-run
 seed: 117
 duration_scale: short

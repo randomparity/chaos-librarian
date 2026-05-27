@@ -1,5 +1,5 @@
 # expected: E_TIMELINE_ACTION_UNKNOWN
-schema_version: 19
+schema_version: 20
 scenario_id: bad
 seed: 1
 duration_scale: short

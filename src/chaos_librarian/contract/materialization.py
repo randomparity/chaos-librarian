@@ -18,7 +18,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
-from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
+from chaos_librarian.contract.scenario import (
+    Mp4MoovPlacement,
+    NetworkLagEffect,
+    TimelineActionName,
+)
 
 
 class Outcome(enum.StrEnum):
@@ -95,6 +99,7 @@ class MaterializedAsset(BaseModel):
     size_bytes: int
     duration_seconds: float
     invocation_index: int
+    mp4_moov_placement: Mp4MoovPlacement | None = None
 
 
 class MaterializationFailure(BaseModel):
@@ -238,7 +243,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[12]
+    schema_version: Literal[13]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str

@@ -22,6 +22,7 @@ from chaos_librarian.contract.scenario import (
     AUDIO_FFMPEG_CHANNEL_LAYOUT_BY_NAME,
     AudioTrack,
     AudioTrackRole,
+    Mp4MoovPlacement,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -379,6 +380,7 @@ def _build_video_command(
     audios: Sequence[AudioTrack],
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
+    mp4_moov_placement: Mp4MoovPlacement | None,
 ) -> list[str]:
     _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
     _validate_video(video)
@@ -395,6 +397,8 @@ def _build_video_command(
     argv.extend(_audio_channel_layout_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     argv.extend(_audio_metadata_args(audios))
+    if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
+        argv.extend(["-movflags", "+faststart"])
     argv.append("-shortest")
     argv.append(str(output_path))
     return argv
@@ -429,6 +433,7 @@ def build_command(
     audios: Sequence[AudioTrack],
     audio_inputs: Sequence[FFmpegInput],
     output_path: Path,
+    mp4_moov_placement: Mp4MoovPlacement | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for one asset.
 
@@ -441,6 +446,12 @@ def build_command(
             supported matrix, or an FFmpegInput is missing its input.
     """
     container = _resolve_container(output_path)
+    if mp4_moov_placement is not None and container != "mp4":
+        raise UnsupportedMaterializationError(
+            "mp4_moov_placement is only supported for mp4 assets",
+            field="mp4_moov_placement",
+            payload={"container": container},
+        )
     if video is None:
         if video_input is not None:
             raise UnsupportedMaterializationError(
@@ -467,6 +478,7 @@ def build_command(
         audios=audios,
         audio_inputs=audio_inputs,
         output_path=output_path,
+        mp4_moov_placement=mp4_moov_placement,
     )
 
 

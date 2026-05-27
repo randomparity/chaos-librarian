@@ -21,6 +21,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    Mp4MoovPlacement,
     SubtitleMode,
     SubtitleTrack,
     VideoResolutionSequence,
@@ -46,7 +47,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 19
+schema_version: 20
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -160,7 +161,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 19
+schema_version: 20
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -314,6 +315,82 @@ def test_materialize_one_asset_writes_audio_only_track(
     assert result.sidecar_hashes == {}
 
 
+def test_materialize_one_asset_records_mp4_moov_placement(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    asset = Asset(
+        id="asset_mp4",
+        role="main",
+        container="mp4",
+        duration_seconds=1.0,
+        mp4_moov_placement=Mp4MoovPlacement.MOOV_AT_START,
+        video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+        audio=(
+            AudioTrack(
+                source=AudioSource.SINE,
+                codec="aac",
+                channels=AudioChannelLayout.STEREO,
+                language="eng",
+            ),
+        ),
+    )
+    output_path = tmp_path / "run" / "library" / "r" / "Moov.mp4"
+    captured: dict[str, Mp4MoovPlacement | None] = {}
+
+    def fake_build_command(
+        *,
+        video: VideoTrack | None,
+        video_input: object | None,
+        audios: object,
+        audio_inputs: object,
+        output_path: Path,
+        mp4_moov_placement: Mp4MoovPlacement | None,
+    ) -> list[str]:
+        del video, video_input, audios, audio_inputs
+        captured["mp4_moov_placement"] = mp4_moov_placement
+        return ["ffmpeg", "-i", "synthetic", str(output_path)]
+
+    def fake_run_ffmpeg(argv: list[str], *, ffmpeg_version: str, timeout_s: float = 60.0):
+        del ffmpeg_version, timeout_s
+        Path(argv[-1]).write_bytes(b"media")
+        return (
+            ToolInvocation(
+                tool="ffmpeg",
+                version="7.1.1",
+                command=argv,
+                exit_code=0,
+                duration_ns=1,
+            ),
+            "",
+        )
+
+    monkeypatch.setattr(synthesis_mod, "build_command", fake_build_command)
+    monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run_ffmpeg)
+    monkeypatch.setattr(
+        synthesis_mod,
+        "probe_file",
+        lambda _path: ProbedMedia(
+            container="mov,mp4,m4a,3gp,3g2,mj2",
+            duration_seconds=1,
+            size_bytes=output_path.stat().st_size,
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+        ),
+    )
+
+    result = materialize_one_asset(
+        asset,
+        1,
+        tmp_path / "run",
+        _caps(),
+        0,
+        rendered_relative_path="r/Moov.mp4",
+    )
+
+    assert captured["mp4_moov_placement"] is Mp4MoovPlacement.MOOV_AT_START
+    assert result.materialized_asset.mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START
+
+
 def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
     tmp_path: Path,
 ) -> None:
@@ -406,7 +483,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 19
+schema_version: 20
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -465,7 +542,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 19
+schema_version: 20
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -513,7 +590,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 19
+schema_version: 20
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short

@@ -226,6 +226,7 @@ def materialize_one_asset(
         audios=asset.audio,
         audio_inputs=resolved_inputs.audio_inputs,
         output_path=output_path,
+        mp4_moov_placement=asset.mp4_moov_placement,
     )
     invocation, stderr_tail = run_ffmpeg(argv, ffmpeg_version=caps.ffmpeg.version or "unknown")
     if invocation.exit_code != 0:
@@ -256,6 +257,7 @@ def materialize_one_asset(
         size_bytes=probed.size_bytes,
         duration_seconds=probed.duration_seconds,
         invocation_index=invocation_index,
+        mp4_moov_placement=asset.mp4_moov_placement,
     )
     return MaterializeAssetResult(
         invocation=invocation,

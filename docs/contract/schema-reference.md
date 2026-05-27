@@ -46,12 +46,12 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 19 |
+| scenario | 20 |
 | manifest | 8 |
 | journal | 1 |
 | replay bundle | 10 |
 | validation | 1 |
-| materialization | 12 |
+| materialization | 13 |
 | run sentinel | 2 |
 | capabilities | 6 |
 | asset report | 8 |
@@ -67,6 +67,9 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 3 |
 | divergence | 1 |
+
+Scenario v20 adds MP4 `moov` atom placement options on assets. Materialization
+v13 records the selected MP4 placement on each materialized asset.
 
 Scenario v19 adds expanded audio layouts (`4.0`, `lcr`, `6.1`) and audio
 track roles (`main`, `commentary`, `alternate`). Manifest v8, asset-report v8,

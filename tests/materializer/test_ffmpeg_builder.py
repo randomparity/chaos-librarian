@@ -13,6 +13,7 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     AudioTrackRole,
+    Mp4MoovPlacement,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -299,6 +300,46 @@ def test_hdr_video_owns_color_signal_args(tmp_path: Path) -> None:
 
     assert "-colorspace" not in argv
     assert "-color_range" not in argv
+
+
+def test_mp4_moov_at_start_adds_faststart(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(),
+        video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mp4",
+        mp4_moov_placement=Mp4MoovPlacement.MOOV_AT_START,
+    )
+
+    assert argv[argv.index("-movflags") + 1] == "+faststart"
+
+
+def test_mp4_moov_at_end_uses_default_mp4_order(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(),
+        video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mp4",
+        mp4_moov_placement=Mp4MoovPlacement.MOOV_AT_END,
+    )
+
+    assert "-movflags" not in argv
+
+
+def test_mp4_moov_placement_rejects_non_mp4_output(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=_video(),
+            video_input=recipe_color_bars(width=640, height=480, fps=24, duration_s=1.0, seed=1),
+            audios=[_audio()],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.mkv",
+            mp4_moov_placement=Mp4MoovPlacement.MOOV_AT_START,
+        )
+
+    assert exc.value.field == "mp4_moov_placement"
 
 
 def test_hdr_video_rejects_non_hevc_codec(tmp_path: Path) -> None:

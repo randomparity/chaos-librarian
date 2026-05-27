@@ -39,7 +39,7 @@ def _input_and_report(name: str) -> tuple[RunInput, ValidationReport]:
 
 def _corruption_input_and_report(seed: str = "42") -> tuple[RunInput, ValidationReport]:
     scenario = f"""
-schema_version: 19
+schema_version: 20
 scenario_id: corruption-plan-test
 seed: {seed}
 duration_scale: short

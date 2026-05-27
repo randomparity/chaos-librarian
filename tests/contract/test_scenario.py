@@ -183,7 +183,7 @@ def test_minimal_scenario_roundtrip() -> None:
     assert loaded == s
 
 
-def test_movie_only_scenario_v19_payload() -> None:
+def test_movie_only_scenario_v20_payload() -> None:
     payload = _base_payload()
     payload["movies"] = [
         {
@@ -196,10 +196,50 @@ def test_movie_only_scenario_v19_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 19
+    assert scenario.schema_version == 20
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
+
+
+def test_mp4_moov_placement_asset_round_trip() -> None:
+    payload = _base_payload()
+    asset = _video_asset_payload("asset_moov")
+    asset["container"] = "mp4"
+    asset["mp4_moov_placement"] = "moov_at_start"
+    payload["movies"] = [
+        {
+            "id": "movie_moov",
+            "title": "Moov",
+            "layout": "movie_flat",
+            "variants": [_variant_payload(asset)],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert (
+        scenario.movies[0].variants[0].bundle.assets[0].mp4_moov_placement
+        is scenario_contract.Mp4MoovPlacement.MOOV_AT_START
+    )
+
+
+def test_mp4_moov_placement_rejects_unknown_value() -> None:
+    payload = _base_payload()
+    asset = _video_asset_payload("asset_moov")
+    asset["container"] = "mp4"
+    asset["mp4_moov_placement"] = "middle"
+    payload["movies"] = [
+        {
+            "id": "movie_moov",
+            "title": "Moov",
+            "layout": "movie_flat",
+            "variants": [_variant_payload(asset)],
+        }
+    ]
+
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
 
 
 def test_tv_only_scenario_accepts_season_zero_specials() -> None:
@@ -844,8 +884,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_nineteen() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 19
+def test_scenario_schema_version_is_twenty() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 20
 
 
 def test_scenario_accepts_profile_labels() -> None:

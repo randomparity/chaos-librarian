@@ -24,7 +24,7 @@ _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 19,
+            "schema_version": 20,
             "scenario_id": "sc",
             "seed": 7,
             "duration_scale": "short",

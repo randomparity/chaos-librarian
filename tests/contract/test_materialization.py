@@ -10,6 +10,7 @@ from pydantic import BaseModel, ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract import materialization as materialization_contract
+from chaos_librarian.contract import scenario as scenario_contract
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
     ContentSourceEvidence,
@@ -153,8 +154,22 @@ def test_unknown_outcome_value_rejected():
         MaterializationReport.model_validate(payload)
 
 
-def test_materialization_schema_version_is_twelve() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 12
+def test_materialization_schema_version_is_thirteen() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 13
+
+
+def test_materialized_asset_records_mp4_moov_placement() -> None:
+    asset = MaterializedAsset(
+        asset_id="asset_mp4",
+        location_path="library/movie/main.mp4",
+        content_hash="sha256:" + "0" * 64,
+        size_bytes=100,
+        duration_seconds=1.0,
+        invocation_index=0,
+        mp4_moov_placement=scenario_contract.Mp4MoovPlacement.MOOV_AT_START,
+    )
+
+    assert asset.model_dump(mode="json")["mp4_moov_placement"] == "moov_at_start"
 
 
 def test_materialization_report_run_timing_defaults() -> None:
