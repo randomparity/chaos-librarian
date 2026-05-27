@@ -762,7 +762,7 @@ Run one adversarial review pass on the renderer/preflight diff before continuing
 - Test: `tests/materializer/test_sidecar_bytes.py`
 - Test: `tests/materializer/test_media.py`
 
-- [ ] **Step 1: Write failing synthesis test**
+- [x] **Step 1: Write failing synthesis test**
 
 Add to `tests/materializer/test_synthesis.py`:
 
@@ -811,7 +811,7 @@ def test_materialize_one_asset_writes_multiple_subtitle_recipe_sidecars(
 Add a small `_sha256(data: bytes) -> str` helper in the test file if one does
 not exist.
 
-- [ ] **Step 2: Write failing phase-B default behavior tests**
+- [x] **Step 2: Write failing phase-B default behavior tests**
 
 In `tests/materializer/test_sidecar_bytes.py`, keep existing assertions and add:
 
@@ -832,7 +832,7 @@ def test_regenerate_sidecar_subtitle_remains_default_utf8_srt() -> None:
     assert b"[Script Info]" not in bytes_
 ```
 
-- [ ] **Step 3: Run tests to verify red**
+- [x] **Step 3: Run tests to verify red**
 
 Run:
 
@@ -845,7 +845,7 @@ uv run pytest --no-cov \
 
 Expected: ASS path missing or SRT BOM missing before implementation.
 
-- [ ] **Step 4: Implement synthesis byte writing**
+- [x] **Step 4: Implement synthesis byte writing**
 
 In `synthesis.py`, import `subtitle_payload_bytes`. Change declared sidecar
 writing:
@@ -875,7 +875,7 @@ In phase-B subtitle creation/update code, keep default generated SRT behavior bu
 switch to explicit `subtitle_payload_bytes(...)` with SRT/UTF8/NORMAL where it
 reduces duplication. Do not add timeline recipe fields.
 
-- [ ] **Step 5: Run green materializer tests and commit**
+- [x] **Step 5: Run green materializer tests and commit**
 
 Run:
 

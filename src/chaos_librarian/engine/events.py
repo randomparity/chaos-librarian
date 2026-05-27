@@ -1443,7 +1443,11 @@ def _hierarchy_entry(
                 raise ChaosLibrarianValueError(
                     f"renderer-derived sidecar {sidecar.id!r} has no language"
                 )
-            sidecar_to_path = render_declared_sidecar_path(to_path, sidecar.language)
+            sidecar_to_path = render_declared_sidecar_path(
+                to_path,
+                sidecar.language,
+                codec=_sidecar_codec_from_path(sidecar),
+            )
             if sidecar.path == sidecar_to_path:
                 continue
             state.sidecars[sidecar.id] = sidecar.model_copy(update={"path": sidecar_to_path})
@@ -1468,6 +1472,13 @@ def _hierarchy_entry(
             "skipped_deleted_asset_ids": skipped_deleted_asset_ids,
         },
     )
+
+
+def _sidecar_codec_from_path(sidecar: ManifestSidecar) -> str:
+    _prefix, separator, codec = sidecar.path.rpartition(".")
+    if separator and codec:
+        return codec
+    return "srt"
 
 
 _HANDLERS: dict[TimelineActionName, _Handler] = {

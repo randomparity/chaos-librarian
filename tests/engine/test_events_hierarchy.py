@@ -35,7 +35,7 @@ def _apply_timeline(scenario: Scenario) -> tuple[Any, ...]:
 def _series_scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 22,
+            "schema_version": 23,
             "scenario_id": "hierarchy-series",
             "seed": 1,
             "duration_scale": "short",
@@ -117,7 +117,7 @@ def _series_two_asset_scenario(timeline: list[dict[str, object]]) -> Scenario:
 def _music_scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 22,
+            "schema_version": 23,
             "scenario_id": "hierarchy-music",
             "seed": 1,
             "duration_scale": "short",
@@ -231,6 +231,46 @@ def test_renumber_episode_moves_asset_and_renderer_derived_sidecar_only() -> Non
     ]
     assert entry.state_delta["skipped_deleted_asset_ids"] == []
     assert state.sidecars["sidecar_0001"].path == "library/custom/spanish.srt"
+
+
+def test_renumber_episode_preserves_declared_ass_sidecar_extension() -> None:
+    scenario = _series_scenario(
+        [
+            {
+                "id": "ev_renumber",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_1",
+                "episode_number": 2,
+            },
+        ]
+    )
+    payload = scenario.model_dump(mode="json")
+    asset = payload["series"][0]["seasons"][0]["episodes"][0]["variants"][0]["bundle"]["assets"][0]
+    asset["subtitles"] = [
+        {
+            "codec": "ass",
+            "source": "styled_ass",
+            "language": "jpn",
+            "mode": "sidecar",
+        }
+    ]
+    scenario = Scenario.model_validate(payload)
+
+    state, entry = _apply_timeline(scenario)
+
+    assert entry.state_delta["sidecar_moves"] == [
+        {
+            "sidecar_id": "sidecar_episode_asset_jpn",
+            "asset_id": "episode_asset",
+            "from_path": "library/tv/Show/Season 01/Show - S01E01 - Pilot - web.jpn.ass",
+            "to_path": "library/tv/Show/Season 01/Show - S01E02 - Pilot - web.jpn.ass",
+        }
+    ]
+    assert (
+        state.sidecars["sidecar_episode_asset_jpn"].path
+        == "library/tv/Show/Season 01/Show - S01E02 - Pilot - web.jpn.ass"
+    )
 
 
 def test_move_episode_to_season_composes_with_current_episode_metadata() -> None:
