@@ -47,9 +47,11 @@ def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(run_mod, "detect_capabilities", _capabilities)
 
 
-def _capabilities(*, materialize_hevc_video: bool = True) -> Capabilities:
+def _capabilities(
+    *, materialize_hevc_video: bool = True, materialize_hdr_video: bool = True
+) -> Capabilities:
     return Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -60,6 +62,7 @@ def _capabilities(*, materialize_hevc_video: bool = True) -> Capabilities:
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
             materialize_hevc_video=materialize_hevc_video,
+            materialize_hdr_video=materialize_hdr_video,
         ),
     )
 
@@ -123,7 +126,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 15\n"
+        "schema_version: 16\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -275,6 +278,31 @@ def test_orchestrator_refuses_hevc_when_encoder_capability_missing(
         materialize_scenario(FIXTURE_DIR / "hevc-mkv.yaml", out)
 
     assert exc.value.field == "ready_for.materialize_hevc_video"
+    assert not out.exists()
+
+
+def test_orchestrator_refuses_hdr_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """WHY: HDR scenarios require libx265 10-bit + setparams. The refusal
+    must happen before run-dir allocation."""
+    monkeypatch.setattr(
+        run_mod,
+        "detect_capabilities",
+        lambda: _capabilities(materialize_hevc_video=True, materialize_hdr_video=False),
+    )
+    scenario = tmp_path / "hdr.yaml"
+    scenario.write_text(
+        (FIXTURE_DIR / "hevc-mkv.yaml")
+        .read_text()
+        .replace("resolution: sd", "resolution: sd\n                hdr_mode: hdr10")
+    )
+
+    out = tmp_path / "hdr-no-support"
+    with pytest.raises(CapabilityGateError) as exc:
+        materialize_scenario(scenario, out)
+
+    assert exc.value.field == "ready_for.materialize_hdr_video"
     assert not out.exists()
 
 
@@ -440,7 +468,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 15
+schema_version: 16
 scenario_id: static-test
 seed: 1
 duration_scale: short

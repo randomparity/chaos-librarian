@@ -115,6 +115,68 @@ def _ffmpeg_encoder_available(ffmpeg: ToolStatus, encoder: str) -> bool:
     return pattern.search(result.stdout or "") is not None
 
 
+def _ffmpeg_filter_available(ffmpeg: ToolStatus, filter_name: str) -> bool:
+    """Return whether the minimum-passing FFmpeg binary advertises ``filter_name``."""
+    if not ffmpeg.meets_minimum or ffmpeg.path is None:
+        return False
+    try:
+        result = subprocess.run(
+            [ffmpeg.path, "-hide_banner", "-filters"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if result.returncode != 0:
+        return False
+    pattern = re.compile(rf"(^|\s){re.escape(filter_name)}(\s|$)")
+    return pattern.search(result.stdout or "") is not None
+
+
+def _ffmpeg_encoder_supports_pixel_format(
+    ffmpeg: ToolStatus,
+    *,
+    encoder: str,
+    pixel_format: str,
+) -> bool:
+    """Return whether FFmpeg encoder help advertises ``pixel_format``."""
+    if not ffmpeg.meets_minimum or ffmpeg.path is None:
+        return False
+    try:
+        result = subprocess.run(
+            [ffmpeg.path, "-hide_banner", "-h", f"encoder={encoder}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (subprocess.TimeoutExpired, OSError):
+        return False
+    if result.returncode != 0:
+        return False
+    pattern = re.compile(rf"(^|\s){re.escape(pixel_format)}(\s|$)")
+    return pattern.search(result.stdout or "") is not None
+
+
+def _ffmpeg_hdr_signaling_available(
+    ffmpeg: ToolStatus, ffprobe: ToolStatus, *, libx265_available: bool
+) -> bool:
+    """Return whether this host can synthesize probe-visible HEVC HDR signaling."""
+    return (
+        ffmpeg.meets_minimum
+        and ffprobe.meets_minimum
+        and libx265_available
+        and _ffmpeg_filter_available(ffmpeg, "setparams")
+        and _ffmpeg_encoder_supports_pixel_format(
+            ffmpeg,
+            encoder="libx265",
+            pixel_format="yuv420p10le",
+        )
+    )
+
+
 def detect_capabilities() -> Capabilities:
     """Probe ffmpeg, ffprobe, mkvmerge and return a Capabilities report."""
     ffmpeg = _probe_one("ffmpeg", regex_key="ffmpeg")
@@ -124,18 +186,27 @@ def detect_capabilities() -> Capabilities:
     ffprobe_ok = ffprobe.meets_minimum
     mkv_ok = mkv.meets_minimum
     libx265_available = _ffmpeg_encoder_available(ffmpeg, "libx265")
+    hdr_video_available = _ffmpeg_hdr_signaling_available(
+        ffmpeg,
+        ffprobe,
+        libx265_available=libx265_available,
+    )
     return Capabilities(
         schema_version=CAPABILITIES_SCHEMA_VERSION,
         ffmpeg=ffmpeg,
         ffprobe=ffprobe,
         mkvtoolnix=mkv,
         platform=f"{platform.system().lower()}-{platform.machine().lower()}",
-        content_sources=collect_content_source_capabilities(ffmpeg_available=ffmpeg_ok),
+        content_sources=collect_content_source_capabilities(
+            ffmpeg_available=ffmpeg_ok,
+            hdr_available=hdr_video_available,
+        ),
         ready_for=ReadyFor(
             materialize_static=ffmpeg_ok and ffprobe_ok,
             materialize_filesystem_mutations=ffmpeg_ok and ffprobe_ok,
             materialize_media_mutations=ffmpeg_ok and ffprobe_ok and mkv_ok,
             materialize_hevc_video=ffmpeg_ok and ffprobe_ok and libx265_available,
+            materialize_hdr_video=hdr_video_available,
         ),
     )
 

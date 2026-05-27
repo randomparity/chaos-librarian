@@ -26,6 +26,10 @@ OK_MKV: Final = "mkvmerge v80.0 ('Roundabout') 64-bit"
 OLD_FFMPEG: Final = "ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers"
 ENCODERS_WITH_X265: Final = "Encoders:\n V....D libx264\n V....D libx265"
 ENCODERS_WITHOUT_X265: Final = "Encoders:\n V....D libx264"
+FILTERS_WITH_SETPARAMS: Final = "Filters:\n .. setparams         V->V"
+FILTERS_WITHOUT_SETPARAMS: Final = "Filters:\n TS colorspace        V->V"
+X265_HELP_10BIT: Final = "Supported pixel formats: yuv420p yuv420p10le"
+X265_HELP_8BIT: Final = "Supported pixel formats: yuv420p"
 
 
 def _stub_subprocess_run(returns: dict[str, str]) -> object:
@@ -35,6 +39,12 @@ def _stub_subprocess_run(returns: dict[str, str]) -> object:
         tool = Path(argv[0]).name
         if tool == "ffmpeg" and "-encoders" in argv:
             stdout = returns.get("ffmpeg-encoders", "")
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+        if tool == "ffmpeg" and "-filters" in argv:
+            stdout = returns.get("ffmpeg-filters", "")
+            return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+        if tool == "ffmpeg" and "-h" in argv and "encoder=libx265" in argv:
+            stdout = returns.get("ffmpeg-libx265-help", "")
             return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
         stdout = returns.get(tool, "")
         return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
@@ -101,6 +111,8 @@ def test_detect_capabilities_all_present_above_minimum(
             {
                 "ffmpeg": OK_FFMPEG,
                 "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-filters": FILTERS_WITH_SETPARAMS,
+                "ffmpeg-libx265-help": X265_HELP_10BIT,
                 "ffprobe": OK_FFPROBE,
                 "mkvmerge": OK_MKV,
             }
@@ -113,10 +125,12 @@ def test_detect_capabilities_all_present_above_minimum(
     assert caps.ready_for.materialize_static
     assert caps.ready_for.materialize_media_mutations
     assert caps.ready_for.materialize_hevc_video
+    assert caps.ready_for.materialize_hdr_video
     provider = caps.content_sources.providers[0]
     assert provider.name == "builtin-lavfi"
     assert provider.available
     assert "video:color_bars" in provider.sources
+    assert "video:hdr:hdr10" in provider.sources
 
 
 def test_detect_capabilities_requires_libx265_for_hevc_video(
@@ -134,6 +148,8 @@ def test_detect_capabilities_requires_libx265_for_hevc_video(
             {
                 "ffmpeg": OK_FFMPEG,
                 "ffmpeg-encoders": ENCODERS_WITHOUT_X265,
+                "ffmpeg-filters": FILTERS_WITH_SETPARAMS,
+                "ffmpeg-libx265-help": X265_HELP_10BIT,
                 "ffprobe": OK_FFPROBE,
             }
         ),
@@ -141,6 +157,65 @@ def test_detect_capabilities_requires_libx265_for_hevc_video(
     caps = detect_capabilities()
     assert caps.ready_for.materialize_static
     assert not caps.ready_for.materialize_hevc_video
+    assert not caps.ready_for.materialize_hdr_video
+    assert "video:hdr:hdr10" not in caps.content_sources.providers[0].sources
+
+
+def test_detect_capabilities_requires_setparams_for_hdr_video(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which({"ffmpeg": "/usr/bin/ffmpeg", "ffprobe": "/usr/bin/ffprobe"}),
+    )
+    monkeypatch.setattr(
+        cap_mod.subprocess,
+        "run",
+        _stub_subprocess_run(
+            {
+                "ffmpeg": OK_FFMPEG,
+                "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-filters": FILTERS_WITHOUT_SETPARAMS,
+                "ffmpeg-libx265-help": X265_HELP_10BIT,
+                "ffprobe": OK_FFPROBE,
+            }
+        ),
+    )
+
+    caps = detect_capabilities()
+
+    assert caps.ready_for.materialize_hevc_video
+    assert not caps.ready_for.materialize_hdr_video
+    assert "video:hdr:hlg" not in caps.content_sources.providers[0].sources
+
+
+def test_detect_capabilities_requires_x265_ten_bit_for_hdr_video(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which({"ffmpeg": "/usr/bin/ffmpeg", "ffprobe": "/usr/bin/ffprobe"}),
+    )
+    monkeypatch.setattr(
+        cap_mod.subprocess,
+        "run",
+        _stub_subprocess_run(
+            {
+                "ffmpeg": OK_FFMPEG,
+                "ffmpeg-encoders": ENCODERS_WITH_X265,
+                "ffmpeg-filters": FILTERS_WITH_SETPARAMS,
+                "ffmpeg-libx265-help": X265_HELP_8BIT,
+                "ffprobe": OK_FFPROBE,
+            }
+        ),
+    )
+
+    caps = detect_capabilities()
+
+    assert caps.ready_for.materialize_hevc_video
+    assert not caps.ready_for.materialize_hdr_video
 
 
 def test_detect_capabilities_ffmpeg_below_minimum(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -224,7 +299,7 @@ def test_detect_capabilities_ffmpeg_missing_marks_content_sources_unavailable(
 
 def test_assert_capable_raises_on_regression() -> None:
     caps = Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=False, meets_minimum=False),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -235,6 +310,7 @@ def test_assert_capable_raises_on_regression() -> None:
             materialize_filesystem_mutations=False,
             materialize_media_mutations=False,
             materialize_hevc_video=False,
+            materialize_hdr_video=False,
         ),
     )
     with pytest.raises(CapabilityGateError):

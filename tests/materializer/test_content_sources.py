@@ -16,6 +16,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
+    VideoHdrMode,
     VideoSource,
     VideoTrack,
     VideoVfrCadence,
@@ -39,6 +40,7 @@ def _video_request(
     field_order: VideoFieldOrder | None = None,
     color_space: VideoColorSpace | None = None,
     color_range: VideoColorRange | None = None,
+    hdr_mode: VideoHdrMode | None = None,
 ) -> VideoSourceRequest:
     return VideoSourceRequest(
         asset_id="asset_main",
@@ -52,6 +54,7 @@ def _video_request(
         field_order=field_order,
         color_space=color_space,
         color_range=color_range,
+        hdr_mode=hdr_mode,
     )
 
 
@@ -69,6 +72,7 @@ def _video(
     field_order: VideoFieldOrder | None = None,
     color_space: VideoColorSpace | None = None,
     color_range: VideoColorRange | None = None,
+    hdr_mode: VideoHdrMode | None = None,
 ) -> VideoTrack:
     return VideoTrack(
         source=VideoSource.COLOR_BARS,
@@ -77,6 +81,7 @@ def _video(
         field_order=field_order,
         color_space=color_space,
         color_range=color_range,
+        hdr_mode=hdr_mode,
     )
 
 
@@ -222,6 +227,22 @@ def test_color_range_changes_recipe_digest() -> None:
     assert default.evidence.color_range is None
 
 
+def test_hdr_mode_changes_recipe_digest() -> None:
+    default = resolve_video_source(source=VideoSource.COLOR_BARS, request=_video_request())
+    hdr10 = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(hdr_mode=VideoHdrMode.HDR10),
+    )
+    hlg = resolve_video_source(
+        source=VideoSource.COLOR_BARS,
+        request=_video_request(hdr_mode=VideoHdrMode.HLG),
+    )
+
+    assert hdr10.evidence.recipe_digest != default.evidence.recipe_digest
+    assert hlg.evidence.recipe_digest != default.evidence.recipe_digest
+    assert hdr10.evidence.recipe_digest != hlg.evidence.recipe_digest
+
+
 def test_resolve_audio_source_records_track_index() -> None:
     resolution = resolve_audio_source(
         source=AudioSource.SINE,
@@ -258,7 +279,7 @@ def test_preflight_asset_does_not_build_content_source_evidence(
 
 
 def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
-    capabilities = collect_content_source_capabilities(ffmpeg_available=True)
+    capabilities = collect_content_source_capabilities(ffmpeg_available=True, hdr_available=True)
 
     assert [provider.name for provider in capabilities.providers] == ["builtin-lavfi"]
     provider = capabilities.providers[0]
@@ -268,6 +289,8 @@ def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
     assert "video:interlaced:bottom_field_first" in provider.sources
     assert "video:color_space:bt709" in provider.sources
     assert "video:color_range:full" in provider.sources
+    assert "video:hdr:hdr10" in provider.sources
+    assert "video:hdr:hlg" in provider.sources
 
 
 def test_collect_content_source_capabilities_marks_builtin_unavailable_without_ffmpeg() -> None:
@@ -279,8 +302,16 @@ def test_collect_content_source_capabilities_marks_builtin_unavailable_without_f
     assert provider.reason == "required tool unavailable: ffmpeg"
 
 
+def test_collect_content_source_capabilities_omits_hdr_when_unavailable() -> None:
+    capabilities = collect_content_source_capabilities(ffmpeg_available=True, hdr_available=False)
+
+    provider = capabilities.providers[0]
+    assert "video:hdr:hdr10" not in provider.sources
+    assert "video:hdr:hlg" not in provider.sources
+
+
 def test_collect_content_source_capabilities_reports_registered_source_union() -> None:
-    capabilities = collect_content_source_capabilities(ffmpeg_available=True)
+    capabilities = collect_content_source_capabilities(ffmpeg_available=True, hdr_available=True)
 
     assert len(capabilities.providers) == 1
     provider = capabilities.providers[0]
@@ -295,6 +326,8 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         "video:color_space:bt2020",
         "video:color_space:bt601",
         "video:color_space:bt709",
+        "video:hdr:hdr10",
+        "video:hdr:hlg",
         "video:interlaced:bottom_field_first",
         "video:interlaced:top_field_first",
         "video:mandelbrot",

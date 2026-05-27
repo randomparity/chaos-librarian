@@ -37,7 +37,7 @@ from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
-from chaos_librarian.materializer.errors import CorruptionActionError
+from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -58,7 +58,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 15
+schema_version: 16
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -97,7 +97,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 15
+schema_version: 16
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -137,6 +137,42 @@ timeline:
     action: corrupt_container_header
     target: asset_main
     bytes: 64
+"""
+_HDR_SCENARIO = b"""\
+schema_version: 16
+scenario_id: run-replay-hdr-capability-test
+seed: 7
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_001
+    title: HDR Replay
+    layout: movie_flat
+    variants:
+      - id: variant_001
+        label: hd
+        bundle:
+          id: bundle_001
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: hevc
+                resolution: hd
+                hdr_mode: hdr10
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []
 """
 _TRUNCATE_SCENARIO = _scenario_bytes(
     scenario_id="run-replay-truncate-test",
@@ -238,6 +274,41 @@ def test_run_replay_reproduces_corruption_action_evidence(
     replay_payload = json.loads((tmp_path / "replay" / "replay.json").read_text(encoding="utf-8"))
     _assert_fake_content_source_payload(report_payload["content_sources"])
     _assert_fake_content_source_payload(replay_payload["content_sources"])
+
+
+def test_run_replay_refuses_hdr_when_capability_missing(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caps = Capabilities(
+        schema_version=4,
+        ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
+        ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=True,
+            materialize_filesystem_mutations=True,
+            materialize_media_mutations=True,
+            materialize_hevc_video=True,
+            materialize_hdr_video=False,
+        ),
+    )
+    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(
+        replay_mod,
+        "materialize_one_asset",
+        lambda *_args, **_kwargs: pytest.fail("HDR gate should run before synthesis"),
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(CapabilityGateError) as exc:
+        replay_run_bundle(_run_bundle_for(_HDR_SCENARIO, applied_events=0), out)
+
+    assert exc.value.field == "ready_for.materialize_hdr_video"
+    assert not out.exists()
 
 
 def test_run_replay_reproduces_truncate_file_corruption_action_evidence(
@@ -426,7 +497,7 @@ def _patch_replay_materializer(
     patch_corruption: bool = True,
 ) -> None:
     caps = Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -437,6 +508,7 @@ def _patch_replay_materializer(
             materialize_filesystem_mutations=True,
             materialize_media_mutations=True,
             materialize_hevc_video=True,
+            materialize_hdr_video=True,
         ),
     )
     monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)

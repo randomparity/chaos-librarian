@@ -20,6 +20,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
+    VideoHdrMode,
     VideoSource,
     VideoVfrCadence,
 )
@@ -70,6 +71,9 @@ COLOR_SPACE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
 COLOR_RANGE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
     f"video:color_range:{color_range.value}" for color_range in VideoColorRange
 )
+HDR_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
+    f"video:hdr:{hdr_mode.value}" for hdr_mode in VideoHdrMode
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -84,6 +88,7 @@ class VideoSourceRequest:
     field_order: VideoFieldOrder | None = None
     color_space: VideoColorSpace | None = None
     color_range: VideoColorRange | None = None
+    hdr_mode: VideoHdrMode | None = None
     track_index: None = None
 
 
@@ -135,7 +140,9 @@ class ContentSourceProvider(Protocol):
     ) -> FFmpegInput:
         """Resolve an audio source to an FFmpeg input without replay evidence."""
 
-    def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
+    def capability(
+        self, *, ffmpeg_available: bool, hdr_available: bool
+    ) -> ContentSourceProviderCapability:
         """Report provider capability for the current host."""
 
 
@@ -232,7 +239,10 @@ class _BuiltinLavfiProvider:
             seed=request.seed,
         )
 
-    def capability(self, *, ffmpeg_available: bool) -> ContentSourceProviderCapability:
+    def capability(
+        self, *, ffmpeg_available: bool, hdr_available: bool
+    ) -> ContentSourceProviderCapability:
+        hdr_sources = HDR_CAPABILITY_SOURCES if hdr_available else ()
         return _builtin_capability(
             ffmpeg_available=ffmpeg_available,
             sources=[
@@ -242,6 +252,7 @@ class _BuiltinLavfiProvider:
                 *INTERLACED_CAPABILITY_SOURCES,
                 *COLOR_SPACE_CAPABILITY_SOURCES,
                 *COLOR_RANGE_CAPABILITY_SOURCES,
+                *hdr_sources,
             ],
         )
 
@@ -295,10 +306,17 @@ def resolve_audio_input(source: AudioSource, request: AudioSourceRequest) -> FFm
     return provider.resolve_audio_input(source=source, request=request)
 
 
-def collect_content_source_capabilities(ffmpeg_available: bool) -> ContentSourceCapabilities:
+def collect_content_source_capabilities(
+    ffmpeg_available: bool, *, hdr_available: bool = False
+) -> ContentSourceCapabilities:
     """Collect content-source capabilities for all registered providers."""
     return ContentSourceCapabilities(
-        providers=[_BUILTIN_PROVIDER.capability(ffmpeg_available=ffmpeg_available)],
+        providers=[
+            _BUILTIN_PROVIDER.capability(
+                ffmpeg_available=ffmpeg_available,
+                hdr_available=hdr_available,
+            )
+        ],
     )
 
 
@@ -394,6 +412,7 @@ def _request_payload(
                 "field_order": (None if request.field_order is None else request.field_order.value),
                 "color_space": (None if request.color_space is None else request.color_space.value),
                 "color_range": (None if request.color_range is None else request.color_range.value),
+                "hdr_mode": (None if request.hdr_mode is None else request.hdr_mode.value),
                 "channels": None,
             }
         )

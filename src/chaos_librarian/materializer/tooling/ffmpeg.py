@@ -24,6 +24,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
+    VideoHdrMode,
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
@@ -79,6 +80,38 @@ _COLOR_SPACE_OUTPUT_ARGS: Final[dict[VideoColorSpace, str]] = {
 _COLOR_RANGE_OUTPUT_ARGS: Final[dict[VideoColorRange, str]] = {
     VideoColorRange.LIMITED: "tv",
     VideoColorRange.FULL: "pc",
+}
+_HDR_FILTERS: Final[dict[VideoHdrMode, str]] = {
+    VideoHdrMode.HDR10: (
+        "setparams=color_primaries=bt2020:color_trc=smpte2084:"
+        "colorspace=bt2020nc:range=tv,format=yuv420p10le"
+    ),
+    VideoHdrMode.HLG: (
+        "setparams=color_primaries=bt2020:color_trc=arib-std-b67:"
+        "colorspace=bt2020nc:range=tv,format=yuv420p10le"
+    ),
+}
+_HDR10_MASTER_DISPLAY: Final = (
+    "G(13250,34500)B(7500,3000)R(34000,16000)WP(15635,16450)L(10000000,1)"
+)
+_HDR_X265_PARAMS: Final[dict[VideoHdrMode, tuple[str, ...]]] = {
+    VideoHdrMode.HDR10: (
+        "hdr10=1",
+        "repeat-headers=1",
+        "colorprim=bt2020",
+        "transfer=smpte2084",
+        "colormatrix=bt2020nc",
+        "range=limited",
+        f"master-display={_HDR10_MASTER_DISPLAY}",
+        "max-cll=1000,400",
+    ),
+    VideoHdrMode.HLG: (
+        "repeat-headers=1",
+        "colorprim=bt2020",
+        "transfer=arib-std-b67",
+        "colormatrix=bt2020nc",
+        "range=limited",
+    ),
 }
 
 
@@ -136,7 +169,50 @@ def _interlaced_video_args(video: VideoTrack) -> list[str]:
     )
 
 
+def _hdr_video_args(video: VideoTrack) -> list[str]:
+    if video.hdr_mode is None:
+        return []
+    if video.codec not in HEVC_VIDEO_CODECS:
+        raise UnsupportedMaterializationError(
+            "HDR signaling requires HEVC/H.265 video materialization",
+            field="video.hdr_mode",
+            payload={"supported_codecs": sorted(HEVC_VIDEO_CODECS)},
+        )
+    if video.color_space not in {None, VideoColorSpace.BT2020}:
+        raise UnsupportedMaterializationError(
+            "HDR signaling requires color_space='bt2020' when color_space is set",
+            field="video.color_space",
+            payload={"supported": [VideoColorSpace.BT2020.value]},
+        )
+    if video.color_range not in {None, VideoColorRange.LIMITED}:
+        raise UnsupportedMaterializationError(
+            "HDR signaling requires color_range='limited' when color_range is set",
+            field="video.color_range",
+            payload={"supported": [VideoColorRange.LIMITED.value]},
+        )
+    if video.vfr_cadence is not None:
+        raise UnsupportedMaterializationError(
+            "HDR signaling cannot be combined with vfr_cadence",
+            field="video.hdr_mode",
+            payload={"vfr_cadence": video.vfr_cadence.value},
+        )
+    if video.field_order is not None:
+        raise UnsupportedMaterializationError(
+            "HDR signaling cannot be combined with field_order",
+            field="video.hdr_mode",
+            payload={"field_order": video.field_order.value},
+        )
+    return [
+        "-vf",
+        _HDR_FILTERS[video.hdr_mode],
+        "-x265-params",
+        ":".join(_HDR_X265_PARAMS[video.hdr_mode]),
+    ]
+
+
 def _color_signal_args(video: VideoTrack) -> list[str]:
+    if video.hdr_mode is not None:
+        return []
     args: list[str] = []
     if video.color_space is not None:
         args.extend(["-colorspace", _COLOR_SPACE_OUTPUT_ARGS[video.color_space]])
@@ -227,6 +303,7 @@ def _build_video_command(
     argv.extend(_audio_input_args(audio_inputs))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
     argv.extend(["-c:v", VIDEO_ENCODER_BY_CODEC[video.codec], "-preset", "medium"])
+    argv.extend(_hdr_video_args(video))
     argv.extend(_interlaced_video_args(video))
     argv.extend(_color_signal_args(video))
     argv.extend(["-c:a", "aac"])

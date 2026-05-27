@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.media_matrix import (
+    HEVC_VIDEO_CODECS,
     SUPPORTED_AUDIO_CODECS,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
     SUPPORTED_RESOLUTIONS,
@@ -169,6 +170,11 @@ def _check_video(
         video_loc=video_loc,
         reporter=reporter,
     )
+    _check_hdr_video(
+        video=video,
+        video_loc=video_loc,
+        reporter=reporter,
+    )
 
 
 def _check_interlaced_video(
@@ -185,6 +191,50 @@ def _check_interlaced_video(
             code=E_MATERIALIZE_UNSUPPORTED,
             message="field_order cannot be combined with vfr_cadence",
             loc=(*video_loc, "field_order"),
+        )
+
+
+def _check_hdr_video(
+    *,
+    video: Mapping[str, object],
+    video_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    hdr_mode = video.get("hdr_mode")
+    if not isinstance(hdr_mode, str):
+        return
+    codec = video.get("codec")
+    if isinstance(codec, str) and codec not in HEVC_VIDEO_CODECS:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="HDR signaling requires HEVC/H.265 video materialization",
+            loc=(*video_loc, "hdr_mode"),
+        )
+    color_space = video.get("color_space")
+    if isinstance(color_space, str) and color_space != "bt2020":
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="HDR signaling requires color_space 'bt2020' when color_space is set",
+            loc=(*video_loc, "color_space"),
+        )
+    color_range = video.get("color_range")
+    if isinstance(color_range, str) and color_range != "limited":
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="HDR signaling requires color_range 'limited' when color_range is set",
+            loc=(*video_loc, "color_range"),
+        )
+    if "vfr_cadence" in video and video.get("vfr_cadence") is not None:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="HDR signaling cannot be combined with vfr_cadence",
+            loc=(*video_loc, "hdr_mode"),
+        )
+    if "field_order" in video and video.get("field_order") is not None:
+        reporter.error(
+            code=E_MATERIALIZE_UNSUPPORTED,
+            message="HDR signaling cannot be combined with field_order",
+            loc=(*video_loc, "hdr_mode"),
         )
 
 

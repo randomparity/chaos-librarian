@@ -13,6 +13,7 @@ from chaos_librarian.contract.scenario import (
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
+    VideoHdrMode,
     VideoSource,
     VideoTrack,
 )
@@ -34,6 +35,7 @@ def _video(
     field_order: VideoFieldOrder | None = None,
     color_space: VideoColorSpace | None = None,
     color_range: VideoColorRange | None = None,
+    hdr_mode: VideoHdrMode | None = None,
 ) -> VideoTrack:
     return VideoTrack(
         source=VideoSource.COLOR_BARS,
@@ -42,6 +44,7 @@ def _video(
         field_order=field_order,
         color_space=color_space,
         color_range=color_range,
+        hdr_mode=hdr_mode,
     )
 
 
@@ -195,6 +198,98 @@ def test_video_color_range_adds_ffmpeg_output_arg(
     )
 
     assert argv[argv.index("-color_range") + 1] == ffmpeg_value
+
+
+@pytest.mark.parametrize(
+    ("hdr_mode", "transfer"),
+    [
+        (VideoHdrMode.HDR10, "smpte2084"),
+        (VideoHdrMode.HLG, "arib-std-b67"),
+    ],
+)
+def test_hdr_video_adds_10_bit_filter_and_x265_params(
+    hdr_mode: VideoHdrMode, transfer: str, tmp_path: Path
+) -> None:
+    output = tmp_path / "asset.mkv"
+    argv = build_command(
+        video=_video(codec="hevc", hdr_mode=hdr_mode),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=output,
+    )
+
+    vf = argv[argv.index("-vf") + 1]
+    x265_params = argv[argv.index("-x265-params") + 1]
+    assert "format=yuv420p10le" in vf
+    assert "color_primaries=bt2020" in vf
+    assert f"color_trc={transfer}" in vf
+    assert "colorspace=bt2020nc" in vf
+    assert "range=tv" in vf
+    assert "colorprim=bt2020" in x265_params
+    assert f"transfer={transfer}" in x265_params
+    assert "colormatrix=bt2020nc" in x265_params
+    assert "range=limited" in x265_params
+
+
+def test_hdr10_video_adds_static_metadata_params(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(codec="hevc", hdr_mode=VideoHdrMode.HDR10),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mkv",
+    )
+
+    x265_params = argv[argv.index("-x265-params") + 1]
+    assert "hdr10=1" in x265_params
+    assert "master-display=" in x265_params
+    assert "max-cll=1000,400" in x265_params
+
+
+def test_hlg_video_omits_hdr10_static_metadata_params(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(codec="hevc", hdr_mode=VideoHdrMode.HLG),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mkv",
+    )
+
+    x265_params = argv[argv.index("-x265-params") + 1]
+    assert "master-display=" not in x265_params
+    assert "max-cll=" not in x265_params
+
+
+def test_hdr_video_owns_color_signal_args(tmp_path: Path) -> None:
+    argv = build_command(
+        video=_video(
+            codec="hevc",
+            color_space=VideoColorSpace.BT2020,
+            color_range=VideoColorRange.LIMITED,
+            hdr_mode=VideoHdrMode.HDR10,
+        ),
+        video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+        audios=[_audio()],
+        audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+        output_path=tmp_path / "asset.mkv",
+    )
+
+    assert "-colorspace" not in argv
+    assert "-color_range" not in argv
+
+
+def test_hdr_video_rejects_non_hevc_codec(tmp_path: Path) -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc:
+        build_command(
+            video=_video(codec="h264", hdr_mode=VideoHdrMode.HDR10),
+            video_input=recipe_color_bars(width=1280, height=720, fps=24, duration_s=1.0, seed=1),
+            audios=[_audio()],
+            audio_inputs=[recipe_sine(channels="stereo", duration_s=1.0, seed=1)],
+            output_path=tmp_path / "asset.mkv",
+        )
+
+    assert exc.value.field == "video.hdr_mode"
 
 
 def test_unsupported_container_rejected(tmp_path: Path) -> None:

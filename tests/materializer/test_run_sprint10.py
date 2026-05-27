@@ -59,7 +59,7 @@ _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 
 _MALFORMED_SCENARIO = """\
-schema_version: 15
+schema_version: 16
 scenario_id: malformed-materialize-test
 seed: 42
 duration_scale: short
@@ -172,7 +172,7 @@ def _plan_artifacts_with_stale_reports() -> PlanArtifacts:
         replay_bundle=PlanOnlyReplayBundle(
             schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
             chaos_librarian_version=_chaos_librarian_version,
-            scenario="schema_version: 15\n",
+            scenario="schema_version: 16\n",
             run_id=_RUN_ID,
             resolved_seed=42,
             applied_events=0,
@@ -324,7 +324,7 @@ def _write_negative_oracle_scenario(tmp_path: Path) -> Path:
     path = tmp_path / "negative-oracle-two-events.yaml"
     path.write_text(
         """\
-schema_version: 15
+schema_version: 16
 scenario_id: negative-oracle-two-events
 seed: 42
 duration_scale: short
@@ -396,7 +396,7 @@ def _patch_successful_synthesis(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def _fake_capabilities() -> Capabilities:
     return Capabilities(
-        schema_version=3,
+        schema_version=4,
         ffmpeg=ToolStatus(found=True, version="7.1.1", path="/x/ffmpeg", meets_minimum=True),
         ffprobe=ToolStatus(found=True, version="7.1.1", path="/x/ffprobe", meets_minimum=True),
         mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
@@ -407,6 +407,7 @@ def _fake_capabilities() -> Capabilities:
             materialize_filesystem_mutations=True,
             materialize_media_mutations=False,
             materialize_hevc_video=True,
+            materialize_hdr_video=True,
         ),
     )
 
