@@ -617,6 +617,17 @@
           "title": "Location Path",
           "type": "string"
         },
+        "mp4_moov_placement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mp4MoovPlacement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "size_bytes": {
           "title": "Size Bytes",
           "type": "integer"
@@ -745,6 +756,15 @@
       ],
       "title": "MediaAction",
       "type": "object"
+    },
+    "Mp4MoovPlacement": {
+      "description": "MP4 top-level moov atom placement requested at mux time.",
+      "enum": [
+        "moov_at_start",
+        "moov_at_end"
+      ],
+      "title": "Mp4MoovPlacement",
+      "type": "string"
     },
     "NetworkLagAction": {
       "additionalProperties": false,
@@ -1205,7 +1225,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 12,
+      "const": 13,
       "title": "Schema Version",
       "type": "integer"
     },

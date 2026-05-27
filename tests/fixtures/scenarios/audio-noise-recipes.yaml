@@ -1,4 +1,4 @@
-schema_version: 19
+schema_version: 20
 scenario_id: audio-noise-recipes
 seed: 134
 duration_scale: short

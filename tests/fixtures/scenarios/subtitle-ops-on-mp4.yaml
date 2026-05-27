@@ -1,4 +1,4 @@
-schema_version: 19
+schema_version: 20
 scenario_id: sc_mp4_sub_001
 seed: 42
 duration_scale: short

@@ -169,6 +169,17 @@
           "title": "Id",
           "type": "string"
         },
+        "mp4_moov_placement": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Mp4MoovPlacement"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "role": {
           "title": "Role",
           "type": "string"
@@ -1096,6 +1107,15 @@
         "movie_folder"
       ],
       "title": "MovieLayout",
+      "type": "string"
+    },
+    "Mp4MoovPlacement": {
+      "description": "MP4 top-level moov atom placement requested at mux time.",
+      "enum": [
+        "moov_at_start",
+        "moov_at_end"
+      ],
+      "title": "Mp4MoovPlacement",
       "type": "string"
     },
     "NetworkLagCommitEvent": {
@@ -2200,7 +2220,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 19,
+      "const": 20,
       "title": "Schema Version",
       "type": "integer"
     },
