@@ -25,6 +25,7 @@ from chaos_librarian.contract.scenario import (
     EmbeddedCoverArt,
     MatroskaMuxingProfile,
     Mp4MoovPlacement,
+    SubtitleCodec,
     SubtitleMode,
     SubtitleTrack,
     VideoResolutionSequence,
@@ -591,7 +592,13 @@ def test_materialize_one_asset_rejects_audio_only_sidecar_before_writing(
                 language="eng",
             ),
         ),
-        subtitles=(SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR),),
+        subtitles=(
+            SubtitleTrack(
+                codec=SubtitleCodec.SRT,
+                language="eng",
+                mode=SubtitleMode.SIDECAR,
+            ),
+        ),
     )
 
     with pytest.raises(UnsupportedMaterializationError) as exc_info:

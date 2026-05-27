@@ -22,6 +22,8 @@ from chaos_librarian.contract.scenario import (
     Asset,
     AudioTrack,
     Scenario,
+    SubtitleCodec,
+    SubtitleEncoding,
     SubtitleMode,
     SubtitleSource,
     SubtitleTrack,
@@ -69,6 +71,21 @@ __all__ = [
     "preflight_asset",
     "preflight_timeline",
 ]
+
+_SRT_SUBTITLE_ENCODINGS = frozenset(
+    {
+        SubtitleEncoding.UTF8,
+        SubtitleEncoding.UTF8_BOM,
+        SubtitleEncoding.UTF16_LE,
+        SubtitleEncoding.ISO_8859_1,
+    }
+)
+_ASS_SUBTITLE_ENCODINGS = frozenset({SubtitleEncoding.UTF8, SubtitleEncoding.UTF8_BOM})
+_SUBTITLE_RECIPE_MATRIX = {
+    (SubtitleCodec.SRT, SubtitleSource.GENERATED_SRT): _SRT_SUBTITLE_ENCODINGS,
+    (SubtitleCodec.ASS, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
+    (SubtitleCodec.SSA, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
+}
 
 
 def iter_assets(scenario: Scenario) -> Iterator[Asset]:
@@ -297,26 +314,31 @@ def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
 
 
 def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
-    """Subtitle matrix: SRT + generated + sidecar only."""
+    """Reject declared subtitle recipes outside the materializer matrix."""
     for index, sub in enumerate(subtitles):
-        if sub.codec != "srt":
-            raise UnsupportedMaterializationError(
-                f"subtitle codec {sub.codec!r} not supported",
-                field=f"subtitle[{index}].codec",
-                payload={"supported": ["srt"]},
-            )
-        if sub.source is not SubtitleSource.GENERATED_SRT:
-            raise UnsupportedMaterializationError(
-                f"subtitle source {sub.source!r} not supported",
-                field=f"subtitle[{index}].source",
-                payload={"supported": [SubtitleSource.GENERATED_SRT.value]},
-            )
         if sub.mode is not SubtitleMode.SIDECAR:
             raise UnsupportedMaterializationError(
                 f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",
                 payload={"supported": ["sidecar"]},
             )
+        supported_encodings = _SUBTITLE_RECIPE_MATRIX.get((sub.codec, sub.source))
+        if supported_encodings is None:
+            raise UnsupportedMaterializationError(
+                f"subtitle codec/source recipe {sub.codec.value}/{sub.source.value} not supported",
+                field=f"subtitle[{index}].source",
+                payload={
+                    "codec": sub.codec.value,
+                    "source": sub.source.value,
+                },
+            )
+        if sub.encoding in supported_encodings:
+            continue
+        raise UnsupportedMaterializationError(
+            f"subtitle encoding {sub.encoding.value!r} not supported",
+            field=f"subtitle[{index}].encoding",
+            payload={"supported": sorted(encoding.value for encoding in supported_encodings)},
+        )
 
 
 def preflight_timeline(scenario: Scenario, *, allow_network_lag: bool = False) -> None:

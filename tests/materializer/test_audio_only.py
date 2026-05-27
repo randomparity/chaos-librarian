@@ -11,6 +11,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    SubtitleCodec,
     SubtitleMode,
     SubtitleTrack,
     VideoSource,
@@ -93,7 +94,11 @@ def test_track_with_video_rejected_by_preflight() -> None:
 
 
 def test_track_with_subtitle_rejected_by_preflight() -> None:
-    subtitle = SubtitleTrack(codec="srt", language="eng", mode=SubtitleMode.SIDECAR)
+    subtitle = SubtitleTrack(
+        codec=SubtitleCodec.SRT,
+        language="eng",
+        mode=SubtitleMode.SIDECAR,
+    )
 
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(

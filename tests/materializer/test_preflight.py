@@ -9,11 +9,28 @@ from __future__ import annotations
 
 import pytest
 
-from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.materializer.errors import TimelineUnsupportedError
+from chaos_librarian.contract.domain import ParentKind
+from chaos_librarian.contract.scenario import (
+    AudioChannelLayout,
+    AudioTrack,
+    Scenario,
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleMode,
+    SubtitleSource,
+    SubtitleTimingProfile,
+    SubtitleTrack,
+    VideoSource,
+    VideoTrack,
+)
+from chaos_librarian.materializer.errors import (
+    TimelineUnsupportedError,
+    UnsupportedMaterializationError,
+)
 from chaos_librarian.materializer.preflight import (
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S10_ACTIONS,
+    preflight_asset,
     preflight_timeline,
 )
 
@@ -38,7 +55,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
     ]
     return Scenario.model_validate(
         {
-            "schema_version": 22,
+            "schema_version": 23,
             "scenario_id": "preflight-test",
             "seed": 1,
             "duration_scale": "short",
@@ -245,3 +262,48 @@ def test_preflight_timeline_accepts_network_lag_for_run() -> None:
     )
 
     preflight_timeline(scenario, allow_network_lag=True)
+
+
+def test_preflight_accepts_supported_subtitle_recipes() -> None:
+    preflight_asset(
+        parent_kind=ParentKind.MOVIE,
+        video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+        audios=[AudioTrack(codec="aac", channels=AudioChannelLayout.STEREO, language="eng")],
+        subtitles=[
+            SubtitleTrack(
+                codec=SubtitleCodec.ASS,
+                source=SubtitleSource.STYLED_ASS,
+                language="jpn",
+                mode=SubtitleMode.SIDECAR,
+            ),
+            SubtitleTrack(
+                codec=SubtitleCodec.SRT,
+                language="eng",
+                mode=SubtitleMode.SIDECAR,
+                encoding=SubtitleEncoding.UTF16_LE,
+                timing_profile=SubtitleTimingProfile.OVERLAP,
+            ),
+        ],
+        container="mkv",
+    )
+
+
+def test_preflight_rejects_ass_utf16_encoding() -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        preflight_asset(
+            parent_kind=ParentKind.MOVIE,
+            video=VideoTrack(source=VideoSource.COLOR_BARS, codec="h264", resolution="sd"),
+            audios=[],
+            subtitles=[
+                SubtitleTrack(
+                    codec=SubtitleCodec.ASS,
+                    source=SubtitleSource.STYLED_ASS,
+                    language="jpn",
+                    mode=SubtitleMode.SIDECAR,
+                    encoding=SubtitleEncoding.UTF16_LE,
+                )
+            ],
+            container="mkv",
+        )
+
+    assert exc_info.value.field == "subtitle[0].encoding"

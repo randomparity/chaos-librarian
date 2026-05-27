@@ -507,7 +507,7 @@ Run one adversarial review pass on the validation diff before continuing.
 - Test: `tests/materializer/test_subtitle_recipes.py`
 - Test: `tests/materializer/test_preflight.py`
 
-- [ ] **Step 1: Write failing pure recipe tests**
+- [x] **Step 1: Write failing pure recipe tests**
 
 Create `tests/materializer/test_subtitle_recipes.py`:
 
@@ -598,7 +598,7 @@ def test_ssa_payload_uses_v4_styles_section() -> None:
     assert "0:00:02.00" in decoded
 ```
 
-- [ ] **Step 2: Write failing preflight tests**
+- [x] **Step 2: Write failing preflight tests**
 
 Add to `tests/materializer/test_preflight.py`:
 
@@ -643,7 +643,7 @@ def test_preflight_rejects_ass_utf16_encoding() -> None:
     assert exc.value.field == "subtitle[0].encoding"
 ```
 
-- [ ] **Step 3: Run tests to verify red**
+- [x] **Step 3: Run tests to verify red**
 
 Run:
 
@@ -657,7 +657,7 @@ uv run pytest --no-cov \
 
 Expected: missing module/function and stale preflight matrix failures.
 
-- [ ] **Step 4: Implement pure subtitle renderer**
+- [x] **Step 4: Implement pure subtitle renderer**
 
 Create `src/chaos_librarian/materializer/tooling/subtitles.py`:
 
@@ -703,7 +703,7 @@ Implement private helpers:
 
 Keep function bodies under 100 lines. Do not move `srt_payload`; existing tests import it from `recipes.py`.
 
-- [ ] **Step 5: Implement preflight matrix**
+- [x] **Step 5: Implement preflight matrix**
 
 In `preflight.py`, replace `_preflight_subtitles` with matrix checks mirroring validation:
 
@@ -731,7 +731,7 @@ For each subtitle:
 - Reject missing pair with field `subtitle[index].source`.
 - Reject unsupported encoding with field `subtitle[index].encoding`.
 
-- [ ] **Step 6: Run green tests and commit**
+- [x] **Step 6: Run green tests and commit**
 
 Run:
 
