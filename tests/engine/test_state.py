@@ -529,6 +529,62 @@ def test_sidecar_id_for_path_scoped_by_asset_id() -> None:
     assert state.sidecar_id_for_path("asset_b", "a.eng.srt") == "sidecar_0002"
 
 
+def _add_sidecar(
+    state: WorldState, sidecar_id: str, asset_id: str, *, renderer_derived: bool
+) -> None:
+    state.sidecars[sidecar_id] = ManifestSidecar(
+        id=sidecar_id,
+        asset_id=asset_id,
+        kind=SidecarKind.SUBTITLE,
+        path=f"{asset_id}.{sidecar_id}.eng.srt",
+        language="eng",
+    )
+    if renderer_derived:
+        state._renderer_derived_sidecar_ids.add(sidecar_id)
+
+
+class TestRendererDerivedSidecarsByAsset:
+    """Grouping renderer-derived sidecars in one scan, in manifest order."""
+
+    def test_groups_by_asset_in_manifest_order(self) -> None:
+        state = WorldState()
+        _add_sidecar(state, "sidecar_0001", "asset_a", renderer_derived=True)
+        _add_sidecar(state, "sidecar_0002", "asset_b", renderer_derived=True)
+        _add_sidecar(state, "sidecar_0003", "asset_a", renderer_derived=True)
+
+        grouped = state.renderer_derived_sidecars_by_asset(["asset_a", "asset_b"])
+
+        assert [s.id for s in grouped["asset_a"]] == ["sidecar_0001", "sidecar_0003"]
+        assert [s.id for s in grouped["asset_b"]] == ["sidecar_0002"]
+
+    def test_excludes_non_renderer_derived_sidecars(self) -> None:
+        state = WorldState()
+        _add_sidecar(state, "sidecar_0001", "asset_a", renderer_derived=True)
+        _add_sidecar(state, "sidecar_0002", "asset_a", renderer_derived=False)
+
+        grouped = state.renderer_derived_sidecars_by_asset(["asset_a"])
+
+        assert [s.id for s in grouped["asset_a"]] == ["sidecar_0001"]
+
+    def test_excludes_assets_outside_requested_set(self) -> None:
+        state = WorldState()
+        _add_sidecar(state, "sidecar_0001", "asset_a", renderer_derived=True)
+        _add_sidecar(state, "sidecar_0002", "asset_b", renderer_derived=True)
+
+        grouped = state.renderer_derived_sidecars_by_asset(["asset_a"])
+
+        assert "asset_b" not in grouped
+        assert set(grouped) == {"asset_a"}
+
+    def test_absent_when_no_renderer_derived_sidecars(self) -> None:
+        state = WorldState()
+        _add_sidecar(state, "sidecar_0001", "asset_a", renderer_derived=False)
+
+        grouped = state.renderer_derived_sidecars_by_asset(["asset_a"])
+
+        assert grouped == {}
+
+
 class TestBuildInitialStateSeedsDeclaredSidecars:
     """``build_initial_state`` mirrors the validator's projection of subtitles.
 
