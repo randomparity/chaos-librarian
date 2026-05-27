@@ -29,6 +29,7 @@ from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
 from chaos_librarian.contract.reports import (
+    REPORT_FAMILIES,
     AlbumReport,
     ArtistReport,
     AssetReport,
@@ -61,20 +62,6 @@ __all__ = [
     "finalize_materialize_run",
     "publish_wall_clock_baseline",
 ]
-
-REPORT_DIRS = (
-    "assets",
-    "movies",
-    "series",
-    "seasons",
-    "episodes",
-    "artists",
-    "albums",
-    "discs",
-    "tracks",
-    "variants",
-    "bundles",
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,19 +230,10 @@ def _write_shared_metadata(out_dir: Path, metadata: MaterializeMetadata) -> None
 
 def _write_reports(out_dir: Path, reports: MaterializeReports) -> None:
     reports_dir = out_dir / "reports"
-    for sub in REPORT_DIRS:
-        (reports_dir / sub).mkdir(parents=True, exist_ok=True)
-    _write_report_map(reports_dir / "assets", reports.assets, "asset_id")
-    _write_report_map(reports_dir / "movies", reports.movies, "movie_id")
-    _write_report_map(reports_dir / "series", reports.series, "series_id")
-    _write_report_map(reports_dir / "seasons", reports.seasons, "season_id")
-    _write_report_map(reports_dir / "episodes", reports.episodes, "episode_id")
-    _write_report_map(reports_dir / "artists", reports.artists, "artist_id")
-    _write_report_map(reports_dir / "albums", reports.albums, "album_id")
-    _write_report_map(reports_dir / "discs", reports.discs, "disc_id")
-    _write_report_map(reports_dir / "tracks", reports.tracks, "track_id")
-    _write_report_map(reports_dir / "variants", reports.variants, "variant_id")
-    _write_report_map(reports_dir / "bundles", reports.bundles, "bundle_id")
+    for family in REPORT_FAMILIES:
+        directory = reports_dir / family.name
+        directory.mkdir(parents=True, exist_ok=True)
+        _write_report_map(directory, getattr(reports, family.name), family.id_field)
 
 
 def _write_report_map(

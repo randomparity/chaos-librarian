@@ -58,6 +58,7 @@ from chaos_librarian.contract.observed_state import (
 )
 from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle, compute_plan_only_run_id
 from chaos_librarian.contract.reports import (
+    REPORT_FAMILY_NAMES,
     AlbumReport,
     ArtistReport,
     AssetReport,
@@ -79,19 +80,6 @@ RUN_ID = uuid.UUID("7c44eb62-7046-4b8f-a168-eaf3a58e0145")
 HASH_A = "sha256:" + "a" * 64
 HASH_B = "sha256:" + "b" * 64
 _SYNTHETIC_SCENARIOS = frozenset({"static-library.yaml"})
-_REPORT_DIRS = (
-    "assets",
-    "movies",
-    "series",
-    "seasons",
-    "episodes",
-    "artists",
-    "albums",
-    "discs",
-    "tracks",
-    "variants",
-    "bundles",
-)
 
 
 @dataclass(frozen=True)
@@ -250,7 +238,7 @@ def _write_synthetic_plan_fixture(run_dir: Path, scenario_yaml_bytes: bytes) -> 
 
 def _write_reports(reports_dir: Path, oracle_reports: OracleReports) -> None:
     reports_dir.mkdir()
-    for name in _REPORT_DIRS:
+    for name in REPORT_FAMILY_NAMES:
         directory = reports_dir / name
         directory.mkdir()
         for report_id, report in getattr(oracle_reports, name).items():
