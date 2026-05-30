@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Annotated
 
@@ -10,9 +11,13 @@ import typer
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.profiles import FUZZ_LANES_BY_PROFILE, FuzzLaneName, FuzzProfileName
+from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import (
+    BatchItem,
     generate_scenario,
     generated_scenario_summary,
+    plan_generation_batch,
+    scenario_id_for,
     write_generated_scenario,
 )
 
@@ -21,13 +26,43 @@ from chaos_librarian.generation import (
 def generate(
     profile: Annotated[FuzzProfileName, typer.Option("--profile")],
     seed: Annotated[int, typer.Option("--seed", min=0)],
-    out: Annotated[Path, typer.Option("--out", callback=validate_new_out_path)],
+    out: Annotated[Path, typer.Option("--out")],
     lane: Annotated[FuzzLaneName | None, typer.Option("--lane")] = None,
+    count: Annotated[int, typer.Option("--count", min=1, max=1000)] = 1,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
-    """Generate a deterministic fuzz scenario YAML file."""
-    resolved_lane = _resolve_lane(profile=profile, lane=lane)
-    generated = generate_scenario(profile=profile, lane=resolved_lane, seed=seed)
+    """Generate one or more deterministic fuzz scenario YAML files.
+
+    With ``--count 1`` (default) ``--out`` is a new file. With ``--count > 1``
+    ``--out`` is an existing directory and each scenario is written as
+    ``<scenario_id>.yaml``.
+    """
+    resolved_lane = _resolve_lane_for_batch(profile=profile, lane=lane, count=count)
+    items = plan_generation_batch(profile=profile, lane=resolved_lane, seed=seed, count=count)
+    if count == 1:
+        _write_single(profile=profile, item=items[0], out=out, json_output=json_output)
+        return
+    _write_batch(profile=profile, items=items, out_dir=out, json_output=json_output)
+
+
+def _resolve_lane_for_batch(
+    profile: FuzzProfileName, lane: FuzzLaneName | None, count: int
+) -> FuzzLaneName | None:
+    """Validate and resolve ``--lane``; return ``None`` to cycle the lane order."""
+    if lane is not None:
+        if lane not in FUZZ_LANES_BY_PROFILE[profile]:
+            raise typer.BadParameter(f"lane {lane.value} is not valid for {profile.value}")
+        return lane
+    if profile is FuzzProfileName.FUZZ_SMOKE:
+        return FuzzLaneName.SMOKE
+    if count == 1:
+        raise typer.BadParameter("--lane is required for fuzz-regression")
+    return None
+
+
+def _write_single(profile: FuzzProfileName, item: BatchItem, out: Path, json_output: bool) -> None:
+    validate_new_out_path(out)
+    generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
     write_generated_scenario(out, generated.data)
     if json_output:
         typer.echo(generated_scenario_summary(out, generated.data, scenario=generated.scenario))
@@ -35,11 +70,100 @@ def generate(
         typer.echo(f"generate: wrote {out}")
 
 
-def _resolve_lane(profile: FuzzProfileName, lane: FuzzLaneName | None) -> FuzzLaneName:
-    if profile is FuzzProfileName.FUZZ_SMOKE and lane is None:
-        return FuzzLaneName.SMOKE
-    if lane is None:
-        raise typer.BadParameter("--lane is required for fuzz-regression")
-    if lane not in FUZZ_LANES_BY_PROFILE[profile]:
-        raise typer.BadParameter(f"lane {lane.value} is not valid for {profile.value}")
-    return lane
+def _write_batch(
+    profile: FuzzProfileName,
+    items: tuple[BatchItem, ...],
+    out_dir: Path,
+    json_output: bool,
+) -> None:
+    _validate_out_dir(out_dir)
+    targets = _batch_targets(profile=profile, items=items, out_dir=out_dir)
+    written: list[Path] = []
+    records: list[tuple[Path, bytes, Scenario]] = []
+    for item, path in targets:
+        try:
+            generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
+            _assert_scenario_id(
+                profile=profile, item=item, generated_id=generated.scenario.scenario_id
+            )
+            write_generated_scenario(path, generated.data)
+        except Exception as exc:  # rollback then re-report any generation/write failure
+            removed = _rollback(written)
+            typer.echo(
+                f"generate: failed at profile={profile.value} lane={item.lane.value} "
+                f"seed={item.seed}: {exc}",
+                err=True,
+            )
+            if removed:
+                joined = ", ".join(str(p) for p in removed)
+                typer.echo(
+                    f"generate: rolled back {len(removed)} partially written files: {joined}",
+                    err=True,
+                )
+            raise typer.Exit(code=1) from exc
+        written.append(path)
+        records.append((path, generated.data, generated.scenario))
+        if not json_output:
+            typer.echo(f"generate: wrote {path}")
+    if json_output:
+        typer.echo(_batch_summary_json(out_dir, records))
+    else:
+        typer.echo(f"generate: wrote {len(records)} scenarios to {out_dir}")
+
+
+def _validate_out_dir(out_dir: Path) -> None:
+    if not out_dir.exists():
+        raise typer.BadParameter(f"--out directory does not exist: {out_dir}")
+    if not out_dir.is_dir():
+        raise typer.BadParameter(f"--out is not a directory: {out_dir}")
+
+
+def _batch_targets(
+    profile: FuzzProfileName, items: tuple[BatchItem, ...], out_dir: Path
+) -> list[tuple[BatchItem, Path]]:
+    targets: list[tuple[BatchItem, Path]] = []
+    names: set[str] = set()
+    for item in items:
+        name = f"{scenario_id_for(profile, item.lane, item.seed)}.yaml"
+        if name in names:
+            raise RuntimeError(f"batch produced a duplicate file name: {name}")
+        names.add(name)
+        path = out_dir / name
+        if path.exists():
+            raise typer.BadParameter(f"--out already contains target file: {path}")
+        targets.append((item, path))
+    return targets
+
+
+def _assert_scenario_id(profile: FuzzProfileName, item: BatchItem, generated_id: str) -> None:
+    expected = scenario_id_for(profile, item.lane, item.seed)
+    if generated_id != expected:
+        raise RuntimeError(
+            f"generated scenario_id {generated_id!r} does not match planned {expected!r}"
+        )
+
+
+def _rollback(written: list[Path]) -> list[Path]:
+    removed: list[Path] = []
+    for path in written:
+        try:
+            path.unlink(missing_ok=True)
+            removed.append(path)
+        except OSError:
+            pass
+    return removed
+
+
+def _batch_summary_json(out_dir: Path, records: list[tuple[Path, bytes, Scenario]]) -> str:
+    scenarios = [
+        json.loads(generated_scenario_summary(path, data, scenario=scenario))
+        for path, data, scenario in records
+    ]
+    scenarios.sort(key=lambda summary: summary["scenario_path"])
+    payload: dict[str, object] = {
+        "ok": True,
+        "count": len(scenarios),
+        "out_dir": str(out_dir.resolve()),
+        "scenarios": scenarios,
+    }
+    return json.dumps(payload, sort_keys=True)
