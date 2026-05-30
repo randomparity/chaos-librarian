@@ -1,0 +1,47 @@
+# Recipe: Corrupt container header
+# Category: metadata
+# Tests: the container header is overwritten, so a probe of the file fails.
+# Expected consumer response: errors — probe fails; the asset is flagged
+#   unreadable rather than silently indexed.
+# Requires: malformed-media
+schema_version: 23
+scenario_id: recipe-metadata-corrupt-container-header
+seed: 1301
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_hdr
+    title: Corrupt Container Header
+    layout: movie_flat
+    variants:
+      - id: v_hdr
+        label: hd
+        bundle:
+          id: b_hdr
+          assets:
+            - id: asset_hdr
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_corrupt
+    at: 1s
+    action: corrupt_container_header
+    target: asset_hdr
+    bytes: 128

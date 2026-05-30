@@ -1,0 +1,54 @@
+# Recipe: Rapid churn
+# Category: watcher
+# Tests: a move, a delete, and a re-add fire back-to-back on one asset.
+# Expected consumer response: converges — settle on the final path without
+#   thrashing or leaking stale entries.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-watcher-rapid-churn
+seed: 1103
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_churn
+    title: Rapid Churn
+    layout: movie_flat
+    variants:
+      - id: v_churn
+        label: hd
+        bundle:
+          id: b_churn
+          assets:
+            - id: asset_churn
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_move
+    at: 1s
+    action: move_asset
+    target: asset_churn
+    to: movies/Moved.mkv
+  - id: ev_delete
+    at: 2s
+    action: delete_file
+    target: asset_churn
+  - id: ev_readd
+    at: 3s
+    action: add_file
+    target: asset_churn
+    to: movies/Readded.mkv

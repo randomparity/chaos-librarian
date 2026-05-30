@@ -1,0 +1,56 @@
+# Recipe: Relocate then archive
+# Category: archive
+# Tests: an asset is moved between two active roots, then archived from its new
+#   root into cold storage.
+# Expected consumer response: converges — one identity across the cross-root move
+#   and the later archive.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-archive-relocate-then-archive
+seed: 1503
+duration_scale: short
+library:
+  roots:
+    - id: movies_sd
+      path: movies-sd
+    - id: movies_hd
+      path: movies-hd
+    - id: cold_storage
+      path: cold-storage
+  archive_root: cold_storage
+movies:
+  - id: w_relo
+    title: Relocate Then Archive
+    layout: movie_flat
+    variants:
+      - id: v_relo
+        label: hd
+        bundle:
+          id: b_relo
+          assets:
+            - id: asset_relo
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_relocate
+    at: 1s
+    action: move_between_roots
+    target: asset_relo
+    from_root_id: movies_sd
+    to_root_id: movies_hd
+  - id: ev_archive
+    at: 2s
+    action: archive_file
+    target: asset_relo

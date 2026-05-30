@@ -1,0 +1,47 @@
+# Recipe: Truncated file
+# Category: metadata
+# Tests: a file is cut short mid-stream, leaving a valid header but missing data.
+# Expected consumer response: errors or diverges — probe sees a short stream;
+#   duration/bitrate should not be trusted.
+# Requires: malformed-media
+schema_version: 23
+scenario_id: recipe-metadata-truncated-file
+seed: 1302
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_trunc
+    title: Truncated File
+    layout: movie_flat
+    variants:
+      - id: v_trunc
+        label: hd
+        bundle:
+          id: b_trunc
+          assets:
+            - id: asset_trunc
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_truncate
+    at: 1s
+    action: truncate_file
+    target: asset_trunc
+    keep_bytes: 256

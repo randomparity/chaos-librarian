@@ -1,0 +1,49 @@
+# Recipe: Corrupt packet range
+# Category: metadata
+# Tests: a run of video packets mid-stream is corrupted; the header is intact.
+# Expected consumer response: diverges — probe may succeed but decode of the
+#   affected range fails; consumers differ on whether they detect it.
+# Requires: malformed-media
+schema_version: 23
+scenario_id: recipe-metadata-corrupt-packet-range
+seed: 1303
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_pkt
+    title: Corrupt Packet Range
+    layout: movie_flat
+    variants:
+      - id: v_pkt
+        label: hd
+        bundle:
+          id: b_pkt
+          assets:
+            - id: asset_pkt
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_packets
+    at: 1s
+    action: corrupt_packet_range
+    target: asset_pkt
+    stream: video
+    packet_start: 0
+    packet_count: 4

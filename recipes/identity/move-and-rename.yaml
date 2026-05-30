@@ -1,0 +1,49 @@
+# Recipe: Move and rename
+# Category: identity
+# Tests: durable identity must survive a move followed by a rename of one asset.
+# Expected consumer response: converges — one stable identity across both ops.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-identity-move-and-rename
+seed: 1201
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_id
+    title: Move And Rename
+    layout: movie_flat
+    variants:
+      - id: v_id
+        label: hd
+        bundle:
+          id: b_id
+          assets:
+            - id: asset_id
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_move
+    at: 1s
+    action: move_asset
+    target: asset_id
+    to: movies/Moved.mkv
+  - id: ev_rename
+    at: 2s
+    action: rename_file
+    target: asset_id
+    to: movies/Final.mkv

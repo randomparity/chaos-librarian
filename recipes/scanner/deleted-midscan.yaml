@@ -1,0 +1,43 @@
+# Recipe: Deleted mid-scan
+# Category: scanner
+# Tests: a tracked file is deleted while a scanner iterates the library.
+# Expected consumer response: converges — drop the asset, no error.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-scanner-deleted-midscan
+seed: 1001
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_del
+    title: Deleted Midscan
+    layout: movie_flat
+    variants:
+      - id: v_del
+        label: hd
+        bundle:
+          id: b_del
+          assets:
+            - id: asset_del
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_delete
+    at: 1s
+    action: delete_file
+    target: asset_del

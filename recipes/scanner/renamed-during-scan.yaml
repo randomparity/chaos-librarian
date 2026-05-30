@@ -1,0 +1,44 @@
+# Recipe: Renamed during scan
+# Category: scanner
+# Tests: a file is renamed in place while a scan is running.
+# Expected consumer response: converges — same asset, new filename.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-scanner-renamed-during-scan
+seed: 1003
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_ren
+    title: Renamed Midscan
+    layout: movie_flat
+    variants:
+      - id: v_ren
+        label: hd
+        bundle:
+          id: b_ren
+          assets:
+            - id: asset_ren
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_rename
+    at: 1s
+    action: rename_file
+    target: asset_ren
+    to: movies/Renamed.mkv

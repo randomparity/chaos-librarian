@@ -1,0 +1,47 @@
+# Recipe: Archive to explicit root
+# Category: archive
+# Tests: an active asset is archived into a named archive root (cold storage).
+# Expected consumer response: converges — track the move into the named archive
+#   root.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-archive-explicit-root
+seed: 1502
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+    - id: cold_storage
+      path: cold-storage
+  archive_root: cold_storage
+movies:
+  - id: w_archx
+    title: Archive Explicit Root
+    layout: movie_flat
+    variants:
+      - id: v_archx
+        label: hd
+        bundle:
+          id: b_archx
+          assets:
+            - id: asset_archx
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_archive
+    at: 1s
+    action: archive_file
+    target: asset_archx

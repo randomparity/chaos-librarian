@@ -1,0 +1,47 @@
+# Recipe: Mtime touch
+# Category: watcher
+# Tests: a file's modification time changes with no content change.
+# Expected consumer response: converges — no re-probe/re-hash storm from a bare
+#   mtime bump.
+# Requires: filesystem-artifacts
+schema_version: 23
+scenario_id: recipe-watcher-mtime-touch
+seed: 1104
+duration_scale: short
+profiles:
+  - filesystem-artifacts
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_touch
+    title: Mtime Touch
+    layout: movie_flat
+    variants:
+      - id: v_touch
+        label: hd
+        bundle:
+          id: b_touch
+          assets:
+            - id: asset_touch
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_touch
+    at: 1s
+    action: touch_mtime
+    target: asset_touch
+    offset: 5s
