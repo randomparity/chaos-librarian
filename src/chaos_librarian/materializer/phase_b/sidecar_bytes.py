@@ -16,16 +16,44 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+from typing import Final
 
 from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 __all__ = [
+    "encode_subtitle_body",
     "perturbed_seed_for_update",
     "poster_ffmpeg_argv",
     "regenerate_sidecar",
     "render_nfo",
 ]
+
+
+_SUBTITLE_PYTHON_ENCODING: Final[dict[str, str]] = {
+    "utf8": "utf-8",
+    "utf8_bom": "utf-8",
+    "utf16_le": "utf-16-le",
+    "iso_8859_1": "iso-8859-1",
+}
+
+
+def encode_subtitle_body(text: str, encoding: str | None) -> bytes:
+    """Encode an SRT body. ``None`` ⇒ utf8; ``utf8_bom`` prepends a UTF-8 BOM.
+
+    Raises:
+        ValueError: ``encoding`` is not one of the supported subtitle encodings.
+            The caller wraps this in a MediaActionError so the user sees
+            E_MATERIALIZE_MEDIA_FAILED.
+    """
+    name = encoding or "utf8"
+    python_codec = _SUBTITLE_PYTHON_ENCODING.get(name)
+    if python_codec is None:
+        raise ValueError(f"unsupported subtitle encoding {name!r}")
+    body = text.encode(python_codec)
+    if name == "utf8_bom":
+        return b"\xef\xbb\xbf" + body
+    return body
 
 
 def _seed_hash(*, stream: str, seed: int, keys: tuple[str, ...]) -> int:
@@ -57,14 +85,33 @@ def poster_ffmpeg_argv(
     output_path: Path,
     resolved_seed: int,
     sidecar_id: str,
+    media_type: str | None = None,
 ) -> list[str]:
-    """Build the ffmpeg argv for a single-color PNG poster.
+    """Build the ffmpeg argv for a poster sidecar.
 
-    Hex color derived from (resolved_seed, sidecar_id) so different
-    sidecars on the same run produce visually distinct posters.
+    ``media_type`` ``None``/``"image"`` ⇒ a single-color PNG; ``"video"``
+    ⇒ a tiny single-frame video muxed into the container the ``output_path``
+    extension implies (the ``poster-is-video`` chaos). Hex color derived from
+    (resolved_seed, sidecar_id) so different sidecars on the same run produce
+    visually distinct output.
     """
     seed_hash = _seed_hash(stream="poster_color", seed=resolved_seed, keys=(sidecar_id,))
     color = f"{seed_hash & 0xFFFFFF:06x}"
+    if media_type == "video":
+        return [
+            "ffmpeg",
+            "-hide_banner",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            f"color=c=#{color}:s=320x240:d=0.04:r=25",
+            "-frames:v",
+            "1",
+            "-pix_fmt",
+            "yuv420p",
+            str(output_path),
+        ]
     return [
         "ffmpeg",
         "-hide_banner",
@@ -102,11 +149,17 @@ def regenerate_sidecar(
     event_id: str,
     duration_s: float,
     output_path: Path | None = None,
+    encoding: str | None = None,
+    body: str | None = None,
+    media_type: str | None = None,
 ) -> tuple[bytes | None, list[str] | None]:
     """Dispatch by kind. Returns ``(bytes, None)`` or ``(None, argv)``.
 
-    ``output_path`` is required only for ``kind=POSTER`` (used in the
-    ffmpeg argv).
+    Honors the authored content knobs so ``update_sidecar`` regenerates
+    faithfully: subtitle bytes are re-encoded with the stored ``encoding``
+    (cue text still varies by the perturbed seed); an authored NFO ``body`` is
+    re-emitted verbatim; the poster ``media_type`` selects image vs. video.
+    ``output_path`` is required only for ``kind=POSTER`` (used in the ffmpeg argv).
     """
     perturbed_seed = perturbed_seed_for_update(
         sidecar_id=sidecar_id,
@@ -116,11 +169,13 @@ def regenerate_sidecar(
     if kind == SidecarKind.SUBTITLE:
         if language is None:
             raise ValueError("subtitle sidecar requires language")
-        body = srt_payload(language=language, duration_s=duration_s, seed=perturbed_seed).encode()
-        return body, None
+        text = srt_payload(language=language, duration_s=duration_s, seed=perturbed_seed)
+        return encode_subtitle_body(text, encoding), None
     if kind == SidecarKind.NFO:
-        # NFO bytes don't depend on the seed (template is fixed); we
-        # incorporate sidecar_id directly in the body.
+        # An authored body is re-emitted verbatim (no seed to perturb); else the
+        # fixed template keyed on sidecar_id.
+        if body is not None:
+            return body.encode("utf-8"), None
         return render_nfo(sidecar_id=sidecar_id), None
     if kind == SidecarKind.POSTER:
         if output_path is None:
@@ -129,6 +184,7 @@ def regenerate_sidecar(
             output_path=output_path,
             resolved_seed=perturbed_seed,
             sidecar_id=sidecar_id,
+            media_type=media_type,
         )
         return None, argv
     raise ValueError(f"unknown sidecar kind {kind!r}")
