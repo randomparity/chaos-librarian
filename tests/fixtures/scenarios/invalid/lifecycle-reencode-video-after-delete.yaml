@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 29
+schema_version: 30
 scenario_id: lifecycle-reencode-video-after-delete
 seed: 1
 duration_scale: short

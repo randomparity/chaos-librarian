@@ -65,7 +65,7 @@ def _add_destination_series(raw: dict[str, object], *, episode_naming: str) -> N
 
 def _write_music_scenario(path: Path, *, timeline: str) -> None:
     path.write_text(
-        f"""schema_version: 29
+        f"""schema_version: 30
 scenario_id: music-action-validation
 seed: 1
 duration_scale: short

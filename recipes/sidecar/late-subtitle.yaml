@@ -4,7 +4,7 @@
 # Expected consumer response: converges — attach the subtitle to the existing
 #   asset on a later pass.
 # Requires: none
-schema_version: 29
+schema_version: 30
 scenario_id: recipe-sidecar-late-subtitle
 seed: 1401
 duration_scale: short

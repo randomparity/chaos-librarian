@@ -35,7 +35,7 @@ def _apply_timeline(scenario: Scenario) -> tuple[Any, ...]:
 def _series_scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "hierarchy-series",
             "seed": 1,
             "duration_scale": "short",
@@ -117,7 +117,7 @@ def _series_two_asset_scenario(timeline: list[dict[str, object]]) -> Scenario:
 def _music_scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "hierarchy-music",
             "seed": 1,
             "duration_scale": "short",

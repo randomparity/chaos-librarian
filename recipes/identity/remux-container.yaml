@@ -4,7 +4,7 @@
 #   same underlying streams.
 # Expected consumer response: converges — same identity, new container.
 # Requires: none
-schema_version: 29
+schema_version: 30
 scenario_id: recipe-identity-remux-container
 seed: 1203
 duration_scale: short

@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 29
+schema_version: 30
 scenario_id: invalid-create-sidecar-ass-utf16
 seed: 7
 duration_scale: short

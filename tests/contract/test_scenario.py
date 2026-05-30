@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import cast
 
 import pytest
@@ -181,6 +182,64 @@ def _base_payload() -> dict[str, object]:
     }
 
 
+def _podcast_episode_payload(
+    episode_id: str = "pe1",
+    *,
+    published_at: str = "2026-05-01T00:00:00Z",
+    slug: str = "pilot",
+    stale: bool = False,
+) -> dict[str, object]:
+    return {
+        "id": episode_id,
+        "title": "Pilot",
+        "published_at": published_at,
+        "slug": slug,
+        "stale": stale,
+        "variants": [_variant_payload(_audio_asset_payload(f"asset_{episode_id}"))],
+    }
+
+
+def test_podcast_episode_accepts_utc_published_at() -> None:
+    episode = scenario_contract.PodcastEpisode.model_validate(_podcast_episode_payload())
+
+    assert episode.published_at == datetime(2026, 5, 1, tzinfo=UTC)
+    assert episode.stale is False
+    assert episode.slug == "pilot"
+
+
+def test_podcast_episode_rejects_naive_published_at() -> None:
+    payload = _podcast_episode_payload(published_at="2026-05-01T00:00:00")
+
+    with pytest.raises(ValidationError):
+        scenario_contract.PodcastEpisode.model_validate(payload)
+
+
+def test_podcast_episode_rejects_non_utc_offset() -> None:
+    payload = _podcast_episode_payload(published_at="2026-05-01T00:00:00+02:00")
+
+    with pytest.raises(ValidationError):
+        scenario_contract.PodcastEpisode.model_validate(payload)
+
+
+def test_podcast_scenario_roundtrips() -> None:
+    payload = _base_payload()
+    payload["podcasts"] = [
+        {
+            "id": "p1",
+            "title": "The Daily",
+            "layout": "podcast_folder",
+            "episode_naming": "date_slug_title",
+            "episodes": [_podcast_episode_payload()],
+        }
+    ]
+
+    scenario = Scenario.model_validate(payload)
+
+    assert scenario.podcasts[0].layout is scenario_contract.PodcastLayout.PODCAST_FOLDER
+    assert scenario.podcasts[0].episodes[0].id == "pe1"
+    assert scenario.movies == ()
+
+
 def test_minimal_scenario_roundtrip() -> None:
     s = _minimal_scenario()
     loaded = Scenario.model_validate_json(s.model_dump_json())
@@ -200,7 +259,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 29
+    assert scenario.schema_version == 30
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -1024,7 +1083,7 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
 
 
 def test_scenario_schema_version_is_twenty_eight() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 29
+    assert SCENARIO_SCHEMA_VERSION == 30
 
 
 def test_scenario_accepts_profile_labels() -> None:

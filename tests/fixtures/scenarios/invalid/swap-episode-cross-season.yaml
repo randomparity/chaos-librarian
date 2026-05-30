@@ -1,5 +1,5 @@
 # expected: E_HIERARCHY_INVALID
-schema_version: 29
+schema_version: 30
 scenario_id: swap-episode-cross-season
 seed: 11905
 duration_scale: short

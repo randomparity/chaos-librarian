@@ -31,7 +31,7 @@ def _minimal(timeline, *, asset_subtitles=None):
     """Build a raw dict for one asset with optional declared subtitles."""
     subtitles = asset_subtitles or []
     return {
-        "schema_version": 29,
+        "schema_version": 30,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",

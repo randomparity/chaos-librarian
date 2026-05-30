@@ -346,7 +346,7 @@ def _state(tmp_path: Path) -> phase_b.PhaseBState:
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "phase-b-test",
             "seed": 7,
             "duration_scale": "short",

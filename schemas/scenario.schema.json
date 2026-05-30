@@ -1518,6 +1518,99 @@
       "title": "PacketStreamKind",
       "type": "string"
     },
+    "Podcast": {
+      "additionalProperties": false,
+      "properties": {
+        "episode_naming": {
+          "$ref": "#/$defs/PodcastEpisodeNaming"
+        },
+        "episodes": {
+          "items": {
+            "$ref": "#/$defs/PodcastEpisode"
+          },
+          "title": "Episodes",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "$ref": "#/$defs/PodcastLayout"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout",
+        "episode_naming",
+        "episodes"
+      ],
+      "title": "Podcast",
+      "type": "object"
+    },
+    "PodcastEpisode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "slug": {
+          "minLength": 1,
+          "title": "Slug",
+          "type": "string"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "variants": {
+          "items": {
+            "$ref": "#/$defs/Variant"
+          },
+          "title": "Variants",
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "published_at",
+        "slug",
+        "variants"
+      ],
+      "title": "PodcastEpisode",
+      "type": "object"
+    },
+    "PodcastEpisodeNaming": {
+      "enum": [
+        "date_slug_title"
+      ],
+      "title": "PodcastEpisodeNaming",
+      "type": "string"
+    },
+    "PodcastLayout": {
+      "enum": [
+        "podcast_folder"
+      ],
+      "title": "PodcastLayout",
+      "type": "string"
+    },
     "ProfileName": {
       "enum": [
         "malformed-media",
@@ -2893,6 +2986,13 @@
       "title": "Movies",
       "type": "array"
     },
+    "podcasts": {
+      "items": {
+        "$ref": "#/$defs/Podcast"
+      },
+      "title": "Podcasts",
+      "type": "array"
+    },
     "profiles": {
       "items": {
         "$ref": "#/$defs/ProfileName"
@@ -2905,7 +3005,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 29,
+      "const": 30,
       "title": "Schema Version",
       "type": "integer"
     },

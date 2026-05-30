@@ -4,7 +4,7 @@
 #   their rendered paths. The sanctioned alternative to an implicit renumber swap.
 # Expected consumer response: converges — same two assets, exchanged numbering/paths.
 # Requires: none
-schema_version: 29
+schema_version: 30
 scenario_id: recipe-scanner-swapped-episode-numbers
 seed: 1009
 duration_scale: short
