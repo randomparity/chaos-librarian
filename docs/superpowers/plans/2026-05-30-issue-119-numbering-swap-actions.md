@@ -76,9 +76,18 @@ Single atomic task (model + version literal + regenerated artifact must move tog
   number fields. Add each to the `TimelineEvent` union.
 - [ ] Bump `SCENARIO_SCHEMA_VERSION` 28 → 29 in `contract/__init__.py` and the
   `Scenario.schema_version: Literal[29]`.
+- [ ] **Mass-bump every existing `schema_version: 28` → 29 in this same commit.**
+  `Scenario.schema_version` is a hard `Literal[29]` with no version-tolerance shim, and
+  `test_sample_scenarios.py` + the invalid corpus run every fixture through
+  `Scenario.model_validate`; leaving any fixture at `28` makes `pytest -q` **red at this
+  commit**. Update every `schema_version: 28` string across `tests/fixtures/` and
+  `recipes/` (`rg -l "schema_version: 28"`) plus any in-repo docs/examples. No semantic
+  change to those scenarios. (New swap fixtures/recipes are added later in Task 6; only
+  the version-string bump of *existing* files happens here.)
 - [ ] `uv run python -m chaos_librarian.schema_export --write`; commit the regenerated
   `schemas/scenario.schema.json` in this task.
-- [ ] **Guardrails green; commit.** `feat: add numbering swap event variants (schema v29)`
+- [ ] **Guardrails green (incl. `test_sample_scenarios.py` + `test_invalid_corpus.py` +
+  drift gate); commit.** `feat: add numbering swap event variants (schema v29)`
 
 ## Task 2 — Validation: target/with_* resolution + swap_validity + projection branch
 
@@ -119,8 +128,14 @@ Single atomic task (model + version literal + regenerated artifact must move tog
   `_handle_swap_track_numbers`, each mirroring `_handle_renumber_episode`: capture both
   entities' asset ids + before-paths, `model_copy(update={number_field: other_number})`
   on both entities, build `metadata` for both, emit one `_hierarchy_entry` whose
-  `asset_ids` is the union and whose `hierarchy_target_id` is entity A (entity B added to
-  `target_ids` — extend `_hierarchy_entry` or pass both ids). Register in `_HANDLERS`.
+  `asset_ids` is the union of both entities' assets. Register in `_HANDLERS`.
+- [ ] **`_hierarchy_entry` entity-B threading — single committed approach:** add an
+  optional `extra_hierarchy_target_ids: tuple[str, ...] = ()` parameter to
+  `_hierarchy_entry` and build `target_ids=[hierarchy_target_id, *extra_hierarchy_target_ids,
+  *asset_ids]`. The three swap handlers pass entity B's id there; existing callers pass
+  nothing (behavior unchanged). The Task-3 test asserts the full
+  `target_ids == [a, b, *asset_ids]` shape, so a dropped entity-B id fails the test.
+  (B's *asset* ids are already in the union; only B's *entity* id needs this.)
 - [ ] Engine trusts validated input (mirrors existing hierarchy handlers; no re-guard).
 - [ ] **Guardrails green; commit.** `feat: engine handlers for numbering swaps`
 
@@ -129,9 +144,11 @@ Single atomic task (model + version literal + regenerated artifact must move tog
 - [ ] **Test first** (`tests/materializer/phase_b/test_filesystem.py`): drive the real
   `_plan_hierarchy_moves` + the two-phase `source.replace(temp)` / `temp.replace(dest)`
   execution with mutually-crossed moves (A.from==B.to, B.from==A.to) on two real files
-  under a temp library root; assert the on-disk bytes are exchanged and no
-  `.chaos-hierarchy-*` temp file remains. This locks the spec's "no new materializer
-  code" claim.
+  under a temp library root. Hard assertions that prove the crossing actually happened
+  (not a false green): (1) **pre-swap A's bytes != B's bytes** (distinct sentinels);
+  (2) post-swap A holds B's old bytes and B holds A's old bytes (exact exchange); (3) the
+  directory listing equals exactly the two final names — **no `.chaos-hierarchy-*` temp
+  residue**. This locks the spec's "no new materializer code" claim.
 - [ ] No production change expected. If the test fails, that IS new materializer work —
   stop and surface it.
 - [ ] **Guardrails green; commit.** `test: lock collision-free crossed hierarchy moves`
@@ -150,7 +167,10 @@ Single atomic task (model + version literal + regenerated artifact must move tog
 - [ ] No production change expected beyond Tasks 1–3 (these are the wiring assertions).
 - [ ] **Guardrails green; commit.** `test: path-history, lifecycle, implicit-vs-explicit swaps`
 
-## Task 6 — Corpus + recipe + mass version bump
+## Task 6 — New swap corpus + recipe + docs
+
+> The mass-bump of *existing* `schema_version: 28 → 29` fixtures/recipes happened in
+> Task 1 (same commit as the literal). This task adds only the *new* swap files and docs.
 
 - [ ] Add valid swap fixtures per axis under `tests/fixtures/scenarios/`
   (`swap-episode-numbers.yaml`, `swap-disc-numbers.yaml`, `swap-track-numbers.yaml`),
@@ -162,9 +182,6 @@ Single atomic task (model + version literal + regenerated artifact must move tog
   before the timeline replays; that path is covered projection-direct in Task 2.)
 - [ ] Add one or more recipe(s) under `recipes/` demonstrating an explicit swap (mirror
   an existing hierarchy recipe; honor the recipe bit-rot guard / ADR 0002).
-- [ ] **Mass-bump every `schema_version: 28` → 29** across `tests/fixtures/`,
-  `recipes/`, and any in-repo docs/examples (`rg -l "schema_version: 28"`). No semantic
-  change to those scenarios.
 - [ ] Update user-facing docs if the timeline-action list is enumerated anywhere
   (`docs/contract/`); add the three swap actions.
 - [ ] **Guardrails green** including `test_invalid_corpus.py` + `test_sample_scenarios.py`
