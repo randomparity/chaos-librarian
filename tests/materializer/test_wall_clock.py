@@ -8,7 +8,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from pydantic import TypeAdapter
@@ -1380,3 +1380,26 @@ def test_slow_copy_commit_times_rejects_non_committed_entry() -> None:
     journal = (_atomic_entry_with_action(TimelineActionName.SLOW_COPY_COMMIT),)
     with pytest.raises(ChaosLibrarianValueError):
         wall_clock._slow_copy_commit_times(journal)
+
+
+def _empty_dispatch_state() -> wall_clock._DispatchState:
+    # The committed-entry guard is the first statement in each commit handler,
+    # so the contexts are never dereferenced for these tests.
+    return wall_clock._DispatchState(
+        fs_ctx=cast(Any, None),
+        media_ctx=cast(Any, None),
+        corruption_ctx=cast(Any, None),
+        oracle_hash_ctx=cast(Any, None),
+    )
+
+
+def test_wall_clock_slow_copy_commit_rejects_non_committed_entry() -> None:
+    entry = _atomic_entry_with_action(TimelineActionName.SLOW_COPY_COMMIT)
+    with pytest.raises(ChaosLibrarianValueError):
+        wall_clock._wall_clock_slow_copy_commit(_empty_dispatch_state(), entry)
+
+
+def test_wall_clock_network_lag_commit_rejects_non_committed_entry() -> None:
+    entry = _atomic_entry_with_action(TimelineActionName.NETWORK_LAG_COMMIT)
+    with pytest.raises(ChaosLibrarianValueError):
+        wall_clock._wall_clock_network_lag_commit(_empty_dispatch_state(), entry)

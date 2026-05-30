@@ -25,6 +25,7 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import Scenario, SidecarKind, TimelineActionName
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
@@ -32,7 +33,10 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
 )
 from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
-from chaos_librarian.materializer.phase_b.filesystem import FilesystemPhaseBContext
+from chaos_librarian.materializer.phase_b.filesystem import (
+    FilesystemPhaseBContext,
+    _slow_copy_commit,
+)
 from chaos_librarian.materializer.phase_b.media import MediaPhaseBContext
 from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 
@@ -402,3 +406,17 @@ def _entry(action: TimelineActionName) -> AtomicJournalEntry:
         location_ids=["location_0001"],
         state_delta={},
     )
+
+
+def test_slow_copy_commit_rejects_non_committed_entry(tmp_path: Path) -> None:
+    # A corrupt journal carrying a slow_copy_commit action on a non-committed
+    # entry must raise a domain error rather than a bare AssertionError
+    # (stripped under -O) before touching the pending-slow-copy state.
+    ctx = FilesystemPhaseBContext(
+        library_root=tmp_path,
+        scenario_assets={},
+        resolved_seed=0,
+    )
+    entry = _entry(TimelineActionName.SLOW_COPY_COMMIT)
+    with pytest.raises(ChaosLibrarianValueError):
+        _slow_copy_commit(ctx, entry)
