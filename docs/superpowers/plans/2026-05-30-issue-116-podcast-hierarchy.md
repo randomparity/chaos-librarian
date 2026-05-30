@@ -148,16 +148,37 @@ In `Scenario` (around line 1109): change `schema_version: Literal[29]` to `schem
 
 In `src/chaos_librarian/contract/__init__.py:16`: `SCENARIO_SCHEMA_VERSION: Final = 30`.
 
-- [ ] **Step 6: Run the new tests + the contract-constants test**
+- [ ] **Step 6: Re-pin scenario fixtures and recipes (29 → 30) in the SAME commit**
 
-Run: `uv run python -m pytest tests/contract/test_scenario.py -k podcast tests/contract/test_contract_constants.py -q --no-cov`
-Expected: PASS (note: other fixtures still pin 29 — they break in Task 9; do not run the full suite yet).
+The version bump invalidates every fixture pinned at 29 — including the ones
+`tests/contract/test_sample_scenarios.py` globs and loads. To keep the guardrail
+gate green at this commit, re-pin in the same change:
 
-- [ ] **Step 7: Commit**
+```bash
+grep -rl "schema_version: 29" tests/fixtures recipes \
+  | xargs sed -i '' 's/schema_version: 29/schema_version: 30/'
+```
+(macOS `sed -i ''`.) The new podcast scenario fixtures land in Task 8; only the
+re-pin happens here.
+
+- [ ] **Step 7: Regenerate the scenario schema artifact**
+
+Run: `uv run python -m chaos_librarian.schema_export --write`
+(`scenario.schema.json` changes — the manifest artifact regenerates in Task 4.)
+
+- [ ] **Step 8: Run the guardrail gate (now green)**
+
+Run: `uv run python -m pytest tests/contract tests/validation -q --no-cov` plus
+`uv run python -m chaos_librarian.schema_export --check`.
+Expected: PASS — fixtures re-pinned, scenario schema regenerated. (Manifest is
+still v9 here; that bumps in Task 4. Full suite runs at the end of Task 4.)
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add src/chaos_librarian/contract/domain.py src/chaos_librarian/contract/scenario.py \
-        src/chaos_librarian/contract/__init__.py tests/contract/test_scenario.py
+        src/chaos_librarian/contract/__init__.py tests/contract/test_scenario.py \
+        schemas/scenario.schema.json tests/fixtures recipes
 git commit -m "feat: add podcast scenario models and PODCAST_EPISODE kind"
 ```
 (Commit body trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.)
@@ -445,15 +466,21 @@ Add to the engine state test module:
 ```python
 def test_initial_state_seeds_podcast_episode_location_and_rows():
     from chaos_librarian.engine.state import build_initial_state
+    from chaos_librarian.determinism.ids import IdAllocator
+    from chaos_librarian.determinism.trace import TraceRecorder
     scenario = _scenario_with_one_podcast()  # one podcast/episode/asset
-    manifest = build_initial_state(scenario).to_manifest()  # use the real assembly API
+    manifest = build_initial_state(scenario, IdAllocator(TraceRecorder())).to_manifest()
     assert manifest.podcasts[0].id == "p1"
     assert manifest.podcast_episodes[0].id == "pe1"
     # the asset has a rendered location under the podcast folder
     assert any("/The Daily/" in loc.path for loc in manifest.locations)
 ```
 
-Match the real "build initial state → manifest" call used by existing engine tests (the assembly is `WorldState` → `Manifest(` at `engine/state.py:357`); use whatever public helper existing tests use, e.g. `build_initial_state(scenario)` then the manifest accessor.
+The real signature is `build_initial_state(scenario, ids)` (`state.py:376`) and
+the manifest accessor is `.to_manifest()` (`state.py:355`); copy the exact
+`IdAllocator(TraceRecorder())` construction from existing engine tests (e.g.
+`tests/engine/test_events_filesystem.py:214`) — adjust the import paths to match
+that file's imports if they differ from the names above.
 
 - [ ] **Step 5: Run to verify failure**
 
@@ -467,7 +494,31 @@ Add `ManifestPodcast`, `ManifestPodcastEpisode` to the manifest imports. Add `po
 - records `ManifestPodcastEpisode(id, podcast_id, title, published_at, slug, stale)`,
 - calls `_seed_variant_bundle_rows(state, variant, ParentKind.PODCAST_EPISODE, episode.id)` for each variant.
 
-Add `state.podcasts` / `state.podcast_episodes` to the `Manifest(` construction at line 357 (`podcasts=list(state.podcasts.values())`, `podcast_episodes=list(state.podcast_episodes.values())`). Add a `asset_ids_for_podcast_episode` helper mirroring `asset_ids_for_episode` (uses `_asset_ids_for_parent(ParentKind.PODCAST_EPISODE, episode_id)`). The rendered location seeding at line 533 already uses `render_asset_path(renderable_asset_context(context, primary_root_path))`, which now handles podcast contexts — no change needed there beyond the walk feeding contexts in.
+Add `state.podcasts` / `state.podcast_episodes` to the `Manifest(` construction at line 357 (`podcasts=list(state.podcasts.values())`, `podcast_episodes=list(state.podcast_episodes.values())`). Add a `asset_ids_for_podcast_episode` helper mirroring `asset_ids_for_episode` (uses `_asset_ids_for_parent(ParentKind.PODCAST_EPISODE, episode_id)`). The initial-location seeding (around line 533) uses `render_asset_path(renderable_asset_context(context, primary_root_path))`, which handles podcast contexts after Task 3 — the walk just needs to feed the contexts in.
+
+**Critical — add the `PODCAST_EPISODE` branch to `WorldState.renderable_context_for_asset` (`state.py:255-319`).** This method, NOT `_hierarchy_entry`, is where per-`parent_kind` rendering branches live (it branches `MOVIE`/`EPISODE`/`TRACK`). `render_path_for_asset` (`state.py:241`) and `_hierarchy_entry`'s re-render both delegate here, so without a podcast branch every podcast path render raises. Mirror the `EPISODE`/`TRACK` branches:
+
+```python
+        if variant.parent_kind is ParentKind.PODCAST_EPISODE:
+            episode = self.podcast_episodes[variant.parent_id]
+            podcast = self.podcasts[episode.podcast_id]
+            return RenderableAssetContext(
+                parent_kind=ParentKind.PODCAST_EPISODE,
+                root_path=root_path,
+                layout=PodcastLayout(podcast.layout),
+                naming=PodcastEpisodeNaming(podcast.episode_naming),
+                podcast_title=podcast.title,
+                published_at=episode.published_at,
+                episode_slug=episode.slug,
+                episode_title=episode.title,
+                variant_label=variant.label,
+                asset_role=asset.role,
+                asset_container=asset.container,
+                bundle_asset_count=bundle_asset_count,
+            )
+```
+
+(The movie/TV/music fields default to `None` via `RenderableAssetContext`'s kw_only defaults, so they need not be spelled out — but match the existing branches' explicit-`None` style if the file's convention requires it; `ty` will flag any missing required field.) Import `PodcastLayout`, `PodcastEpisodeNaming`. Note `ManifestPodcastEpisode.podcast_id` makes the episode→podcast lookup direct.
 
 - [ ] **Step 7: Run engine + manifest tests**
 
@@ -746,7 +797,7 @@ def _handle_mark_episode_stale(
     )
 ```
 
-Confirm `_hierarchy_entry` renders podcast paths — it calls the same renderer (`render_asset_path`) which now supports `PODCAST_EPISODE`; verify the path-history projection in `_hierarchy_entry` reads episode state from `state.podcast_episodes` (extend the renderer lookup in `_hierarchy_entry` if it branches on `state.episodes`/`state.tracks` only — add a `state.podcast_episodes` branch mirroring the others). Import `RepublishEpisodeEvent`, `MarkEpisodeStaleEvent`. Register both in the dispatch table.
+`_hierarchy_entry` needs **no change**: it does not branch on entity kind — it calls `state.render_path_for_asset(asset_id)`, which delegates to `WorldState.renderable_context_for_asset`. The `PODCAST_EPISODE` branch added there in Task 4 already makes podcast path re-render work, so `republish_episode`'s `_hierarchy_entry` call renders correctly. Just import `RepublishEpisodeEvent`, `MarkEpisodeStaleEvent` and register both handlers in the dispatch table. (If Task 4's `renderable_context_for_asset` branch was somehow missed, `republish_episode` raises here — add it in `state.py:255-319`, not in `_hierarchy_entry`.)
 
 - [ ] **Step 4: Run handler tests**
 
@@ -762,25 +813,40 @@ git commit -m "feat: engine handlers for republish_episode and mark_episode_stal
 
 ---
 
-## Task 8: Regenerate schema artifacts + re-pin fixtures
+## Task 8: New podcast fixtures + manifest re-pin
+
+> Scenario fixtures/recipes were already re-pinned 29→30 and
+> `scenario.schema.json` regenerated in Task 1; the manifest artifact and
+> manifest version constant were bumped in Task 4. This task adds the podcast
+> fixtures and fixes any remaining manifest-v9 test data.
 
 **Files:**
-- Regenerate: `schemas/scenario.schema.json`, `schemas/manifest.schema.json`, and any report schema embedding the manifest
-- Modify: ~141 scenario fixtures/recipes (`schema_version: 29` → `30`), manifest fixtures (`9` → `10`)
+- Regenerate: `schemas/manifest.schema.json` and any report schema embedding the manifest (if not already current from Task 4)
+- Modify: manifest test data still constructing v9 manifests (`9` → `10`)
 - Create: `tests/fixtures/scenarios/podcast_basic.yaml` (valid) + invalid fixtures
 
-- [ ] **Step 1: Regenerate schema artifacts**
+- [ ] **Step 1: Confirm schema artifacts are current**
 
 Run: `uv run python -m chaos_librarian.schema_export --write`
-Then: `git status --short schemas/` (expect `scenario.schema.json`, `manifest.schema.json`, possibly report schemas, modified).
+Then: `git status --short schemas/` (manifest + report schemas should already be
+current from Task 4; this is a no-op guard. If anything changes, Task 4 missed a
+regen — stage it here.)
 
-- [ ] **Step 2: Re-pin scenario fixtures and recipes (29 → 30)**
+- [ ] **Step 2: Re-pin remaining manifest test data (9 → 10)**
+
+Manifest fixtures are not in the scenario corpus; they live in test data that
+constructs full manifests. Search `tests` for literal `schema_version=9` and
+`"schema_version": 9`, and fix the ones that are **manifests** (not other
+contracts — `journal`, `replay-bundle`, etc. keep their own versions):
 
 ```bash
-grep -rl "schema_version: 29" tests/fixtures recipes \
-  | xargs sed -i '' 's/schema_version: 29/schema_version: 30/'
+grep -rln "schema_version.*9" tests/contract/test_manifest.py tests/contract/test_reports.py \
+  tests/contract/test_replay_bundle.py tests/contract/test_run_sentinel.py \
+  tests/contract/test_capabilities.py
 ```
-(macOS `sed -i ''`.) Then re-pin any JSON/embedded manifest version 9 → 10 in test data that constructs full manifests (search `tests` for literal `schema_version=9` and `"schema_version": 9` and fix the ones that are manifests, not other contracts).
+Bump only the manifest `schema_version` to 10 in each (the v9→10 covered in
+Task 4 for `test_manifest.py`; the others embed a manifest and need the same
+bump).
 
 - [ ] **Step 3: Add the valid podcast fixture**
 
@@ -826,12 +892,17 @@ def test_existing_topology_paths_unchanged_by_podcast_support():
     # captured from an existing fixture. The new podcast field defaults empty,
     # so a podcast-free scenario must be byte-identical.
     scenario = _load_fixture("series_season_folders.yaml")  # an existing TV fixture
-    manifest = build_initial_state(scenario).to_manifest()
+    manifest = build_initial_state(scenario, IdAllocator(TraceRecorder())).to_manifest()
     assert manifest.podcasts == []
     assert manifest.podcast_episodes == []
     # rendered episode path matches the known TV shape
     assert any("/Season 01/" in loc.path for loc in manifest.locations)
 ```
+
+Use the real `build_initial_state(scenario, ids)` arity (`state.py:376`) with
+`IdAllocator(TraceRecorder())`, matching existing engine tests; `_load_fixture`
+should load and `Scenario.model_validate` an existing TV fixture name that
+actually exists in `tests/fixtures/scenarios/` (verify the filename first).
 
 - [ ] **Step 2: Run to verify pass**
 
