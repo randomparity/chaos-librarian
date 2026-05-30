@@ -430,6 +430,27 @@ class Asset(BaseModel):
     video: VideoTrack | None = None
     audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
     subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
+    # Content-dedup authoring knobs (scenario v25). ``same_content_as`` copies
+    # another asset's materialized bytes verbatim (same full content_hash);
+    # ``hash_collision_with`` + ``collision_prefix_len`` make this asset's
+    # *recorded* hash share a truncated hex prefix with another asset's while
+    # the on-disk bytes differ (oracle-recorded collision). The two link fields
+    # are mutually exclusive; cross-asset reference resolution is a semantic rule.
+    same_content_as: str | None = None
+    hash_collision_with: str | None = None
+    collision_prefix_len: int | None = Field(default=None, ge=1, le=63)
+
+    @model_validator(mode="after")
+    def _check_content_dedup_fields(self) -> Asset:
+        if self.same_content_as is not None and self.hash_collision_with is not None:
+            raise ValueError("same_content_as and hash_collision_with are mutually exclusive")
+        if (self.hash_collision_with is None) != (self.collision_prefix_len is None):
+            raise ValueError(
+                "collision_prefix_len must be set if and only if hash_collision_with is set"
+            )
+        if self.same_content_as is not None and self.subtitles:
+            raise ValueError("same_content_as forbids declaring the asset's own subtitles")
+        return self
 
 
 class Bundle(BaseModel):
