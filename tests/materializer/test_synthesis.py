@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 from pathlib import Path
 
 import pytest
@@ -38,7 +40,10 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.engine import run_plan
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.errors import (
+    SymlinkTargetMissingError,
+    UnsupportedMaterializationError,
+)
 from chaos_librarian.materializer.synthesis import (
     MaterializeAssetResult,
     PhaseAResult,
@@ -1414,6 +1419,292 @@ def test_hardlinked_to_unset_skips_os_link(
 
     monkeypatch.setattr(synthesis_mod.os, "link", _fail_link)
     # _SAME_CONTENT_SCENARIO sets same_content_as but no hardlinked_to → no os.link.
+    materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+
+
+def _symlink_in_root_scenario() -> bytes:
+    return b"""\
+schema_version: 27
+scenario_id: symlink-in-root
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: Link
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_ref
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+      - id: va_b
+        label: b
+        bundle:
+          id: b_b
+          assets:
+            - id: a_link
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              symlink: {to_asset: a_ref}
+series: []
+artists: []
+timeline: []
+"""
+
+
+def _symlink_escaping_scenario() -> bytes:
+    return b"""\
+schema_version: 27
+scenario_id: symlink-escaping
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: Link
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_link
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              symlink: {to_run_dir_path: external-store/clip.mkv}
+series: []
+artists: []
+timeline: []
+"""
+
+
+def test_symlink_to_asset_materializes_relative_symlink(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    phase_a, by_id, artifacts = _run_phase_a(monkeypatch, tmp_path, _symlink_in_root_scenario())
+    ref, link = by_id["a_ref"], by_id["a_link"]
+    ref_file = tmp_path / ref.location_path
+    link_file = tmp_path / link.location_path
+    # the referrer path is a real symlink
+    assert link_file.is_symlink()
+    # the stored target is relative (run-dir portable), not absolute
+    target = os.readlink(link_file)
+    assert not os.path.isabs(target)
+    # following the link reaches the referent's bytes
+    assert link_file.read_bytes() == ref_file.read_bytes()
+    assert link.content_hash == ref.content_hash
+    # invocation_index resolves to a synthetic symlink invocation
+    link_invocation = phase_a.invocations[link.invocation_index]
+    assert link_invocation.tool == "symlink"
+    assert link_invocation.exit_code == 0
+    # the link contributes no content-source evidence
+    assert [e.asset_id for e in phase_a.content_sources] == ["a_ref"]
+    # re-probed (size matches the resolved target)
+    assert link.size_bytes == link_file.stat().st_size
+    # manifest records the link's own location and the resolved-target hash
+    versions = {v.asset_id: v.content_hash for v in artifacts.current_manifest.versions}
+    assert versions["a_link"] == versions["a_ref"]
+
+
+def test_symlink_to_asset_resolves_after_tree_relocation(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "run-a"
+    out_dir.mkdir()
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_symlink_in_root_scenario(), source_label="test:symlink.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+    phase_a = materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=out_dir,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+    by_id = {m.asset_id: m for m in phase_a.materialized_assets}
+    link_rel = by_id["a_link"].location_path
+    ref_rel = by_id["a_ref"].location_path
+    # relocate the whole run-dir tree to a new absolute path, preserving symlinks
+    moved = tmp_path / "run-b"
+    shutil.copytree(out_dir, moved, symlinks=True)
+    moved_link = moved / link_rel
+    assert moved_link.is_symlink()
+    # the relative target still resolves to the referent's bytes after the move
+    assert moved_link.read_bytes() == (moved / ref_rel).read_bytes()
+
+
+def test_symlink_to_run_dir_path_materializes_escaping_link(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_symlink_escaping_scenario(), source_label="test:symlink-escaping.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+    # create the out-of-library target under the tmp run dir (never a real system path)
+    target = tmp_path / "external-store" / "clip.mkv"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"escaping-target-bytes")
+
+    phase_a = materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+    by_id = {m.asset_id: m for m in phase_a.materialized_assets}
+    link_file = tmp_path / by_id["a_link"].location_path
+    assert link_file.is_symlink()
+    # stored target is relative and resolves out of library/ to the created target
+    assert not os.path.isabs(os.readlink(link_file))
+    assert link_file.read_bytes() == b"escaping-target-bytes"
+    # the asset path itself stays contained (under library/) — no escape on it
+    assert link_file.resolve().is_relative_to(tmp_path)
+
+
+def test_symlink_missing_target_fails_loud(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_symlink_escaping_scenario(), source_label="test:symlink-missing.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+    # target file intentionally NOT created → fail loud, not silent / unhandled
+    with pytest.raises(SymlinkTargetMissingError) as exc_info:
+        materialize_assets_phase_a(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
+    assert exc_info.value.error_code == "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
+
+
+_SYMLINK_CHAIN_SCENARIO = b"""\
+schema_version: 27
+scenario_id: symlink-chain
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: Chain
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_ref
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+      - id: va_b
+        label: b
+        bundle:
+          id: b_b
+          assets:
+            - id: a_link
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              symlink: {to_asset: a_ref}
+      - id: va_c
+        label: c
+        bundle:
+          id: b_c
+          assets:
+            - id: a_link2
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              symlink: {to_asset: a_link}
+series: []
+artists: []
+timeline: []
+"""
+
+
+def test_symlink_chain_follows_transitively(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _phase_a, by_id, _artifacts = _run_phase_a(monkeypatch, tmp_path, _SYMLINK_CHAIN_SCENARIO)
+    ref_file = tmp_path / by_id["a_ref"].location_path
+    link2_file = tmp_path / by_id["a_link2"].location_path
+    # a_link2 -> a_link -> a_ref: reading the chained link reaches a_ref's bytes
+    assert link2_file.is_symlink()
+    assert link2_file.read_bytes() == ref_file.read_bytes()
+
+
+def test_symlink_unset_skips_os_symlink(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_SAME_CONTENT_SCENARIO, source_label="test:no-symlink.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+
+    def _fail_symlink(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("os.symlink must not be called when no asset sets symlink")
+
+    monkeypatch.setattr(synthesis_mod.os, "symlink", _fail_symlink)
     materialize_assets_phase_a(
         scenario=run_input.scenario,
         out_dir=tmp_path,

@@ -43,6 +43,7 @@ from chaos_librarian.materializer.content_sources import (
 )
 from chaos_librarian.materializer.errors import (
     ProbeParseError,
+    SymlinkTargetMissingError,
     ToolFailedError,
     UnsupportedMaterializationError,
 )
@@ -153,7 +154,20 @@ def materialize_assets_phase_a(
             renderable_asset_context(context, primary_root_path)
         )
         rel_path_by_asset[asset.id] = rendered_relative_path
-        if asset.hardlinked_to is not None:
+        if asset.symlink is not None:
+            referent_rel_path = (
+                rel_path_by_asset[asset.symlink.to_asset]
+                if asset.symlink.to_asset is not None
+                else None
+            )
+            asset_result = _symlink_asset(
+                asset=asset,
+                out_dir=out_dir,
+                rendered_relative_path=rendered_relative_path,
+                referent_rel_path=referent_rel_path,
+                invocation_index=invocation_index,
+            )
+        elif asset.hardlinked_to is not None:
             asset_result = _hardlink_asset(
                 asset=asset,
                 out_dir=out_dir,
@@ -293,6 +307,88 @@ def _hardlink_asset(
         tool="hardlink",
         version="n/a",
         command=["link", asset.hardlinked_to or "", str(output_path.relative_to(out_dir))],
+        exit_code=0,
+        duration_ns=duration_ns,
+    )
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+        mp4_moov_placement=asset.mp4_moov_placement,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(),
+        prelude_invocations=(),
+    )
+
+
+def _symlink_asset(
+    *,
+    asset: Asset,
+    out_dir: Path,
+    rendered_relative_path: str,
+    referent_rel_path: str | None,
+    invocation_index: int,
+) -> MaterializeAssetResult:
+    """Materialize a ``symlink`` asset's path as an ``os.symlink``.
+
+    A sibling of ``_hardlink_asset`` that swaps ``os.link`` for ``os.symlink``:
+    the referrer's path becomes a symbolic link, not a regular file or a shared
+    inode. The link target is either an in-root asset's already-written file
+    (``to_asset`` ⇒ ``referent_rel_path``) or a library-escaping run-dir path
+    (``to_run_dir_path``); the escaping target is sandboxed to the run dir by
+    ``rule_symlink_target_escape`` at validate time. v1 requires the resolved
+    target to exist on disk (dangling links are deferred); a missing target
+    raises ``SymlinkTargetMissingError`` rather than creating a dangling link.
+
+    The link is created with a **run-dir-relative** target
+    (``os.path.relpath`` against the link's own parent) so the materialized tree
+    is portable and replay-stable — no absolute run-specific path is written to
+    disk. The referrer's ``content_hash`` and probe come from the resolved
+    target (``open``/``probe_file`` follow the link). Reproduces every per-asset
+    contribution synthesis makes so the phase-A invariants hold: a synthetic
+    ``symlink`` ``ToolInvocation``, empty ``sidecar_hashes`` (``symlink`` forbids
+    the asset's own subtitles), and no ``content_sources`` (a link resolves no
+    synthesis source). ``os.symlink`` is non-overwriting and phase A writes into
+    a freshly-created library tree, so ``output_path`` never pre-exists.
+    """
+    symlink = asset.symlink
+    if symlink is None:  # pragma: no cover - dispatch guarantees this
+        raise ChaosLibrarianValueError("_symlink_asset called for an asset without symlink")
+    library_dir = out_dir / "library"
+    output_path = library_dir / rendered_relative_path
+    if referent_rel_path is not None:
+        target_path = library_dir / referent_rel_path
+        target_descriptor = symlink.to_asset or ""
+    else:
+        target_path = out_dir / (symlink.to_run_dir_path or "")
+        target_descriptor = symlink.to_run_dir_path or ""
+    if not target_path.exists():
+        raise SymlinkTargetMissingError(
+            f"symlink target for asset {asset.id!r} does not exist: {target_descriptor!r}",
+            asset_id=asset.id,
+            field="symlink",
+            payload={"target": target_descriptor},
+        )
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    relative_target = os.path.relpath(target_path, output_path.parent)
+    started = time.monotonic_ns()
+    os.symlink(relative_target, output_path)
+    duration_ns = time.monotonic_ns() - started
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    probed = probe_file(output_path)
+    invocation = ToolInvocation(
+        tool="symlink",
+        version="n/a",
+        command=["symlink", target_descriptor, str(output_path.relative_to(out_dir))],
         exit_code=0,
         duration_ns=duration_ns,
     )
