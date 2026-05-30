@@ -50,6 +50,7 @@ from chaos_librarian.contract.scenario import (
     Series,
     SeriesLayout,
     SidecarKind,
+    SidecarMediaType,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     SubtitleCodec,
@@ -1449,6 +1450,11 @@ def test_sidecar_kind_enum_values():
     assert SidecarKind.SUBTITLE.value == "subtitle"
     assert SidecarKind.POSTER.value == "poster"
     assert SidecarKind.NFO.value == "nfo"
+
+
+def test_sidecar_media_type_enum_values():
+    assert SidecarMediaType.IMAGE.value == "image"
+    assert SidecarMediaType.VIDEO.value == "video"
 
 
 def test_create_sidecar_default_kind_is_subtitle():

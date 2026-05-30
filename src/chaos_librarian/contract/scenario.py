@@ -291,6 +291,17 @@ class SidecarKind(enum.StrEnum):
     NFO = "nfo"
 
 
+class SidecarMediaType(enum.StrEnum):
+    """Synthesized media kind for a poster sidecar.
+
+    ``image`` is the default PNG poster; ``video`` writes a small deterministic
+    video at the poster path — the ``poster-is-video`` chaos.
+    """
+
+    IMAGE = "image"
+    VIDEO = "video"
+
+
 class NetworkLagEffect(enum.StrEnum):
     """Watcher-visible filesystem lag artifact requested by a lag window."""
 
