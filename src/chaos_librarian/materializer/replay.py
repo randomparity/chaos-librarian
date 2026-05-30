@@ -395,6 +395,9 @@ def _apply_prefix_phase_b(
     if network_lag_starts:
         pending = sorted(network_lag_starts)
         raise ReplayIntegrityError(f"uncommitted network_lag_start entries: {pending}")
+    if state.chaos is not None and (state.chaos.open_locks or state.chaos.open_unmounts):
+        pending = sorted({*state.chaos.open_locks, *state.chaos.open_unmounts})
+        raise ReplayIntegrityError(f"unclosed network-fs-chaos open windows: {pending}")
 
 
 def _apply_replay_chaos_entry(
