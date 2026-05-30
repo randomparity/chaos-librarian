@@ -36,6 +36,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.engine import run_plan
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.synthesis import (
@@ -1232,7 +1233,7 @@ timeline: []
 
 def _run_phase_a(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scenario_bytes: bytes
-) -> tuple[PhaseAResult, dict[str, MaterializedAsset], object]:
+) -> tuple[PhaseAResult, dict[str, MaterializedAsset], PlanArtifacts]:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=scenario_bytes, source_label="test:hardlink.yaml"
     )
