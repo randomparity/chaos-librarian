@@ -1106,6 +1106,78 @@ class TestApplyUpdateSidecar:
         with pytest.raises(MediaActionError, match="not a live sidecar"):
             apply_media_action(ctx, entry)
 
+    def test_update_preserves_authored_encoding(self, tmp_path):
+        """create_sidecar utf16_le -> update_sidecar keeps UTF-16-LE bytes."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_cs_001",
+                action=TimelineActionName.CREATE_SIDECAR,
+                target="a0",
+                state_delta={
+                    "sidecar_path": "a0.eng.srt",
+                    "sidecar_id": "sidecar_live",
+                    "language": "eng",
+                    "kind": "subtitle",
+                    "encoding": "utf16_le",
+                },
+            ),
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_002",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_live", "sidecar_path": "a0.eng.srt"},
+            ),
+        )
+        updated = (tmp_path / "a0.eng.srt").read_bytes()
+        # Still decodes as UTF-16-LE (would raise / mis-decode if reverted to UTF-8).
+        assert "00:00:00,000" in updated.decode("utf-16-le")
+
+    def test_update_preserves_authored_nfo_body(self, tmp_path):
+        """create_sidecar nfo body -> update_sidecar re-emits the exact body."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_cs_001",
+                action=TimelineActionName.CREATE_SIDECAR,
+                target="a0",
+                state_delta={
+                    "sidecar_path": "a0.nfo",
+                    "sidecar_id": "sidecar_nfo",
+                    "language": None,
+                    "kind": "nfo",
+                    "body": "<movie>AUTHORED</movie>",
+                },
+            ),
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_002",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_nfo", "sidecar_path": "a0.nfo"},
+            ),
+        )
+        assert (tmp_path / "a0.nfo").read_bytes() == b"<movie>AUTHORED</movie>"
+
 
 class TestApplyCreateSidecar:
     """Sprint 7 routing fix: create_sidecar lives in media.py and dispatches per-kind.
