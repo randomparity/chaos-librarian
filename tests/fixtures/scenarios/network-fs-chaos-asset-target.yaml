@@ -1,4 +1,4 @@
-schema_version: 31
+schema_version: 32
 scenario_id: network-fs-chaos-asset-target
 seed: 42
 duration_scale: short

@@ -72,7 +72,7 @@ def minimal_scenario() -> ScenarioBuilder:
         if asset_subtitles is not None:
             asset["subtitles"] = asset_subtitles
         base: dict[str, object] = {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -138,7 +138,7 @@ def series_scenario() -> ScenarioBuilder:
             ],
         }
         base: dict[str, object] = {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "series-test",
             "seed": 1,
             "duration_scale": "short",
@@ -213,7 +213,7 @@ def podcast_scenario() -> ScenarioBuilder:
             }
         ]
         base: dict[str, object] = {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "podcast-test",
             "seed": 1,
             "duration_scale": "short",
@@ -269,7 +269,7 @@ def music_scenario() -> ScenarioBuilder:
             ],
         }
         base: dict[str, object] = {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "music-test",
             "seed": 1,
             "duration_scale": "short",

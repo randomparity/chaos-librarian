@@ -4,7 +4,7 @@
 # Expected consumer response: converges — a scanner that resolves the link by realpath treats the two paths as one underlying file; one that double-counts the link as a separate asset diverges. (Expected response is documentation; chaos-librarian records only the neutral on-disk fact that the path is a symlink and where it points.)
 # Note: this ships the in-root form (symlink.to_asset). The library-escaping form (symlink.to_run_dir_path), the "symlink-external" shape, validates clean but materializes end-to-end only with an out-of-library target the run does not yet author; that target-authoring / dangling work is deferred (see the issue #179 follow-up).
 # Requires: none
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-scanner-symlink-external
 seed: 2179
 duration_scale: short

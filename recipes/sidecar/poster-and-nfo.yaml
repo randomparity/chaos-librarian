@@ -5,7 +5,7 @@
 # Expected consumer response: converges — associate artwork/metadata with the
 #   asset; do not treat them as media.
 # Requires: none
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-sidecar-poster-and-nfo
 seed: 1402
 duration_scale: short

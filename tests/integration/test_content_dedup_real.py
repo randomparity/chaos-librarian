@@ -31,7 +31,7 @@ pytestmark = pytest.mark.skipif(
 
 
 _SAME_CONTENT_YAML = """\
-schema_version: 31
+schema_version: 32
 scenario_id: same-content-real
 seed: 7
 duration_scale: short
@@ -71,7 +71,7 @@ timeline: []
 
 
 _COLLISION_YAML = """\
-schema_version: 31
+schema_version: 32
 scenario_id: hash-collision-real
 seed: 7
 duration_scale: short

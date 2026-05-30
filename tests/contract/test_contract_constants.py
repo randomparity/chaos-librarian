@@ -42,7 +42,7 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_current_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 31
+    assert SCENARIO_SCHEMA_VERSION == 32
     assert MANIFEST_SCHEMA_VERSION == 10
     assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
     assert ASSET_REPORT_SCHEMA_VERSION == 9
@@ -62,7 +62,7 @@ def test_domain_report_schema_versions_start_at_one() -> None:
 
 
 def test_materialization_schema_version_bumped_to_16() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 16
+    assert MATERIALIZATION_SCHEMA_VERSION == 17
 
 
 def test_capabilities_schema_version_bumped_to_7() -> None:

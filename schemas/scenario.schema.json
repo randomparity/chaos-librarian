@@ -3106,7 +3106,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 31,
+      "const": 32,
       "title": "Schema Version",
       "type": "integer"
     },

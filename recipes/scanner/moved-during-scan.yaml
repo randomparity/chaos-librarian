@@ -3,7 +3,7 @@
 # Tests: a file is relocated within its root while a scan is running.
 # Expected consumer response: converges — re-link the asset at its new path.
 # Requires: none
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-scanner-moved-during-scan
 seed: 1002
 duration_scale: short

@@ -60,7 +60,7 @@ def _variant_payload(
 def _scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "topology",
             "seed": 1,
             "duration_scale": "short",
@@ -157,7 +157,7 @@ def _movie_scenario_with_edition(edition: str) -> Scenario:
     variant["edition"] = edition
     return Scenario.model_validate(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "topology-edition",
             "seed": 1,
             "duration_scale": "short",
@@ -198,7 +198,7 @@ def test_renderable_asset_context_movie_edition_defaults_none() -> None:
 def _podcast_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "topology-podcast",
             "seed": 1,
             "duration_scale": "short",
@@ -238,7 +238,7 @@ def _podcast_scenario() -> Scenario:
 def _multi_asset_bundle_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "multi-asset-bundle",
             "seed": 1,
             "duration_scale": "short",
