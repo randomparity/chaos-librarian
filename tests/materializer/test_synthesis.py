@@ -699,7 +699,19 @@ def test_materialize_one_asset_writes_resolution_switch_video(
     assert len(result.prelude_invocations) == 2
     assert result.invocation.command[result.invocation.command.index("-c") + 1] == "copy"
     assert result.materialized_asset.invocation_index == 2
-    assert result.content_sources[0].resolution_sequence is VideoResolutionSequence.SD_TO_HD
+    # Both the SD and HD segments are encoded and concatenated, so both
+    # resolved sources must appear in the replay evidence with distinct recipes.
+    assert len(result.content_sources) == 2
+    assert [source.track_kind for source in result.content_sources] == [
+        ContentTrackKind.VIDEO,
+        ContentTrackKind.VIDEO,
+    ]
+    assert all(
+        source.resolution_sequence is VideoResolutionSequence.SD_TO_HD
+        for source in result.content_sources
+    )
+    sd_evidence, hd_evidence = result.content_sources
+    assert sd_evidence.recipe_digest != hd_evidence.recipe_digest
     assert output_path.exists()
 
 
