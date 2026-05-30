@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     ArtistLayout,
     EpisodeNaming,
     MovieLayout,
+    PodcastEpisodeNaming,
+    PodcastLayout,
     SeriesLayout,
     TrackNaming,
 )
@@ -23,10 +25,10 @@ _ASCII_DELETE = 127
 class RenderableAssetContext:
     parent_kind: ParentKind
     root_path: str
-    layout: MovieLayout | SeriesLayout | ArtistLayout
+    layout: MovieLayout | SeriesLayout | ArtistLayout | PodcastLayout
     # Domain fields default to None so builders set only the rows on their branch;
     # kw_only lets these defaults precede the required tail fields below.
-    naming: EpisodeNaming | TrackNaming | None = None
+    naming: EpisodeNaming | TrackNaming | PodcastEpisodeNaming | None = None
     movie_title: str | None = None
     series_title: str | None = None
     season_number: int | None = None
@@ -39,6 +41,9 @@ class RenderableAssetContext:
     disc_number: int | None = None
     track_number: int | None = None
     track_title: str | None = None
+    podcast_title: str | None = None
+    published_at: datetime | None = None
+    episode_slug: str | None = None
     variant_label: str
     asset_role: str
     asset_container: str
@@ -68,6 +73,8 @@ def render_asset_path(ctx: RenderableAssetContext) -> str:
         parts = _episode_parts(root, ctx)
     elif ctx.parent_kind is ParentKind.TRACK:
         parts = _track_parts(root, ctx)
+    elif ctx.parent_kind is ParentKind.PODCAST_EPISODE:
+        parts = _podcast_parts(root, ctx)
     else:
         raise ValueError(f"unsupported parent_kind: {ctx.parent_kind}")
     return _join_path(*parts)
@@ -210,6 +217,27 @@ def _track_stem(ctx: RenderableAssetContext) -> str:
     if ctx.naming is TrackNaming.DISC_TRACK_NUMBER_TITLE:
         return f"{disc_number:02d}-{track_number:02d} - {title}"
     raise ValueError("track context requires TrackNaming")
+
+
+def _podcast_parts(root: str, ctx: RenderableAssetContext) -> tuple[str, ...]:
+    if not isinstance(ctx.layout, PodcastLayout):
+        raise ValueError("podcast context requires PodcastLayout")
+    podcast = clean_display_component(_required(ctx.podcast_title, "podcast_title"))
+    stem = _podcast_stem(ctx)
+    filename = _filename(stem, ctx)
+    if ctx.layout is PodcastLayout.PODCAST_FOLDER:
+        return (root, podcast, filename)
+    raise ValueError(f"unsupported podcast layout: {ctx.layout}")
+
+
+def _podcast_stem(ctx: RenderableAssetContext) -> str:
+    title = clean_display_component(_required(ctx.episode_title, "episode_title"))
+    slug = clean_display_component(_required(ctx.episode_slug, "episode_slug"))
+    published_at = _required(ctx.published_at, "published_at")
+    if ctx.naming is PodcastEpisodeNaming.DATE_SLUG_TITLE:
+        date_str = published_at.astimezone(UTC).date().isoformat()
+        return f"{date_str} - {slug} - {title}"
+    raise ValueError("podcast context requires PodcastEpisodeNaming")
 
 
 def _required[T](value: T | None, field_name: str) -> T:
