@@ -47,6 +47,7 @@ from chaos_librarian.validation.rules.slow_copy import (
     rule_slow_copy_timing,
     rule_slow_copy_unpaired,
 )
+from chaos_librarian.validation.rules.symlink_target import rule_symlink_target_escape
 from chaos_librarian.validation.rules.target_unknown import (
     rule_root_unknown,
     rule_target_unknown,
@@ -65,6 +66,7 @@ _RULES: list[Rule] = [
     rule_duration_syntax,
     rule_target_unknown,
     rule_content_reference,
+    rule_symlink_target_escape,
     rule_profile_opt_in,
     rule_profile_budgets,
     rule_root_unknown,

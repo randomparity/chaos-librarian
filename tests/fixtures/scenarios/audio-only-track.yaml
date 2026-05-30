@@ -1,4 +1,4 @@
-schema_version: 26
+schema_version: 27
 scenario_id: audio-only-track
 seed: 10603
 duration_scale: short

@@ -417,6 +417,29 @@ class EmbeddedCoverArt(BaseModel):
 # ---- Asset / Bundle / Variant / Domain hierarchy ----------------------------
 
 
+class SymlinkTarget(BaseModel):
+    """Declares the target of an asset materialized as an ``os.symlink``.
+
+    Exactly one of the two forms is set: ``to_asset`` references another
+    earlier-declared asset whose in-library file the link points at (an
+    in-root link), and ``to_run_dir_path`` is a relative path resolving inside
+    the run dir but outside ``library/`` (a library-escaping link). The two
+    forms validate differently — ``to_asset`` is an asset-id reference
+    (``rule_content_reference`` → ``E_TARGET_UNKNOWN``), ``to_run_dir_path`` is
+    a sandboxed path (``rule_symlink_target_escape`` → ``E_SYMLINK_TARGET_ESCAPE``).
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    to_asset: str | None = None
+    to_run_dir_path: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> SymlinkTarget:
+        if (self.to_asset is None) == (self.to_run_dir_path is None):
+            raise ValueError("symlink requires exactly one of to_asset / to_run_dir_path")
+        return self
+
+
 class Asset(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
@@ -437,12 +460,16 @@ class Asset(BaseModel):
     # asset's while the on-disk bytes differ (oracle-recorded collision);
     # ``hardlinked_to`` (v26) makes this asset's path a *hardlink* to another
     # asset's already-written file via ``os.link`` (one shared inode, link count
-    # >= 2), distinct from ``same_content_as``'s byte copy. The three link fields
-    # are mutually exclusive; cross-asset reference resolution is a semantic rule.
+    # >= 2), distinct from ``same_content_as``'s byte copy. ``symlink`` (v27)
+    # makes this asset's path an ``os.symlink`` to either an in-root asset's file
+    # (``to_asset``) or a library-escaping run-dir path (``to_run_dir_path``). The
+    # four link fields are mutually exclusive; cross-asset reference resolution
+    # and escaping-target sandboxing are semantic rules.
     same_content_as: str | None = None
     hash_collision_with: str | None = None
     collision_prefix_len: int | None = Field(default=None, ge=1, le=63)
     hardlinked_to: str | None = None
+    symlink: SymlinkTarget | None = None
 
     @model_validator(mode="after")
     def _check_content_dedup_fields(self) -> Asset:
@@ -452,6 +479,12 @@ class Asset(BaseModel):
             raise ValueError("hardlinked_to and same_content_as are mutually exclusive")
         if self.hardlinked_to is not None and self.hash_collision_with is not None:
             raise ValueError("hardlinked_to and hash_collision_with are mutually exclusive")
+        if self.symlink is not None and self.same_content_as is not None:
+            raise ValueError("symlink and same_content_as are mutually exclusive")
+        if self.symlink is not None and self.hash_collision_with is not None:
+            raise ValueError("symlink and hash_collision_with are mutually exclusive")
+        if self.symlink is not None and self.hardlinked_to is not None:
+            raise ValueError("symlink and hardlinked_to are mutually exclusive")
         if (self.hash_collision_with is None) != (self.collision_prefix_len is None):
             raise ValueError(
                 "collision_prefix_len must be set if and only if hash_collision_with is set"
@@ -460,6 +493,8 @@ class Asset(BaseModel):
             raise ValueError("same_content_as forbids declaring the asset's own subtitles")
         if self.hardlinked_to is not None and self.subtitles:
             raise ValueError("hardlinked_to forbids declaring the asset's own subtitles")
+        if self.symlink is not None and self.subtitles:
+            raise ValueError("symlink forbids declaring the asset's own subtitles")
         return self
 
 
@@ -953,7 +988,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[26]
+    schema_version: Literal[27]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

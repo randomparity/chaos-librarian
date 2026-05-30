@@ -200,7 +200,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 26
+    assert scenario.schema_version == 27
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -963,8 +963,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_six() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 26
+def test_scenario_schema_version_is_twenty_seven() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 27
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -1968,6 +1968,126 @@ def test_asset_rejects_hardlinked_to_with_own_subtitles() -> None:
                 {"codec": "srt", "language": "eng", "mode": "sidecar"},
             ],
             "hardlinked_to": "a1",
+        }
+    )
+    with pytest.raises(ValidationError, match="subtitles"):
+        Scenario.model_validate(payload)
+
+
+def _symlink_second_asset(symlink: dict[str, object]) -> dict[str, object]:
+    return _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "symlink": symlink,
+        }
+    )
+
+
+def test_asset_accepts_symlink_to_asset() -> None:
+    payload = _symlink_second_asset({"to_asset": "a1"})
+    scenario = Scenario.model_validate(payload)
+    loaded = scenario.movies[0].variants[0].bundle.assets[1]
+    assert loaded.symlink is not None
+    assert loaded.symlink.to_asset == "a1"
+    assert loaded.symlink.to_run_dir_path is None
+    assert loaded.hardlinked_to is None
+
+
+def test_asset_accepts_symlink_to_run_dir_path() -> None:
+    payload = _symlink_second_asset({"to_run_dir_path": "external-store/clip.mkv"})
+    scenario = Scenario.model_validate(payload)
+    loaded = scenario.movies[0].variants[0].bundle.assets[1]
+    assert loaded.symlink is not None
+    assert loaded.symlink.to_run_dir_path == "external-store/clip.mkv"
+    assert loaded.symlink.to_asset is None
+
+
+def test_asset_rejects_symlink_with_neither_target() -> None:
+    payload = _symlink_second_asset({})
+    with pytest.raises(ValidationError, match="exactly one"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_symlink_with_both_targets() -> None:
+    payload = _symlink_second_asset({"to_asset": "a1", "to_run_dir_path": "x/y.mkv"})
+    with pytest.raises(ValidationError, match="exactly one"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_symlink_and_same_content_both_set() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "symlink": {"to_asset": "a1"},
+            "same_content_as": "a1",
+        }
+    )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_symlink_and_hash_collision_both_set() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "symlink": {"to_asset": "a1"},
+            "hash_collision_with": "a1",
+            "collision_prefix_len": 8,
+        }
+    )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_symlink_and_hardlinked_to_both_set() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "symlink": {"to_asset": "a1"},
+            "hardlinked_to": "a1",
+        }
+    )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_symlink_with_own_subtitles() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [
+                {"codec": "srt", "language": "eng", "mode": "sidecar"},
+            ],
+            "symlink": {"to_asset": "a1"},
         }
     )
     with pytest.raises(ValidationError, match="subtitles"):

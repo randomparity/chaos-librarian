@@ -3,7 +3,7 @@
 # Tests: a file is renamed in place while a scan is running.
 # Expected consumer response: converges — same asset, new filename.
 # Requires: none
-schema_version: 26
+schema_version: 27
 scenario_id: recipe-scanner-renamed-during-scan
 seed: 1003
 duration_scale: short

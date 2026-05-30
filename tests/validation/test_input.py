@@ -72,7 +72,7 @@ class TestRunInputScenarioCache:
     """
 
     _VALID_BYTES = (
-        b"schema_version: 26\n"
+        b"schema_version: 27\n"
         b"scenario_id: s1\n"
         b"seed: 1\n"
         b"duration_scale: short\n"
@@ -213,7 +213,7 @@ class TestRunInputScenarioCache:
         """
         path = tmp_path / "s.yaml"
         path.write_text(
-            "schema_version: 26\n"
+            "schema_version: 27\n"
             "scenario_id: dedup\n"
             "seed: 1\n"
             "duration_scale: short\n"

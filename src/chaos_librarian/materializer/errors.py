@@ -52,6 +52,17 @@ class UnsupportedMaterializationError(MaterializationError):
     error_code: str = "E_MATERIALIZE_UNSUPPORTED"
 
 
+class SymlinkTargetMissingError(MaterializationError):
+    """A ``symlink`` asset's resolved target does not exist on disk.
+
+    v1 requires the symlink target to exist at materialize time (dangling
+    links are deferred). Fail loud rather than create a dangling link or
+    skip the asset silently.
+    """
+
+    error_code: str = "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
+
+
 class ToolFailedError(MaterializationError):
     """ffmpeg subprocess exited non-zero."""
 
