@@ -41,6 +41,7 @@ from chaos_librarian.contract.scenario import (
     EditMetadataEvent,
     EmbedSubtitleEvent,
     ExtractSubtitleEvent,
+    MarkEpisodeStaleEvent,
     MoveAssetEvent,
     MoveBetweenRootsEvent,
     MoveEpisodeToSeasonEvent,
@@ -57,6 +58,7 @@ from chaos_librarian.contract.scenario import (
     RenameSeasonEvent,
     RenumberDiscEvent,
     RenumberEpisodeEvent,
+    RepublishEpisodeEvent,
     SidecarKind,
     SimulateQuotaExceededEvent,
     SimulateStaleHandleEvent,
@@ -1767,6 +1769,65 @@ def _swap_metadata(field: str, a_value: int, b_value: int) -> dict[str, dict[str
     }
 
 
+def _handle_republish_episode(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, RepublishEpisodeEvent)
+    asset_ids = state.asset_ids_for_podcast_episode(event.target)
+    previous = state.podcast_episodes[event.target]
+    before = _capture_rendered_paths(state, asset_ids)
+    updates: dict[str, object] = {"published_at": event.published_at, "stale": False}
+    if event.slug is not None:
+        updates["slug"] = event.slug
+    state.podcast_episodes[event.target] = previous.model_copy(update=updates)
+    metadata = _metadata_delta(previous, state.podcast_episodes[event.target], tuple(updates))
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.REPUBLISH_EPISODE,
+            hierarchy_target_id=event.target,
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_mark_episode_stale(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    """Flip the episode's recorded stale fact; the file lingers unchanged.
+
+    Records a neutral ``state_delta`` (stale + current paths) — no policy. The
+    lifecycle rule has already proven the episode still has a live location.
+    """
+    del ids
+    event = _checked_event(resolved, MarkEpisodeStaleEvent)
+    asset_ids = state.asset_ids_for_podcast_episode(event.target)
+    previous = state.podcast_episodes[event.target]
+    state.podcast_episodes[event.target] = previous.model_copy(update={"stale": True})
+    location_ids = [state.location_id_for_asset(asset_id) for asset_id in asset_ids]
+    paths = [state.locations[location_id].path for location_id in location_ids]
+    entry = _new_atomic_entry(
+        resolved=resolved,
+        ctx=ctx,
+        action=TimelineActionName.MARK_EPISODE_STALE,
+        target_ids=[event.target, *asset_ids],
+        location_ids=location_ids,
+        state_delta={"stale": True, "paths": paths},
+    )
+    return (entry,)
+
+
 def _capture_rendered_paths(
     state: WorldState,
     asset_ids: list[str],
@@ -1915,4 +1976,6 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.SWAP_EPISODE_NUMBERS: _handle_swap_episode_numbers,
     TimelineActionName.SWAP_DISC_NUMBERS: _handle_swap_disc_numbers,
     TimelineActionName.SWAP_TRACK_NUMBERS: _handle_swap_track_numbers,
+    TimelineActionName.REPUBLISH_EPISODE: _handle_republish_episode,
+    TimelineActionName.MARK_EPISODE_STALE: _handle_mark_episode_stale,
 }
