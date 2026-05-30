@@ -4,7 +4,7 @@
 # Expected consumer response: converges — track the asset's move into the
 #   archive; do not treat it as deleted.
 # Requires: none
-schema_version: 24
+schema_version: 25
 scenario_id: recipe-archive-on-event
 seed: 1501
 duration_scale: short

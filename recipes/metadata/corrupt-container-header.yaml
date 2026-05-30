@@ -4,7 +4,7 @@
 # Expected consumer response: errors — probe fails; the asset is flagged
 #   unreadable rather than silently indexed.
 # Requires: malformed-media
-schema_version: 24
+schema_version: 25
 scenario_id: recipe-metadata-corrupt-container-header
 seed: 1301
 duration_scale: short

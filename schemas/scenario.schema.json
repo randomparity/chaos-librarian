@@ -2472,7 +2472,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 24,
+      "const": 25,
       "title": "Schema Version",
       "type": "integer"
     },
