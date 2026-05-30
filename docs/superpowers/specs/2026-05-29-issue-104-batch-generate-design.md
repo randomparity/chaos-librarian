@@ -81,10 +81,12 @@ chaos-librarian generate \
 
 `--count N`:
 
-- Type `int`, `min=1`, `max=10000`, default `1`.
-- The `max` is a typo guard against runaway disk writes, not a coverage policy;
-  CI breadth is controlled by the seed manifest and sharding, as in the
-  fuzz-generation-suite design. The error names the limit.
+- Type `int`, `min=1`, `max=1000`, default `1`.
+- The `max` is a runaway guard against typos producing a flood of files and
+  wall-clock (each scenario runs the full validation pipeline), not a coverage
+  policy; CI breadth is controlled by the seed manifest and sharding, as in the
+  fuzz-generation-suite design. The error names the limit. (The issue's examples
+  use `--count 20` and `--count 5`; 1000 leaves ample headroom.)
 
 `--out`:
 
@@ -133,15 +135,37 @@ Rules (for item index `i` in `0 .. count-1`):
   - else (`fuzz-regression`, no lane, `count > 1`):
     `lane_i = CANONICAL_FUZZ_LANES[fuzz-regression][i % len]`.
 
+### Single source of truth for `scenario_id`
+
+The `scenario_id` format (`f"{profile}-{lane}-seed-{seed}"`) is currently inlined
+in `generation._generate_scenario_yaml_unvalidated`. This design extracts it into
+a shared pure helper in `generation.py`:
+
+```
+scenario_id_for(profile, lane, seed) -> str
+```
+
+Both the single-scenario generator and the batch path planner call it, so the
+file name and the `scenario_id` embedded in the YAML cannot drift. Because it is
+pure and needs no generation, the batch can compute every target path from the
+plan *before* generating anything (used by the collision pre-check below). After
+each scenario is generated, the implementation asserts
+`generated.scenario.scenario_id == scenario_id_for(profile, lane_i, seed_i)` as a
+guard; a mismatch is a generator bug and aborts the batch.
+
+The target file name is `f"{scenario_id_for(profile, lane_i, seed_i)}.yaml"`. It
+is traversal-safe by construction: `profile` and `lane` are `StrEnum` values
+(fixed lowercase/`-` charset) and `seed` is an `int >= 0`, so the name contains
+no path separators or `..`.
+
 Properties this guarantees:
 
-- **Determinism:** the item list is a pure function of `(profile, lane, seed,
-  count)`.
+- **Determinism:** the item list, the file-name set, and each file's bytes are
+  pure functions of `(profile, lane, seed, count)`.
 - **No collisions:** `seed_i` is strictly increasing, so every item has a unique
-  `seed_i`; the generated `scenario_id = f"{profile}-{lane}-seed-{seed}"` is
-  therefore unique, and so is its `<scenario_id>.yaml` file name. The
-  implementation still asserts uniqueness of the planned file-name set and fails
-  loudly if a future change breaks it.
+  `seed_i`, hence a unique `scenario_id` and a unique `<scenario_id>.yaml` name.
+  The planner asserts uniqueness of the computed file-name set and fails loudly
+  if a future change breaks it.
 - **Individual reproducibility:** item `i` is exactly what
   `generate --profile P --lane lane_i --seed seed_i` produces as a single file.
 
@@ -162,27 +186,50 @@ The order is part of the batch reproducibility contract. A unit test asserts
 profile, so the ordered tuple and the existing frozenset cannot drift apart when
 lanes are added or removed.
 
-## Write Semantics (all-or-nothing within the process)
+## Write Semantics (rollback on failure)
 
-Batch writing is staged so a generator bug never leaves a half-written directory:
+The batch is not a true atomic filesystem transaction (POSIX gives no
+multi-file commit), but it is made *self-cleaning*: on any failure, files this
+invocation created are removed, so the directory is left as it was found and the
+command can simply be re-run. Writes are streamed one scenario at a time, so
+peak memory holds a single scenario, not the whole batch.
 
-1. **Generate + validate all** items in memory (each via the existing
-   `generate_scenario`, which validates). Any failure aborts the whole command
-   before any file is written; the error names profile, lane, and seed.
-2. **Pre-check collisions:** compute every target path and fail loudly (writing
-   nothing) if any already exists.
-3. **Write all** via the existing `write_generated_scenario` (atomic temp-file +
-   `os.link`, non-overwriting).
+1. **Plan + pre-check (no generation yet).** Compute the `(lane_i, seed_i)` list
+   and, via `scenario_id_for`, every target path. Fail loudly, writing nothing,
+   if `--out` is not an existing directory, if the planned file-name set is not
+   unique (generator-bug guard), or if any target path already exists.
+2. **Generate → validate → write, per item, tracking what was written.** For
+   each item: `generate_scenario` (which validates), assert its `scenario_id`
+   matches the precomputed one, then `write_generated_scenario` (atomic
+   temp-file + `os.link`, non-overwriting). Append the path to a written-list
+   only after the link succeeds.
+3. **Rollback on any failure in step 2.** If generation, validation, the
+   `scenario_id` assertion, or any write raises — including a concurrent
+   collision (`FileExistsError` from `os.link`), `ENOSPC`, `EACCES`, or an
+   `fsync` failure — best-effort `unlink(missing_ok=True)` every path in the
+   written-list, then re-raise wrapped with the failing profile/lane/seed (and
+   the colliding path for collisions). The partially written batch is removed.
 
-Residual edge: a concurrent process could create one of the target files between
-step 2 and step 3. `write_generated_scenario`'s `os.link` is atomic and raises
-`FileExistsError`, so the batch fails loudly mid-write rather than overwriting,
-but earlier files in that batch remain on disk. This TOCTOU window is documented,
-not closed; closing it would require directory locking that the single-scenario
-path also lacks. The failure message names the colliding path.
+Failure-mode table for step 2:
 
-Memory cost of step 1 is bounded by `max=10000` × per-scenario YAML size (a few
-KB), i.e. tens of MB worst case — acceptable for a developer/CI tool.
+| failure | when | on-disk result after rollback |
+| --- | --- | --- |
+| generator bug / validation fail | any item | nothing (earlier files unlinked) |
+| `scenario_id` mismatch assert | any item | nothing (earlier files unlinked) |
+| concurrent `FileExistsError` | any item | earlier files unlinked; the pre-existing colliding file is **not** touched |
+| `ENOSPC` / `EACCES` / `fsync` | any item | earlier files unlinked (best effort) |
+
+Residual edge: rollback is best-effort. If the process is hard-killed
+(`SIGKILL`, power loss) mid-batch, files already linked remain and a re-run will
+fail the step-1 collision check until the directory is cleaned. This is the same
+durability boundary the single-scenario path already has; it is documented, not
+closed. The non-overwriting `os.link` guarantees the batch never destroys
+pre-existing files even mid-failure.
+
+Peak memory is one generated scenario plus the `O(count)` lightweight write
+records (path + a small per-scenario summary). Measured `fuzz-regression`
+scenarios are ~10 KB, so even at `--count 1000` the transient footprint is a few
+tens of MB; the full `Scenario` model is not retained across items.
 
 ## Output
 
@@ -252,17 +299,20 @@ than adding a test that cannot fire — surfacing the gap instead of hiding it.
 
 ## Errors
 
-All batch errors are loud and actionable and write nothing partial at the
-pre-write stages:
+All batch errors are loud and actionable; any failure rolls back files this
+invocation wrote (see "Write Semantics"):
 
 - `--count` out of range: Typer reports the `min`/`max`.
 - `--out` not an existing directory when `count > 1`: name the path and the
-  requirement.
+  requirement; nothing written.
 - `--lane is required for fuzz-regression` when `count == 1`: unchanged.
 - lane/profile mismatch: unchanged.
+- target path already exists at the step-1 pre-check: name the colliding path;
+  nothing written.
 - generated scenario fails validation (generator bug): name profile, lane, seed,
-  and the validation issues; nothing written.
-- target file collision: name the colliding path.
+  and the validation issues; partial batch rolled back.
+- mid-batch concurrent collision / `ENOSPC` / `EACCES`: name the failing
+  scenario (and colliding path); partial batch rolled back best-effort.
 
 ## Success Criteria
 

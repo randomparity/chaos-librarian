@@ -34,9 +34,16 @@ introduce a second coverage-control mechanism alongside lanes.
 4. **No `--timeline-weight` option.** Lanes already partition timeline coverage
    by action family.
 5. **`--out` is a file when `count == 1` (current contract) and an existing
-   directory when `count > 1`.** Files are named `<scenario_id>.yaml`.
-6. **All-or-nothing pre-write:** generate+validate all items and pre-check
-   collisions before writing any file.
+   directory when `count > 1`.** File names come from a shared
+   `scenario_id_for(profile, lane, seed)` helper (single source of truth with the
+   generator), so the file name and the embedded `scenario_id` cannot drift.
+6. **Stream-write with rollback on failure.** Pre-check collisions from the plan
+   (no generation needed), then generate→validate→write one scenario at a time,
+   tracking written paths; on any failure (generator bug, `ENOSPC`, `EACCES`,
+   concurrent collision) best-effort unlink the files this invocation wrote so
+   the directory is left as found and the command can be re-run. Peak memory is
+   one scenario, not the whole batch. `--count` is capped at 1000 as a runaway
+   guard.
 
 ## Consequences
 
@@ -51,9 +58,11 @@ introduce a second coverage-control mechanism alongside lanes.
 - `seed_i = seed + i` means two batches with overlapping `[seed, seed+count)`
   ranges and the same lane produce overlapping files — expected and deterministic,
   not a defect.
-- A TOCTOU window remains between collision pre-check and write; it fails loudly
-  via atomic `os.link` rather than overwriting. Not closed (the single-scenario
-  path has the same property).
+- Writes are not a true multi-file transaction (POSIX offers none), but rollback
+  makes a failed batch self-cleaning, so re-running works without manual cleanup.
+  The only residual is a hard process kill mid-batch, which leaves linked files
+  behind; the non-overwriting `os.link` still guarantees no pre-existing file is
+  destroyed. Same durability boundary as the single-scenario path.
 
 ## Considered & rejected
 
@@ -75,9 +84,15 @@ introduce a second coverage-control mechanism alongside lanes.
 - **Per-lane independent seed streams (advance seed only within a lane).**
   Rejected: makes item `i`'s seed depend on how many prior items shared its lane,
   which is harder to reproduce by hand than a flat `seed + i`.
-- **Stream writes without an all-or-nothing pre-check.** Rejected: a mid-batch
-  generator/validation failure would leave a partially populated directory,
-  violating fail-loud expectations.
+- **Stream writes with no rollback.** Rejected: a mid-batch generator/validation
+  or I/O failure would leave a partially populated directory, and because writes
+  are non-overwriting the user could not even re-run without manually cleaning
+  it. Rollback-on-failure removes that friction.
+- **Buffer-and-validate the entire batch in memory before any write.** Rejected:
+  at `--count 1000` this retains ~1000 ~10 KB YAML blobs *and* their parsed
+  `Scenario` model trees (hundreds of MB of objects) for no benefit over
+  streamed writes with rollback, which give the same self-cleaning guarantee at
+  one-scenario peak memory.
 - **Close #104 as already satisfied by the lane command + CI seed manifest.**
   Rejected: users explicitly need one-shot batch generation; the manifest is a CI
   mechanism, not an interactive command.
