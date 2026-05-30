@@ -100,20 +100,32 @@ def render_nfo(*, sidecar_id: str) -> bytes:
     ).encode()
 
 
+# Explicit ffmpeg image encoder per poster image_format (#118). ``png`` keeps
+# the legacy implicit-extension behavior (no explicit ``-c:v``) so existing png
+# poster bytes stay byte-identical; jpeg/webp name their encoders explicitly.
+_POSTER_IMAGE_ENCODER: Final[dict[str, str]] = {
+    "jpeg": "mjpeg",
+    "webp": "libwebp",
+}
+
+
 def poster_ffmpeg_argv(
     *,
     output_path: Path,
     resolved_seed: int,
     sidecar_id: str,
     media_type: str | None = None,
+    image_format: str | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for a poster sidecar.
 
-    ``media_type`` ``None``/``"image"`` ⇒ a single-color PNG; ``"video"``
+    ``media_type`` ``None``/``"image"`` ⇒ a single-color still; ``"video"``
     ⇒ a tiny single-frame video muxed into the container the ``output_path``
-    extension implies (the ``poster-is-video`` chaos). Hex color derived from
-    (resolved_seed, sidecar_id) so different sidecars on the same run produce
-    visually distinct output.
+    extension implies (the ``poster-is-video`` chaos). For an image poster,
+    ``image_format`` (#118) selects the encoder explicitly (``jpeg``⇒mjpeg,
+    ``webp``⇒libwebp); ``None``/``png`` keeps the legacy PNG (no explicit
+    ``-c:v``). Hex color derived from (resolved_seed, sidecar_id) so different
+    sidecars on the same run produce visually distinct output.
     """
     seed_hash = _seed_hash(stream="poster_color", seed=resolved_seed, keys=(sidecar_id,))
     color = f"{seed_hash & 0xFFFFFF:06x}"
@@ -132,6 +144,9 @@ def poster_ffmpeg_argv(
             "yuv420p",
             str(output_path),
         ]
+    encoder_flags: list[str] = []
+    if image_format is not None and image_format in _POSTER_IMAGE_ENCODER:
+        encoder_flags = ["-c:v", _POSTER_IMAGE_ENCODER[image_format]]
     return [
         "ffmpeg",
         "-hide_banner",
@@ -142,6 +157,7 @@ def poster_ffmpeg_argv(
         f"color=c=#{color}:s=400x600:d=0.01:r=1",
         "-frames:v",
         "1",
+        *encoder_flags,
         str(output_path),
     ]
 
@@ -172,14 +188,16 @@ def regenerate_sidecar(
     encoding: str | None = None,
     body: str | None = None,
     media_type: str | None = None,
+    image_format: str | None = None,
 ) -> tuple[bytes | None, list[str] | None]:
     """Dispatch by kind. Returns ``(bytes, None)`` or ``(None, argv)``.
 
     Honors the authored content knobs so ``update_sidecar`` regenerates
     faithfully: subtitle bytes are re-encoded with the stored ``encoding``
-    (cue text still varies by the perturbed seed); an authored NFO ``body`` is
-    re-emitted verbatim; the poster ``media_type`` selects image vs. video.
-    ``output_path`` is required only for ``kind=POSTER`` (used in the ffmpeg argv).
+    (cue text still varies by the perturbed seed); an authored NFO/CUE ``body``
+    is re-emitted verbatim; the poster ``media_type`` selects image vs. video and
+    ``image_format`` selects the still encoder. ``output_path`` is required only
+    for ``kind=POSTER`` (used in the ffmpeg argv).
     """
     perturbed_seed = perturbed_seed_for_update(
         sidecar_id=sidecar_id,
@@ -208,6 +226,7 @@ def regenerate_sidecar(
             resolved_seed=perturbed_seed,
             sidecar_id=sidecar_id,
             media_type=media_type,
+            image_format=image_format,
         )
         return None, argv
     raise ValueError(f"unknown sidecar kind {kind!r}")

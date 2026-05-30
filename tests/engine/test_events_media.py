@@ -504,6 +504,7 @@ class TestCreateSidecarHandler:
             "encoding": None,
             "body": None,
             "media_type": None,
+            "image_format": None,
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()

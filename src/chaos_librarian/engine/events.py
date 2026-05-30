@@ -99,6 +99,7 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "encoding",
             "body",
             "media_type",
+            "image_format",
         }
     ),
     TimelineActionName.SLOW_COPY_START: frozenset(
@@ -542,6 +543,7 @@ def _handle_create_sidecar(
         "encoding": event.encoding.value if event.encoding is not None else None,
         "body": event.body,
         "media_type": event.media_type.value if event.media_type is not None else None,
+        "image_format": event.image_format.value if event.image_format is not None else None,
     }
     entry = _new_atomic_entry(
         resolved=resolved,

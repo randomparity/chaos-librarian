@@ -121,6 +121,37 @@ def test_poster_ffmpeg_argv_deterministic_per_seed():
     assert a == b
 
 
+def test_poster_argv_selects_webp_encoder():
+    argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/cover.webp"),
+        resolved_seed=1,
+        sidecar_id="sc-1",
+        image_format="webp",
+    )
+    assert "libwebp" in argv
+
+
+def test_poster_argv_selects_mjpeg_encoder():
+    argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/cover.jpg"),
+        resolved_seed=1,
+        sidecar_id="sc-1",
+        image_format="jpeg",
+    )
+    assert "mjpeg" in argv
+
+
+def test_poster_argv_default_image_omits_explicit_encoder():
+    argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/cover.png"),
+        resolved_seed=1,
+        sidecar_id="sc-1",
+        image_format=None,
+    )
+    assert "libwebp" not in argv
+    assert "mjpeg" not in argv
+
+
 def test_regenerate_sidecar_subtitle_returns_srt_bytes():
     """WHY: the SRT body must come from recipes.srt_payload with a
     perturbed sub-seed that incorporates sidecar_id+event_id (spec #7),
