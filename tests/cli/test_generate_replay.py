@@ -33,3 +33,20 @@ def test_generated_regression_lane_plans_and_replays(tmp_path: Path) -> None:
         ["replay", str(run_dir / "replay.json"), "--out", str(replay_dir), "--json"],
     )
     assert replay_result.exit_code == 0, replay_result.stdout + replay_result.stderr
+
+
+def test_batch_generated_scenario_plans(tmp_path: Path) -> None:
+    out = tmp_path / "gen"
+    out.mkdir()
+    run_dir = tmp_path / "run"
+
+    gen = runner.invoke(
+        app,
+        ["generate", "--profile", "fuzz-smoke", "--count", "2", "--seed", "70", "--out", str(out)],
+    )
+    assert gen.exit_code == 0, gen.stdout + gen.stderr
+
+    scenario = out / "fuzz-smoke-smoke-seed-70.yaml"
+    assert scenario.exists()
+    plan_result = runner.invoke(app, ["plan", str(scenario), "--out", str(run_dir), "--json"])
+    assert plan_result.exit_code == 0, plan_result.stdout + plan_result.stderr
