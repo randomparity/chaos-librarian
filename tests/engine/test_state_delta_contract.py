@@ -62,6 +62,22 @@ def test_corruption_state_delta_contract_keys() -> None:
     )
 
 
+def test_create_sidecar_state_delta_contract_keys() -> None:
+    assert _STATE_DELTA_KEYS[TimelineActionName.CREATE_SIDECAR] == frozenset(
+        {
+            "sidecar_path",
+            "sidecar_id",
+            "language",
+            "kind",
+            "codec",
+            "source",
+            "encoding",
+            "body",
+            "media_type",
+        }
+    )
+
+
 @pytest.mark.parametrize("action", sorted(_STATE_DELTA_KEYS, key=lambda a: a.value))
 def test_state_delta_keys_match_contract(action: TimelineActionName) -> None:
     """Every handler's emitted state_delta is a superset of _STATE_DELTA_KEYS[action]."""

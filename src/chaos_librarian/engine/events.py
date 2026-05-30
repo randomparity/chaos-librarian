@@ -76,7 +76,17 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.DELETE_FILE: frozenset({"removed_path"}),
     TimelineActionName.ADD_FILE: frozenset({"added_path"}),
     TimelineActionName.CREATE_SIDECAR: frozenset(
-        {"sidecar_path", "sidecar_id", "language", "kind"}
+        {
+            "sidecar_path",
+            "sidecar_id",
+            "language",
+            "kind",
+            "codec",
+            "source",
+            "encoding",
+            "body",
+            "media_type",
+        }
     ),
     TimelineActionName.SLOW_COPY_START: frozenset(
         {"final_path", "temp_path", "initial_path_at_start"}
@@ -505,6 +515,11 @@ def _handle_create_sidecar(
         "sidecar_id": sidecar_id,
         "language": event.language,
         "kind": event.kind.value,
+        "codec": event.codec.value if event.codec is not None else None,
+        "source": event.source.value if event.source is not None else None,
+        "encoding": event.encoding.value if event.encoding is not None else None,
+        "body": event.body,
+        "media_type": event.media_type.value if event.media_type is not None else None,
     }
     entry = _new_atomic_entry(
         resolved=resolved,
