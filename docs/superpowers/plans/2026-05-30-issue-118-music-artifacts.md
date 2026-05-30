@@ -73,6 +73,11 @@ absent); validation/engine/byte-helper tests are pure Python.
 - `src/chaos_librarian/engine/events.py` — `_STATE_DELTA_KEYS[CORRUPT_TAGS]`,
   `_handle_corrupt_tags`, dispatch entry; `create_sidecar` state_delta gains
   `image_format`.
+- `src/chaos_librarian/engine/version_history.py` — `corrupt_tags` in
+  `_VERSION_AFFECTING_ACTIONS` and `_PRESERVED_DELTA_KEYS` (it binds a new version, so the
+  version-history projection must carry it, exactly like the other corruptors).
+- `src/chaos_librarian/materializer/actions.py` — `corrupt_tags` in `_CORRUPTION_ACTIONS`
+  (the routing set that dispatches the action to `apply_corruption_action`).
 - `src/chaos_librarian/materializer/phase_b/corruption_bytes.py` — `zero_range`,
   `malformed_id3_header`.
 - `src/chaos_librarian/materializer/phase_b/corruption.py` — `_apply_corrupt_tags`,
@@ -784,12 +789,25 @@ def _handle_corrupt_tags(state, resolved, ids, ctx):
 Add `_STATE_DELTA_KEYS[CORRUPT_TAGS] = frozenset({"input_path","output_path","profile","corruptor","flavor","byte_count","seed_material"})`
 and the dispatch-table entry. Import `CorruptTagsEvent`.
 
-- [ ] **Step 6: Run + guardrails**
+- [ ] **Step 6: Register corrupt_tags in version_history (required — it binds a version)**
+
+`corrupt_tags` calls `_bind_corruption_version`, so the version-history projection must
+carry it like every other corruptor. In `engine/version_history.py`:
+- Add `TimelineActionName.CORRUPT_TAGS` to `_VERSION_AFFECTING_ACTIONS`.
+- Add to `_PRESERVED_DELTA_KEYS`:
+  `TimelineActionName.CORRUPT_TAGS: ("profile", "corruptor", "flavor", "byte_count", "seed_material")`.
+
+Write a test in `tests/engine/test_corrupt_tags.py` asserting `derive_version_history`
+for the corrupted asset returns an entry whose summary carries `flavor` and `corruptor`.
+Without both maps the version is silently dropped from history (filtered at the
+`_VERSION_AFFECTING_ACTIONS` check), or `_PRESERVED_DELTA_KEYS[action]` raises `KeyError`.
+
+- [ ] **Step 7: Run + guardrails**
 
 Run: `uv run python -m pytest tests/materializer/phase_b/test_corruption_bytes.py tests/engine/test_corrupt_tags.py -v && uv run ruff check && uv run ty check src tests && uv run python -m pytest -q`
-Expected: PASS (incl. state-delta-keys contract test).
+Expected: PASS (incl. state-delta-keys contract test and version-history projection).
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A
@@ -804,13 +822,17 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 **Files:**
 - Modify: `src/chaos_librarian/contract/materialization.py` (widen `action` Literal)
+- Modify: `src/chaos_librarian/materializer/actions.py` (`_CORRUPTION_ACTIONS` routing set)
 - Modify: `src/chaos_librarian/materializer/phase_b/corruption.py`
 - Test: `tests/materializer/phase_b/test_corrupt_tags_apply.py`
 - Regenerate: `schemas/materialization.schema.json`
 
-- [ ] **Step 1: Widen `CorruptionAction.action`**
+- [ ] **Step 1: Widen `CorruptionAction.action` and the routing set**
 
-In `materialization.py`, add `TimelineActionName.CORRUPT_TAGS` to the `action` Literal.
+In `materialization.py`, add `TimelineActionName.CORRUPT_TAGS` to the `action` Literal. In
+`materializer/actions.py`, add `TimelineActionName.CORRUPT_TAGS` to `_CORRUPTION_ACTIONS`
+(line ~45) — this is the routing set that dispatches the action to
+`apply_corruption_action`; without it the materializer never reaches `_apply_corrupt_tags`.
 
 - [ ] **Step 2: Write the failing materializer test**
 
@@ -903,17 +925,48 @@ Expected: PASS (recipes validate).
 
 - [ ] **Step 5: Write the backward-compat regression test**
 
+One concrete mechanism: for a representative existing movie, TV, and podcast fixture,
+load it through `Scenario.model_validate` and round-trip its `model_dump(mode="json")`,
+then re-validate the dump and assert it equals the first dump (idempotent round-trip),
+and assert the only schema-version-bearing field is `32`. Then assert the three new
+fields are absent-by-default by constructing each affected model with no new field and
+checking the dump omits them.
+
 ```python
 # tests/contract/test_v32_backward_compat.py
-# For a representative existing movie, TV, and podcast fixture, assert that loading
-# at v32 yields a Scenario whose model_dump(mode="json") equals the v31 baseline
-# except schema_version. Assert no movie/TV/podcast model gained required fields.
+import yaml
+from pathlib import Path
+from chaos_librarian.contract.scenario import Asset, CreateSidecarEvent, Scenario
+
+_FIXTURES = ("fixtures/scenarios/movie-folder.yaml",  # pick real existing fixtures:
+             "fixtures/scenarios/tv-season-folders.yaml",
+             "fixtures/scenarios/podcast-folder.yaml")  # adjust names to repo
+
+
+def _load(rel: str) -> dict:
+    return yaml.safe_load((Path(__file__).parent.parent / rel).read_text())
+
+
+def test_existing_topologies_roundtrip_unchanged_at_v32():
+    for rel in _FIXTURES:
+        raw = _load(rel)
+        scenario = Scenario.model_validate(raw)
+        dump = scenario.model_dump(mode="json", by_alias=True)
+        assert dump["schema_version"] == 32
+        # Idempotent: re-validate the dump and re-dump; must be identical.
+        assert Scenario.model_validate(dump).model_dump(mode="json", by_alias=True) == dump
+
+
+def test_new_fields_absent_by_default():
+    sidecar = CreateSidecarEvent.model_validate(
+        {"id": "e", "at": "0s", "target": "a", "to": "x.png", "kind": "poster"}
+    )
+    assert sidecar.image_format is None  # poster image_format optional
+    dump = sidecar.model_dump(mode="json", exclude_none=True, by_alias=True)
+    assert "image_format" not in dump
 ```
-Concretely: load each fixture, dump, pop `schema_version`, and compare against a frozen
-expected dict (or assert the dump is unchanged vs. a `git show HEAD~N:` baseline if the
-harness supports it). At minimum assert the three new scenario fields
-(`image_format`, the `cue` kind, `corrupt_tags`) are all optional/absent by default so
-omitting them is byte-identical.
+(Replace `_FIXTURES` with three real existing movie/TV/podcast fixture paths; confirm the
+exact names with `ls tests/fixtures/scenarios | grep -E "movie|season|podcast"`.)
 
 - [ ] **Step 6: Run + guardrails**
 
@@ -980,5 +1033,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 - **Order:** Task 1 first so the drift gate stays green; contract → validation →
   engine → materializer per capability; fixtures/recipes last once all paths exist.
 - **No new error code; manifest v10; only scenario 32 + materialization 17 bump.**
+- **Generator coverage deferred:** `corrupt_tags` is authored-scenario-only in v1; the
+  fuzz malformed-lane emitter (`generation_planner._emit_malformed_required_events`) is
+  not extended to emit it. Authored scenarios and recipes exercise it fully; adding a
+  generated `_corrupt_tags` emitter is a small follow-up, not a correctness requirement,
+  and is called out as a deferred follow-up issue.
 - **Deferred (file as issues before merge):** album-art format-change action,
-  multi-track single-file album, embedded-lyrics phase-A field.
+  multi-track single-file album, embedded-lyrics phase-A field, fuzz-generator coverage
+  for `corrupt_tags`.
