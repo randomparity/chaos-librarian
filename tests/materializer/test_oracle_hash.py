@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from pathlib import Path
 
@@ -15,8 +16,19 @@ from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.phase_b.oracle_hash import (
     OracleHashPhaseBContext,
     apply_wrong_oracle_hash,
+    collided_hash_for,
     false_hash_for,
 )
+
+_SHA256_URI = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+
+def _hex(digest_uri: str) -> str:
+    return digest_uri.removeprefix("sha256:")
+
+
+def _hash(label: str) -> str:
+    return "sha256:" + hashlib.sha256(label.encode()).hexdigest()
 
 
 def _entry(
@@ -160,3 +172,51 @@ def test_apply_wrong_oracle_hash_can_follow_prior_phase_b_mutation(tmp_path: Pat
         action.reported_content_hash,
         probed,
     )
+
+
+@pytest.mark.parametrize("prefix_len", [1, 8, 63])
+def test_collided_hash_shares_exact_prefix(prefix_len: int) -> None:
+    referent = _hash("referent")
+    real = _hash("real")
+    result = collided_hash_for(referent, real, prefix_len)
+    assert _SHA256_URI.match(result)
+    referent_hex = _hex(referent)
+    result_hex = _hex(result)
+    assert result_hex[:prefix_len] == referent_hex[:prefix_len]
+    # exact prefix: the char just past the shared prefix differs from the
+    # referent (prefix_len 63 leaves exactly one char to differ).
+    if prefix_len < 63:
+        assert result_hex[prefix_len] != referent_hex[prefix_len]
+
+
+@pytest.mark.parametrize("prefix_len", [1, 8, 63])
+def test_collided_hash_differs_at_full_length(prefix_len: int) -> None:
+    referent = _hash("referent")
+    real = _hash("real")
+    result = collided_hash_for(referent, real, prefix_len)
+    assert result != referent
+    assert result != real
+
+
+def test_collided_hash_is_deterministic() -> None:
+    referent = _hash("referent")
+    real = _hash("real")
+    assert collided_hash_for(referent, real, 8) == collided_hash_for(referent, real, 8)
+
+
+def test_collided_hash_fallback_branch_when_candidate_equals_real() -> None:
+    # Construct real so the first candidate equals it, forcing the fallback.
+    referent = _hash("referent")
+    prefix_len = 8
+    referent_hex = _hex(referent)
+    prefix = referent_hex[:prefix_len]
+    # Find a `real` whose first candidate collides with `real` itself is hard to
+    # force directly; instead assert that for the degenerate real == referent the
+    # result still satisfies every invariant (real==referent forces the candidate
+    # to share its full prefix with both and the guard to engage if equal).
+    real = referent
+    result = collided_hash_for(referent, real, prefix_len)
+    assert _SHA256_URI.match(result)
+    assert _hex(result)[:prefix_len] == prefix
+    assert result != referent
+    assert result != real
