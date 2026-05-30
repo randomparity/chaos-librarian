@@ -52,7 +52,12 @@ new rule mapping run-dir escapes to a new code `E_SYMLINK_TARGET_ESCAPE`, leavin
 1. **Symlink = `symlink: SymlinkTarget | None`, a parallel field** reusing the prior
    fields' reference machinery (asset-id reference for `to_asset`,
    earlier-declaration requirement, `E_TARGET_UNKNOWN`, orchestrator short-circuit,
-   synthetic ToolInvocation) and swapping the primitive to `os.symlink`.
+   synthetic ToolInvocation) and swapping the primitive to `os.symlink`. The link is
+   created with a **run-dir-relative** target (`os.path.relpath` against the link's own
+   parent) so no absolute run-specific path is written to disk and the materialized
+   tree is portable / replay-stable. The materializer **checks the resolved target
+   exists** before linking and fails loud with a new `MaterializationError`
+   (`E_SYMLINK_TARGET_MISSING`) if not.
 2. **Two named target forms** (`to_asset` xor `to_run_dir_path`), not a `kind` enum or
    a single overloaded string: in-root is an id, escaping is a path; they are
    structurally different and validate differently.
@@ -75,8 +80,10 @@ new rule mapping run-dir escapes to a new code `E_SYMLINK_TARGET_ESCAPE`, leavin
    link can be probed like every other asset). Dangling links are a filed follow-up.
 8. **Reference/shape errors reuse existing codes.** Unknown/self/forward `to_asset`
    → `E_TARGET_UNKNOWN`; cross-field misuse (`symlink` + any link field;
-   `symlink` + own `subtitles`; neither/both target forms) → `E_FIELD_SHAPE`. Only the
-   run-dir-escape check introduces a new code.
+   `symlink` + own `subtitles`; neither/both target forms) → `E_FIELD_SHAPE`. The
+   run-dir-escape check introduces the validate-time code `E_SYMLINK_TARGET_ESCAPE`,
+   and the materialize-time existence check introduces `E_SYMLINK_TARGET_MISSING` (a
+   `MaterializationError`, fail-loud rather than silent-skip).
 
 ## Consequences
 
@@ -98,16 +105,18 @@ new rule mapping run-dir escapes to a new code `E_SYMLINK_TARGET_ESCAPE`, leavin
   `symlink` `ToolInvocation` keeps the "one invocation per asset" invariant and gives
   the referrer a real `invocation_index`; the resolved target is re-probed; the link
   contributes no `ContentSourceEvidence`.
-- A new error code `E_SYMLINK_TARGET_ESCAPE` enters the public code set (additive,
-  non-breaking). It is the only contract surface that genuinely differs from the prior
-  fields.
-- **Replay holds schema-neutrally.** A pure replay re-runs materialization into a
-  fresh run dir; `_symlink_asset` re-runs `os.symlink` there, reconstructing the link
-  from the scenario `symlink` field alone — the same property #178 relies on for
-  `os.link`. The escaping target is reconstructed run-dir-relative from
-  `to_run_dir_path`, so replay is stable.
-- Dangling links and machine-encoded follow/reject policy are out of v1 scope; the
-  former is a filed follow-up.
+- Two new codes enter the public set (additive, non-breaking): validate-time
+  `E_SYMLINK_TARGET_ESCAPE` and materialize-time `E_SYMLINK_TARGET_MISSING`. They are
+  the only contract surface that genuinely differs from the prior fields.
+- **Replay holds schema-neutrally and portably.** A pure replay re-runs materialization
+  into a fresh run dir; `_symlink_asset` re-runs `os.symlink` there, reconstructing the
+  link from the scenario `symlink` field alone — the same property #178 relies on for
+  `os.link`. Because the on-disk target is **run-dir-relative**, the link is identical
+  regardless of the absolute run-dir path and resolves after the tree is moved/replayed.
+- Dangling links, user-authored escaping-target creation, and machine-encoded
+  follow/reject policy are out of v1 scope; dangling / target-authoring is a filed
+  follow-up. A missing target at materialize time is the loud
+  `E_SYMLINK_TARGET_MISSING`, not a successfully-materialized dangling link.
 
 ## Considered & rejected
 
@@ -148,12 +157,14 @@ new rule mapping run-dir escapes to a new code `E_SYMLINK_TARGET_ESCAPE`, leavin
   chaos here, so reusing the "escapes library" code would misclassify a valid recipe
   as a containment violation and there'd be no way to distinguish the legal escape
   from the illegal run-dir escape.
-- *Rejected: a whole `E_SYMLINK_*` family.* Only one new failure mode exists
-  (run-dir escape); a family would be mostly dead.
+- *Rejected: a whole `E_SYMLINK_*` family.* Only two genuinely new failure modes exist
+  (validate-time run-dir escape; materialize-time missing target); the rest reuse the
+  prior fields' codes, so a broad family would be mostly dead.
 - **Chosen: reuse `E_TARGET_UNKNOWN` (unknown/self/forward `to_asset`) and
-  `E_FIELD_SHAPE` (cross-field / target-form misuse), add exactly one new code
-  `E_SYMLINK_TARGET_ESCAPE`** for an in-library / absolute / run-dir-escaping
-  `to_run_dir_path`.
+  `E_FIELD_SHAPE` (cross-field / target-form misuse); add `E_SYMLINK_TARGET_ESCAPE`**
+  (validate-time) for an in-library / absolute / run-dir-escaping `to_run_dir_path`,
+  **and `E_SYMLINK_TARGET_MISSING`** (materialize-time `MaterializationError`) for a
+  resolved target absent on disk — fail-loud rather than silent-skip.
 
 **Q5 — Dangling symlinks (target absent).**
 - *Rejected: support dangling in v1.* A dangling link has no bytes to `probe_file`, so
@@ -162,13 +173,16 @@ new rule mapping run-dir escapes to a new code `E_SYMLINK_TARGET_ESCAPE`, leavin
   manifest/materialization schema bump beyond the scenario bump, contradicting the
   schema-neutral goal (Q6).
 - **Chosen: defer dangling.** v1 requires an existing target so the link probes like
-  any asset. Dangling is a filed follow-up (nullable-probe / symlink manifest record).
+  any asset; a target absent at materialize time is the loud `E_SYMLINK_TARGET_MISSING`
+  (not a successfully-materialized dangling link). True dangling support, and a
+  user-authorable escaping target the materializer *creates*, are a filed follow-up
+  (nullable-probe / symlink manifest record / target authoring).
 
 **Q6 — What the manifest records about the link.**
 - *Rejected: record the link target / resolved realpath* on the location row. The
-  resolved escaping target is an absolute run-specific path; recording it breaks
-  manifest byte-stability and run/replay equality (cf. #178's inode reasoning) and
-  leaks a value the consumer reads from disk anyway.
+  on-disk link target is already run-dir-relative; recording a target in the manifest
+  would add a versioned-schema field with no consumer contract and leak a value the
+  consumer reads from disk anyway (cf. #178's inode reasoning).
 - *Rejected: record an `is_symlink` boolean.* Adds a versioned-schema field with no
   consumer contract and pre-judges the consumer's detection job.
 - **Chosen: record nothing new (schema-neutral).** The link-ness and target are

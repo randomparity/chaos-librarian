@@ -106,12 +106,17 @@ and applies its own policy; chaos-librarian does not pre-judge it. (ADR 0006 Q1.
 
 ## Non-goals
 
-- **Dangling symlinks (target absent).** A dangling link has no bytes to `probe_file`,
-  so it cannot get the `content_hash`/`size`/`duration` every `MaterializedAsset`
-  carries today; supporting it forces nullable probe fields or a distinct symlink
-  manifest record — a manifest/materialization schema bump beyond the scenario bump.
-  v1 ships only links whose target **exists** at materialize time. Dangling is a filed
-  follow-up. (ADR 0006 Q5.)
+- **Dangling symlinks (target absent) and user-authored escaping-target creation.** A
+  dangling link has no bytes to `probe_file`, so it cannot get the
+  `content_hash`/`size`/`duration` every `MaterializedAsset` carries today; supporting
+  it forces nullable probe fields or a distinct symlink manifest record — a
+  manifest/materialization schema bump beyond the scenario bump. v1 ships only links
+  whose target **exists** at materialize time, enforced by the materialize-time
+  existence check (`E_SYMLINK_TARGET_MISSING`, fail loud — see Materialization). A
+  fully user-authorable escaping target that nothing pre-creates (i.e. a recipe that
+  declares an escaping `to_run_dir_path` and expects the materializer to create the
+  target) depends on the same target-authoring / dangling work and is deferred to the
+  filed follow-up. (ADR 0006 Q5.)
 - **Machine-encoding the follow/reject expectation.** Out of scope by the
   policy-neutrality decision above; documentation prose only. (ADR 0006 Q1.)
 - **Links to host paths (targets escaping the run dir).** Forbidden by
@@ -122,10 +127,11 @@ and applies its own policy; chaos-librarian does not pre-judge it. (ADR 0006 Q1.
 - **Absolute-path targets.** `to_run_dir_path` is a relative path interpreted under
   the run dir; absolute targets are rejected (they would escape the sandbox or be
   non-deterministic). In-root targets are expressed as an asset-id, never a raw path.
-- **Recording the resolved absolute target in the manifest.** The absolute run-dir
-  path is run-specific; recording it would break manifest determinism (cf. #178's
-  inode reasoning). The manifest records the referrer's normal location and a
-  re-probe of the resolved target; the link-ness and target are observed on disk.
+- **Recording the link target in the manifest.** The manifest records the referrer's
+  normal location and a re-probe of the resolved target; the link-ness and the
+  (run-dir-relative) target are observed on disk via `os.path.islink` / `os.readlink`.
+  Recording the target would add a versioned-schema field with no consumer contract
+  (cf. #178's inode reasoning).
 
 ## Ground truth: how assets are written, how identity is recorded, where containment runs
 
@@ -241,17 +247,27 @@ containment is a separate rule (next).
 A new rule `rule_symlink_target_escape` (in
 `validation/rules/symlink_target.py`) checks every `symlink.to_run_dir_path`:
 
-- The value MUST be a **relative** path (absolute rejected).
-- It MUST resolve, **under a synthetic run-dir root**, to a path that is inside the
-  run dir but **outside** `library/`. Concretely: the rule resolves
-  `<synthetic-run-dir> / to_run_dir_path` and requires (a) it is a strict subpath of
-  the synthetic run dir, and (b) it is **not** inside `<synthetic-run-dir>/library/`.
-  - A target inside `library/` is **rejected** (`E_SYMLINK_TARGET_ESCAPE`, message:
-    "escaping symlink target must be outside library/; use to_asset for in-root
-    links") — an in-root link must use `to_asset`, keeping the two forms honest.
-  - A target that escapes the run dir (via `..` or absolute) is **rejected**
-    (`E_SYMLINK_TARGET_ESCAPE`, message: "symlink target escapes the run-dir
-    sandbox").
+**Exact region predicate.** Let `R = <synthetic-run-dir>` and `L = R / "library"`.
+The rule resolves `resolved = (R / to_run_dir_path).resolve(strict=False)` (which
+collapses any `..` and `.` segments) and classifies it into exactly one region:
+
+| region of `resolved` | predicate | outcome |
+| --- | --- | --- |
+| outside the run dir | `R != resolved` and `R not in resolved.parents` (or `to_run_dir_path` is absolute) | **reject** — "symlink target escapes the run-dir sandbox" |
+| equal to the run dir | `resolved == R` | **reject** — "symlink target must be a path under the run dir" |
+| inside `library/` or equal to it | `resolved == L` or `L in resolved.parents` | **reject** — "escaping symlink target must be outside library/; use to_asset for in-root links" |
+| strict subpath of run dir, not under `library/` | otherwise | **accept** |
+
+Equivalently: **ACCEPT iff** `resolved` is a strict subpath of `R` **AND NOT** (`resolved
+== L` **OR** `L in resolved.parents`); otherwise **REJECT** with
+`E_SYMLINK_TARGET_ESCAPE` and the region-specific message above. The strict-subpath
+check (`resolved != R`, `R in resolved.parents`) is evaluated **before** the
+`library/` check so that an absolute path or a `..`-escape is classified as a
+sandbox escape rather than mis-reported as a library-boundary error. A path that
+resolves **exactly to** `library` (e.g. `library` or `library/`) and a path that
+resolves into `library` via `..` traversal (e.g. `library/../library/x`) are both
+caught by the `library/` predicate. An absolute `to_run_dir_path` is rejected up front
+(it cannot be a relative path under the run dir).
 
 This is the one place the contract genuinely differs from `E_PATH_CONTAINMENT`:
 escaping the **library** is the intended chaos (so it must *not* be
@@ -273,20 +289,34 @@ visibility into previously-materialized assets or the run dir layout). When
 `_hardlink_asset`):
 
 - Computes the **link path** at `out_dir / "library" / rendered_relative_path`.
-- Computes the **target**:
+- Computes the **absolute target** (for resolution / probe / existence check):
   - `to_asset` → `out_dir / "library" / rel_path_by_asset[to_asset]` (the referent's
     already-written file).
   - `to_run_dir_path` → `out_dir / to_run_dir_path` (a path under the run dir,
-    outside `library/`). The materializer does not synthesize the target; for v1 the
-    escaping-target recipe/test is responsible for an **existing** target file under
-    the run dir (the materializer tests create it under a tmp run dir).
-- Creates the link's parent dirs, then `os.symlink(target, link_path)`.
+    outside `library/`).
+- **Existence check (fail loud).** If the absolute target does not exist on disk
+  (`Path.exists()` is false — note this follows the path, so it is false for an absent
+  final component), raise a `SymlinkTargetMissingError` (a new
+  `MaterializationError` subclass; `error_code = "E_SYMLINK_TARGET_MISSING"`) whose
+  message names the asset id and the resolved target. The orchestrator routes it
+  through the existing `MaterializationFailure` path exactly like other
+  `MaterializationError`s — **never** a silent skip or an unhandled exception. For an
+  in-root `to_asset`, the referent materialized earlier in the same pass so the target
+  always exists; the check is the meaningful guard for the escaping form whose target
+  is created by an out-of-band step (a recipe/test that writes the target first). This
+  is the v1 stand-in until target-authoring / dangling support lands (see Non-goals
+  and the filed follow-up).
+- Creates the link's parent dirs, then creates the link with a **run-dir-relative
+  target**: `relative_target = os.path.relpath(absolute_target, link_path.parent)`,
+  then `os.symlink(relative_target, link_path)`. The on-disk link therefore stores a
+  **relative** path (e.g. `../../external-store/clip.mkv`), so the materialized tree is
+  portable: moving or replaying it into a different run dir keeps the link valid.
   `os.symlink` is non-overwriting and phase A writes into a freshly-created tree, so
   `link_path` never pre-exists.
-- Computes the referrer's `content_hash` from the **resolved** linked file (`open`
-  follows the link), and **re-probes** the resolved target for
-  `size_bytes`/`duration_seconds` (honest, mirrors `_hardlink_asset`). Since v1
-  targets always exist, the open/probe always succeed.
+- Computes the referrer's `content_hash` from the **resolved** linked file (`open(
+  link_path)` follows the link), and **re-probes** the resolved target for
+  `size_bytes`/`duration_seconds` (honest, mirrors `_hardlink_asset`). The existence
+  check above guarantees the open/probe succeed.
 - Returns a `MaterializeAssetResult` with:
   - a synthetic `ToolInvocation` (`tool="symlink"`, `version="n/a"`,
     `command=["symlink", <target descriptor>, <link rel path>]`, `exit_code=0`,
@@ -312,10 +342,12 @@ The manifest records the referrer's normal `ManifestVersion` (resolved-target
 `content_hash`) and `ManifestLocation` (its own path). It records **no** link flag,
 **no** target, **no** realpath. Rationale (ADR 0006 Q6):
 
-- **Determinism / neutrality.** The resolved escaping target is an absolute,
-  run-specific path; recording it breaks manifest byte-stability (cf. #178's inode
-  reasoning). The link-ness and the link target are **fully observable on disk** via
-  `os.path.islink` + `os.readlink`, which is what the consumer inspects.
+- **Determinism / neutrality.** The on-disk link stores a **run-dir-relative** target
+  (see Materialization), so it carries no absolute run-specific path, but recording a
+  link target in the manifest at all would still add a versioned-schema field with no
+  consumer contract. The link-ness and the link target are **fully observable on disk**
+  via `os.path.islink` + `os.readlink` (which returns the relative target), which is
+  what the consumer inspects.
 - **Schema-neutral, like #178/#180.** Only `SCENARIO_SCHEMA_VERSION` 26 → 27 bumps.
 
 ### Replay reconstruction (schema-neutral consequence — confirmed)
@@ -325,9 +357,11 @@ A pure replay re-runs materialization into a fresh run dir. `_symlink_asset` re-
 `_copy_same_content_asset` re-runs `shutil.copyfile`. The symlink is reconstructed
 from the scenario alone (the `symlink` field), not from any manifest record — the same
 property #178 relies on for the shared inode. **Confirmed: the schema-neutral choice
-holds for symlinks because the link is reproducible from the scenario field.** For an
-escaping link, the target path is reconstructed from `to_run_dir_path` (relative to
-the fresh run dir), so replay is run-dir-relative and stable.
+holds for symlinks because the link is reproducible from the scenario field.** Because
+the on-disk link target is computed run-dir-relative (`os.path.relpath` against the
+link's own parent), the link is identical regardless of the absolute run-dir location
+and resolves correctly after the tree is moved or replayed into a different run dir —
+so replay is genuinely run-dir-portable and byte-stable.
 
 ### Schema version
 
@@ -363,6 +397,15 @@ tmp run dir). The recipe header documents both follow/reject expectations in pro
 (Note: the recipe filename keeps the issue's `symlink-external` name; the v1 shipped
 body is the in-root variant — the header makes this explicit.)
 
+**v1 limitation (stated plainly).** The escaping form is validate-exercised (it
+validates clean) and materializer-test-exercised (tests pre-create the target under a
+tmp run dir). A fully user-authorable escaping recipe that materializes end-to-end
+needs the materializer to *create* the out-of-library target, which is the same
+target-authoring / dangling capability deferred to the follow-up issue. Until then, a
+`materialize` of an escaping scenario whose target nothing created fails loud with
+`E_SYMLINK_TARGET_MISSING` (not a silent skip) — so the limitation is visible, not
+latent.
+
 The recipe ships the header block (`# Recipe:` … `# Requires: none` — validation needs
 no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
 
@@ -378,6 +421,13 @@ no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
 | `symlink.to_asset` references a later-declared asset (forward ref) | semantic rule | `E_TARGET_UNKNOWN` |
 | `symlink.to_run_dir_path` resolves inside `library/` (should use `to_asset`) | semantic rule | `E_SYMLINK_TARGET_ESCAPE` |
 | `symlink.to_run_dir_path` is absolute or escapes the run dir | semantic rule | `E_SYMLINK_TARGET_ESCAPE` |
+
+Plus one **materialize-time** failure (not a validate-time code; routed through the
+`MaterializationFailure` path like other `MaterializationError`s):
+
+| condition | layer | code |
+| --- | --- | --- |
+| the resolved symlink target does not exist on disk at materialize time | materializer (`_symlink_asset`) | `E_SYMLINK_TARGET_MISSING` |
 
 ## Failure modes and edge cases
 
@@ -396,8 +446,14 @@ no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
   `to_asset`. Keeps the two forms non-overlapping.
 - **Escaping target escaping the run dir / absolute** → rejected
   (`E_SYMLINK_TARGET_ESCAPE`): the sandbox boundary is the run dir; never a host path.
-- **Dangling target** → out of scope (v1 requires an existing target); filed
-  follow-up.
+- **Missing target at materialize time** → the resolved target does not exist on disk
+  when `_symlink_asset` runs → fails loud with `E_SYMLINK_TARGET_MISSING` (a
+  `MaterializationError` subclass routed through `MaterializationFailure`), message
+  naming the asset id and the resolved target. Never a silent skip or an unhandled
+  exception.
+- **Dangling target (authored absent target)** → out of scope (v1 requires an existing
+  target; a missing one is the loud `E_SYMLINK_TARGET_MISSING` above, not a
+  successfully-materialized dangling link); filed follow-up for true dangling support.
 - **Chained symlink** (`symlink.to_asset` → an asset that is itself a symlink) →
   allowed; `os.symlink` against the earlier asset's link path produces a link to a
   link, which `os.stat`/`open` follow transitively. The earlier-declaration rule
@@ -430,6 +486,13 @@ no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
 - [ ] An escaping `symlink` (target created under a tmp run dir, outside `library/`)
       materializes a real symlink pointing at that out-of-library target; the asset
       path itself is contained and raises no `E_PATH_CONTAINMENT`.
+- [ ] The materialized link stores a **relative** target: `os.readlink(link)` returns
+      a relative path (not absolute), and the link still resolves to the target's bytes
+      after the entire run-dir tree is relocated to a different absolute path
+      (replay-portability).
+- [ ] A `symlink` whose resolved target is absent at materialize time fails with
+      `E_SYMLINK_TARGET_MISSING` (a `MaterializationError`), not a silent skip or an
+      unhandled exception.
 - [ ] The manifest records the resolved target's `content_hash` and the link's own
       `ManifestLocation`, and records **no** link flag / target (schema-neutral).
 - [ ] Omitting `symlink` produces byte-identical output and the same code path as
@@ -444,8 +507,10 @@ no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
   (`E_FIELD_SHAPE`); `symlink` + each link field and `symlink` + own `subtitles`
   rejected (`E_FIELD_SHAPE`); round-trips through `Scenario.model_validate`.
 - Validation: invalid fixtures for unknown/self/forward `to_asset`
-  (`# expected: E_TARGET_UNKNOWN`), `to_run_dir_path` inside-library / absolute /
-  run-dir-escape (`# expected: E_SYMLINK_TARGET_ESCAPE`), cross-field misuse
+  (`# expected: E_TARGET_UNKNOWN`), `to_run_dir_path` inside-library, the
+  `library/`-boundary case (a target resolving **exactly to** `library` and one
+  reaching into `library` via `..`, e.g. `library/../library/x`), absolute, and
+  run-dir-escape (all `# expected: E_SYMLINK_TARGET_ESCAPE`), cross-field misuse
   (`# expected: E_FIELD_SHAPE`); valid fixtures for an in-root `to_asset` and a
   well-formed escaping `to_run_dir_path`.
 - Materializer (unit, no ffmpeg — reuses the #178/#180 `_file_writing_fake` +
@@ -453,14 +518,20 @@ no ffmpeg) and is discovered by `tests/recipes/test_recipe_corpus.py`.
   disk; escaping-target tests write the target under the test's **tmp run dir**, never
   a real system path):
   - in-root `to_asset`: the referrer path is a symlink (`os.path.islink`); `os.stat`
-    follows it to the referent's bytes; `os.readlink` points at the referent's
-    in-library path; the referrer's `content_hash` equals the referent's; the
-    referrer's `MaterializedAsset.invocation_index` resolves to a `phase_a.invocations[i]`
-    whose `tool == "symlink"`; no `ContentSourceEvidence`; re-probed
-    (size/duration equal the referent's).
+    follows it to the referent's bytes; `os.readlink` returns a **relative** path that
+    resolves to the referent's in-library file; the referrer's `content_hash` equals
+    the referent's; the referrer's `MaterializedAsset.invocation_index` resolves to a
+    `phase_a.invocations[i]` whose `tool == "symlink"`; no `ContentSourceEvidence`;
+    re-probed (size/duration equal the referent's).
   - escaping `to_run_dir_path`: target file created under the tmp run dir outside
-    `library/`; the referrer path is a symlink pointing at that target
-    (`os.readlink`); `os.stat` follows it; no `E_PATH_CONTAINMENT` raised.
+    `library/`; the referrer path is a symlink whose `os.readlink` is **relative** and
+    points at that target; `os.stat` follows it; no `E_PATH_CONTAINMENT` raised.
+  - replay portability: after materializing an in-root link, move the whole run-dir
+    tree to a different absolute path and assert the link still resolves to the
+    target's bytes (proving the relative target is run-dir-portable).
+  - missing target: a `symlink` whose resolved target is absent raises
+    `E_SYMLINK_TARGET_MISSING` (assert the `MaterializationError` type / `error_code`),
+    not an unhandled exception or a silent skip.
   - chained symlink (`to_asset` → a symlink asset): the second link follows
     transitively to real bytes.
 - Backward-compat (no ffmpeg): with `symlink` unset, the orchestrator takes the
