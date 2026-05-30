@@ -102,20 +102,41 @@ music track, and is the music-relevant reading of #118's "album-art sidecar."
 Add a new `image_format` field to the poster path of `CreateSidecarEvent`, typed as a
 dedicated **`PosterImageFormat` StrEnum (`png`, `jpeg`, `webp`)** (see enum rationale
 below). `None`/`png` keeps today's behavior (a 400x600 single-color PNG). `jpeg`/`webp`
-synthesize the same color frame in that format. The selector drives both the synthesized
-bytes (the ffmpeg argv's pixel/codec choice) and the deterministic rendered extension on
-the sidecar `path` — the materializer derives the encoder/extension from `image_format`
-rather than relying on implicit ffmpeg extension inference from the author's `to:`.
+synthesize the same color frame in that format.
+
+**Single source of truth for the output format.** `image_format` selects the ffmpeg
+encoder explicitly (`-c:v png`/`mjpeg`/`libwebp`). The author's `to:` path still owns the
+sidecar's on-disk path and is recorded verbatim as `ManifestSidecar.path`; there is no
+second, materializer-derived extension. To keep the recorded `path` extension honest
+about the bytes, a new semantic rule requires the `to:` extension to **agree** with
+`image_format` (`png` ⇒ `.png`; `jpeg` ⇒ `.jpg` or `.jpeg`; `webp` ⇒ `.webp`), emitting
+`E_MATERIALIZE_UNSUPPORTED` on mismatch (same code/rule family as the existing
+`create_sidecar` content checks). This avoids the prior ambiguity where the bytes and the
+path extension could disagree. When `image_format` is omitted, behavior is exactly
+today's (author `to:` extension, default poster argv) — no extension rule applies, so all
+existing poster fixtures stay valid.
 
 `image_format` is poster-only (forbidden on subtitle/nfo/cue, enforced in the extended
-`CreateSidecarEvent.model_validator`). It is incompatible with `media_type=video`
-(image format applies only to image posters); the validator rejects the combination.
+`CreateSidecarEvent.model_validator` → `E_FIELD_*`). It is incompatible with
+`media_type=video` (image format applies only to image posters); the validator rejects
+the combination (`E_FIELD_*`).
 
-**Capability guard:** `jpeg`/`webp` require their ffmpeg encoders (`mjpeg`, `libwebp`).
-A validation/materialization guard checks availability via the existing
-`_ffmpeg_encoder_available` (`materializer/tooling/capabilities.py`) and surfaces
-`E_MATERIALIZE_UNSUPPORTED` when the encoder is absent, mirroring how the subtitle
-recipe matrix and HEVC paths gate on synthesis capability. `png` needs no guard.
+**Validation layering (capability vs. shape).**
+- Value validity (is `image_format` a member of the closed enum) and the poster-only /
+  `media_type` exclusivity are **static shape** checks: Pydantic `E_FIELD_SHAPE` /
+  `E_FIELD_*` from the `model_validator`.
+- The `to:`-extension/`image_format` agreement is a **static semantic** check in a
+  `create_sidecar`-adjacent rule → `E_MATERIALIZE_UNSUPPORTED`.
+- ffmpeg **encoder availability** (`mjpeg` for jpeg, `libwebp` for webp) is a
+  **materialize-time** concern, NOT a validate-time error — matching how HEVC and the
+  muxing profiles behave (validate does not probe ffmpeg). If the encoder is absent the
+  poster ffmpeg invocation exits nonzero and the run fails through the existing
+  `_run_ffmpeg_checked` tool-failure path (the same way an unavailable `libx265` surfaces
+  today); a `materialize_*` capability flag in the capabilities report can advertise
+  jpeg/webp support analogously to `materialize_hevc_video` if a preflight signal is
+  wanted. `png` needs no guard. The implementation reuses `_ffmpeg_encoder_available`
+  (`materializer/tooling/capabilities.py`) for that capability flag rather than adding a
+  validate-time ffmpeg probe.
 
 **Enum rationale (no conflation):** a poster sidecar is a standalone image file; embedded
 cover art is an attached-picture stream muxed into an mp4 and carries its own validation
@@ -164,14 +185,20 @@ JSON-schema artifacts regenerated with `--write`. All fixtures and recipes mass 
   `rule_profile_opt_in`, driven by the mapping).
 - `corrupt_tags` / CUE `create_sidecar` with an unknown `target` → `E_TARGET_UNKNOWN`
   (existing `rule_target_unknown`; `corrupt_tags` added to its asset-target set).
-- Cross-kind field misuse on a CUE sidecar (e.g. `language` on `cue`) →
-  `E_FIELD_*` from the extended `CreateSidecarEvent.model_validator`.
+- Cross-kind field misuse on a CUE sidecar (e.g. `language` on `cue`), `image_format`
+  on a non-poster kind, or `image_format` with `media_type=video` → `E_FIELD_*` from the
+  extended `CreateSidecarEvent.model_validator`.
+- Poster `image_format` whose value disagrees with the `to:` extension →
+  `E_MATERIALIZE_UNSUPPORTED` from a static semantic rule (`create_sidecar`-adjacent).
 - `corrupt_tags` lifecycle (target must be a live, materialized asset; cannot follow a
   delete) → existing `E_LIFECYCLE_INVALID` via `timeline_lifecycle` (added to the
   corruption action sets) and `hierarchy` resolution.
 - Pydantic shape errors (bad `flavor`, `bytes` out of range) → `E_FIELD_SHAPE`.
 
-No new validation code unless a gap surfaces during TDD; if one does, surface it.
+Reuses existing codes throughout. The only new validation *logic* is the poster
+`image_format`/`to:`-extension agreement check (a small addition to the existing
+`create_sidecar` content rule family, reusing `E_MATERIALIZE_UNSUPPORTED`); no new error
+code. If any further gap surfaces during TDD, surface it.
 
 ## Materialization
 

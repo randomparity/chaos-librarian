@@ -47,13 +47,16 @@ Ship three of the five capabilities in v1; defer three as follow-up issues.
 3. **Album-art format variety = a poster-sidecar `image_format` selector** (new
    `PosterImageFormat` StrEnum `{png, jpeg, webp}` on the poster path of
    `CreateSidecarEvent`). A poster sidecar attaches to any asset, including a music
-   track, so this delivers album-art-as-sidecar format variety for music. The selector
-   drives the synthesized bytes and the format-derived rendered extension; `jpeg`/`webp`
-   are capability-guarded via `_ffmpeg_encoder_available` (`mjpeg`/`libwebp`) and surface
-   `E_MATERIALIZE_UNSUPPORTED` when absent. `png` is the default and byte-identical to
-   today. A dedicated enum (not `CoverArtImageFormat`) keeps the standalone poster
-   sidecar's format contract independent of the embedded-cover-art evidence/validation
-   surface.
+   track, so this delivers album-art-as-sidecar format variety for music. `image_format`
+   is the single source of truth for the synthesized format (selects the ffmpeg `-c:v`
+   encoder); the author's `to:` still owns the on-disk path, and a static semantic rule
+   requires the `to:` extension to agree with `image_format` (`E_MATERIALIZE_UNSUPPORTED`
+   on mismatch) so the recorded `ManifestSidecar.path` extension stays honest about the
+   bytes. Encoder availability (`mjpeg`/`libwebp`) is a materialize-time concern (ffmpeg
+   nonzero exit through the existing tool-failure path, mirroring `libx265`), not a
+   validate-time error. `png` is the default and byte-identical to today. A dedicated
+   enum (not `CoverArtImageFormat`) keeps the standalone poster sidecar's format contract
+   independent of the embedded-cover-art evidence/validation surface.
 
 `SCENARIO_SCHEMA_VERSION` is bumped 31 → 32. `MANIFEST_SCHEMA_VERSION` stays 10 and
 `MATERIALIZATION_SCHEMA_VERSION` is unchanged: tag corruption reuses the existing
