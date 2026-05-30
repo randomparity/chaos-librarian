@@ -30,8 +30,10 @@ spec's "Dropped proposals").
 - Materialize each knob to the exact bytes the author requested (encoding-correct
   subtitle bytes, the author's NFO body verbatim, video bytes at a poster path).
 - Preserve backward compatibility: every existing `create_sidecar` scenario (and the
-  shipped recipes) stays valid and produces byte-identical output when the new fields
-  are omitted.
+  shipped recipes) stays valid, and when the new fields are omitted the materializer
+  executes the *identical pre-change code path* (same `.encode("utf-8")`, same
+  `render_nfo`, same `poster_ffmpeg_argv` argv) — a no-op refactor, not a frozen-hash
+  promise.
 
 ## Non-goals
 
@@ -141,6 +143,17 @@ behavior:
 The materializer resolves `None` to the concrete default at the point of use, so the
 "omitted field" and "field set to the default value" cases produce identical bytes.
 
+**How "byte-identical" is actually verified.** Poster bytes come from ffmpeg lavfi
+(version-dependent) and subtitle bytes from `srt_payload(..., seed=resolved_seed)`, so
+a committed golden hash would flap on an ffmpeg upgrade. The backward-compat test does
+*not* assert against a frozen hash. Instead it asserts the `None` branch is a no-op
+refactor: for the SRT case, `_apply_create_sidecar` with `encoding=None` must call
+`.encode("utf-8")` and produce bytes equal to the unchanged `srt_payload(...)
+.encode("utf-8")`; for NFO, `body=None` must produce bytes equal to a direct
+`render_nfo(sidecar_id=...)`; for poster, `media_type=None` must build the exact argv
+`poster_ffmpeg_argv(...)` returns. These are equalities between the new code's `None`
+branch and a direct call to the unchanged generator — no ffmpeg version dependence.
+
 ### Cross-kind exclusivity (`model_validator`, `E_FIELD_*`)
 
 The existing `_check_language_matches_kind` validator is extended (renamed to
@@ -205,12 +218,33 @@ Handler routing in `_apply_create_sidecar`:
   lavfi (a few-frame `color`/`testsrc` muxed to a small container) at the poster path;
   else the current PNG.
 
-`regenerate_sidecar` and `LiveSidecar` gain the same fields so `update_sidecar` on one
-of these sidecars regenerates with the authored encoding / body / media_type rather
-than reverting to defaults. `ManifestSidecar` is unchanged on the wire (it does not and
-will not carry encoding/body/media_type — those are synthesis inputs, not manifest
-identity); `LiveSidecar` is an in-memory dataclass, so widening it is not a schema
-change.
+#### `update_sidecar` on an authored sidecar
+
+`update_sidecar` regenerates a sidecar's bytes via `regenerate_sidecar` using a
+*perturbed* sub-seed (`perturbed_seed_for_update`, which folds in `event_id` so
+consecutive updates produce distinct bytes — that is existing, intended behavior and is
+preserved). The authored *content knobs* must survive that regeneration, so:
+
+- `LiveSidecar` (an in-memory dataclass — widening it is **not** a schema change) gains
+  `encoding`, `body`, and `media_type`, captured at create time and threaded into
+  `regenerate_sidecar`.
+- **Subtitle**: `regenerate_sidecar` regenerates the SRT body from the perturbed seed
+  (so the body text changes per update, as today) but applies the **stored encoding**
+  via the same encoding map — not a hardcoded UTF-8. An authored `utf16_le` subtitle
+  stays UTF-16-LE across updates; only the cue text changes.
+- **NFO**: the current `render_nfo` ignores the seed (template keyed on `sidecar_id`).
+  When a `body` was authored, `update_sidecar` re-emits that **exact stored body**
+  verbatim (the perturbed seed has no effect on an author-supplied body — there is no
+  generator to perturb). When no body was authored, it re-emits the template, as today.
+- **Poster**: `media_type` selects image-vs-video regeneration; the perturbed seed
+  still varies the synthesized pixels/frames as today.
+
+`ManifestSidecar` is unchanged on the wire (it does not and will not carry
+encoding/body/media_type — those are synthesis inputs, not manifest identity), so
+`MANIFEST_SCHEMA_VERSION` is not bumped.
+
+A test updates an authored `utf16_le` subtitle and an authored-`body` NFO and asserts
+the encoding (resp. the exact body) survives the update.
 
 #### Subtitle codec scope (the one materialize-capability decision)
 
@@ -233,9 +267,17 @@ valid for ASS," but the *code* is identical.
 
 `SCENARIO_SCHEMA_VERSION` 23 → 24 (adding fields to a contract model is breaking per
 the project's no-minor-versions rule). `Scenario.schema_version` literal updated to
-`Literal[24]`. Every `tests/fixtures/scenarios/**/*.yaml` and every
-`recipes/**/*.yaml` is bumped to `schema_version: 24` (the corpus tests enforce the
-literal). `MANIFEST_SCHEMA_VERSION` is **not** bumped — `ManifestSidecar` is unchanged.
+`Literal[24]`. The 146 files matching `schema_version: 23` under `tests/` and
+`recipes/` are bumped to `schema_version: 24` as one mechanical step (the corpus tests
+`test_sample_scenarios`, `test_invalid_corpus`, and `test_recipe_corpus` all enforce
+the literal). **Exception:** `tests/fixtures/scenarios/invalid/yaml-parse-error.yaml`
+pins `schema_version: 11` and expects `E_YAML_PARSE` — it never parses, so its version
+is irrelevant and it is deliberately left untouched (it is not among the 146 and there
+is no negative "wrong schema_version" fixture to preserve). The new invalid fixture
+`create-sidecar-ass-utf16.yaml` ships at `schema_version: 24` with its
+`# expected: E_MATERIALIZE_UNSUPPORTED` marker.
+
+`MANIFEST_SCHEMA_VERSION` is **not** bumped — `ManifestSidecar` is unchanged.
 `MATERIALIZATION_SCHEMA_VERSION` is **not** bumped — `MediaAction` is unchanged. Schema
 artifacts regenerated with `--write` and committed.
 
@@ -275,8 +317,10 @@ validates clean. These bring `recipes/sidecar/` from 3 to 6 recipes.
   forbid empty body?* — Decision: **forbid** empty body via `min_length=1` so an empty
   string is a clear authoring error rather than a silent zero-byte file, matching
   `EditMetadataEvent.fields` non-empty enforcement.
-- **`update_sidecar` on an authored sidecar** → regenerates with the authored
-  encoding/body/media_type (LiveSidecar carries them).
+- **`update_sidecar` on an authored sidecar** → the cue text / pixels still vary by the
+  perturbed seed (existing behavior), but the authored encoding survives, the authored
+  NFO body is re-emitted verbatim, and the poster media_type is preserved (see
+  "`update_sidecar` on an authored sidecar" above).
 - **Schema bump** → every fixture/recipe `Literal[23]` mismatch fails the corpus tests
   until bumped to 24 (the intended forcing function).
 
@@ -300,8 +344,13 @@ validates clean. These bring `recipes/sidecar/` from 3 to 6 recipes.
 - Validation: a new invalid fixture `create-sidecar-ass-utf16.yaml`
   (`# expected: E_MATERIALIZE_UNSUPPORTED`); valid fixtures covering each new field.
 - Materializer (env-gated ffmpeg where needed): subtitle encoding produces decodable
-  UTF-16-LE bytes; NFO body written verbatim; poster video is a probe-valid video;
-  omitted-fields regression asserts byte-identical hashes.
+  UTF-16-LE bytes; NFO body written verbatim; poster video is a probe-valid video.
+- Backward-compat (no ffmpeg needed): with the new fields `None`, the SRT branch's
+  bytes equal `srt_payload(...).encode("utf-8")`, the NFO branch's bytes equal
+  `render_nfo(sidecar_id=...)`, and the poster branch's argv equals
+  `poster_ffmpeg_argv(...)` — code-path equality, not a frozen hash.
+- `update_sidecar` of an authored `utf16_le` subtitle keeps UTF-16-LE bytes across the
+  update; `update_sidecar` of an authored-`body` NFO re-emits the exact body.
 - `test_state_delta_keys_match_contract` updated for the new `create_sidecar` keys.
 - Recipe corpus: the three new recipes validate clean (existing
   `test_recipe_corpus.py`).
