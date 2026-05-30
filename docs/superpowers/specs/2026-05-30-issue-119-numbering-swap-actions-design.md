@@ -119,22 +119,56 @@ with a regression test that drives the real planner with crossed moves, so the
 A swap is a hierarchy action, so it flows through the existing hierarchy rules with
 small additions:
 
-1. **`rule_target_unknown`** — extend the per-action target-field map so both `target`
-   and the axis-specific `with_*` field are resolved against the declared entity pool.
-   Unknown id → `E_TARGET_UNKNOWN` (existing message/behavior).
-2. **`rule_hierarchy_timeline`** (`HierarchyProjection.apply`) — add a swap branch that:
-   - looks up both entities; if either is missing, the projection no-ops (target-unknown
-     already reported the missing id) and emits nothing new here;
-   - if the two ids are equal, or the entities do not share a parent, emits
-     `E_HIERARCHY_INVALID` ("swap requires two distinct same-parent <kind>s");
-   - otherwise exchanges the two number fields and returns the affected
-     season/album/disc id so the existing `_check_hierarchy_mutation_numbers` runs the
-     post-mutation duplicate check unchanged. A well-formed pairwise swap of two distinct
-     same-parent siblings can never produce a duplicate, but a malformed scenario (e.g. a
-     third sibling already holding one of the swapped numbers) is caught by that existing
-     check — reusing it rather than re-deriving the invariant.
+1. **`rule_target_unknown`** — add the three swap actions to
+   `_HIERARCHY_TARGET_KIND_BY_ACTION` (so `target` resolves against its kind's set) and
+   extend `_check_destination_reference` so the axis-specific `with_*` field is resolved
+   via `_check_field_reference` against **its own kind's id set** (`with_episode` → the
+   `episode` set, `with_disc` → `disc`, `with_track` → `track`), exactly as
+   `to_season` → `season` and `to_disc` → `disc` do today. Because `entity_ids_by_kind`
+   keeps disjoint per-kind sets, a `with_*` value that names a **declared id of the wrong
+   kind** (e.g. a season id in `with_episode`) is **not** in the episode set and
+   therefore yields `E_TARGET_UNKNOWN`, *not* `E_HIERARCHY_INVALID`. A test asserts this
+   wrong-kind case.
+2. **`rule_hierarchy_timeline`** + **`HierarchyProjection`** — the projection has no
+   reporter (it is also driven by `rule_timeline_lifecycle` and the engine), so the swap
+   *validity* checks live in the rule and the *state exchange* lives in the projection.
+   Concretely:
+   - The projection gains a query `swap_validity(event) -> SwapValidity` (an enum/result:
+     `OK` / `SELF_SWAP` / `NOT_SAME_PARENT`; missing ids → `MISSING`, treated as OK-here
+     because target-unknown already reported them). It reads both entity ids without
+     mutating state.
+   - `rule_hierarchy_timeline` calls `swap_validity` **before** `apply`. On `SELF_SWAP`
+     it emits `E_HIERARCHY_INVALID` ("swap requires two distinct <kind>s"); on
+     `NOT_SAME_PARENT` it emits `E_HIERARCHY_INVALID` ("swap requires same-parent
+     <kind>s"); in either case it **skips `apply`** so no exchange occurs, then continues
+     to the next event.
+   - **self-swap guard is load-bearing:** it cannot be folded into the post-mutation
+     duplicate check, because swapping a number with itself is a no-op that leaves
+     numbers unique, so the duplicate check would *not* catch it. The
+     `swap_validity == SELF_SWAP` path is tested independently of the duplicate check.
+   - On `OK`, `apply`'s swap branch exchanges the two number fields and returns the
+     affected season/album/disc id so the existing `_check_hierarchy_mutation_numbers`
+     runs the post-mutation duplicate check unchanged.
    - `affected_asset_ids` returns the union of both entities' assets so the existing
      path-collision and rendered-path checks cover both sides.
+   - `rule_timeline_lifecycle` does not call `swap_validity`; it dispatches the swap
+     through the existing hierarchy branch and applies the mutation. A self/non-sibling
+     swap there is harmless: the projection's swap branch in `apply` no-ops the exchange
+     when `swap_validity != OK` (so lifecycle state stays consistent and the lifecycle
+     rule emits nothing for an already-`E_HIERARCHY_INVALID` event — duplicate codes from
+     two rules on one event are avoided).
+
+   **On the post-mutation duplicate check (defense-in-depth, not the primary guard):** a
+   well-formed pairwise swap of two distinct same-parent siblings can never *create* a
+   duplicate — both source numbers were already unique in the group (a pre-existing
+   duplicate is rejected statically by `rule_hierarchy_invariants` before the timeline
+   replays), and swapping two unique values only permutes them. The reused
+   `_check_hierarchy_mutation_numbers` is therefore defense-in-depth: it guards the
+   projection invariant rather than catching a reachable swap-specific scenario input.
+   The test plan exercises it **through the projection directly** (drive
+   `HierarchyProjection.apply` against a projection state seeded with a duplicate in the
+   affected group), not via a hand-built scenario fixture that `rule_hierarchy_invariants`
+   would statically reject first.
 3. **`rule_timeline_lifecycle`** — the swap is dispatched through the existing
    `is_hierarchy_action` branch (`_lifecycle_check_hierarchy_action`), which already
    rejects a hierarchy action touching an asset with a pending slow_copy
@@ -198,22 +232,33 @@ Behavior-first, edges and errors included:
    `_plan_hierarchy_moves` + two-phase execution with mutually-crossed moves and assert
    the on-disk bytes are exchanged with no leftover temp file (locks the "no new
    materializer code" claim).
-4. **Reject still-duplicate** — a swap that, combined with a third sibling already
-   holding a swapped number, leaves a duplicate → `E_HIERARCHY_INVALID`.
-5. **Reject non-sibling / same-id / unknown** — different-parent pair →
-   `E_HIERARCHY_INVALID`; `target == with_*` → `E_HIERARCHY_INVALID`; unknown `target`
-   or `with_*` → `E_TARGET_UNKNOWN`.
-6. **Implicit-swap still rejected, explicit accepted** — one test asserts the
+4. **Self-swap guard (load-bearing, independent of the duplicate check)** —
+   `target == with_*` → `E_HIERARCHY_INVALID`, asserted directly: a self-swap is a no-op
+   number exchange that the post-mutation duplicate check cannot catch, so this test
+   fails if the explicit equality guard is dropped.
+5. **Post-mutation duplicate check is defense-in-depth (projection-direct)** — drive
+   `HierarchyProjection.apply` with a swap whose affected sibling group is seeded with a
+   duplicate number directly in the projection state, and assert
+   `_check_hierarchy_mutation_numbers` reports `E_HIERARCHY_INVALID`. This exercises the
+   reused check through the projection rather than a scenario fixture, because a fixture
+   with a pre-existing duplicate is statically rejected by `rule_hierarchy_invariants`
+   before the timeline replays.
+6. **Reject non-sibling / wrong-kind / unknown** — different-parent pair (both valid
+   ids, different season/album/disc) → `E_HIERARCHY_INVALID`; `with_*` naming a declared
+   id of the **wrong kind** (e.g. a season id in `with_episode`) → `E_TARGET_UNKNOWN`;
+   unknown `target` or unknown `with_*` → `E_TARGET_UNKNOWN`.
+7. **Implicit-swap still rejected, explicit accepted** — one test asserts the
    `renumber_episode`-into-a-duplicate case still emits `E_HIERARCHY_INVALID` while the
    equivalent `swap_episode_numbers` validates clean.
-7. **Existing scenarios still valid** — the sample-scenario corpus and invalid corpus
+8. **Existing scenarios still valid** — the sample-scenario corpus and invalid corpus
    pass after the bump.
-8. **Lifecycle interaction** — a swap on an asset with a pending `slow_copy` →
+9. **Lifecycle interaction** — a swap on an asset with a pending `slow_copy` →
    `E_LIFECYCLE_INVALID`; a fields-unset timeline (no swap) takes the identical
    pre-change projection path (covered by the unchanged existing corpus).
-9. **Corpus fixtures** — a valid swap fixture per axis under
-   `tests/fixtures/scenarios/`, and invalid fixtures (`# expected: E_...` marker) for the
-   non-sibling and still-duplicate cases.
+10. **Corpus fixtures** — a valid swap fixture per axis under
+    `tests/fixtures/scenarios/`, and invalid fixtures (`# expected: E_...` marker) for the
+    non-sibling and self-swap cases (both statically reachable, unlike a pre-existing
+    duplicate).
 
 ## Out of scope (filed follow-up)
 
