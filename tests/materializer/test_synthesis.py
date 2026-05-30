@@ -36,10 +36,12 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.engine import run_plan
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.synthesis import (
     MaterializeAssetResult,
+    PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
 )
@@ -59,7 +61,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 25
+schema_version: 26
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -173,7 +175,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 25
+schema_version: 26
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -749,7 +751,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 25
+schema_version: 26
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -808,7 +810,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 25
+schema_version: 26
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -856,7 +858,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 25
+schema_version: 26
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short
@@ -1030,7 +1032,7 @@ def _fake_materialize_one_asset(
 
 
 _SAME_CONTENT_SCENARIO = b"""\
-schema_version: 25
+schema_version: 26
 scenario_id: same-content
 seed: 1
 duration_scale: short
@@ -1177,3 +1179,245 @@ def test_same_content_as_copies_referent_bytes(
     assert [e.asset_id for e in phase_a.content_sources] == ["a_ref"]
     # re-probed (size matches the copied file)
     assert dup.size_bytes == dup_file.stat().st_size
+
+
+def _hardlink_scenario(extra_asset_yaml: bytes = b"") -> bytes:
+    """A two-asset hardlink scenario; ``extra_asset_yaml`` appends a third asset."""
+    return (
+        b"""\
+schema_version: 26
+scenario_id: hardlink
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: Link
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_ref
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+      - id: va_b
+        label: b
+        bundle:
+          id: b_b
+          assets:
+            - id: a_link
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              hardlinked_to: a_ref
+"""
+        + extra_asset_yaml
+        + b"""\
+series: []
+artists: []
+timeline: []
+"""
+    )
+
+
+def _run_phase_a(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, scenario_bytes: bytes
+) -> tuple[PhaseAResult, dict[str, MaterializedAsset], PlanArtifacts]:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=scenario_bytes, source_label="test:hardlink.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+    phase_a = materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+    by_id = {m.asset_id: m for m in phase_a.materialized_assets}
+    return phase_a, by_id, artifacts
+
+
+def test_hardlinked_to_shares_one_inode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    phase_a, by_id, artifacts = _run_phase_a(monkeypatch, tmp_path, _hardlink_scenario())
+    ref, link = by_id["a_ref"], by_id["a_link"]
+    ref_file = tmp_path / ref.location_path
+    link_file = tmp_path / link.location_path
+    ref_stat, link_stat = ref_file.stat(), link_file.stat()
+    # one shared inode (the link-not-copy proof) and link count >= 2
+    assert link_stat.st_ino == ref_stat.st_ino
+    assert link_stat.st_dev == ref_stat.st_dev
+    assert ref_stat.st_nlink >= 2
+    assert link_stat.st_nlink >= 2
+    # byte-identical content → identical full content_hash
+    assert link_file.read_bytes() == ref_file.read_bytes()
+    assert link.content_hash == ref.content_hash
+    # both manifest versions carry the same hash
+    versions = {v.asset_id: v.content_hash for v in artifacts.current_manifest.versions}
+    assert versions["a_link"] == versions["a_ref"]
+    # invocation_index resolves to a synthetic hardlink invocation
+    link_invocation = phase_a.invocations[link.invocation_index]
+    assert link_invocation.tool == "hardlink"
+    assert link_invocation.exit_code == 0
+    # the link contributes no content-source evidence
+    assert [e.asset_id for e in phase_a.content_sources] == ["a_ref"]
+    # re-probed (size matches the linked file)
+    assert link.size_bytes == link_file.stat().st_size
+
+
+def test_hardlinked_to_mutation_propagates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _phase_a, by_id, _artifacts = _run_phase_a(monkeypatch, tmp_path, _hardlink_scenario())
+    ref_file = tmp_path / by_id["a_ref"].location_path
+    link_file = tmp_path / by_id["a_link"].location_path
+    # writing through one path's inode is observed through the other (shared inode)
+    ref_file.write_bytes(b"mutated-through-ref")
+    assert link_file.read_bytes() == b"mutated-through-ref"
+
+
+_HARDLINK_CHAIN_ASSET = b"""\
+      - id: va_c
+        label: c
+        bundle:
+          id: b_c
+          assets:
+            - id: a_link2
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              hardlinked_to: a_link
+"""
+
+
+def test_hardlinked_to_chain_shares_one_inode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _phase_a, by_id, _artifacts = _run_phase_a(
+        monkeypatch, tmp_path, _hardlink_scenario(_HARDLINK_CHAIN_ASSET)
+    )
+    inodes = {
+        name: (tmp_path / by_id[name].location_path).stat().st_ino
+        for name in ("a_ref", "a_link", "a_link2")
+    }
+    # C -> B -> A all resolve to one shared inode transitively
+    assert len(set(inodes.values())) == 1
+    assert (tmp_path / by_id["a_ref"].location_path).stat().st_nlink == 3
+
+
+_HARDLINK_TO_DUPLICATE_SCENARIO = b"""\
+schema_version: 26
+scenario_id: hardlink-dup
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: LinkDup
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_ref
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+      - id: va_b
+        label: b
+        bundle:
+          id: b_b
+          assets:
+            - id: a_dup
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              same_content_as: a_ref
+      - id: va_c
+        label: c
+        bundle:
+          id: b_c
+          assets:
+            - id: a_link_dup
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              hardlinked_to: a_dup
+series: []
+artists: []
+timeline: []
+"""
+
+
+def test_hardlinked_to_a_same_content_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _phase_a, by_id, _artifacts = _run_phase_a(
+        monkeypatch, tmp_path, _HARDLINK_TO_DUPLICATE_SCENARIO
+    )
+    dup_ino = (tmp_path / by_id["a_dup"].location_path).stat()
+    link_ino = (tmp_path / by_id["a_link_dup"].location_path).stat()
+    ref_ino = (tmp_path / by_id["a_ref"].location_path).stat()
+    # the link shares the *duplicate's* inode, which is a copy (distinct from a_ref's)
+    assert link_ino.st_ino == dup_ino.st_ino
+    assert dup_ino.st_ino != ref_ino.st_ino
+    assert dup_ino.st_nlink == 2
+
+
+def test_hardlinked_to_unset_skips_os_link(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_SAME_CONTENT_SCENARIO, source_label="test:no-link.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+
+    def _fail_link(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("os.link must not be called when no asset sets hardlinked_to")
+
+    monkeypatch.setattr(synthesis_mod.os, "link", _fail_link)
+    # _SAME_CONTENT_SCENARIO sets same_content_as but no hardlinked_to → no os.link.
+    materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )

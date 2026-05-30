@@ -24,7 +24,7 @@ state against that. The column records what a correct consumer *should* do:
 
 ## Schema version and bit-rot guard
 
-Every recipe pins `schema_version: 25` (the current `SCENARIO_SCHEMA_VERSION`).
+Every recipe pins `schema_version: 26` (the current `SCENARIO_SCHEMA_VERSION`).
 `tests/recipes/test_recipe_corpus.py` re-validates every recipe in CI and asserts
 each category ships at least three. Because `schema_version` is a fixed literal
 on the model, the next schema bump makes the recipes fail validation, turning the
@@ -41,6 +41,7 @@ Filesystem changes a scanner must tolerate mid-scan.
 | `moved-during-scan.yaml` | A file is relocated within its root mid-scan. | converges | none |
 | `renamed-during-scan.yaml` | A file is renamed in place mid-scan. | converges | none |
 | `delete-then-restore.yaml` | A file disappears then reappears at a new path. | converges | none |
+| `hardlink-duplicates.yaml` | Two paths are hardlinks to one inode (shared `st_ino`, link count 2). | converges | none |
 
 ### `watcher/` — watcher/daemon stress
 Copy races and network/filesystem timing artifacts.

@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 25
+schema_version: 26
 scenario_id: invalid-matroska-profile-audio-track
 seed: 138
 duration_scale: short

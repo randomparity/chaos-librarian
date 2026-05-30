@@ -430,26 +430,36 @@ class Asset(BaseModel):
     video: VideoTrack | None = None
     audio: tuple[AudioTrack, ...] = Field(default_factory=tuple)
     subtitles: tuple[SubtitleTrack, ...] = Field(default_factory=tuple)
-    # Content-dedup authoring knobs (scenario v25). ``same_content_as`` copies
-    # another asset's materialized bytes verbatim (same full content_hash);
-    # ``hash_collision_with`` + ``collision_prefix_len`` make this asset's
-    # *recorded* hash share a truncated hex prefix with another asset's while
-    # the on-disk bytes differ (oracle-recorded collision). The two link fields
+    # Content-dedup / shared-inode authoring knobs. ``same_content_as`` (v25)
+    # copies another asset's materialized bytes verbatim (same full content_hash,
+    # independent files); ``hash_collision_with`` + ``collision_prefix_len`` (v25)
+    # make this asset's *recorded* hash share a truncated hex prefix with another
+    # asset's while the on-disk bytes differ (oracle-recorded collision);
+    # ``hardlinked_to`` (v26) makes this asset's path a *hardlink* to another
+    # asset's already-written file via ``os.link`` (one shared inode, link count
+    # >= 2), distinct from ``same_content_as``'s byte copy. The three link fields
     # are mutually exclusive; cross-asset reference resolution is a semantic rule.
     same_content_as: str | None = None
     hash_collision_with: str | None = None
     collision_prefix_len: int | None = Field(default=None, ge=1, le=63)
+    hardlinked_to: str | None = None
 
     @model_validator(mode="after")
     def _check_content_dedup_fields(self) -> Asset:
         if self.same_content_as is not None and self.hash_collision_with is not None:
             raise ValueError("same_content_as and hash_collision_with are mutually exclusive")
+        if self.hardlinked_to is not None and self.same_content_as is not None:
+            raise ValueError("hardlinked_to and same_content_as are mutually exclusive")
+        if self.hardlinked_to is not None and self.hash_collision_with is not None:
+            raise ValueError("hardlinked_to and hash_collision_with are mutually exclusive")
         if (self.hash_collision_with is None) != (self.collision_prefix_len is None):
             raise ValueError(
                 "collision_prefix_len must be set if and only if hash_collision_with is set"
             )
         if self.same_content_as is not None and self.subtitles:
             raise ValueError("same_content_as forbids declaring the asset's own subtitles")
+        if self.hardlinked_to is not None and self.subtitles:
+            raise ValueError("hardlinked_to forbids declaring the asset's own subtitles")
         return self
 
 
@@ -943,7 +953,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[25]
+    schema_version: Literal[26]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

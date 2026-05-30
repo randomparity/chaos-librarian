@@ -1,12 +1,14 @@
 """Pin the validation and materializer asset-walker orders in lockstep.
 
-``same_content_as`` / ``hash_collision_with`` correctness depends on the
-validator's declaration-order check (``validation.rules._common.iter_asset_contexts``,
-a raw-dict walk) and the materializer's actual copy/stamp order
-(``topology.iter_asset_contexts``, a model walk) yielding assets in the *same*
-order. They are independent implementations; this test fails loudly if a future
-reorder of either walker diverges, rather than silently corrupting a duplicate or
-collision scenario at materialize time.
+``same_content_as`` / ``hash_collision_with`` / ``hardlinked_to`` correctness
+depends on the validator's declaration-order check
+(``validation.rules._common.iter_asset_contexts``, a raw-dict walk) and the
+materializer's actual copy/link/stamp order (``topology.iter_asset_contexts``, a
+model walk) yielding assets in the *same* order. They are independent
+implementations; this test fails loudly if a future reorder of either walker
+diverges, rather than silently corrupting a duplicate, collision, or hardlink
+scenario at materialize time (the ``hardlinked_to`` referent must already exist on
+disk for ``os.link`` to resolve).
 """
 
 from __future__ import annotations
@@ -70,7 +72,7 @@ def _variant(variant_id: str, bundle_id: str, asset: Asset) -> Variant:
 
 def _multi_tree_scenario() -> Scenario:
     return Scenario(
-        schema_version=25,
+        schema_version=26,
         scenario_id="walker-order",
         seed=1,
         duration_scale=DurationScale.SHORT,

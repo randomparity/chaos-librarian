@@ -4,7 +4,7 @@
 # Expected consumer response: converges — settle on the final path without
 #   thrashing or leaking stale entries.
 # Requires: none
-schema_version: 25
+schema_version: 26
 scenario_id: recipe-watcher-rapid-churn
 seed: 1103
 duration_scale: short

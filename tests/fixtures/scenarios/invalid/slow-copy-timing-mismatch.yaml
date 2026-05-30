@@ -1,5 +1,5 @@
 # expected: E_SLOW_COPY_TIMING
-schema_version: 25
+schema_version: 26
 scenario_id: bad
 seed: 1
 duration_scale: short

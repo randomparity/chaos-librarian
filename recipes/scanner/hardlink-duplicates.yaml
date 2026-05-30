@@ -1,0 +1,58 @@
+# Recipe: Hardlink duplicates
+# Category: scanner
+# Tests: two paths are hardlinks to one inode (shared st_ino, link count 2) — a scanner must recognize the same file, not two independent copies.
+# Expected consumer response: converges — same-inode detection treats the two paths as one underlying file, distinct from a byte-identical copy.
+# Requires: none
+schema_version: 26
+scenario_id: recipe-scanner-hardlink-duplicates
+seed: 1901
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: w_link
+    title: Hardlink Duplicates
+    layout: movie_flat
+    variants:
+      - id: v_original
+        label: original
+        bundle:
+          id: b_original
+          assets:
+            - id: asset_original
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: v_hardlink
+        label: hardlink
+        bundle:
+          id: b_hardlink
+          assets:
+            - id: asset_hardlink
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+              hardlinked_to: asset_original
+series: []
+artists: []
+timeline: []

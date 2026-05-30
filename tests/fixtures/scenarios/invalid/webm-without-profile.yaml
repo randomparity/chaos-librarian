@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 25
+schema_version: 26
 scenario_id: invalid-webm-without-profile
 seed: 142
 duration_scale: short

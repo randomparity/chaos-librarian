@@ -201,6 +201,18 @@
           ],
           "default": null
         },
+        "hardlinked_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hardlinked To"
+        },
         "hash_collision_with": {
           "anyOf": [
             {
@@ -2472,7 +2484,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 25,
+      "const": 26,
       "title": "Schema Version",
       "type": "integer"
     },

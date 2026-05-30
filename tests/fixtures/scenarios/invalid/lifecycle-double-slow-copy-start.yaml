@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 25
+schema_version: 26
 scenario_id: lifecycle-double-slow-copy-start
 seed: 1
 duration_scale: short
