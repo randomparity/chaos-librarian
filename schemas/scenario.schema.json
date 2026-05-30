@@ -680,6 +680,17 @@
           "title": "Id",
           "type": "string"
         },
+        "image_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PosterImageFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "kind": {
           "$ref": "#/$defs/SidecarKind",
           "default": "subtitle"
@@ -1650,6 +1661,16 @@
         "podcast_folder"
       ],
       "title": "PodcastLayout",
+      "type": "string"
+    },
+    "PosterImageFormat": {
+      "description": "Image format for a poster/album-art sidecar (#118).\n\nSelects the ffmpeg encoder for the synthesized poster image. Distinct from\n``CoverArtImageFormat`` (embedded mp4 cover art) so the standalone-sidecar\nformat contract stays independent of the embedded-cover-art surface.",
+      "enum": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "title": "PosterImageFormat",
       "type": "string"
     },
     "ProfileName": {

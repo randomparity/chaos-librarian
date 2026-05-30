@@ -325,6 +325,19 @@ class SidecarMediaType(enum.StrEnum):
     VIDEO = "video"
 
 
+class PosterImageFormat(enum.StrEnum):
+    """Image format for a poster/album-art sidecar (#118).
+
+    Selects the ffmpeg encoder for the synthesized poster image. Distinct from
+    ``CoverArtImageFormat`` (embedded mp4 cover art) so the standalone-sidecar
+    format contract stays independent of the embedded-cover-art surface.
+    """
+
+    PNG = "png"
+    JPEG = "jpeg"
+    WEBP = "webp"
+
+
 class NetworkLagEffect(enum.StrEnum):
     """Watcher-visible filesystem lag artifact requested by a lag window."""
 
@@ -751,14 +764,17 @@ class CreateSidecarEvent(_TimelineEventBase):
     # (kind in {poster, nfo}, language=None).
     language: str | None = None
     kind: SidecarKind = SidecarKind.SUBTITLE
-    # Authoring knobs (scenario v24). Each is scoped to one kind; the
+    # Authoring knobs (scenario v24+). Each is scoped to one kind; the
     # model_validator forbids cross-kind misuse. None selects the kind's
-    # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster).
+    # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster,
+    # default CUE). ``image_format`` (v32, #118) is poster-only and selects the
+    # synthesized poster image format (png/jpeg/webp); ``body`` also serves cue.
     codec: SubtitleCodec | None = None
     source: SubtitleSource | None = None
     encoding: SubtitleEncoding | None = None
     body: str | None = Field(default=None, min_length=1)
     media_type: SidecarMediaType | None = None
+    image_format: PosterImageFormat | None = None
 
     @model_validator(mode="after")
     def _check_fields_match_kind(self) -> CreateSidecarEvent:
@@ -778,6 +794,10 @@ class CreateSidecarEvent(_TimelineEventBase):
             raise ValueError("body is only valid for nfo and cue sidecars")
         if self.kind != SidecarKind.POSTER and self.media_type is not None:
             raise ValueError("media_type is only valid for poster sidecars")
+        if self.kind != SidecarKind.POSTER and self.image_format is not None:
+            raise ValueError("image_format is only valid for poster sidecars")
+        if self.image_format is not None and self.media_type is SidecarMediaType.VIDEO:
+            raise ValueError("image_format cannot be combined with media_type=video")
         return self
 
 
