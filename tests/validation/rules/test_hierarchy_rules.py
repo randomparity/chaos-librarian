@@ -1421,3 +1421,72 @@ def test_swap_track_numbers_different_disc_rejected(music_scenario, empty_index)
     issues = _issues_for(raw, empty_index)
 
     assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_episode_numbers_with_pending_slow_copy_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev_sc",
+                "at": "1s",
+                "action": "slow_copy_start",
+                "target": "asset_episode",
+                "to": "TV/copying.mkv",
+                "temp_path": "TV/copying.mkv.part",
+                "duration": "5s",
+            },
+            {
+                "id": "ev_swap",
+                "at": "2s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            },
+        ]
+    )
+    _add_second_episode(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_LIFECYCLE_INVALID and "pending slow_copy" in issue.message
+        for issue in issues
+    )
+
+
+def test_implicit_renumber_swap_rejected_explicit_swap_accepted(
+    series_scenario, empty_index
+) -> None:
+    """The forbidden implicit swap stays rejected; the explicit swap validates clean."""
+    implicit = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            }
+        ]
+    )
+    _add_second_episode(implicit)
+    implicit_issues = _issues_for(implicit, empty_index)
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in implicit_issues)
+
+    explicit = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            }
+        ]
+    )
+    _add_second_episode(explicit)
+    explicit_issues = _issues_for(explicit, empty_index)
+    assert not any(
+        issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN}
+        for issue in explicit_issues
+    )
