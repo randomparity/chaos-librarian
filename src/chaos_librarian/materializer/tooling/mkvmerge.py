@@ -8,6 +8,7 @@ from pathlib import Path
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import MatroskaMuxingProfile
+from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 
 
 def build_mkvmerge_command(
@@ -77,7 +78,7 @@ def run_mkvmerge(
     )
     duration_ns = time.monotonic_ns() - start
     stderr_bytes = completed.stderr or b""
-    stderr_tail = stderr_bytes[-2048:].decode("utf-8", errors="replace")
+    stderr_tail = stderr_bytes[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
     invocation = ToolInvocation(
         tool="mkvmerge",
         version=mkvmerge_version,

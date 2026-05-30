@@ -20,6 +20,7 @@ from chaos_librarian.contract.manifest import (
     StreamKind,
 )
 from chaos_librarian.materializer.errors import ProbeParseError
+from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
 
@@ -263,7 +264,7 @@ def probe_file(path: Path) -> ProbedMedia:
     if completed.returncode != 0:
         raise ProbeParseError(
             f"ffprobe exit {completed.returncode} on {path}",
-            payload={"path": str(path), "stderr": (completed.stderr or "")[-2048:]},
+            payload={"path": str(path), "stderr": (completed.stderr or "")[-STDERR_TAIL_BYTES:]},
         )
     try:
         raw = json.loads(completed.stdout or "")

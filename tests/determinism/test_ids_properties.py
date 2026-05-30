@@ -7,7 +7,7 @@ from collections import Counter
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from chaos_librarian.determinism.ids import IdAllocator
+from chaos_librarian.determinism.ids import _MAX_PER_NAMESPACE, IdAllocator
 from chaos_librarian.determinism.trace import TraceRecorder
 
 _METHODS = {
@@ -48,3 +48,14 @@ def test_allocator_output_depends_only_on_per_namespace_counts(calls: list[str])
         expected.append(f"{namespace}_{reference_counters[namespace]:04d}")
 
     assert actual == expected
+
+
+def test_allocated_id_pad_width_tracks_max_per_namespace() -> None:
+    """The numeric suffix is zero-padded to the width of _MAX_PER_NAMESPACE.
+
+    WHY: the pad width is derived from the max so a future bump to the max
+    cannot silently desync from a hardcoded format width.
+    """
+    alloc = IdAllocator(recorder=TraceRecorder())
+    numeric = alloc.next_version_id().split("_")[-1]
+    assert len(numeric) == len(str(_MAX_PER_NAMESPACE))

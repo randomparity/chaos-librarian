@@ -99,6 +99,8 @@ __all__ = [
     "run_wall_clock_scenario",
 ]
 
+# Cadence (1 second in ns) at which an in-flight slow copy grows toward its
+# final size while waiting for the commit event.
 _SLOW_COPY_POLL_INTERVAL_NS = 1_000_000_000
 
 

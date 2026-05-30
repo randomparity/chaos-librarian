@@ -14,6 +14,8 @@ from chaos_librarian.determinism.trace import TraceRecorder
 from chaos_librarian.errors import ChaosLibrarianError
 
 _MAX_PER_NAMESPACE = 9_999
+# Zero-pad width derived from the max so the two cannot drift apart.
+_ID_PAD_WIDTH = len(str(_MAX_PER_NAMESPACE))
 _NAMESPACES = ("version", "location", "sidecar", "mutation")
 
 
@@ -37,7 +39,7 @@ class IdAllocator:
             )
         next_n = current + 1
         self._counters[namespace] = next_n
-        allocated = f"{namespace}_{next_n:04d}"
+        allocated = f"{namespace}_{next_n:0{_ID_PAD_WIDTH}d}"
         self._recorder.record_alloc(stream=namespace, value=allocated)
         return allocated
 

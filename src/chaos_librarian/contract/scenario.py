@@ -684,6 +684,8 @@ class CorruptContainerHeaderEvent(_TimelineEventBase):
         TimelineActionName.CORRUPT_CONTAINER_HEADER
     )
     target: str
+    # Number of leading header bytes to overwrite; default clobbers the first
+    # 64 bytes, upper bound caps how much of the header region is affected.
     bytes: int = Field(default=64, ge=1, le=4096)
 
 
@@ -700,6 +702,8 @@ class CorruptPacketRangeEvent(_TimelineEventBase):
     target: str
     stream: PacketStreamKind = PacketStreamKind.VIDEO
     packet_start: int = Field(ge=0)
+    # Number of consecutive packets to corrupt; default corrupts a single
+    # packet, upper bound caps the corruption span.
     packet_count: int = Field(default=1, ge=1, le=128)
 
 
