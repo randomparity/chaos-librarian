@@ -424,7 +424,7 @@ def _write_batch(
             generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
             _assert_scenario_id(profile=profile, item=item, generated_id=generated.scenario.scenario_id)
             write_generated_scenario(path, generated.data)
-        except Exception as exc:  # noqa: BLE001 — rollback then re-report any write/gen failure
+        except Exception as exc:  # rollback then re-report any generation/write failure
             removed = _rollback(written)
             typer.echo(
                 f"generate: failed at profile={profile.value} lane={item.lane.value} "
@@ -516,7 +516,7 @@ Expected: PASS — all seven existing `test_generate.py` tests and the replay te
 - [ ] **Step 3: Run lint and types**
 
 Run: `uv run ruff check src/chaos_librarian/cli/commands/generate.py && uv run ty check src`
-Expected: PASS. If `ruff` flags the `# noqa: BLE001`, confirm `BLE001` (blind-except) is the actual code reported; the broad catch is intentional (rollback must run for any failure) and justified inline.
+Expected: PASS. The broad `except Exception` needs no `# noqa` — `BLE` is not in this repo's ruff `select`, so adding one would trip `RUF100` (unused noqa). The catch is intentional (rollback must run for any failure) and explained by the inline comment.
 
 - [ ] **Step 4: Commit**
 
