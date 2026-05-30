@@ -101,11 +101,12 @@ materialize tests), `uv` / `ruff` / `ty`.
 - Modify: `schemas/scenario.schema.json` (regenerate).
 
 - [ ] **Step 1:** Bump `SCENARIO_SCHEMA_VERSION` and the model `Literal`.
-- [ ] **Step 2:** Mass-bump fixtures/recipes:
-  `rg -l 'schema_version: 24' tests recipes` then a scripted in-place replace of
-  `schema_version: 24` → `schema_version: 25` on exactly those files. Verify the count
-  matches the pre-change `rg -l 'schema_version: 24' ... | wc -l` (150) and that
-  `yaml-parse-error.yaml` is **not** in the list.
+- [ ] **Step 2:** Mass-bump fixtures/recipes: replace `schema_version: 24` →
+  `schema_version: 25` on **exactly the set `rg -l 'schema_version: 24' tests recipes`
+  returns at execution time** (do not rely on a frozen count). **Post-condition:** after
+  the replace, `rg -l 'schema_version: 24' tests recipes` must return **only**
+  `yaml-parse-error.yaml` (the deliberately-pinned never-parses fixture) — assert this so
+  no stray v24 file survives to red `test_sample_scenarios` after the literal bump.
 - [ ] **Step 3:** `uv run python -m chaos_librarian.schema_export --write` and stage the
   regenerated `schemas/scenario.schema.json`.
 - [ ] **Step 4: Verify.** `test_sample_scenarios`, `test_invalid_corpus`,
@@ -225,10 +226,14 @@ materialize tests), `uv` / `ruff` / `ty`.
 
 **Files:**
 - Modify: `src/chaos_librarian/materializer/synthesis.py` (`materialize_assets_phase_a`)
-- Test: `tests/materializer/test_synthesis.py` (inject a fake `materialize_asset` so the
-  referent is produced without ffmpeg; the copy path itself needs no ffmpeg, only
-  ffprobe for the re-probe — gate the ffprobe assertions behind the existing env gate
-  if probe needs a real binary, else stub `probe_file`).
+- Test: `tests/materializer/test_synthesis.py`. **The copy path reads a real referent
+  file off disk (`shutil.copyfile`) and runs real ffprobe (`probe_file`), so the unit
+  test must (a) inject a fake `materialize_asset` that *writes a real file* to
+  `out_dir/"library"/<rendered_relative_path>` for the referent — the existing
+  `_fake_materialize_one_asset` writes none — and (b) monkeypatch `synthesis.probe_file`
+  (the same seam used at `test_synthesis.py:258/362/442`). Then the copy runs ffmpeg-free
+  and the byte-identity / same-hash assertions are exercised on the real copied bytes the
+  fake wrote.**
 
 > **Layer note:** the copy lives in the orchestrator loop, not `materialize_one_asset`
 > (whose injected signature is unchanged). The orchestrator already computes each asset's
@@ -299,6 +304,13 @@ materialize tests), `uv` / `ruff` / `ty`.
 - [ ] **Step 3: run/replay parity.** For a `hash_collision_with` scenario, assert the
   replayed manifest equals the materialized manifest (full equality incl. the collided
   `content_hash`). Mirror an existing run/replay parity test's harness.
+- [ ] **Step 4: cross-feature interaction (locks the one combination the spec permits).**
+  A three-asset scenario: A synthesized; B `same_content_as: A` (B's recorded hash = A's
+  copied full hash); C `hash_collision_with: B, collision_prefix_len: 8`. Assert C's
+  recorded `content_hash` shares exactly 8 hex chars with **B's copied hash** and differs
+  at full length — so a collision referencing a duplicate reads the duplicate's stamped
+  (copied) hash, as the spec's edge-case section states. (Can be a `augment_manifest`-
+  level test if a full ffmpeg run is undesirable.)
 - [ ] **Commit:** `test: same-content and collision materialize/replay`
 
 ## Task 9: Ship the two recipes
