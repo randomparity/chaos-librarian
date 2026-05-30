@@ -3,7 +3,7 @@
 # Tests: a tracked file is deleted while a scanner iterates the library.
 # Expected consumer response: converges — drop the asset, no error.
 # Requires: none
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-scanner-deleted-midscan
 seed: 1001
 duration_scale: short

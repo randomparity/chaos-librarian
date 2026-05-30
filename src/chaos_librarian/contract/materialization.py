@@ -194,6 +194,7 @@ class CorruptionAction(BaseModel):
         TimelineActionName.TRUNCATE_FILE,
         TimelineActionName.CORRUPT_PACKET_RANGE,
         TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
     ]
     target_asset_id: str
     input_path: str
@@ -284,7 +285,7 @@ class MaterializationReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[16]
+    schema_version: Literal[17]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str

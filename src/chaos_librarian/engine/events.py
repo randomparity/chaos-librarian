@@ -36,6 +36,7 @@ from chaos_librarian.contract.scenario import (
     ChangePermissionsEvent,
     CorruptContainerHeaderEvent,
     CorruptPacketRangeEvent,
+    CorruptTagsEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -99,6 +100,7 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "encoding",
             "body",
             "media_type",
+            "image_format",
         }
     ),
     TimelineActionName.SLOW_COPY_START: frozenset(
@@ -174,6 +176,17 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
             "profile",
             "corruptor",
             "value",
+            "seed_material",
+        }
+    ),
+    TimelineActionName.CORRUPT_TAGS: frozenset(
+        {
+            "input_path",
+            "output_path",
+            "profile",
+            "corruptor",
+            "flavor",
+            "byte_count",
             "seed_material",
         }
     ),
@@ -542,6 +555,7 @@ def _handle_create_sidecar(
         "encoding": event.encoding.value if event.encoding is not None else None,
         "body": event.body,
         "media_type": event.media_type.value if event.media_type is not None else None,
+        "image_format": event.image_format.value if event.image_format is not None else None,
     }
     entry = _new_atomic_entry(
         resolved=resolved,
@@ -999,6 +1013,51 @@ def _handle_truncate_file(
                 "profile": ProfileName.MALFORMED_MEDIA.value,
                 "corruptor": corruptor,
                 "keep_bytes": event.keep_bytes,
+                "seed_material": seed_material,
+            },
+        ),
+    )
+
+
+def _handle_corrupt_tags(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    event = _checked_event(resolved, CorruptTagsEvent)
+    corruptor = "tag_corruption_v1"
+    seed_material = _seed_material(corruptor, ctx, event.id, event.target)
+    record = CorruptionRecord(
+        profile=ProfileName.MALFORMED_MEDIA,
+        event_id=event.id,
+        corruptor=corruptor,
+        byte_start=0,
+        byte_count=event.bytes,
+        seed_material=seed_material,
+        metadata={"flavor": event.flavor.value},
+    )
+    prior_version_id, new_version_id = _bind_corruption_version(
+        state, ids, target=event.target, record=record
+    )
+    loc_id = state.location_id_for_asset(event.target)
+    location = state.locations[loc_id]
+    return (
+        _new_atomic_entry(
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.CORRUPT_TAGS,
+            target_ids=[event.target],
+            location_ids=[loc_id],
+            input_version_ids=[prior_version_id],
+            output_version_ids=[new_version_id],
+            state_delta={
+                "input_path": location.path,
+                "output_path": location.path,
+                "profile": ProfileName.MALFORMED_MEDIA.value,
+                "corruptor": corruptor,
+                "flavor": event.flavor.value,
+                "byte_count": event.bytes,
                 "seed_material": seed_material,
             },
         ),
@@ -1956,6 +2015,7 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.TRUNCATE_FILE: _handle_truncate_file,
     TimelineActionName.CORRUPT_PACKET_RANGE: _handle_corrupt_packet_range,
     TimelineActionName.WRITE_INVALID_DURATION_METADATA: _handle_write_invalid_duration_metadata,
+    TimelineActionName.CORRUPT_TAGS: _handle_corrupt_tags,
     TimelineActionName.TOUCH_MTIME: _handle_touch_mtime,
     TimelineActionName.WRONG_ORACLE_HASH: _handle_wrong_oracle_hash,
     TimelineActionName.NETWORK_LAG_START: _handle_network_lag_start,

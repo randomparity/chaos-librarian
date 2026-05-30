@@ -13,12 +13,14 @@ from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import CorruptionAction, ToolInvocation
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import TagCorruptionFlavor, TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
 from chaos_librarian.materializer.phase_b.content import hash_bytes, hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.corruption_bytes import (
+    malformed_id3_header,
     overwrite_range,
     truncate_bytes,
+    zero_range,
 )
 from chaos_librarian.materializer.phase_b.packet_probe import resolve_packet_byte_range
 from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
@@ -92,6 +94,7 @@ _CorruptionTimelineAction = Literal[
     TimelineActionName.TRUNCATE_FILE,
     TimelineActionName.CORRUPT_PACKET_RANGE,
     TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+    TimelineActionName.CORRUPT_TAGS,
 ]
 
 
@@ -206,6 +209,35 @@ def _apply_truncate_file(
         byte_start=keep_bytes,
         byte_count=len(input_bytes) - keep_bytes,
         seed_material=_state_delta_str(delta, "seed_material"),
+    )
+
+
+def _apply_corrupt_tags(
+    ctx: CorruptionPhaseBContext,
+    entry: JournalEntry,
+    started: int,
+) -> CorruptionAction:
+    delta = entry.state_delta
+    paths = _paths_from_delta(ctx, delta)
+    flavor = _state_delta_str(delta, "flavor")
+    byte_count = _state_delta_int(delta, "byte_count")
+    seed_material = _state_delta_str(delta, "seed_material")
+    input_bytes = paths.input_path.read_bytes()
+    if flavor == TagCorruptionFlavor.NULL_BYTES.value:
+        output_bytes = zero_range(input_bytes, byte_start=0, byte_count=byte_count)
+    else:
+        output_bytes = malformed_id3_header(input_bytes, byte_count=byte_count)
+    finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
+    return _corruption_action(
+        entry=entry,
+        action=TimelineActionName.CORRUPT_TAGS,
+        finalized=finalized,
+        started=started,
+        corruptor=_state_delta_str(delta, "corruptor"),
+        byte_start=0,
+        byte_count=byte_count,
+        seed_material=seed_material,
+        metadata={"flavor": flavor},
     )
 
 
@@ -431,4 +463,5 @@ _HANDLERS: Final[dict[TimelineActionName, _Handler]] = {
     TimelineActionName.TRUNCATE_FILE: _apply_truncate_file,
     TimelineActionName.CORRUPT_PACKET_RANGE: _apply_corrupt_packet_range,
     TimelineActionName.WRITE_INVALID_DURATION_METADATA: _apply_invalid_duration_metadata,
+    TimelineActionName.CORRUPT_TAGS: _apply_corrupt_tags,
 }

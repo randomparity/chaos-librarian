@@ -72,6 +72,7 @@ class TimelineActionName(enum.StrEnum):
     SWAP_TRACK_NUMBERS = "swap_track_numbers"
     REPUBLISH_EPISODE = "republish_episode"
     MARK_EPISODE_STALE = "mark_episode_stale"
+    CORRUPT_TAGS = "corrupt_tags"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -304,12 +305,14 @@ class SubtitleTimingProfile(enum.StrEnum):
 class SidecarKind(enum.StrEnum):
     """Kind of a sidecar — extends Sprint 6's subtitle-only assumption.
 
-    Subtitle requires ``language``; poster and NFO forbid it.
+    Subtitle requires ``language``; poster, NFO, and CUE forbid it. CUE (#118)
+    is an authored ``.cue`` index sheet — like NFO it accepts an inline ``body``.
     """
 
     SUBTITLE = "subtitle"
     POSTER = "poster"
     NFO = "nfo"
+    CUE = "cue"
 
 
 class SidecarMediaType(enum.StrEnum):
@@ -321,6 +324,19 @@ class SidecarMediaType(enum.StrEnum):
 
     IMAGE = "image"
     VIDEO = "video"
+
+
+class PosterImageFormat(enum.StrEnum):
+    """Image format for a poster/album-art sidecar (#118).
+
+    Selects the ffmpeg encoder for the synthesized poster image. Distinct from
+    ``CoverArtImageFormat`` (embedded mp4 cover art) so the standalone-sidecar
+    format contract stays independent of the embedded-cover-art surface.
+    """
+
+    PNG = "png"
+    JPEG = "jpeg"
+    WEBP = "webp"
 
 
 class NetworkLagEffect(enum.StrEnum):
@@ -351,6 +367,18 @@ class PacketStreamKind(enum.StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     SUBTITLE = "subtitle"
+
+
+class TagCorruptionFlavor(enum.StrEnum):
+    """Tag-corruption shape for ``corrupt_tags`` (#118).
+
+    ``null_bytes`` overwrites the head with ``0x00`` (embedded null bytes in a
+    tag); ``malformed_frame`` overwrites it with a fixed invalid ID3v2 header.
+    Both are in-place head overwrites — the file size is unchanged.
+    """
+
+    NULL_BYTES = "null_bytes"
+    MALFORMED_FRAME = "malformed_frame"
 
 
 # ---- Library ----------------------------------------------------------------
@@ -749,14 +777,17 @@ class CreateSidecarEvent(_TimelineEventBase):
     # (kind in {poster, nfo}, language=None).
     language: str | None = None
     kind: SidecarKind = SidecarKind.SUBTITLE
-    # Authoring knobs (scenario v24). Each is scoped to one kind; the
+    # Authoring knobs (scenario v24+). Each is scoped to one kind; the
     # model_validator forbids cross-kind misuse. None selects the kind's
-    # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster).
+    # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster,
+    # default CUE). ``image_format`` (v32, #118) is poster-only and selects the
+    # synthesized poster image format (png/jpeg/webp); ``body`` also serves cue.
     codec: SubtitleCodec | None = None
     source: SubtitleSource | None = None
     encoding: SubtitleEncoding | None = None
     body: str | None = Field(default=None, min_length=1)
     media_type: SidecarMediaType | None = None
+    image_format: PosterImageFormat | None = None
 
     @model_validator(mode="after")
     def _check_fields_match_kind(self) -> CreateSidecarEvent:
@@ -772,10 +803,14 @@ class CreateSidecarEvent(_TimelineEventBase):
             ):
                 if value is not None:
                     raise ValueError(f"{name} is only valid for subtitle sidecars")
-        if self.kind != SidecarKind.NFO and self.body is not None:
-            raise ValueError("body is only valid for nfo sidecars")
+        if self.kind not in {SidecarKind.NFO, SidecarKind.CUE} and self.body is not None:
+            raise ValueError("body is only valid for nfo and cue sidecars")
         if self.kind != SidecarKind.POSTER and self.media_type is not None:
             raise ValueError("media_type is only valid for poster sidecars")
+        if self.kind != SidecarKind.POSTER and self.image_format is not None:
+            raise ValueError("image_format is only valid for poster sidecars")
+        if self.image_format is not None and self.media_type is SidecarMediaType.VIDEO:
+            raise ValueError("image_format cannot be combined with media_type=video")
         return self
 
 
@@ -898,6 +933,15 @@ class WriteInvalidDurationMetadataEvent(_TimelineEventBase):
     )
     target: str
     value: str = Field(default="not-a-duration", min_length=1, max_length=128)
+
+
+class CorruptTagsEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.CORRUPT_TAGS] = TimelineActionName.CORRUPT_TAGS
+    target: str
+    flavor: TagCorruptionFlavor
+    # Count of in-place head bytes the corruptor overwrites; matches
+    # corrupt_container_header's knob. The file size is unchanged.
+    bytes: int = Field(default=64, ge=1, le=4096)
 
 
 class TouchMtimeEvent(_TimelineEventBase):
@@ -1181,7 +1225,8 @@ TimelineEvent = Annotated[
     | SwapDiscNumbersEvent
     | SwapTrackNumbersEvent
     | RepublishEpisodeEvent
-    | MarkEpisodeStaleEvent,
+    | MarkEpisodeStaleEvent
+    | CorruptTagsEvent,
     Field(discriminator="action"),
 ]
 
@@ -1193,7 +1238,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[31]
+    schema_version: Literal[32]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

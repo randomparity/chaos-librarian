@@ -1,4 +1,4 @@
-schema_version: 31
+schema_version: 32
 scenario_id: voom-ci-hevc-noop
 seed: 9703
 duration_scale: short

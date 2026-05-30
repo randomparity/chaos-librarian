@@ -22,9 +22,11 @@ from chaos_librarian.materializer.phase_b.corruption import (
     apply_corruption_action,
 )
 from chaos_librarian.materializer.phase_b.corruption_bytes import (
+    malformed_id3_header,
     overwrite_range,
     replacement_bytes,
     truncate_bytes,
+    zero_range,
 )
 
 
@@ -548,3 +550,75 @@ def test_invalid_duration_metadata_records_probe_duration_before_and_after(
         "input_duration_seconds": 1.0,
         "output_duration_seconds": 999.0,
     }
+
+
+def test_zero_range_zeros_head_and_preserves_length() -> None:
+    out = zero_range(b"abcdefgh", byte_start=0, byte_count=4)
+    assert out == b"\x00\x00\x00\x00efgh"
+    assert len(out) == 8
+
+
+def test_zero_range_rejects_overlong() -> None:
+    with pytest.raises(ValueError, match="shorter than requested"):
+        zero_range(b"ab", byte_start=0, byte_count=4)
+
+
+def test_malformed_id3_header_in_place_and_starts_with_magic() -> None:
+    out = malformed_id3_header(b"\x11" * 32, byte_count=10)
+    assert out[:3] == b"ID3"
+    assert len(out) == 32
+    assert out[10:] == b"\x11" * 22
+
+
+def test_malformed_id3_header_rejects_overlong() -> None:
+    with pytest.raises(ValueError, match="shorter than requested"):
+        malformed_id3_header(b"\x11" * 4, byte_count=10)
+
+
+def _corrupt_tags_entry(*, flavor: str, byte_count: int = 8) -> AtomicJournalEntry:
+    return _corruption_entry(
+        action=TimelineActionName.CORRUPT_TAGS,
+        event_id="corrupt_tags_001",
+        state_delta={
+            "input_path": "movies-hd/asset.mkv",
+            "output_path": "movies-hd/asset.mkv",
+            "profile": "malformed-media",
+            "corruptor": "tag_corruption_v1",
+            "flavor": flavor,
+            "byte_count": byte_count,
+            "seed_material": "tag_corruption_v1:42:corrupt_tags_001:asset_main",
+        },
+    )
+
+
+def test_corrupt_tags_null_bytes_zeros_head(tmp_path, monkeypatch) -> None:
+    asset = tmp_path / "movies-hd" / "asset.mkv"
+    asset.parent.mkdir()
+    asset.write_bytes(b"0123456789abcdef")
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
+
+    action = apply_corruption_action(ctx, _corrupt_tags_entry(flavor="null_bytes", byte_count=8))
+
+    corrupted = asset.read_bytes()
+    assert corrupted[:8] == b"\x00" * 8
+    assert corrupted[8:] == b"89abcdef"
+    assert action.action == TimelineActionName.CORRUPT_TAGS
+    assert action.metadata == {"flavor": "null_bytes"}
+
+
+def test_corrupt_tags_malformed_frame_writes_id3_magic(tmp_path, monkeypatch) -> None:
+    asset = tmp_path / "movies-hd" / "asset.mkv"
+    asset.parent.mkdir()
+    asset.write_bytes(b"0123456789abcdef")
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
+    ctx = CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=42)
+
+    action = apply_corruption_action(
+        ctx, _corrupt_tags_entry(flavor="malformed_frame", byte_count=10)
+    )
+
+    corrupted = asset.read_bytes()
+    assert corrupted[:3] == b"ID3"
+    assert len(corrupted) == 16
+    assert action.metadata == {"flavor": "malformed_frame"}

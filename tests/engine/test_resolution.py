@@ -25,7 +25,7 @@ def _resolve_fixture(scenario_name: str) -> list[ResolvedEvent]:
 def _scenario(timeline: list[dict[str, object]]) -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",

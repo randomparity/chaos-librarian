@@ -1,5 +1,5 @@
 # expected: E_SIDECAR_TARGET_UNKNOWN
-schema_version: 31
+schema_version: 32
 scenario_id: sc_inv_dedup_001
 seed: 1
 duration_scale: short

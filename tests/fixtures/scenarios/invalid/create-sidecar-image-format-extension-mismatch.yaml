@@ -1,0 +1,49 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 32
+scenario_id: create-sidecar-image-format-extension-mismatch
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_001
+    name: The Mismatch
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_001
+        title: Wrong Extension
+        discs:
+          - id: disc_001
+            disc_number: 1
+            tracks:
+              - id: track_001
+                track_number: 1
+                title: Cover Art
+                variants:
+                  - id: variant_flac
+                    label: flac
+                    bundle:
+                      id: bundle_flac
+                      assets:
+                        - id: asset_track
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 1.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: create_poster_001
+    at: 1s
+    action: create_sidecar
+    target: asset_track
+    to: music/cover.png
+    kind: poster
+    image_format: webp

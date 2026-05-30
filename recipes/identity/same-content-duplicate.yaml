@@ -3,7 +3,7 @@
 # Tests: two assets with byte-identical content must be detected as a true duplicate (same full content hash).
 # Expected consumer response: converges — dedup recognizes one shared content hash across two paths.
 # Requires: none
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-identity-same-content-duplicate
 seed: 1801
 duration_scale: short

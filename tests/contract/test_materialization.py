@@ -155,7 +155,7 @@ def test_unknown_outcome_value_rejected():
 
 
 def test_materialization_schema_version_is_sixteen() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 16
+    assert MATERIALIZATION_SCHEMA_VERSION == 17
 
 
 def test_materialized_asset_records_mp4_moov_placement() -> None:

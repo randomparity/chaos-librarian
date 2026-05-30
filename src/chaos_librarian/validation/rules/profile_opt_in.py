@@ -20,6 +20,7 @@ REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
     TimelineActionName.TRUNCATE_FILE.value: ProfileName.MALFORMED_MEDIA.value,
     TimelineActionName.CORRUPT_PACKET_RANGE.value: ProfileName.MALFORMED_MEDIA.value,
     TimelineActionName.WRITE_INVALID_DURATION_METADATA.value: ProfileName.MALFORMED_MEDIA.value,
+    TimelineActionName.CORRUPT_TAGS.value: ProfileName.MALFORMED_MEDIA.value,
     TimelineActionName.TOUCH_MTIME.value: ProfileName.FILESYSTEM_ARTIFACTS.value,
     TimelineActionName.WRONG_ORACLE_HASH.value: ProfileName.NEGATIVE_ORACLE.value,
     TimelineActionName.NETWORK_LAG_START.value: ProfileName.NETWORK_FS_LAG.value,

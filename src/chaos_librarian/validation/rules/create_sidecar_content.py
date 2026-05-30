@@ -5,12 +5,17 @@ out-of-set encoding raises E_MATERIALIZE_UNSUPPORTED — the same code the
 declared-subtitle path (``materialize_media_matrix``) raises for the analogous
 combo. NFO ``body`` (any non-empty UTF-8 string) and poster ``media_type`` (a
 closed enum) are always synthesizable, so they need no materialize check here.
+
+A poster ``image_format`` (#118) selects the synthesized image format; the ``to:``
+extension must agree with it (png→.png, jpeg→.jpg/.jpeg, webp→.webp) so the
+recorded sidecar path stays honest about the bytes — a mismatch raises the same
+E_MATERIALIZE_UNSUPPORTED.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
@@ -23,18 +28,28 @@ if TYPE_CHECKING:
 
 __all__ = ["rule_create_sidecar_content"]
 
+_POSTER_EXTENSIONS_BY_FORMAT: Final[dict[str, frozenset[str]]] = {
+    "png": frozenset({"png"}),
+    "jpeg": frozenset({"jpg", "jpeg"}),
+    "webp": frozenset({"webp"}),
+}
+
 
 def rule_create_sidecar_content(
     raw: Mapping[str, object],
     line_index: LineIndex,
     collector: IssueCollector,
 ) -> None:
-    """Reject create_sidecar subtitle combos the materializer cannot synthesize."""
+    """Reject create_sidecar combos the materializer cannot synthesize."""
     reporter = Reporter(collector=collector, line_index=line_index)
     for index, event in _iter_timeline_events(raw):
         if event.get("action") != TimelineActionName.CREATE_SIDECAR:
             continue
-        if event.get("kind", SidecarKind.SUBTITLE.value) != SidecarKind.SUBTITLE.value:
+        kind = event.get("kind", SidecarKind.SUBTITLE.value)
+        if kind == SidecarKind.POSTER.value:
+            _check_poster_image_format(event, index, reporter)
+            continue
+        if kind != SidecarKind.SUBTITLE.value:
             continue
         codec = event.get("codec") or "srt"
         source = event.get("source") or "generated_srt"
@@ -58,3 +73,31 @@ def rule_create_sidecar_content(
                 message=f"create_sidecar subtitle encoding {encoding!r} is not supported",
                 loc=("timeline", index, "encoding"),
             )
+
+
+def _check_poster_image_format(
+    event: Mapping[str, object],
+    index: int,
+    reporter: Reporter,
+) -> None:
+    """Reject a poster whose ``to:`` extension disagrees with ``image_format``."""
+    image_format = event.get("image_format")
+    if not isinstance(image_format, str):
+        return  # None ⇒ today's behavior; Pydantic owns enum validity
+    allowed = _POSTER_EXTENSIONS_BY_FORMAT.get(image_format)
+    if allowed is None:
+        return  # Pydantic owns enum validity
+    to = event.get("to")
+    if not isinstance(to, str):
+        return  # Pydantic owns the type check
+    extension = to.rsplit(".", 1)[-1].lower() if "." in to else ""
+    if extension in allowed:
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=(
+            f"poster image_format {image_format!r} requires a matching {to!r} extension "
+            f"({'/'.join(sorted(allowed))})"
+        ),
+        loc=("timeline", index, "image_format"),
+    )

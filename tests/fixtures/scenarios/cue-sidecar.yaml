@@ -1,0 +1,59 @@
+schema_version: 32
+scenario_id: cue-sidecar
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_001
+    name: Index Sheet Trio
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums:
+      - id: album_001
+        title: One File Album
+        discs:
+          - id: disc_001
+            disc_number: 1
+            tracks:
+              - id: track_001
+                track_number: 1
+                title: Whole Side A
+                variants:
+                  - id: variant_flac
+                    label: flac
+                    bundle:
+                      id: bundle_flac
+                      assets:
+                        - id: asset_track
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 1.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: create_cue
+    at: 1s
+    action: create_sidecar
+    target: asset_track
+    to: music/album.cue
+    kind: cue
+    body: |
+      PERFORMER "Index Sheet Trio"
+      TITLE "One File Album"
+      FILE "album.flac" WAVE
+        TRACK 01 AUDIO
+          TITLE "Whole Side A"
+          INDEX 01 00:00:00
+  - id: update_cue
+    at: 2s
+    action: update_sidecar
+    target: asset_track
+    sidecar_path: music/album.cue

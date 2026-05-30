@@ -283,7 +283,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 31
+    assert scenario.schema_version == 32
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -1154,7 +1154,7 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
 
 
 def test_scenario_schema_version_is_thirty_one() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 31
+    assert SCENARIO_SCHEMA_VERSION == 32
 
 
 def test_scenario_accepts_profile_labels() -> None:

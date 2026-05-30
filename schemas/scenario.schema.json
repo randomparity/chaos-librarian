@@ -604,6 +604,47 @@
       "title": "CorruptPacketRangeEvent",
       "type": "object"
     },
+    "CorruptTagsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "corrupt_tags",
+          "default": "corrupt_tags",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "bytes": {
+          "default": 64,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "flavor": {
+          "$ref": "#/$defs/TagCorruptionFlavor"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "flavor"
+      ],
+      "title": "CorruptTagsEvent",
+      "type": "object"
+    },
     "CoverArtImageFormat": {
       "description": "Image format for embedded cover art.",
       "enum": [
@@ -679,6 +720,17 @@
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "image_format": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PosterImageFormat"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "kind": {
           "$ref": "#/$defs/SidecarKind",
@@ -1652,6 +1704,16 @@
       "title": "PodcastLayout",
       "type": "string"
     },
+    "PosterImageFormat": {
+      "description": "Image format for a poster/album-art sidecar (#118).\n\nSelects the ffmpeg encoder for the synthesized poster image. Distinct from\n``CoverArtImageFormat`` (embedded mp4 cover art) so the standalone-sidecar\nformat contract stays independent of the embedded-cover-art surface.",
+      "enum": [
+        "png",
+        "jpeg",
+        "webp"
+      ],
+      "title": "PosterImageFormat",
+      "type": "string"
+    },
     "ProfileName": {
       "enum": [
         "malformed-media",
@@ -2205,11 +2267,12 @@
       "type": "string"
     },
     "SidecarKind": {
-      "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster and NFO forbid it.",
+      "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster, NFO, and CUE forbid it. CUE (#118)\nis an authored ``.cue`` index sheet \u2014 like NFO it accepts an inline ``body``.",
       "enum": [
         "subtitle",
         "poster",
-        "nfo"
+        "nfo",
+        "cue"
       ],
       "title": "SidecarKind",
       "type": "string"
@@ -2577,6 +2640,15 @@
       },
       "title": "SymlinkTarget",
       "type": "object"
+    },
+    "TagCorruptionFlavor": {
+      "description": "Tag-corruption shape for ``corrupt_tags`` (#118).\n\n``null_bytes`` overwrites the head with ``0x00`` (embedded null bytes in a\ntag); ``malformed_frame`` overwrites it with a fixed invalid ID3v2 header.\nBoth are in-place head overwrites \u2014 the file size is unchanged.",
+      "enum": [
+        "null_bytes",
+        "malformed_frame"
+      ],
+      "title": "TagCorruptionFlavor",
+      "type": "string"
     },
     "ToggleReadonlyEvent": {
       "additionalProperties": false,
@@ -3106,7 +3178,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 31,
+      "const": 32,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -3139,6 +3211,7 @@
             "change_permissions": "#/$defs/ChangePermissionsEvent",
             "corrupt_container_header": "#/$defs/CorruptContainerHeaderEvent",
             "corrupt_packet_range": "#/$defs/CorruptPacketRangeEvent",
+            "corrupt_tags": "#/$defs/CorruptTagsEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
             "edit_metadata": "#/$defs/EditMetadataEvent",
@@ -3308,6 +3381,9 @@
           },
           {
             "$ref": "#/$defs/MarkEpisodeStaleEvent"
+          },
+          {
+            "$ref": "#/$defs/CorruptTagsEvent"
           }
         ]
       },

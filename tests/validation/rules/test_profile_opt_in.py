@@ -112,6 +112,31 @@ def test_malformed_media_interceptor_with_profile_passes_profile_rule(
     assert not any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
 
 
+def test_corrupt_tags_without_profile_emits_e_profile_required(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(timeline=[_profile_gated_event("corrupt_tags", flavor="null_bytes")])
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
+def test_corrupt_tags_with_malformed_media_passes_profile_rule(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=["malformed-media"],
+        timeline=[_profile_gated_event("corrupt_tags", flavor="malformed_frame")],
+    )
+    collector = IssueCollector()
+
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any(issue.code == codes.E_PROFILE_REQUIRED for issue in collector.issues)
+
+
 def test_filesystem_artifact_interceptor_without_profile_emits_e_profile_required(
     minimal_scenario, empty_index
 ) -> None:

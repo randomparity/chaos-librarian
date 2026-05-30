@@ -8,7 +8,7 @@
 # file's real sha256 does NOT share the prefix. It exercises consumers that dedup on
 # the recorded/manifest hash, not consumers that re-hash files on disk. A true
 # on-disk sha256 prefix collision (nonce grind) is tracked as a follow-up.
-schema_version: 31
+schema_version: 32
 scenario_id: recipe-identity-hash-collision-simulation
 seed: 1802
 duration_scale: short

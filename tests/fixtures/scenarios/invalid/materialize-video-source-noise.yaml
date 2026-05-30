@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 31
+schema_version: 32
 scenario_id: materialize-video-source-noise
 seed: 1
 duration_scale: short

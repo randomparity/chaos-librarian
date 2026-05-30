@@ -1,5 +1,5 @@
 # expected: E_PATH_CONTAINMENT
-schema_version: 31
+schema_version: 32
 scenario_id: network-fs-chaos-escaping-path-target
 seed: 42
 duration_scale: short

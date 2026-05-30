@@ -13,6 +13,7 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _swap_extension, apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
+from chaos_librarian.engine.version_history import derive_version_history
 from tests.engine.conftest import _engine_event_context
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
@@ -24,7 +25,7 @@ def _scenario(
     profiles: list[str] | None = None,
 ) -> Scenario:
     payload: dict[str, object] = {
-        "schema_version": 31,
+        "schema_version": 32,
         "scenario_id": "media",
         "seed": 1,
         "duration_scale": "short",
@@ -180,6 +181,82 @@ class TestCorruptContainerHeaderHandler:
         )
 
         assert entry.state_delta["seed_material"] == "container_header_v1:777:corrupt_header_001:a0"
+
+
+class TestCorruptTagsHandler:
+    """corrupt_tags binds a new version and records the flavor in the corruption record."""
+
+    def test_corrupt_tags_records_flavor_metadata_and_keeps_path(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_tags_001",
+                    "at": "1s",
+                    "action": "corrupt_tags",
+                    "target": "a0",
+                    "flavor": "null_bytes",
+                    "bytes": 32,
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        original_path = state.locations[state.location_id_for_asset("a0")].path
+        prior_version_id = state.version_id_for_asset("a0")
+        (resolved,) = resolve_timeline(scenario)
+
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        assert state.version_id_for_asset("a0") != prior_version_id
+        assert state.locations[state.location_id_for_asset("a0")].path == original_path
+        assert entry.state_delta == {
+            "input_path": "movies-hd/T - hd.mkv",
+            "output_path": "movies-hd/T - hd.mkv",
+            "profile": ProfileName.MALFORMED_MEDIA.value,
+            "corruptor": "tag_corruption_v1",
+            "flavor": "null_bytes",
+            "byte_count": 32,
+            "seed_material": "tag_corruption_v1:42:corrupt_tags_001:a0",
+        }
+        version = state.versions[entry.output_version_ids[0]]
+        assert version.corruption is not None
+        assert version.corruption.metadata == {"flavor": "null_bytes"}
+
+    def test_corrupt_tags_appears_in_version_history(self) -> None:
+        scenario = _scenario(
+            [
+                {
+                    "id": "corrupt_tags_001",
+                    "at": "1s",
+                    "action": "corrupt_tags",
+                    "target": "a0",
+                    "flavor": "malformed_frame",
+                }
+            ],
+            profiles=["malformed-media"],
+        )
+        ids = IdAllocator(TraceRecorder())
+        state = build_initial_state(scenario, ids)
+        (resolved,) = resolve_timeline(scenario)
+        (entry,) = apply_event(
+            state,
+            resolved,
+            ids,
+            _engine_event_context("media", run_id=_RUN_ID, resolved_seed=42),
+        )
+
+        history = derive_version_history("a0", [entry])
+
+        assert len(history) == 1
+        summary = history[0].state_delta_summary
+        assert summary["corruptor"] == "tag_corruption_v1"
+        assert summary["flavor"] == "malformed_frame"
 
 
 class TestInterceptorHandlers:
@@ -504,6 +581,7 @@ class TestCreateSidecarHandler:
             "encoding": None,
             "body": None,
             "media_type": None,
+            "image_format": None,
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()

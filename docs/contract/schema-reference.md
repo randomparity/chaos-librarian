@@ -46,12 +46,12 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 31 |
+| scenario | 32 |
 | manifest | 10 |
 | journal | 1 |
 | replay bundle | 12 |
 | validation | 1 |
-| materialization | 16 |
+| materialization | 17 |
 | run sentinel | 2 |
 | capabilities | 7 |
 | asset report | 9 |

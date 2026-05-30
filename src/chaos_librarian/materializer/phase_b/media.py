@@ -38,6 +38,7 @@ from chaos_librarian.materializer.actions import (
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+    cue_payload,
     encode_subtitle_body,
     poster_ffmpeg_argv,
     regenerate_sidecar,
@@ -92,6 +93,7 @@ class LiveSidecar:
     encoding: str | None = None
     body: str | None = None
     media_type: str | None = None
+    image_format: str | None = None
 
 
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
@@ -867,6 +869,7 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         encoding=sidecar.encoding,
         body=sidecar.body,
         media_type=sidecar.media_type,
+        image_format=sidecar.image_format,
     )
     if bytes_ is not None:
         temp_output.parent.mkdir(parents=True, exist_ok=True)
@@ -936,6 +939,8 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     body_text = str(raw_body) if isinstance(raw_body, str) else None
     media_type = delta.get("media_type")
     media_type = str(media_type) if isinstance(media_type, str) else None
+    image_format = delta.get("image_format")
+    image_format = str(image_format) if isinstance(image_format, str) else None
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
@@ -961,12 +966,15 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             temp_output.write_bytes(body_text.encode("utf-8"))
         else:
             temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+    elif kind == SidecarKind.CUE:
+        temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
     elif kind == SidecarKind.POSTER:
         argv = poster_ffmpeg_argv(
             output_path=temp_output,
             resolved_seed=ctx.resolved_seed,
             sidecar_id=sidecar_id,
             media_type=media_type,
+            image_format=image_format,
         )
         invocation_index = _run_ffmpeg_checked(
             ctx,
@@ -994,6 +1002,7 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         encoding=encoding,
         body=body_text,
         media_type=media_type,
+        image_format=image_format,
     )
     return MediaAction(
         event_id=entry.event_id,

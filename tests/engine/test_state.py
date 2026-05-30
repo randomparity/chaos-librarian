@@ -66,7 +66,7 @@ def _variant_payload(
 def _minimal_scenario() -> Scenario:
     return _scenario_from_dict(
         {
-            "schema_version": 31,
+            "schema_version": 32,
             "scenario_id": "min",
             "seed": 1,
             "duration_scale": "short",
@@ -115,7 +115,7 @@ class TestBuildInitialState:
     def test_initial_location_path_renders_edition_token(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "edition",
                 "seed": 1,
                 "duration_scale": "short",
@@ -150,7 +150,7 @@ class TestBuildInitialState:
         }
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "edition-sidecar",
                 "seed": 1,
                 "duration_scale": "short",
@@ -211,7 +211,7 @@ class TestBuildInitialState:
     def test_multi_asset_bundle_seeds_domain_rows_once(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "two",
                 "seed": 1,
                 "duration_scale": "short",
@@ -261,7 +261,7 @@ class TestBuildInitialState:
     def test_walks_movie_episode_and_track_hierarchies(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "all-domains",
                 "seed": 1,
                 "duration_scale": "short",
@@ -372,7 +372,7 @@ class TestBuildInitialState:
     def test_empty_bundles_still_seed_variant_and_bundle_rows(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "empty-bundles",
                 "seed": 1,
                 "duration_scale": "short",
@@ -678,7 +678,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_declared_sidecar_subtitle_seeds_one_row_at_rendered_media_path(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",
@@ -723,7 +723,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_embedded_mode_subtitle_is_not_seeded(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "emb",
                 "seed": 1,
                 "duration_scale": "short",
@@ -762,7 +762,7 @@ class TestBuildInitialStateSeedsDeclaredSidecars:
     def test_sidecar_id_for_path_resolves_declared_subtitle(self) -> None:
         scenario = _scenario_from_dict(
             {
-                "schema_version": 31,
+                "schema_version": 32,
                 "scenario_id": "side",
                 "seed": 1,
                 "duration_scale": "short",

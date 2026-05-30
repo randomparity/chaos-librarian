@@ -304,7 +304,8 @@
             "corrupt_container_header",
             "truncate_file",
             "corrupt_packet_range",
-            "write_invalid_duration_metadata"
+            "write_invalid_duration_metadata",
+            "corrupt_tags"
           ],
           "title": "Action",
           "type": "string"
@@ -1239,7 +1240,8 @@
         "swap_disc_numbers",
         "swap_track_numbers",
         "republish_episode",
-        "mark_episode_stale"
+        "mark_episode_stale",
+        "corrupt_tags"
       ],
       "title": "TimelineActionName",
       "type": "string"
@@ -1478,7 +1480,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 16,
+      "const": 17,
       "title": "Schema Version",
       "type": "integer"
     },

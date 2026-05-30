@@ -74,6 +74,7 @@ def test_create_sidecar_state_delta_contract_keys() -> None:
             "encoding",
             "body",
             "media_type",
+            "image_format",
         }
     )
 

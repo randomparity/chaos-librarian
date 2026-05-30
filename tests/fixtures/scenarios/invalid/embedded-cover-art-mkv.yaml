@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 31
+schema_version: 32
 scenario_id: invalid-embedded-cover-art-mkv
 seed: 137
 duration_scale: short
