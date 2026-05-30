@@ -174,17 +174,39 @@ A new semantic rule `rule_create_sidecar_content` (file
 `validation/rules/create_sidecar_content.py`, registered in `semantic._RULES`)
 rejects authored combos the materializer cannot synthesize, raising
 `E_MATERIALIZE_UNSUPPORTED` — the same code the declared-subtitle path raises. It
-reuses the existing `_SUBTITLE_RECIPE_MATRIX` (lifted to a shared location so both
-rules import it; see Plan) and checks, for each `create_sidecar` timeline event:
+checks, for each `create_sidecar` timeline event of subtitle kind:
 
-- subtitle kind: `(codec, source)` is a known recipe key **and** `encoding` is in that
-  key's allowed set. `ass`/`ssa` + `utf16_le`/`iso_8859_1` ⇒ `E_MATERIALIZE_UNSUPPORTED`
-  at `$.timeline[i].encoding` — exactly mirroring the declared-path rejection.
+- `(codec, source)` (defaulting `None` → `srt`/`generated_srt`) must be a key in the
+  **timeline** recipe matrix, and `encoding` must be in that key's allowed set.
 
-No materialize check is needed for NFO `body` (any UTF-8 string is writable) or poster
-`media_type` (both enum values are synthesizable). The closed enums make every legal
-combo synthesizable; only the subtitle codec/source/encoding matrix has a forbidden
-region.
+Because v1 only synthesizes the SRT recipe for the timeline event (see "Subtitle codec
+scope"), the timeline matrix is **SRT-only** — it is *not* a verbatim reuse of the
+declared path's `_SUBTITLE_RECIPE_MATRIX` (which also accepts `ass`/`ssa`):
+
+```python
+_CREATE_SIDECAR_SUBTITLE_MATRIX = {
+    ("srt", "generated_srt"): _SRT_SUBTITLE_ENCODINGS,  # the lifted-shared set
+}
+```
+
+The shared piece lifted to a common location is the **encoding set**
+`_SRT_SUBTITLE_ENCODINGS` (`{utf8, utf8_bom, utf16_le, iso_8859_1}`), imported by both
+the declared-path matrix and this timeline matrix. Consequences of the SRT-only matrix:
+
+- `ass`/`ssa` codec (any encoding, including the otherwise-valid `utf8`) ⇒ unknown key
+  ⇒ `E_MATERIALIZE_UNSUPPORTED` at `$.timeline[i].codec`. This is consistent with
+  "Subtitle codec scope": no ASS synthesis in v1.
+- `srt` + `utf16_le`/`iso_8859_1` ⇒ accepted (the `wrong-encoding` recipe).
+- `srt` + an out-of-set encoding (none exist today, but future-proof) ⇒
+  `E_MATERIALIZE_UNSUPPORTED` at `$.timeline[i].encoding`.
+
+The deferred `ass`+`utf16_le` rejection is therefore satisfied a fortiori: ASS is
+rejected for *every* encoding, so `ass`+`utf16_le` raises `E_MATERIALIZE_UNSUPPORTED`
+just like the declared path — the same code, even though the timeline rejects at the
+`codec` loc (ASS-unsupported) rather than the `encoding` loc.
+
+No materialize check is needed for NFO `body` (any non-empty UTF-8 string is writable)
+or poster `media_type` (both enum values are synthesizable).
 
 Why semantic-rule + `E_MATERIALIZE_UNSUPPORTED` rather than a model_validator: an
 author who hits `ass`+`utf16_le` should get the **same** error whether they declared
@@ -250,18 +272,19 @@ the encoding (resp. the exact body) survives the update.
 
 The `wrong-encoding` recipe needs `(srt, generated_srt, utf16_le)`. To keep the
 materializer honest (no phantom capability), v1 supports **only the SRT subtitle
-recipe** for timeline `create_sidecar`. The materialize matrix for the timeline event
-therefore allows only `(srt | None, generated_srt | None)` and rejects `ass`/`ssa`
-*codecs* on the timeline event with `E_MATERIALIZE_UNSUPPORTED` — even though
+recipe** for timeline `create_sidecar`. The `_CREATE_SIDECAR_SUBTITLE_MATRIX` above therefore allows only
+`(srt | None, generated_srt | None)` and rejects `ass`/`ssa` *codecs* on the timeline
+event with `E_MATERIALIZE_UNSUPPORTED` (at the `codec` loc) — even though
 `(ass, styled_ass, utf8)` is shape-valid — because `_apply_create_sidecar` does not
 synthesize ASS bodies. This is recorded as a follow-up (timeline ASS sidecar synthesis)
 per AGENTS.md Rule 13.
 
 The deferred `ass`+`utf16_le` rejection is still satisfied and tested: an author who
 writes `codec: ass, encoding: utf16_le` on `create_sidecar` gets
-`E_MATERIALIZE_UNSUPPORTED`, the same code as the declared path. The error message
-distinguishes "ASS not yet synthesizable by the timeline event" from "utf16_le not
-valid for ASS," but the *code* is identical.
+`E_MATERIALIZE_UNSUPPORTED`, the same *code* as the declared path (the timeline rejects
+at the `codec` loc because ASS is unsupported in v1; the declared path rejects at the
+`encoding` loc because ass+utf16 is an invalid combo — but both surface the identical
+contract code).
 
 ### Schema version
 
@@ -301,7 +324,7 @@ validates clean. These bring `recipes/sidecar/` from 3 to 6 recipes.
 | `body` on non-nfo kind | model_validator | `E_FIELD_*` |
 | `media_type` on non-poster kind | model_validator | `E_FIELD_*` |
 | subtitle missing `language` / poster\|nfo with `language` | model_validator | `E_FIELD_*` |
-| subtitle `(codec, source, encoding)` not synthesizable (incl. `ass`+`utf16_le`, any ASS/SSA codec in v1) | semantic rule | `E_MATERIALIZE_UNSUPPORTED` |
+| subtitle `(codec, source)` not in the SRT-only timeline matrix — any ASS/SSA codec (incl. `ass`+`utf16_le`) at `codec` loc; out-of-set `srt` encoding at `encoding` loc | semantic rule | `E_MATERIALIZE_UNSUPPORTED` |
 
 ## Failure modes and edge cases
 
@@ -328,8 +351,8 @@ validates clean. These bring `recipes/sidecar/` from 3 to 6 recipes.
 
 - [ ] `create_sidecar` accepts `codec`/`source`/`encoding` (subtitle), `body` (nfo),
       `media_type` (poster); cross-kind misuse rejected at validate time (`E_FIELD_*`).
-- [ ] `ass`/`ssa` + `utf16_le`/`iso_8859_1` (and any ASS/SSA codec in v1) on
-      `create_sidecar` ⇒ `E_MATERIALIZE_UNSUPPORTED`.
+- [ ] any `ass`/`ssa` codec on `create_sidecar` (incl. `ass`+`utf16_le`) ⇒
+      `E_MATERIALIZE_UNSUPPORTED`; `srt`+`utf16_le` is accepted.
 - [ ] Subtitle sidecar materializes with the requested encoding; NFO with the requested
       body; poster as a video when `media_type: video`.
 - [ ] Omitting the new fields produces byte-identical output to the pre-change behavior.
