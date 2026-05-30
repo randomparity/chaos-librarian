@@ -10,6 +10,7 @@ subclasses on failure; the orchestrator in ``run.py`` converts them to
 from __future__ import annotations
 
 import hashlib
+import os
 import shutil
 import time
 from collections.abc import Callable
@@ -152,7 +153,15 @@ def materialize_assets_phase_a(
             renderable_asset_context(context, primary_root_path)
         )
         rel_path_by_asset[asset.id] = rendered_relative_path
-        if asset.same_content_as is not None:
+        if asset.hardlinked_to is not None:
+            asset_result = _hardlink_asset(
+                asset=asset,
+                out_dir=out_dir,
+                rendered_relative_path=rendered_relative_path,
+                referent_rel_path=rel_path_by_asset[asset.hardlinked_to],
+                invocation_index=invocation_index,
+            )
+        elif asset.same_content_as is not None:
             asset_result = _copy_same_content_asset(
                 asset=asset,
                 out_dir=out_dir,
@@ -224,6 +233,66 @@ def _copy_same_content_asset(
         tool="same_content_copy",
         version="n/a",
         command=["copyfile", asset.same_content_as or "", str(output_path.relative_to(out_dir))],
+        exit_code=0,
+        duration_ns=duration_ns,
+    )
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+        mp4_moov_placement=asset.mp4_moov_placement,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(),
+        prelude_invocations=(),
+    )
+
+
+def _hardlink_asset(
+    *,
+    asset: Asset,
+    out_dir: Path,
+    rendered_relative_path: str,
+    referent_rel_path: str,
+    invocation_index: int,
+) -> MaterializeAssetResult:
+    """Hardlink a referent asset's already-written file for a ``hardlinked_to`` asset.
+
+    A near-twin of ``_copy_same_content_asset`` that swaps ``shutil.copyfile`` for
+    ``os.link``: instead of an independent byte copy, the referrer's path becomes a
+    second directory entry for the **same inode** (shared ``st_ino``/``st_dev``,
+    link count >= 2). The shared inode is observed on disk by the consumer; the
+    manifest records nothing inode-specific (the same full ``content_hash`` is
+    stamped on both, since the bytes are literally identical). Reproduces every
+    per-asset contribution synthesis makes so the phase-A invariants hold: a
+    synthetic ``hardlink`` ``ToolInvocation``, a re-probe of the linked file, empty
+    ``sidecar_hashes`` (``hardlinked_to`` forbids the asset's own subtitles), and no
+    ``content_sources`` (a link resolves no synthesis source). ``os.link`` is
+    non-overwriting; the referent materialized earlier in the same
+    declaration-ordered pass and phase A writes into a freshly-created library tree,
+    so ``output_path`` never pre-exists.
+    """
+    library_dir = out_dir / "library"
+    referent_path = library_dir / referent_rel_path
+    output_path = library_dir / rendered_relative_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    os.link(referent_path, output_path)
+    duration_ns = time.monotonic_ns() - started
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    probed = probe_file(output_path)
+    invocation = ToolInvocation(
+        tool="hardlink",
+        version="n/a",
+        command=["link", asset.hardlinked_to or "", str(output_path.relative_to(out_dir))],
         exit_code=0,
         duration_ns=duration_ns,
     )
