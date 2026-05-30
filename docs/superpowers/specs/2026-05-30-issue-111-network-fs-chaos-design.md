@@ -90,21 +90,34 @@ chaos open (`acquire_lock` / `unmount_path`) has **no `after` reference and no
 carry over, stated precisely:
 
 - **Pairing is by event id**, exactly one close per open (`report_unpaired_start`).
-- **The close must follow the open in timeline list order** (`close.idx > open.idx`),
+- **The close must follow the open in declaration order** (`close.idx > open.idx`),
   the same index-based ordering lag's `_check_same_target_window` uses — the
   same-target-window walk scans `timeline[open.idx + 1 : close.idx]` by list index, so
   a close that precedes its open in the list is `E_LIFECYCLE_INVALID`.
-- **No `at` relationship is enforced between open and close.** A zero-width window
-  (`open.at == close.at`) is **legal** — a lock can be acquired and released at the
-  same logical instant; the engine still emits the started/committed pair and the
-  runner records both. (Lag forbids this only because its duration arithmetic demands
-  `commit.at > start.at`; chaos has no duration.)
-- **`at` need not be monotonic across the window**, but the close's list position must
-  be after the open's; the resolved timeline already sorts by `at` then by declaration
-  order, so an author who wants the window to span time orders the events accordingly.
+- **The close's `at` must be ≥ the open's `at`** (`open.at_ns <= close.at_ns`),
+  rejected with `E_LIFECYCLE_INVALID` otherwise. **This is load-bearing, not
+  cosmetic.** Validation runs on the *raw declaration-order* timeline
+  (`_iter_timeline_events(raw)`), but the engine executes the *resolved* timeline,
+  which `resolve_timeline` re-sorts by `(at_ns, declared_index)`
+  (`engine/resolution.py:47`). The engine pops the open's pending entry on the close
+  (`state.pending_*.pop(event.for_)`, an **unguarded** dict pop — `engine/events.py:1187`
+  is the lag precedent). If an author wrote `acquire(at=10s, idx=0)` /
+  `release(at=1s, idx=1)`, declaration-order index validation would pass but the
+  resolver would sort the release **before** the acquire, and the engine would
+  `pop` a not-yet-inserted key → an unhandled `KeyError` (a crash, not a clean
+  `E_LIFECYCLE_INVALID`). Requiring `open.at_ns <= close.at_ns` makes resolved order
+  agree with declaration order so the open always executes first. Lag gets this for
+  free via `commit.at == start.at + duration` (which forces `commit.at > start.at`);
+  chaos has no duration, so the rule states it directly.
+- **A zero-width window (`open.at == close.at`) is legal.** The resolver's stable
+  secondary key is `declared_index`, and `open.idx < close.idx` is required above, so a
+  same-`at` open and close still resolve open-before-close. A lock acquired and
+  released at the same logical instant emits the started/committed pair in the right
+  order.
 
-This looseness is intentional: a lock/unmount window is defined by its open/close
-*events*, not by a wall-clock duration the author must pre-compute.
+The window is defined by its open/close *events*, not by a pre-computed duration; the
+only `at` constraint is the monotonic `open.at <= close.at` that keeps resolved order
+consistent with the validated declaration order.
 
 ## Policy-neutrality (the constraint that shapes the oracle)
 
@@ -387,7 +400,8 @@ semantics are a filed follow-up. The consumer — not chaos-librarian — decide
 | `release_lock.for` references unknown `acquire_lock` | `rule_network_fs_chaos_pairing` (new) | `E_LIFECYCLE_INVALID` |
 | `remount_path.for` references unknown `unmount_path` | `rule_network_fs_chaos_pairing` (new) | `E_LIFECYCLE_INVALID` |
 | `acquire_lock` / `unmount_path` with zero or >1 matching close | pairing rule | `E_LIFECYCLE_INVALID` |
-| close (`release_lock` / `remount_path`) before its open | pairing rule | `E_LIFECYCLE_INVALID` |
+| close (`release_lock` / `remount_path`) before its open in declaration order | pairing rule | `E_LIFECYCLE_INVALID` |
+| close's `at` earlier than its open's `at` (would invert resolved order → engine `KeyError`) | pairing rule | `E_LIFECYCLE_INVALID` |
 | another same-target mutation between open and close | pairing rule (`_check_same_target_window` twin) | `E_LIFECYCLE_INVALID` |
 | new action under static `materialize` | `preflight_timeline` | `E_MATERIALIZE_TIMELINE_UNSUPPORTED` |
 
@@ -474,8 +488,8 @@ with the `network-fs-chaos` profile declared.
       accepted; with a containable library path accepted; with an escaping path rejected
       with `E_PATH_CONTAINMENT`.
 - [ ] `release_lock`→`acquire_lock` and `remount_path`→`unmount_path` pairing validated:
-      unknown ref / unpaired / close-before-open / same-target-window-mutation →
-      `E_LIFECYCLE_INVALID`.
+      unknown ref / unpaired / close-before-open-in-declaration-order / close-`at`-before-
+      open-`at` / same-target-window-mutation → `E_LIFECYCLE_INVALID`.
 - [ ] Wall-clock `change_permissions` produces the expected `os.stat().st_mode` on the
       target; `toggle_readonly readonly` clears the write bits; both are restored to the
       captured original mode at finalize and on the failure path (tree is cleanable).
@@ -501,7 +515,11 @@ with the `network-fs-chaos` profile declared.
   profile (`E_PROFILE_REQUIRED`); unknown asset target on the three asset-only actions
   (`E_TARGET_UNKNOWN`); escaping path on the three path-or-asset actions
   (`E_PATH_CONTAINMENT`); `release_lock`/`remount_path` unknown ref, unpaired,
-  close-before-open, and same-target-window mutation (`E_LIFECYCLE_INVALID`).
+  close-before-open in declaration order, close-`at`-earlier-than-open-`at` (the
+  resolved-order-inversion guard), and same-target-window mutation
+  (`E_LIFECYCLE_INVALID`). A wall-clock test additionally proves a chaos scenario that
+  passes validation never raises an engine `KeyError` (the close always resolves after
+  its open).
 - **Validation (valid fixtures)**: an asset-target and a subtree-path-target chaos
   scenario; a full `acquire`/`release` and `unmount`/`remount` window.
 - **Profile gate**: assert each new action's required profile **against the live
