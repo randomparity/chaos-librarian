@@ -355,6 +355,7 @@ def _make_run_replay_phase_b_state(
         ffprobe_version="unknown",
         invocations=invocations,
         manifest=artifacts.current_manifest,
+        initial_manifest=artifacts.initial_manifest,
     )
 
 

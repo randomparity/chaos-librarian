@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from chaos_librarian.contract.journal import JournalEntry
-from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
+from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
@@ -83,8 +82,16 @@ def make_phase_b_state(
     ffprobe_version: str,
     invocations: list[ToolInvocation],
     manifest: Manifest,
+    initial_manifest: Manifest,
 ) -> PhaseBState:
-    """Build shared phase-B dispatch state for materialize, run, and replay."""
+    """Build shared phase-B dispatch state for materialize, run, and replay.
+
+    ``manifest`` is the manifest at the end of the journal window (used for
+    version-probe fallbacks). ``initial_manifest`` is the manifest at the start
+    of the window; its sidecars seed the live sidecar registry so
+    ``update_sidecar`` can resolve a sidecar that the journal later removes
+    (issue #112).
+    """
     scenario_assets = _index_assets(scenario)
     media_ctx = make_media_phase_b_context(
         library_root=library_root,
@@ -93,7 +100,7 @@ def make_phase_b_state(
         ffmpeg_version=ffmpeg_version,
         ffprobe_version=ffprobe_version,
         invocations=invocations,
-        sidecar_lookup=_sidecar_lookup_from(manifest),
+        initial_sidecars=initial_manifest.sidecars,
     )
     corruption_ctx = make_corruption_phase_b_context(
         library_root=library_root,
@@ -208,12 +215,3 @@ def _index_assets(scenario: Scenario) -> dict[str, Asset]:
     for context in iter_asset_contexts(scenario):
         out[context.asset.id] = context.asset
     return out
-
-
-def _sidecar_lookup_from(manifest: Manifest) -> Callable[[str], ManifestSidecar | None]:
-    by_id = {sidecar.id: sidecar for sidecar in manifest.sidecars}
-
-    def lookup(sidecar_id: str) -> ManifestSidecar | None:
-        return by_id.get(sidecar_id)
-
-    return lookup

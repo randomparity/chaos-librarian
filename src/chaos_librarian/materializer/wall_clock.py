@@ -467,6 +467,7 @@ def _make_dispatch_state(
         ffprobe_version=run_context.caps.ffprobe.version or "unknown",
         invocations=invocations,
         manifest=run_context.plan_artifacts.current_manifest,
+        initial_manifest=run_context.plan_artifacts.initial_manifest,
     )
     return _DispatchState(
         fs_ctx=state.fs_ctx,

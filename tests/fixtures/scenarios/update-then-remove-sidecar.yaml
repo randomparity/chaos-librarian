@@ -1,0 +1,36 @@
+schema_version: 23
+scenario_id: sc_update_then_remove_sidecar_001
+seed: 42
+duration_scale: short
+library: {roots: [{id: r0, path: movies}]}
+movies:
+  - id: w0
+    title: T
+    layout: movie_flat
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+              subtitles:
+                - {codec: srt, language: eng, mode: sidecar}
+series: []
+artists: []
+timeline:
+  - id: ev_update
+    at: 1s
+    action: update_sidecar
+    target: a0
+    sidecar_path: movies/T - hd.eng.srt
+  - id: ev_remove
+    at: 2s
+    action: remove_sidecar
+    target: a0
+    sidecar_path: movies/T - hd.eng.srt
