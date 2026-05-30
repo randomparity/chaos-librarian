@@ -40,7 +40,7 @@ from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
 
-_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 24
+_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 25
 scenario_id: muxing-profile-capability-test
 seed: 138
 duration_scale: short
@@ -77,7 +77,7 @@ artists: []
 timeline: []
 """
 
-_WEBM_PROFILE_SCENARIO = """schema_version: 24
+_WEBM_PROFILE_SCENARIO = """schema_version: 25
 scenario_id: webm-capability-test
 seed: 138
 duration_scale: short
@@ -279,7 +279,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 24\n"
+        "schema_version: 25\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -652,7 +652,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 24
+schema_version: 25
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -694,7 +694,7 @@ timeline: []
 """
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 24
+schema_version: 25
 scenario_id: resolution-switch-capability-test
 seed: 133
 duration_scale: short

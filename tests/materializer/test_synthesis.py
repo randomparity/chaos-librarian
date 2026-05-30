@@ -59,7 +59,7 @@ def test_materialize_assets_phase_a_collects_and_stamps_manifest(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 24
+schema_version: 25
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -173,7 +173,7 @@ def test_materialize_assets_phase_a_passes_rendered_path_for_unsafe_asset_id(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 24
+schema_version: 25
 scenario_id: unsafe-id-materialize
 seed: 1
 duration_scale: short
@@ -749,7 +749,7 @@ def test_phase_a_appends_resolution_switch_invocations_in_order(
 ) -> None:
     run_input = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 24
+schema_version: 25
 scenario_id: resolution-switch-phase-a
 seed: 133
 duration_scale: short
@@ -808,7 +808,7 @@ timeline: []
 def _asset_with_declared_sidecar(asset_id: str):
     scenario = prepare_run_input_from_bytes(
         raw_bytes=f"""\
-schema_version: 24
+schema_version: 25
 scenario_id: sidecar-materialize
 seed: 1
 duration_scale: short
@@ -856,7 +856,7 @@ timeline: []
 def _track_audio_asset():
     scenario = prepare_run_input_from_bytes(
         raw_bytes=b"""\
-schema_version: 24
+schema_version: 25
 scenario_id: audio-track-materialize
 seed: 1
 duration_scale: short
@@ -1027,3 +1027,153 @@ def _fake_materialize_one_asset(
             ),
         ),
     )
+
+
+_SAME_CONTENT_SCENARIO = b"""\
+schema_version: 25
+scenario_id: same-content
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: library
+movies:
+  - id: w_movie
+    title: Dup
+    layout: movie_flat
+    variants:
+      - id: va_a
+        label: a
+        bundle:
+          id: b_a
+          assets:
+            - id: a_ref
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+      - id: va_b
+        label: b
+        bundle:
+          id: b_b
+          assets:
+            - id: a_dup
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{source: sine, codec: aac, channels: stereo, language: eng}]
+              same_content_as: a_ref
+series: []
+artists: []
+timeline: []
+"""
+
+
+def _file_writing_fake(
+    asset,
+    resolved_seed,
+    out_dir: Path,
+    caps,
+    invocation_index: int,
+    *,
+    rendered_relative_path: str,
+    skip_languages=frozenset(),
+) -> MaterializeAssetResult:
+    """Like ``_fake_materialize_one_asset`` but writes real bytes to disk.
+
+    The copy short-circuit reads the referent file off disk and re-probes it,
+    so the referent fake must materialize an actual file.
+    """
+    del resolved_seed, caps, skip_languages
+    output = out_dir / "library" / rendered_relative_path
+    output.parent.mkdir(parents=True, exist_ok=True)
+    data = f"{asset.id}-bytes".encode()
+    output.write_bytes(data)
+    content_hash = "sha256:" + hashlib.sha256(data).hexdigest()
+    return MaterializeAssetResult(
+        invocation=ToolInvocation(
+            tool="ffmpeg",
+            version="7.1.1",
+            command=["ffmpeg", str(output)],
+            exit_code=0,
+            duration_ns=1,
+        ),
+        materialized_asset=MaterializedAsset(
+            asset_id=asset.id,
+            location_path=str(output.relative_to(out_dir)),
+            content_hash=content_hash,
+            size_bytes=len(data),
+            duration_seconds=asset.duration_seconds,
+            invocation_index=invocation_index,
+        ),
+        probed=ProbedMedia(
+            container=asset.container,
+            duration_seconds=asset.duration_seconds,
+            size_bytes=len(data),
+            streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+        ),
+        sidecar_hashes={},
+        content_sources=(
+            ContentSourceEvidence(
+                asset_id=asset.id,
+                track_kind=ContentTrackKind.VIDEO,
+                source="color_bars",
+                provider="builtin-lavfi",
+                recipe_digest="sha256:" + "c" * 64,
+                cache_disposition=CacheDisposition.NOT_CACHEABLE,
+            ),
+        ),
+        prelude_invocations=(),
+    )
+
+
+def _probe_real_file(path: Path) -> ProbedMedia:
+    return ProbedMedia(
+        container="matroska",
+        duration_seconds=2.0,
+        size_bytes=path.stat().st_size,
+        streams=[ProbedStream(kind=StreamKind.VIDEO, codec="h264", width=640, height=480)],
+    )
+
+
+def test_same_content_as_copies_referent_bytes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    run_input = prepare_run_input_from_bytes(
+        raw_bytes=_SAME_CONTENT_SCENARIO, source_label="test:same-content.yaml"
+    )
+    assert run_validation(run_input).ok
+    artifacts = run_plan(run_input=run_input, validation_report=run_validation(run_input))
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
+    monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
+
+    phase_a = materialize_assets_phase_a(
+        scenario=run_input.scenario,
+        out_dir=tmp_path,
+        artifacts=artifacts,
+        caps=_caps(),
+        stamp_manifest=True,
+    )
+
+    by_id = {m.asset_id: m for m in phase_a.materialized_assets}
+    ref, dup = by_id["a_ref"], by_id["a_dup"]
+    # byte-identical file → identical full content_hash
+    ref_file = tmp_path / ref.location_path
+    dup_file = tmp_path / dup.location_path
+    assert dup_file.read_bytes() == ref_file.read_bytes()
+    assert dup.content_hash == ref.content_hash
+    # both manifest versions carry the same hash
+    versions = {v.asset_id: v.content_hash for v in artifacts.current_manifest.versions}
+    assert versions["a_dup"] == versions["a_ref"]
+    # invocation_index resolves to a synthetic copy invocation
+    copy_invocation = phase_a.invocations[dup.invocation_index]
+    assert copy_invocation.tool == "same_content_copy"
+    assert copy_invocation.exit_code == 0
+    # the duplicate contributes no content-source evidence
+    assert [e.asset_id for e in phase_a.content_sources] == ["a_ref"]
+    # re-probed (size matches the copied file)
+    assert dup.size_bytes == dup_file.stat().st_size

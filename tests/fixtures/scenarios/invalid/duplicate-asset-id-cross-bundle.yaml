@@ -1,5 +1,5 @@
 # expected: E_ID_DUPLICATE
-schema_version: 24
+schema_version: 25
 scenario_id: bad
 seed: 1
 duration_scale: short

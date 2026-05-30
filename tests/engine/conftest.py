@@ -206,7 +206,7 @@ def _build_minimal_scenario(
 
     return Scenario.model_validate(
         {
-            "schema_version": 24,
+            "schema_version": 25,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -594,7 +594,7 @@ def _minimal_scenario_for_action(
 def _build_minimal_series_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 24,
+            "schema_version": 25,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",
@@ -654,7 +654,7 @@ def _build_minimal_series_scenario() -> Scenario:
 def _build_minimal_music_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 24,
+            "schema_version": 25,
             "scenario_id": "engine-test",
             "seed": 1,
             "duration_scale": "short",

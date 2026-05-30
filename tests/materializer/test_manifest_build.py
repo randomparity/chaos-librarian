@@ -22,13 +22,16 @@ from chaos_librarian.contract.manifest import (
     ManifestVersion,
     ProbedMedia,
 )
-from chaos_librarian.contract.scenario import SidecarKind
+from chaos_librarian.contract.materialization import MaterializedAsset
+from chaos_librarian.contract.scenario import Asset, SidecarKind
 from chaos_librarian.materializer.manifest_build import (
+    augment_manifest,
     augment_timeline_sidecars,
     augment_updated_sidecars,
     augment_versions,
     find_sidecar_for,
 )
+from chaos_librarian.materializer.phase_b.oracle_hash import collided_hash_for
 
 
 def _build_manifest_with_sidecar(
@@ -359,3 +362,171 @@ def test_find_sidecar_for_subtitle_keeps_language_keyed_lookup() -> None:
     manifest = _minimal_manifest_with_one_sidecar("sidecar_0001", "a.eng.srt", language="eng")
     found = find_sidecar_for(manifest, "a", language="eng", kind=SidecarKind.SUBTITLE)
     assert found is not None
+
+
+def _collision_manifest(referent_hash: str | None) -> Manifest:
+    """Two-asset manifest: referent (a1) with a stamped version, collider (a2)."""
+    return Manifest(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(id="v0", parent_kind=ParentKind.MOVIE, parent_id="m0", label="hd")
+        ],
+        bundles=[ManifestBundle(id="b0", variant_id="v0")],
+        assets=[
+            ManifestAsset(
+                id="a1", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0
+            ),
+            ManifestAsset(
+                id="a2", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0
+            ),
+        ],
+        versions=[
+            ManifestVersion(id="ver_a1", asset_id="a1", index=0, content_hash=referent_hash),
+            ManifestVersion(id="ver_a2", asset_id="a2", index=0, content_hash=None),
+        ],
+        locations=[],
+        sidecars=[],
+    )
+
+
+def _materialized(asset_id: str, content_hash: str) -> MaterializedAsset:
+    return MaterializedAsset(
+        asset_id=asset_id,
+        location_path=f"library/{asset_id}.mkv",
+        content_hash=content_hash,
+        size_bytes=16,
+        duration_seconds=1.0,
+        invocation_index=0,
+    )
+
+
+def _dedup_asset(
+    asset_id: str,
+    *,
+    same_content_as: str | None = None,
+    hash_collision_with: str | None = None,
+    collision_prefix_len: int | None = None,
+) -> Asset:
+    return Asset(
+        id=asset_id,
+        role="main",
+        container="mkv",
+        duration_seconds=1.0,
+        same_content_as=same_content_as,
+        hash_collision_with=hash_collision_with,
+        collision_prefix_len=collision_prefix_len,
+    )
+
+
+def _probed_media() -> ProbedMedia:
+    return ProbedMedia(container="matroska", duration_seconds=1.0, size_bytes=16, streams=[])
+
+
+def test_augment_manifest_stamps_real_hash_without_collision() -> None:
+    real = "sha256:" + "a" * 64
+    manifest = _collision_manifest(referent_hash="sha256:" + "b" * 64)
+    augment_manifest(manifest, _dedup_asset("a2"), _materialized("a2", real), _probed_media(), {})
+    version = next(v for v in manifest.versions if v.asset_id == "a2")
+    assert version.content_hash == real
+
+
+def test_augment_manifest_stamps_collided_hash() -> None:
+    referent_hash = "sha256:" + "b" * 64
+    real = "sha256:" + "a" * 64
+    manifest = _collision_manifest(referent_hash=referent_hash)
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", hash_collision_with="a1", collision_prefix_len=8),
+        _materialized("a2", real),
+        _probed_media(),
+        {},
+    )
+    version = next(v for v in manifest.versions if v.asset_id == "a2")
+    expected = collided_hash_for(referent_hash, real, 8)
+    assert version.content_hash == expected
+    assert version.content_hash is not None
+    shared = version.content_hash.removeprefix("sha256:")[:8]
+    assert shared == referent_hash.removeprefix("sha256:")[:8]
+    assert version.content_hash != real
+
+
+def _three_asset_manifest() -> Manifest:
+    """A1 (referent), A2 (same_content_as A1), A3 (hash_collision_with A2)."""
+    base = _collision_manifest(referent_hash=None)
+    base.assets.append(
+        ManifestAsset(id="a3", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0)
+    )
+    base.versions.append(ManifestVersion(id="ver_a3", asset_id="a3", index=0, content_hash=None))
+    return base
+
+
+def test_collision_referencing_same_content_duplicate_reads_copied_hash() -> None:
+    """A collision whose referent is itself a same_content_as duplicate shares the
+    duplicate's *copied* full hash prefix (the one cross-feature interaction the
+    spec permits)."""
+    manifest = _three_asset_manifest()
+    copied_hash = "sha256:" + "c" * 64  # A2's copied (== A1's) full hash
+    probed = _probed_media()
+    # Stamp A2 (same_content_as A1) with the copied full hash.
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", same_content_as="a1"),
+        _materialized("a2", copied_hash),
+        probed,
+        {},
+    )
+    # A3 collides with A2; its prefix must come from A2's stamped (copied) hash.
+    real = "sha256:" + "d" * 64
+    augment_manifest(
+        manifest,
+        _dedup_asset("a3", hash_collision_with="a2", collision_prefix_len=8),
+        _materialized("a3", real),
+        probed,
+        {},
+    )
+    a3_hash = next(v.content_hash for v in manifest.versions if v.asset_id == "a3")
+    assert a3_hash is not None
+    assert a3_hash.removeprefix("sha256:")[:8] == copied_hash.removeprefix("sha256:")[:8]
+    assert a3_hash != real
+
+
+def test_same_content_referencing_collision_decoy_records_real_hash() -> None:
+    """A same_content_as duplicate of a hash_collision_with decoy records the
+    decoy's *real* bytes hash, not the decoy's collided hash (the spec's
+    intentionally-asymmetric edge case)."""
+    manifest = _three_asset_manifest()
+    probed = _probed_media()
+    referent_hash = "sha256:" + "a" * 64
+    # a1 is the collision referent (ordinary asset already stamped).
+    augment_manifest(manifest, _dedup_asset("a1"), _materialized("a1", referent_hash), probed, {})
+    # a2 is the decoy colliding with a1: its version records the collided hash.
+    decoy_real = "sha256:" + "b" * 64
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", hash_collision_with="a1", collision_prefix_len=8),
+        _materialized("a2", decoy_real),
+        probed,
+        {},
+    )
+    decoy_recorded = next(v.content_hash for v in manifest.versions if v.asset_id == "a2")
+    assert decoy_recorded != decoy_real  # decoy carries a collided hash
+    # a3 is a same_content_as duplicate of the decoy a2. The copy path gives a3
+    # the decoy's REAL bytes hash; augment_manifest stamps it unchanged.
+    augment_manifest(
+        manifest,
+        _dedup_asset("a3", same_content_as="a2"),
+        _materialized("a3", decoy_real),
+        probed,
+        {},
+    )
+    dup_recorded = next(v.content_hash for v in manifest.versions if v.asset_id == "a3")
+    assert dup_recorded == decoy_real
+    assert dup_recorded != decoy_recorded

@@ -200,7 +200,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 24
+    assert scenario.schema_version == 25
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -963,8 +963,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_four() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 24
+def test_scenario_schema_version_is_twenty_five() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 25
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -1746,3 +1746,152 @@ def test_scenario_round_trip_with_sprint_7_events():
     scenario = Scenario.model_validate(payload)
     assert scenario.schema_version == SCENARIO_SCHEMA_VERSION
     assert scenario.timeline[0].action == TimelineActionName.REMUX_CONTAINER
+
+
+def _payload_with_second_asset(second: dict[str, object]) -> dict[str, object]:
+    """Minimal scenario whose single movie bundle holds two assets."""
+    payload = _minimal_scenario().model_dump(mode="json")
+    assets = payload["movies"][0]["variants"][0]["bundle"]["assets"]
+    assert isinstance(assets, list)
+    assets.append(second)
+    return payload
+
+
+def test_asset_accepts_same_content_as() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "same_content_as": "a1",
+        }
+    )
+    scenario = Scenario.model_validate(payload)
+    loaded = scenario.movies[0].variants[0].bundle.assets[1]
+    assert loaded.same_content_as == "a1"
+    assert loaded.hash_collision_with is None
+    assert loaded.collision_prefix_len is None
+
+
+def test_asset_accepts_hash_collision_with() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "hash_collision_with": "a1",
+            "collision_prefix_len": 8,
+        }
+    )
+    scenario = Scenario.model_validate(payload)
+    loaded = scenario.movies[0].variants[0].bundle.assets[1]
+    assert loaded.hash_collision_with == "a1"
+    assert loaded.collision_prefix_len == 8
+    assert loaded.same_content_as is None
+
+
+def test_asset_rejects_same_content_and_collision_both_set() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "same_content_as": "a1",
+            "hash_collision_with": "a1",
+            "collision_prefix_len": 8,
+        }
+    )
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_collision_prefix_len_without_collision_target() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "collision_prefix_len": 8,
+        }
+    )
+    with pytest.raises(ValidationError, match="collision_prefix_len"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_collision_target_without_prefix_len() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "hash_collision_with": "a1",
+        }
+    )
+    with pytest.raises(ValidationError, match="collision_prefix_len"):
+        Scenario.model_validate(payload)
+
+
+@pytest.mark.parametrize("prefix_len", [0, 64])
+def test_asset_rejects_collision_prefix_len_out_of_bounds(prefix_len: int) -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [],
+            "hash_collision_with": "a1",
+            "collision_prefix_len": prefix_len,
+        }
+    )
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def test_asset_rejects_same_content_as_with_own_subtitles() -> None:
+    payload = _payload_with_second_asset(
+        {
+            "id": "a2",
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 12,
+            "video": {"source": "mandelbrot", "codec": "h264", "resolution": "1080p"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [
+                {"codec": "srt", "language": "eng", "mode": "sidecar"},
+            ],
+            "same_content_as": "a1",
+        }
+    )
+    with pytest.raises(ValidationError, match="subtitles"):
+        Scenario.model_validate(payload)
+
+
+def test_asset_without_dedup_fields_still_valid() -> None:
+    scenario = _minimal_scenario()
+    asset = scenario.movies[0].variants[0].bundle.assets[0]
+    assert asset.same_content_as is None
+    assert asset.hash_collision_with is None
+    assert asset.collision_prefix_len is None

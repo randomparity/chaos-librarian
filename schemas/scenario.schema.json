@@ -157,6 +157,20 @@
           "title": "Audio",
           "type": "array"
         },
+        "collision_prefix_len": {
+          "anyOf": [
+            {
+              "maximum": 63,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Collision Prefix Len"
+        },
         "container": {
           "title": "Container",
           "type": "string"
@@ -187,6 +201,18 @@
           ],
           "default": null
         },
+        "hash_collision_with": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hash Collision With"
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -216,6 +242,18 @@
         "role": {
           "title": "Role",
           "type": "string"
+        },
+        "same_content_as": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Same Content As"
         },
         "subtitles": {
           "items": {
@@ -2434,7 +2472,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 24,
+      "const": 25,
       "title": "Schema Version",
       "type": "integer"
     },
