@@ -71,6 +71,19 @@ _HIERARCHY_TARGET_KIND_BY_ACTION: dict[str, str] = {
     TimelineActionName.RENAME_SEASON: "season",
     TimelineActionName.RENUMBER_DISC: "disc",
     TimelineActionName.MOVE_TRACK_TO_DISC: "track",
+    TimelineActionName.SWAP_EPISODE_NUMBERS: "episode",
+    TimelineActionName.SWAP_DISC_NUMBERS: "disc",
+    TimelineActionName.SWAP_TRACK_NUMBERS: "track",
+}
+
+# Each swap action's second-operand field and the entity kind it must resolve to.
+# Resolving against the kind's own disjoint id set means a declared id of the wrong
+# kind (e.g. a season id in ``with_episode``) yields E_TARGET_UNKNOWN, not
+# E_HIERARCHY_INVALID.
+_SWAP_WITH_FIELD_BY_ACTION: dict[str, tuple[str, str]] = {
+    TimelineActionName.SWAP_EPISODE_NUMBERS: ("with_episode", "episode"),
+    TimelineActionName.SWAP_DISC_NUMBERS: ("with_disc", "disc"),
+    TimelineActionName.SWAP_TRACK_NUMBERS: ("with_track", "track"),
 }
 
 
@@ -143,6 +156,16 @@ def _check_destination_reference(
             idx,
             field="to_disc",
             target_kind="disc",
+            entity_ids=entity_ids,
+            reporter=reporter,
+        )
+    elif isinstance(action, str) and action in _SWAP_WITH_FIELD_BY_ACTION:
+        field, target_kind = _SWAP_WITH_FIELD_BY_ACTION[action]
+        _check_field_reference(
+            event,
+            idx,
+            field=field,
+            target_kind=target_kind,
             entity_ids=entity_ids,
             reporter=reporter,
         )
