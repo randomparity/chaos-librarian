@@ -67,6 +67,9 @@ class TimelineActionName(enum.StrEnum):
     RENAME_SEASON = "rename_season"
     RENUMBER_DISC = "renumber_disc"
     MOVE_TRACK_TO_DISC = "move_track_to_disc"
+    SWAP_EPISODE_NUMBERS = "swap_episode_numbers"
+    SWAP_DISC_NUMBERS = "swap_disc_numbers"
+    SWAP_TRACK_NUMBERS = "swap_track_numbers"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -78,6 +81,9 @@ HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.RENAME_SEASON,
         TimelineActionName.RENUMBER_DISC,
         TimelineActionName.MOVE_TRACK_TO_DISC,
+        TimelineActionName.SWAP_EPISODE_NUMBERS,
+        TimelineActionName.SWAP_DISC_NUMBERS,
+        TimelineActionName.SWAP_TRACK_NUMBERS,
     }
 )
 
@@ -961,6 +967,26 @@ class MoveTrackToDiscEvent(_TimelineEventBase):
     track_number: int = Field(ge=1)
 
 
+class SwapEpisodeNumbersEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.SWAP_EPISODE_NUMBERS] = (
+        TimelineActionName.SWAP_EPISODE_NUMBERS
+    )
+    target: str
+    with_episode: str
+
+
+class SwapDiscNumbersEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.SWAP_DISC_NUMBERS] = TimelineActionName.SWAP_DISC_NUMBERS
+    target: str
+    with_disc: str
+
+
+class SwapTrackNumbersEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.SWAP_TRACK_NUMBERS] = TimelineActionName.SWAP_TRACK_NUMBERS
+    target: str
+    with_track: str
+
+
 class GenerationBudget(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1069,7 +1095,10 @@ TimelineEvent = Annotated[
     | MoveEpisodeToSeasonEvent
     | RenameSeasonEvent
     | RenumberDiscEvent
-    | MoveTrackToDiscEvent,
+    | MoveTrackToDiscEvent
+    | SwapEpisodeNumbersEvent
+    | SwapDiscNumbersEvent
+    | SwapTrackNumbersEvent,
     Field(discriminator="action"),
 ]
 
@@ -1081,7 +1110,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[28]
+    schema_version: Literal[29]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

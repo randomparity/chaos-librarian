@@ -1,5 +1,5 @@
 # expected: E_SIDECAR_TARGET_UNKNOWN
-schema_version: 28
+schema_version: 29
 scenario_id: sc_inv_es_001
 seed: 1
 duration_scale: short

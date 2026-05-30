@@ -1,4 +1,4 @@
-schema_version: 28
+schema_version: 29
 scenario_id: voom-ci-single-step-media-mutation
 seed: 9704
 duration_scale: short

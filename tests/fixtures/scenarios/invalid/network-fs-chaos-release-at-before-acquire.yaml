@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 28
+schema_version: 29
 scenario_id: network-fs-chaos-release-at-before-acquire
 seed: 42
 duration_scale: short

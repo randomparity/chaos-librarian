@@ -200,7 +200,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 28
+    assert scenario.schema_version == 29
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -528,6 +528,36 @@ def test_timeline_action_discriminator() -> None:
             },
             "MoveTrackToDiscEvent",
         ),
+        (
+            {
+                "id": "ev_swap_episodes",
+                "at": "6s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            },
+            "SwapEpisodeNumbersEvent",
+        ),
+        (
+            {
+                "id": "ev_swap_discs",
+                "at": "7s",
+                "action": "swap_disc_numbers",
+                "target": "disc_winter_01",
+                "with_disc": "disc_winter_02",
+            },
+            "SwapDiscNumbersEvent",
+        ),
+        (
+            {
+                "id": "ev_swap_tracks",
+                "at": "8s",
+                "action": "swap_track_numbers",
+                "target": "track_opening",
+                "with_track": "track_closing",
+            },
+            "SwapTrackNumbersEvent",
+        ),
     ],
 )
 def test_hierarchy_timeline_event_discriminators(
@@ -539,6 +569,36 @@ def test_hierarchy_timeline_event_discriminators(
     scenario = Scenario.model_validate(payload)
 
     assert type(scenario.timeline[0]).__name__ == expected_type
+
+
+def test_swap_event_rejects_unknown_field() -> None:
+    payload = _base_payload()
+    payload["timeline"] = [
+        {
+            "id": "ev_swap",
+            "at": "1s",
+            "action": "swap_episode_numbers",
+            "target": "episode_one",
+            "with_episode": "episode_two",
+            "episode_number": 3,
+        }
+    ]
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def test_swap_event_requires_with_operand() -> None:
+    payload = _base_payload()
+    payload["timeline"] = [
+        {
+            "id": "ev_swap",
+            "at": "1s",
+            "action": "swap_disc_numbers",
+            "target": "disc_winter_01",
+        }
+    ]
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
 
 
 def test_unknown_action_rejected() -> None:
@@ -964,7 +1024,7 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
 
 
 def test_scenario_schema_version_is_twenty_eight() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 28
+    assert SCENARIO_SCHEMA_VERSION == 29
 
 
 def test_scenario_accepts_profile_labels() -> None:

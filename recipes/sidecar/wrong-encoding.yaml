@@ -4,7 +4,7 @@
 # Expected consumer response: converges — decode the declared/sniffed encoding;
 #   do not assume UTF-8.
 # Requires: none
-schema_version: 28
+schema_version: 29
 scenario_id: recipe-sidecar-wrong-encoding
 seed: 1811
 duration_scale: short

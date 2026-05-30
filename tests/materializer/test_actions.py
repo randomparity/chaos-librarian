@@ -90,6 +90,9 @@ def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
             TimelineActionName.RENAME_SEASON,
             TimelineActionName.RENUMBER_DISC,
             TimelineActionName.MOVE_TRACK_TO_DISC,
+            TimelineActionName.SWAP_EPISODE_NUMBERS,
+            TimelineActionName.SWAP_DISC_NUMBERS,
+            TimelineActionName.SWAP_TRACK_NUMBERS,
         }
     )
     assert expected == _HIERARCHY_ACTIONS
