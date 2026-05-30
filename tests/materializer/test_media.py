@@ -247,6 +247,36 @@ class TestApplyReencodeVideo:
         assert exc_info.value.event_id == "ev_rv_001"
         assert exc_info.value.action == TimelineActionName.REENCODE_VIDEO
 
+    def test_apply_reencode_video_unknown_resolution_raises(self, media_ctx, monkeypatch, tmp_path):
+        (tmp_path / "x.mkv").write_bytes(b"y" * 50)
+        # ffmpeg must NOT be invoked: an unknown resolution is rejected before
+        # encoding rather than silently falling back to SD.
+        ffmpeg_calls: list[int] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            ffmpeg_calls.append(1)
+            raise AssertionError("ffmpeg invoked for unknown resolution")
+
+        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        entry = _atomic_entry(
+            event_id="ev_rv_bad",
+            action=TimelineActionName.REENCODE_VIDEO,
+            target="a0",
+            input_version_ids=["v0"],
+            output_version_ids=["v1"],
+            state_delta={
+                "resolution": "4k",
+                "codec": "h264",
+                "input_path": "x.mkv",
+                "output_path": "x.mkv",
+            },
+        )
+        with pytest.raises(MediaActionError) as exc_info:
+            apply_media_action(media_ctx, entry)
+        assert exc_info.value.action == TimelineActionName.REENCODE_VIDEO
+        assert "4k" in str(exc_info.value)
+        assert ffmpeg_calls == []
+
 
 class TestApplyReencodeAudio:
     def test_apply_reencode_audio_writes_output(self, media_ctx, monkeypatch, tmp_path):
