@@ -206,7 +206,14 @@ def _encode_text(text: str, *, encoding: SubtitleEncoding) -> bytes:
     if encoding is SubtitleEncoding.UTF16_LE:
         return b"\xff\xfe" + text.encode("utf-16-le")
     if encoding is SubtitleEncoding.ISO_8859_1:
-        return text.encode("iso-8859-1")
+        try:
+            return text.encode("iso-8859-1")
+        except UnicodeEncodeError as exc:
+            raise UnsupportedMaterializationError(
+                "subtitle text is not representable in iso-8859-1",
+                field="subtitle.encoding",
+                payload={"encoding": encoding.value},
+            ) from exc
     raise UnsupportedMaterializationError(
         "unsupported subtitle encoding",
         field="subtitle.encoding",

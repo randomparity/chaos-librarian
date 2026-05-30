@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
+
 from chaos_librarian.contract.scenario import (
     SubtitleCodec,
     SubtitleEncoding,
     SubtitleSource,
     SubtitleTimingProfile,
 )
+from chaos_librarian.materializer.errors import UnsupportedMaterializationError
 from chaos_librarian.materializer.tooling.subtitles import subtitle_payload_bytes
 
 
@@ -53,6 +56,22 @@ def test_srt_iso_8859_1_payload_is_latin1() -> None:
     )
 
     assert body.decode("iso-8859-1").startswith("1\n")
+
+
+def test_srt_iso_8859_1_non_latin1_language_raises_unsupported() -> None:
+    # The language is embedded in the cue text; a non-Latin-1 language under
+    # ISO-8859-1 must surface as a structured error, not a raw UnicodeEncodeError.
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        subtitle_payload_bytes(
+            codec=SubtitleCodec.SRT,
+            source=SubtitleSource.GENERATED_SRT,
+            encoding=SubtitleEncoding.ISO_8859_1,
+            timing_profile=SubtitleTimingProfile.NORMAL,
+            language="日本語",
+            duration_s=2.0,
+            seed=42,
+        )
+    assert exc_info.value.field == "subtitle.encoding"
 
 
 def test_srt_overlap_payload_has_overlapping_cues() -> None:
