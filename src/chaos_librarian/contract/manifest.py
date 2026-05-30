@@ -13,6 +13,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.domain import ParentKind
+from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
 from chaos_librarian.contract.profiles import CorruptionRecord
 
 
@@ -167,7 +168,7 @@ class ManifestVersion(BaseModel):
     id: str
     asset_id: str
     index: int
-    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
     probed: ProbedMedia | None = None
     corruption: CorruptionRecord | None = None
 
@@ -194,7 +195,7 @@ class ManifestSidecar(BaseModel):
     # at the scenario layer by CreateSidecarEvent.model_validator and at
     # the materializer layer by per-handler defaults.
     language: str | None = None
-    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
 
 
 class Manifest(BaseModel):

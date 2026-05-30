@@ -6,6 +6,7 @@ import enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
 from chaos_librarian.contract.scenario import (
     AudioNoiseColor,
     AudioSampleFormat,
@@ -16,8 +17,6 @@ from chaos_librarian.contract.scenario import (
     VideoColorSpace,
     VideoResolutionSequence,
 )
-
-SHA256_URI_PATTERN = r"^sha256:[0-9a-f]{64}$"
 
 
 class ContentTrackKind(enum.StrEnum):

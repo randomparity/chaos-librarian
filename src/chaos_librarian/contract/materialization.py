@@ -17,6 +17,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
+from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import (
     Mp4MoovPlacement,
@@ -134,7 +135,7 @@ class FilesystemAction(BaseModel):
     from_path: str | None = None
     to_path: str | None = None
     temp_path: str | None = None
-    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
     mtime_before_ns: int | None = None
     mtime_after_ns: int | None = None
     duration_ns: int
@@ -160,8 +161,8 @@ class MediaAction(BaseModel):
     input_version_id: str | None = None
     output_version_id: str | None = None
     output_sidecar_id: str | None = None
-    input_content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
-    output_content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    input_content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
+    output_content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
     tool_invocation_index: int | None = None
     duration_ns: int
 
@@ -183,8 +184,8 @@ class CorruptionAction(BaseModel):
     output_path: str
     input_version_id: str | None = None
     output_version_id: str
-    input_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    output_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    input_content_hash: str = Field(pattern=SHA256_URI_PATTERN)
+    output_content_hash: str = Field(pattern=SHA256_URI_PATTERN)
     corruptor: str
     input_size_bytes: int
     output_size_bytes: int
@@ -212,8 +213,8 @@ class OracleHashAction(BaseModel):
     output_path: str
     input_version_id: str | None = None
     output_version_id: str
-    actual_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
-    reported_content_hash: str = Field(pattern=r"^sha256:[0-9a-f]{64}$")
+    actual_content_hash: str = Field(pattern=SHA256_URI_PATTERN)
+    reported_content_hash: str = Field(pattern=SHA256_URI_PATTERN)
     seed_material: str
     duration_ns: int
 
