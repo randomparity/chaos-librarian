@@ -80,6 +80,32 @@ here because every section below depends on them.
    path string, reusing `index_start_commit_events` + `report_unpaired_start`.
    Unknown ref / unpaired / close-before-open → `E_LIFECYCLE_INVALID`.
 
+### Pairing timing contract (which lag invariants carry over)
+
+The chaos pairs are **looser** than lag, deliberately. Lag's start carries an `after`
+(immediate-predecessor) reference, shares the `after` event's `at`, and requires
+`commit.at == start.at + duration` (`validation/rules/network_lag.py:183-298`). A
+chaos open (`acquire_lock` / `unmount_path`) has **no `after` reference and no
+`duration`**, so those three lag invariants do **not** apply. The contract that *does*
+carry over, stated precisely:
+
+- **Pairing is by event id**, exactly one close per open (`report_unpaired_start`).
+- **The close must follow the open in timeline list order** (`close.idx > open.idx`),
+  the same index-based ordering lag's `_check_same_target_window` uses — the
+  same-target-window walk scans `timeline[open.idx + 1 : close.idx]` by list index, so
+  a close that precedes its open in the list is `E_LIFECYCLE_INVALID`.
+- **No `at` relationship is enforced between open and close.** A zero-width window
+  (`open.at == close.at`) is **legal** — a lock can be acquired and released at the
+  same logical instant; the engine still emits the started/committed pair and the
+  runner records both. (Lag forbids this only because its duration arithmetic demands
+  `commit.at > start.at`; chaos has no duration.)
+- **`at` need not be monotonic across the window**, but the close's list position must
+  be after the open's; the resolved timeline already sorts by `at` then by declaration
+  order, so an author who wants the window to span time orders the events accordingly.
+
+This looseness is intentional: a lock/unmount window is defined by its open/close
+*events*, not by a wall-clock duration the author must pre-compute.
+
 ## Policy-neutrality (the constraint that shapes the oracle)
 
 AGENTS.md: chaos-librarian "does NOT know the application's expected policy outcomes —
@@ -278,29 +304,38 @@ asset (a subtree-path target has no location id, like a lag on a non-asset targe
 ### Wall-clock realization
 
 `preflight_timeline` widens its supported set with a new
-`NETWORK_FS_CHAOS_ACTIONS` frozenset under the same `allow_network_lag` gate (renamed
-conceptually to "allow the wall-clock-only action families"; the parameter stays
-`allow_network_lag` to avoid churning the static-materialize call sites, **or** a new
-`allow_network_fs_chaos` parameter is threaded — decided in the plan; both
-static-materialize and replay/wall-clock call sites are updated consistently). Static
-`materialize` continues to reject the new actions.
+`NETWORK_FS_CHAOS_ACTIONS` frozenset. A **new** `allow_network_fs_chaos: bool = False`
+parameter is threaded (parallel to the existing `allow_network_lag`), not an overload
+of `allow_network_lag`: the two families are independently gated, and conflating them
+would let a `network-fs-lag`-only call accept chaos actions. The two wall-clock call
+sites (`wall_clock.py:191`, `replay.py:143`) pass `allow_network_fs_chaos=True`
+alongside `allow_network_lag=True`; the static-`materialize` call site passes neither,
+so static `materialize` rejects the new actions with `TimelineUnsupportedError`
+(`E_MATERIALIZE_TIMELINE_UNSUPPORTED`), exactly like lag.
 
-The wall-clock dispatch (`_execute_entry` in `wall_clock.py`) gains branches:
+**Routing.** All seven actions get **explicit branches** in `_execute_entry`
+(`wall_clock.py:518`), not the `dispatch_phase_b_entry` fall-through. The four
+single-shot conditions are `AtomicJournalEntry`s but are routed by their own branch
+(so `dispatch_phase_b_entry` / the phase-B dispatcher never sees a chaos action and
+needs no change), and the paired actions follow the lag `STARTED`/`COMMITTED` routing.
+The branches:
 
 - `change_permissions` / `toggle_readonly` → a **real `os.chmod`** on the resolved
   target under `<run-dir>/library/`. Before mutating, the original `st_mode` is
   captured into a `NetworkFsChaosSession` stored on `_DispatchState` (keyed by event
   id) so it can be restored. `toggle_readonly` clears (`readonly`) or restores
-  (`readwrite`) the write bits; `change_permissions` sets the exact octal mode. A
-  `NetworkFsChaosAction` is appended with `enforced=True` and condition `EACCES`
-  (permissions) — `toggle_readonly` records condition `EACCES` with the readonly/rw
-  state in a neutral `metadata`-style field, or a dedicated `readonly_state` field
-  (decided in the plan).
+  (`readwrite`) the owner/group/other **write** bits; `change_permissions` sets the
+  exact octal mode. A `NetworkFsChaosAction` is appended with `enforced=True` and
+  condition `EACCES`; `toggle_readonly` additionally sets the dedicated
+  `readonly_state` field (the field already committed in the report-record schema
+  below — there is no `metadata` alternative).
 - The four kernel-level conditions → **no filesystem op**; append a
   `NetworkFsChaosAction` with `enforced=False` and the matching condition
-  (`ENOSPC` / `ESTALE` / `EAGAIN` / `UNAVAILABLE`). For the paired actions, the close
-  event finalizes the record with both the open and close event ids (mirroring
-  `_wall_clock_network_lag_commit`).
+  (`ENOSPC` / `ESTALE` / `EAGAIN` / `UNAVAILABLE`). For the paired actions
+  (`acquire_lock`/`unmount_path`), the open branch records the open in
+  `pending_locks` / `pending_unmounts`, and the close branch (`release_lock` /
+  `remount_path`) finalizes the `NetworkFsChaosAction` with both the open and close
+  event ids and the open's target (mirroring `_wall_clock_network_lag_commit`).
 
 **Teardown safety (ADR 0007 Q6).** Every captured original mode is restored at run
 finalize (`_finalize_wall_clock_run`) **and** on the Phase-B failure path
@@ -330,6 +365,16 @@ class NetworkFsChaosAction(BaseModel):
 Field(default_factory=list)` and bumps `MATERIALIZATION_SCHEMA_VERSION` 15 → 16
 (`Literal[15]` → `Literal[16]`). The list is empty for every existing scenario, so the
 field is additive on the wire (a new optional list).
+
+**`lock_type` is a neutral recorded fact only.** Because the lock is recorded-only
+(`enforced=False`), `shared` vs `exclusive` has no chaos-librarian-realized effect; it
+is recorded for the consumer's adapter to interpret. The same-target-window guard
+(below) treats both identically in v1 — it forbids any other mutation on the target
+between `acquire_lock` and `release_lock` regardless of lock type. This intentionally
+over-restricts a `shared` lock (a real shared lock would permit concurrent readers),
+but a chaos *window* models an exclusive hold for v1; finer shared-vs-exclusive window
+semantics are a filed follow-up. The consumer — not chaos-librarian — decides what a
+`shared` lock means for its own behavior.
 
 ### Validation rules summary
 
