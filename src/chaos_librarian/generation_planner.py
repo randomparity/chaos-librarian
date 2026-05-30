@@ -1,13 +1,27 @@
-"""Content and timeline planning for deterministic fuzz generation."""
+"""Content and timeline planning for deterministic fuzz generation.
+
+This module owns the canonical fuzz lane configuration (``LANE_CONFIGS``). Each
+:class:`~chaos_librarian.generation_lanes.LaneConfig` pairs a lane's required
+coverage cells with the ``required_events`` builder that satisfies them, so the
+two cannot drift apart when a lane is added or changed.
+"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Final
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
-from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind
-from chaos_librarian.generation_lanes import LaneConfig
+from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
+from chaos_librarian.generation_lanes import (
+    CELL_LAG_EFFECT_PREFIX,
+    CELL_SIDE_NFO_OR_POSTER,
+    CELL_SIDE_SUBTITLE,
+    LaneConfig,
+    action_cell,
+    derive_required_profiles,
+)
 
 # Header bytes to overwrite for a corrupt-container-header event; within
 # CorruptContainerHeaderEvent's 1..4096 range.
@@ -76,7 +90,7 @@ def plan_payload_parts(
         secondary_root_id="cold-storage",
         assets=assets,
     )
-    _emit_lane_required_events(planner=planner, lane=config.lane)
+    config.required_events(planner)
     _fill_remaining_events(planner=planner, config=config, rng=rng)
     return (
         library,
@@ -402,35 +416,6 @@ def _asset_payload(asset: PlannedAsset, rng: Any) -> dict[str, object]:
     return payload
 
 
-def _emit_lane_required_events(
-    *,
-    planner: TimelinePlanner,
-    lane: FuzzLaneName,
-) -> None:
-    if lane is FuzzLaneName.SMOKE:
-        _emit_smoke_required_events(planner)
-    elif lane is FuzzLaneName.CORE_FS:
-        _emit_core_fs_required_events(planner)
-    elif lane is FuzzLaneName.MEDIA_REWRITE:
-        _emit_media_rewrite_required_events(planner)
-    elif lane is FuzzLaneName.SIDECAR_SUBTITLE:
-        _emit_sidecar_subtitle_required_events(planner)
-    elif lane is FuzzLaneName.MALFORMED:
-        _emit_malformed_required_events(planner)
-    elif lane is FuzzLaneName.NEGATIVE_ORACLE:
-        _wrong_oracle_hash(planner, planner.assets[0])
-    elif lane is FuzzLaneName.FILESYSTEM_ARTIFACT:
-        _touch_mtime(planner, planner.assets[0])
-    elif lane is FuzzLaneName.NETWORK_LAG:
-        _emit_network_lag_required_events(planner)
-    elif lane is FuzzLaneName.TV_TOPOLOGY:
-        _emit_tv_topology_required_events(planner)
-    elif lane is FuzzLaneName.MUSIC_TOPOLOGY:
-        _emit_music_topology_required_events(planner)
-    else:
-        raise ValueError(f"unsupported fuzz lane {lane.value}")
-
-
 def _emit_smoke_required_events(planner: TimelinePlanner) -> None:
     assets = planner.assets
     _move_asset(planner, assets[0])
@@ -509,6 +494,14 @@ def _emit_music_topology_required_events(planner: TimelinePlanner) -> None:
     )
     _rename_file(planner, assets[0])
     _reencode_audio(planner, assets[1])
+
+
+def _emit_negative_oracle_required_events(planner: TimelinePlanner) -> None:
+    _wrong_oracle_hash(planner, planner.assets[0])
+
+
+def _emit_filesystem_artifact_required_events(planner: TimelinePlanner) -> None:
+    _touch_mtime(planner, planner.assets[0])
 
 
 def _fill_remaining_events(
@@ -1004,3 +997,190 @@ def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
 
 def _has_live_sidecars(planner: TimelinePlanner) -> bool:
     return any(planner.sidecars_by_asset.values())
+
+
+def _lane_config(
+    *,
+    profile: FuzzProfileName,
+    lane: FuzzLaneName,
+    movies: int = 0,
+    series: int = 0,
+    artists: int = 0,
+    timeline_events: int,
+    required_cells: frozenset[str],
+    required_events: Callable[[TimelinePlanner], None],
+) -> LaneConfig:
+    """Build a lane config, deriving its gated profiles from required cells.
+
+    ``profiles`` is derived from ``required_cells`` via
+    :func:`~chaos_librarian.generation_lanes.derive_required_profiles` rather
+    than hand-listed, so a lane's declared profiles cannot drift from the
+    profile-gated actions it actually generates.
+    """
+    return LaneConfig(
+        profile=profile,
+        lane=lane,
+        profiles=derive_required_profiles(profile, required_cells),
+        movies=movies,
+        series=series,
+        artists=artists,
+        timeline_events=timeline_events,
+        required_cells=required_cells,
+        required_events=required_events,
+    )
+
+
+LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
+    (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE): _lane_config(
+        profile=FuzzProfileName.FUZZ_SMOKE,
+        lane=FuzzLaneName.SMOKE,
+        movies=3,
+        timeline_events=12,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.MOVE_ASSET),
+                action_cell(TimelineActionName.RENAME_FILE),
+                action_cell(TimelineActionName.EDIT_METADATA),
+                action_cell(TimelineActionName.CREATE_SIDECAR),
+                action_cell(TimelineActionName.UPDATE_SIDECAR),
+            }
+        ),
+        required_events=_emit_smoke_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.CORE_FS,
+        movies=10,
+        timeline_events=32,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.MOVE_ASSET),
+                action_cell(TimelineActionName.RENAME_FILE),
+                action_cell(TimelineActionName.DELETE_FILE),
+                action_cell(TimelineActionName.ADD_FILE),
+                action_cell(TimelineActionName.ARCHIVE_FILE),
+                action_cell(TimelineActionName.MOVE_BETWEEN_ROOTS),
+                action_cell(TimelineActionName.SLOW_COPY_START),
+                action_cell(TimelineActionName.SLOW_COPY_COMMIT),
+            }
+        ),
+        required_events=_emit_core_fs_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MEDIA_REWRITE): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MEDIA_REWRITE,
+        movies=10,
+        timeline_events=32,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.REENCODE_VIDEO),
+                action_cell(TimelineActionName.REENCODE_AUDIO),
+                action_cell(TimelineActionName.REMUX_CONTAINER),
+                action_cell(TimelineActionName.EDIT_METADATA),
+            }
+        ),
+        required_events=_emit_media_rewrite_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.SIDECAR_SUBTITLE): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.SIDECAR_SUBTITLE,
+        movies=10,
+        timeline_events=32,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.CREATE_SIDECAR),
+                action_cell(TimelineActionName.UPDATE_SIDECAR),
+                action_cell(TimelineActionName.REMOVE_SIDECAR),
+                action_cell(TimelineActionName.EXTRACT_SUBTITLE),
+                action_cell(TimelineActionName.EMBED_SUBTITLE),
+                CELL_SIDE_SUBTITLE,
+                CELL_SIDE_NFO_OR_POSTER,
+            }
+        ),
+        required_events=_emit_sidecar_subtitle_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MALFORMED,
+        movies=10,
+        timeline_events=24,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.CORRUPT_CONTAINER_HEADER),
+                action_cell(TimelineActionName.TRUNCATE_FILE),
+                action_cell(TimelineActionName.CORRUPT_PACKET_RANGE),
+                action_cell(TimelineActionName.WRITE_INVALID_DURATION_METADATA),
+            }
+        ),
+        required_events=_emit_malformed_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.NEGATIVE_ORACLE,
+        movies=8,
+        timeline_events=16,
+        required_cells=frozenset({action_cell(TimelineActionName.WRONG_ORACLE_HASH)}),
+        required_events=_emit_negative_oracle_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.FILESYSTEM_ARTIFACT,
+        movies=8,
+        timeline_events=16,
+        required_cells=frozenset({action_cell(TimelineActionName.TOUCH_MTIME)}),
+        required_events=_emit_filesystem_artifact_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.NETWORK_LAG,
+        movies=8,
+        timeline_events=18,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.NETWORK_LAG_START),
+                action_cell(TimelineActionName.NETWORK_LAG_COMMIT),
+                f"{CELL_LAG_EFFECT_PREFIX}{NetworkLagEffect.DELAYED_VISIBILITY.value}",
+                f"{CELL_LAG_EFFECT_PREFIX}{NetworkLagEffect.DELAYED_RENAME.value}",
+                f"{CELL_LAG_EFFECT_PREFIX}{NetworkLagEffect.HELD_HANDLE.value}",
+            }
+        ),
+        required_events=_emit_network_lag_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.TV_TOPOLOGY,
+        series=1,
+        timeline_events=18,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.RENUMBER_EPISODE),
+                action_cell(TimelineActionName.MOVE_EPISODE_TO_SEASON),
+                action_cell(TimelineActionName.RENAME_FILE),
+                action_cell(TimelineActionName.REENCODE_VIDEO),
+            }
+        ),
+        required_events=_emit_tv_topology_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MUSIC_TOPOLOGY,
+        artists=1,
+        timeline_events=18,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.RENUMBER_DISC),
+                action_cell(TimelineActionName.MOVE_TRACK_TO_DISC),
+                action_cell(TimelineActionName.RENAME_FILE),
+                action_cell(TimelineActionName.REENCODE_AUDIO),
+            }
+        ),
+        required_events=_emit_music_topology_required_events,
+    ),
+}
+
+
+def lane_config_for(profile: FuzzProfileName, lane: FuzzLaneName) -> LaneConfig:
+    config = LANE_CONFIGS.get((profile, lane))
+    if config is None:
+        raise ValueError(f"lane {lane.value} is not valid for {profile.value}")
+    return config

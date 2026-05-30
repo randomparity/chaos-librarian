@@ -1,13 +1,25 @@
-"""Lane configuration and coverage helpers for deterministic fuzz generation."""
+"""Lane coverage primitives and profile derivation for fuzz generation.
+
+Lane configuration (``LaneConfig``/``LANE_CONFIGS``) lives in
+``generation_planner`` alongside the event builders that satisfy each lane's
+required coverage cells, so the required cells and the events that produce
+them cannot drift apart. This module owns the coverage vocabulary (cell
+constants and ``coverage_for_payload``) and derives each lane's required
+profile labels from validation's single source of truth.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import Final, cast
+from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
+
+if TYPE_CHECKING:
+    from chaos_librarian.generation_planner import TimelinePlanner
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,6 +32,7 @@ class LaneConfig:
     artists: int
     timeline_events: int
     required_cells: frozenset[str]
+    required_events: Callable[[TimelinePlanner], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,184 +49,39 @@ CELL_SIDE_NFO_OR_POSTER: Final = "sidecar:nfo-or-poster"
 CELL_LAG_EFFECT_PREFIX: Final = "network-lag:"
 
 
-def _action_cell(action: TimelineActionName) -> str:
+def action_cell(action: TimelineActionName) -> str:
     return f"{CELL_ACTION_PREFIX}{action.value}"
 
 
-LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
-    (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE): LaneConfig(
-        profile=FuzzProfileName.FUZZ_SMOKE,
-        lane=FuzzLaneName.SMOKE,
-        profiles=(ProfileName.FUZZ_SMOKE,),
-        movies=3,
-        series=0,
-        artists=0,
-        timeline_events=12,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.MOVE_ASSET),
-                _action_cell(TimelineActionName.RENAME_FILE),
-                _action_cell(TimelineActionName.EDIT_METADATA),
-                _action_cell(TimelineActionName.CREATE_SIDECAR),
-                _action_cell(TimelineActionName.UPDATE_SIDECAR),
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.CORE_FS,
-        profiles=(ProfileName.FUZZ_REGRESSION,),
-        movies=10,
-        series=0,
-        artists=0,
-        timeline_events=32,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.MOVE_ASSET),
-                _action_cell(TimelineActionName.RENAME_FILE),
-                _action_cell(TimelineActionName.DELETE_FILE),
-                _action_cell(TimelineActionName.ADD_FILE),
-                _action_cell(TimelineActionName.ARCHIVE_FILE),
-                _action_cell(TimelineActionName.MOVE_BETWEEN_ROOTS),
-                _action_cell(TimelineActionName.SLOW_COPY_START),
-                _action_cell(TimelineActionName.SLOW_COPY_COMMIT),
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MEDIA_REWRITE): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.MEDIA_REWRITE,
-        profiles=(ProfileName.FUZZ_REGRESSION,),
-        movies=10,
-        series=0,
-        artists=0,
-        timeline_events=32,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.REENCODE_VIDEO),
-                _action_cell(TimelineActionName.REENCODE_AUDIO),
-                _action_cell(TimelineActionName.REMUX_CONTAINER),
-                _action_cell(TimelineActionName.EDIT_METADATA),
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.SIDECAR_SUBTITLE): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.SIDECAR_SUBTITLE,
-        profiles=(ProfileName.FUZZ_REGRESSION,),
-        movies=10,
-        series=0,
-        artists=0,
-        timeline_events=32,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.CREATE_SIDECAR),
-                _action_cell(TimelineActionName.UPDATE_SIDECAR),
-                _action_cell(TimelineActionName.REMOVE_SIDECAR),
-                _action_cell(TimelineActionName.EXTRACT_SUBTITLE),
-                _action_cell(TimelineActionName.EMBED_SUBTITLE),
-                "sidecar:subtitle",
-                "sidecar:nfo-or-poster",
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.MALFORMED,
-        profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.MALFORMED_MEDIA),
-        movies=10,
-        series=0,
-        artists=0,
-        timeline_events=24,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.CORRUPT_CONTAINER_HEADER),
-                _action_cell(TimelineActionName.TRUNCATE_FILE),
-                _action_cell(TimelineActionName.CORRUPT_PACKET_RANGE),
-                _action_cell(TimelineActionName.WRITE_INVALID_DURATION_METADATA),
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NEGATIVE_ORACLE): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.NEGATIVE_ORACLE,
-        profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NEGATIVE_ORACLE),
-        movies=8,
-        series=0,
-        artists=0,
-        timeline_events=16,
-        required_cells=frozenset({_action_cell(TimelineActionName.WRONG_ORACLE_HASH)}),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.FILESYSTEM_ARTIFACT): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.FILESYSTEM_ARTIFACT,
-        profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.FILESYSTEM_ARTIFACTS),
-        movies=8,
-        series=0,
-        artists=0,
-        timeline_events=16,
-        required_cells=frozenset({_action_cell(TimelineActionName.TOUCH_MTIME)}),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.NETWORK_LAG,
-        profiles=(ProfileName.FUZZ_REGRESSION, ProfileName.NETWORK_FS_LAG),
-        movies=8,
-        series=0,
-        artists=0,
-        timeline_events=18,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.NETWORK_LAG_START),
-                _action_cell(TimelineActionName.NETWORK_LAG_COMMIT),
-                "network-lag:delayed_visibility",
-                "network-lag:delayed_rename",
-                "network-lag:held_handle",
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.TV_TOPOLOGY,
-        profiles=(ProfileName.FUZZ_REGRESSION,),
-        movies=0,
-        series=1,
-        artists=0,
-        timeline_events=18,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.RENUMBER_EPISODE),
-                _action_cell(TimelineActionName.MOVE_EPISODE_TO_SEASON),
-                _action_cell(TimelineActionName.RENAME_FILE),
-                _action_cell(TimelineActionName.REENCODE_VIDEO),
-            }
-        ),
-    ),
-    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY): LaneConfig(
-        profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.MUSIC_TOPOLOGY,
-        profiles=(ProfileName.FUZZ_REGRESSION,),
-        movies=0,
-        series=0,
-        artists=1,
-        timeline_events=18,
-        required_cells=frozenset(
-            {
-                _action_cell(TimelineActionName.RENUMBER_DISC),
-                _action_cell(TimelineActionName.MOVE_TRACK_TO_DISC),
-                _action_cell(TimelineActionName.RENAME_FILE),
-                _action_cell(TimelineActionName.REENCODE_AUDIO),
-            }
-        ),
-    ),
-}
+def derive_required_profiles(
+    base: FuzzProfileName,
+    required_cells: frozenset[str],
+) -> tuple[ProfileName, ...]:
+    """Return the profile labels a lane must declare for its required cells.
 
-
-def lane_config_for(profile: FuzzProfileName, lane: FuzzLaneName) -> LaneConfig:
-    config = LANE_CONFIGS.get((profile, lane))
-    if config is None:
-        raise ValueError(f"lane {lane.value} is not valid for {profile.value}")
-    return config
+    The base fuzz profile is always first. Any profile-gated action present in
+    ``required_cells`` contributes its required profile, derived from
+    validation's :data:`REQUIRED_PROFILES_BY_ACTION` so generation cannot drift
+    from the rule that would reject the generated scenario. Gated profiles are
+    appended in their first-appearance order within the validation map for
+    deterministic output.
+    """
+    base_profile = ProfileName(base.value)
+    gated_actions = {
+        cell.removeprefix(CELL_ACTION_PREFIX)
+        for cell in required_cells
+        if cell.startswith(CELL_ACTION_PREFIX)
+    }
+    profiles: list[ProfileName] = [base_profile]
+    seen: set[ProfileName] = {base_profile}
+    for action, profile_value in REQUIRED_PROFILES_BY_ACTION.items():
+        if action not in gated_actions:
+            continue
+        profile = ProfileName(profile_value)
+        if profile not in seen:
+            seen.add(profile)
+            profiles.append(profile)
+    return tuple(profiles)
 
 
 def coverage_for_payload(payload: Mapping[str, object]) -> CoverageReport:
