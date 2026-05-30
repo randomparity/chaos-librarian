@@ -4,6 +4,7 @@
 chaos-librarian validate scenario.yaml --json
 chaos-librarian generate --profile fuzz-smoke --seed 123 --out scenario.yaml --json
 chaos-librarian generate --profile fuzz-regression --lane core-fs --seed 456 --out scenario.yaml --json
+chaos-librarian generate --profile fuzz-regression --count 9 --seed 42 --out ./generated/
 chaos-librarian plan scenario.yaml --out fixtures/run-001 --steps 3 --json
 chaos-librarian materialize scenario.yaml --out fixtures/run-001 --json
 chaos-librarian run scenario.yaml --out fixtures/run-001 --duration 90s --speed 10x --json
@@ -36,8 +37,13 @@ validation fails.
 `generate` writes deterministic fuzz scenario YAML. `--profile` accepts
 `fuzz-smoke` or `fuzz-regression`; `--seed` must be a non-negative integer.
 `--lane` defaults to `smoke` for `fuzz-smoke` and is required for
-`fuzz-regression`. `--out` must point to a new file whose parent directory
-already exists.
+`fuzz-regression` when `--count` is 1. `--out` must point to a new file whose
+parent directory already exists. `--count N` (default `1`, max `1000`) generates
+a batch: with `N > 1`, `--out` is an existing directory and `N` scenarios are
+written as `<scenario_id>.yaml`, with seeds `seed .. seed+N-1` and (for
+`fuzz-regression` without `--lane`) lanes cycling the canonical order. A failed
+batch removes the files it wrote (exit `1`); a usage error such as a target-name
+collision exits `2` before writing.
 
 `plan` writes an oracle-only fixture. `--steps N` applies a prefix of
 user-visible step units.
