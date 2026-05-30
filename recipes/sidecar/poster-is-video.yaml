@@ -1,0 +1,47 @@
+# Recipe: Poster Is Video
+# Category: sidecar
+# Tests: a poster sidecar whose bytes are a video container, not an image.
+# Expected consumer response: errors or diverges — detect the media kind by
+#   content, not by extension; do not treat it as artwork.
+# Requires: none
+schema_version: 24
+scenario_id: recipe-sidecar-poster-is-video
+seed: 1813
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_pv
+    title: Poster Is Video
+    layout: movie_flat
+    variants:
+      - id: v_pv
+        label: hd
+        bundle:
+          id: b_pv
+          assets:
+            - id: asset_pv
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_poster
+    at: 1s
+    action: create_sidecar
+    target: asset_pv
+    to: movies/Poster Is Video - hd.poster.mkv
+    kind: poster
+    media_type: video

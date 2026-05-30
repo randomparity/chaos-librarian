@@ -81,6 +81,9 @@ Subtitle, poster, and NFO sidecar behavior.
 | `late-subtitle.yaml` | A subtitle sidecar materializes after the asset. | converges | none |
 | `poster-and-nfo.yaml` | Non-subtitle companion sidecars (poster, NFO). | converges | none |
 | `second-language-subtitle.yaml` | A French subtitle joins an existing English one. | converges | none |
+| `wrong-encoding.yaml` | A subtitle sidecar written in UTF-16-LE instead of UTF-8. | converges | none |
+| `nfo-xml-injection.yaml` | An NFO sidecar carries an author-supplied XML payload. | errors or diverges | none |
+| `poster-is-video.yaml` | A poster sidecar whose bytes are a video container. | errors or diverges | none |
 
 ### `archive/` — archive and discovery
 Moving assets into archives and across roots.
