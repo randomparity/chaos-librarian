@@ -15,3 +15,4 @@ accepted; supersede rather than edit.
 | [0007](0007-network-fs-chaos.md) | Network-filesystem chaos beyond latency | Accepted |
 | [0008](0008-numbering-swap-actions.md) | Explicit numbering swap actions for hierarchy moves | Accepted |
 | [0009](0009-podcast-hierarchy.md) | Podcast library hierarchy | Accepted |
+| [0010](0010-movie-edition-modeling.md) | Movie release/edition modeling | Accepted |
