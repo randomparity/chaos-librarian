@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
-from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
+from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import (
     Asset,
@@ -25,6 +25,7 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b import media as media_module
 from chaos_librarian.materializer.phase_b.media import (
+    LiveSidecar,
     MediaPhaseBContext,
     _subtitle_codec_for_container,
     apply_media_action,
@@ -892,27 +893,24 @@ class TestApplyExtractSubtitle:
         assert argv[argv.index("-map") + 1] == "0:s:0"
 
 
+def _subtitle_asset(asset_id: str = "a0") -> Asset:
+    return Asset.model_validate(
+        {
+            "id": asset_id,
+            "role": "primary_video",
+            "container": "mkv",
+            "duration_seconds": 2.0,
+            "video": {"source": "color_bars", "codec": "h264", "resolution": "hd"},
+            "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
+            "subtitles": [{"codec": "srt", "language": "eng", "mode": "sidecar"}],
+        }
+    )
+
+
 class TestApplyUpdateSidecar:
-    def test_update_sidecar_subtitle_regenerates_bytes(self, monkeypatch, tmp_path):
+    def test_update_sidecar_subtitle_regenerates_bytes(self, tmp_path):
         # Asset declared with a subtitle so ctx can find duration_seconds.
-        asset = Asset.model_validate(
-            {
-                "id": "a0",
-                "role": "primary_video",
-                "container": "mkv",
-                "duration_seconds": 2.0,
-                "video": {"source": "color_bars", "codec": "h264", "resolution": "hd"},
-                "audio": [{"codec": "aac", "channels": "stereo", "language": "eng"}],
-                "subtitles": [{"codec": "srt", "language": "eng", "mode": "sidecar"}],
-            }
-        )
-        sidecar = ManifestSidecar(
-            id="sidecar_0001",
-            asset_id="a0",
-            kind=SidecarKind.SUBTITLE,
-            path="a0.eng.srt",
-            language="eng",
-        )
+        asset = _subtitle_asset()
         # Pre-populate the sidecar file.
         (tmp_path / "a0.eng.srt").write_bytes(b"old")
         ctx = MediaPhaseBContext(
@@ -921,7 +919,11 @@ class TestApplyUpdateSidecar:
             resolved_seed=42,
             ffmpeg_version="7.0",
             ffprobe_version="7.0",
-            sidecar_lookup=lambda _sid: sidecar,
+            live_sidecars={
+                "sidecar_0001": LiveSidecar(
+                    kind=SidecarKind.SUBTITLE, language="eng", asset_id="a0"
+                )
+            },
         )
         entry = _atomic_entry(
             event_id="ev_us_001",
@@ -939,6 +941,169 @@ class TestApplyUpdateSidecar:
         assert result.output_sidecar_id == "sidecar_0001"
         assert result.tool_invocation_index is None  # subtitle is pure Python
         assert "sidecar_0001" in ctx.post_phase_b_sidecars
+
+    def test_update_resolves_sidecar_created_earlier_in_same_walk(self, tmp_path):
+        """create_sidecar -> update_sidecar resolves from the live registry.
+
+        WHY: the sidecar may never survive to the final manifest (a later
+        remove/embed drops it), so update_sidecar must read the metadata a
+        create_sidecar dispatch recorded, not the final manifest. This is the
+        core of issue #112.
+        """
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        create = _atomic_entry(
+            event_id="ev_cs_001",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.eng.srt",
+                "sidecar_id": "sidecar_live",
+                "language": "eng",
+                "kind": "subtitle",
+            },
+        )
+        apply_media_action(ctx, create)
+        created_bytes = (tmp_path / "a0.eng.srt").read_bytes()
+        update = _atomic_entry(
+            event_id="ev_us_002",
+            action=TimelineActionName.UPDATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_id": "sidecar_live",
+                "sidecar_path": "a0.eng.srt",
+            },
+        )
+        result = apply_media_action(ctx, update)
+        assert result.output_sidecar_id == "sidecar_live"
+        assert (tmp_path / "a0.eng.srt").read_bytes() != created_bytes
+
+    def test_double_update_on_created_sidecar(self, tmp_path):
+        """create -> update -> update both resolve and produce distinct bytes."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_cs_001",
+                action=TimelineActionName.CREATE_SIDECAR,
+                target="a0",
+                state_delta={
+                    "sidecar_path": "a0.eng.srt",
+                    "sidecar_id": "sidecar_live",
+                    "language": "eng",
+                    "kind": "subtitle",
+                },
+            ),
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_001",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_live", "sidecar_path": "a0.eng.srt"},
+            ),
+        )
+        first = (tmp_path / "a0.eng.srt").read_bytes()
+        result = apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_002",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_live", "sidecar_path": "a0.eng.srt"},
+            ),
+        )
+        assert result.output_sidecar_id == "sidecar_live"
+        assert (tmp_path / "a0.eng.srt").read_bytes() != first
+
+    def test_update_resolves_extracted_sidecar(self, monkeypatch, tmp_path):
+        """extract_subtitle -> update_sidecar resolves from the live registry.
+
+        extract_subtitle also allocates a fresh sidecar that may not survive to
+        the final manifest, so it must register live metadata too.
+        """
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        (tmp_path / "a0.mkv").write_bytes(b"asset")
+
+        def fake_probe_index(_ctx, _input, _language):
+            return 0
+
+        def fake_ffmpeg(argv, **_kwargs):
+            Path(argv[-1]).write_bytes(b"extracted srt")
+            return (
+                ToolInvocation(
+                    tool="ffmpeg",
+                    version="7.0",
+                    command=list(argv),
+                    exit_code=0,
+                    duration_ns=1,
+                ),
+                "",
+            )
+
+        monkeypatch.setattr(media_module, "_probe_subtitle_index_for_language", fake_probe_index)
+        monkeypatch.setattr(media_module, "run_ffmpeg", fake_ffmpeg)
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_xs_001",
+                action=TimelineActionName.EXTRACT_SUBTITLE,
+                target="a0",
+                state_delta={
+                    "sidecar_id": "sidecar_extract",
+                    "sidecar_path": "a0.deu.srt",
+                    "language": "deu",
+                    "input_path": "a0.mkv",
+                },
+            ),
+        )
+        result = apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_001",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_extract", "sidecar_path": "a0.deu.srt"},
+            ),
+        )
+        assert result.output_sidecar_id == "sidecar_extract"
+        assert b"00:00:00,000" in (tmp_path / "a0.deu.srt").read_bytes()
+
+    def test_update_unknown_sidecar_raises(self, tmp_path):
+        """A corrupt journal that updates a never-created sidecar still fails."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        entry = _atomic_entry(
+            event_id="ev_us_001",
+            action=TimelineActionName.UPDATE_SIDECAR,
+            target="a0",
+            state_delta={"sidecar_id": "sidecar_ghost", "sidecar_path": "a0.eng.srt"},
+        )
+        with pytest.raises(MediaActionError, match="not a live sidecar"):
+            apply_media_action(ctx, entry)
 
 
 class TestApplyCreateSidecar:

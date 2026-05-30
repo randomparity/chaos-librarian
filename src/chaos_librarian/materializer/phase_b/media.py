@@ -18,13 +18,13 @@ from __future__ import annotations
 import json
 import subprocess
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Final, cast
+from typing import Final, cast
 
 from chaos_librarian.contract.journal import JournalEntry
-from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
@@ -60,17 +60,30 @@ def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
     return blob
 
 
-if TYPE_CHECKING:
-    from chaos_librarian.contract.manifest import ManifestSidecar
-
 __all__ = [
     "SUPPORTED_S7_ACTIONS",
+    "LiveSidecar",
     "MediaPhaseBContext",
     "_subtitle_codec_for_container",
     "apply_media_action",
     "make_media_phase_b_context",
     "supports_media_action",
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class LiveSidecar:
+    """The metadata ``update_sidecar`` needs to regenerate a sidecar's bytes.
+
+    Tracked live across the phase-B journal walk so ``update_sidecar`` can
+    resolve a sidecar that was created (or extracted) earlier in the same walk
+    even when a later ``embed_subtitle`` / ``remove_sidecar`` drops it from the
+    final manifest (issue #112).
+    """
+
+    kind: SidecarKind
+    language: str | None
+    asset_id: str
 
 
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
@@ -141,10 +154,11 @@ class MediaPhaseBContext:
     # Shared with the orchestrator so each media handler's ffmpeg/ffprobe
     # calls append to the same MaterializationReport.invocations list.
     invocations: list[ToolInvocation] = field(default_factory=list)
-    # update_sidecar needs the (kind, language) recorded on the existing
-    # ManifestSidecar; the orchestrator passes a lookup callable so this
-    # module doesn't import from manifest_build.
-    sidecar_lookup: Callable[[str], ManifestSidecar | None] | None = None
+    # Live sidecar metadata keyed by sidecar_id. Seeded from the sidecars that
+    # exist at the start of the phase-B walk and updated as create_sidecar /
+    # extract_subtitle entries are dispatched, so update_sidecar can resolve a
+    # sidecar that never survives to the final manifest (issue #112).
+    live_sidecars: dict[str, LiveSidecar] = field(default_factory=dict)
 
 
 def make_media_phase_b_context(
@@ -155,8 +169,15 @@ def make_media_phase_b_context(
     ffmpeg_version: str,
     ffprobe_version: str,
     invocations: list[ToolInvocation],
-    sidecar_lookup: Callable[[str], ManifestSidecar | None] | None,
+    initial_sidecars: Iterable[ManifestSidecar],
 ) -> MediaPhaseBContext:
+    live_sidecars: dict[str, LiveSidecar] = {}
+    for sidecar in initial_sidecars:
+        live_sidecars[sidecar.id] = LiveSidecar(
+            kind=SidecarKind(sidecar.kind),
+            language=sidecar.language,
+            asset_id=sidecar.asset_id,
+        )
     return MediaPhaseBContext(
         library_root=library_root,
         scenario_assets=scenario_assets,
@@ -164,7 +185,7 @@ def make_media_phase_b_context(
         ffmpeg_version=ffmpeg_version,
         ffprobe_version=ffprobe_version,
         invocations=invocations,
-        sidecar_lookup=sidecar_lookup,
+        live_sidecars=live_sidecars,
     )
 
 
@@ -777,6 +798,9 @@ def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Med
     new_hash = hash_file(sidecar_path)
     sidecar_id = str(delta["sidecar_id"])
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
+    ctx.live_sidecars[sidecar_id] = LiveSidecar(
+        kind=SidecarKind.SUBTITLE, language=language, asset_id=entry.target_ids[0]
+    )
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.EXTRACT_SUBTITLE,
@@ -806,17 +830,10 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     sidecar_id = str(delta["sidecar_id"])
     sidecar_path = ctx.library_root / str(delta["sidecar_path"])
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
-    if ctx.sidecar_lookup is None:
-        raise MediaActionError(
-            "update_sidecar: ctx.sidecar_lookup is None",
-            event_id=entry.event_id,
-            action=TimelineActionName.UPDATE_SIDECAR,
-            cause=RuntimeError("missing lookup"),
-        )
-    sidecar = ctx.sidecar_lookup(sidecar_id)
+    sidecar = ctx.live_sidecars.get(sidecar_id)
     if sidecar is None:
         raise MediaActionError(
-            f"update_sidecar: sidecar_id {sidecar_id!r} not in manifest",
+            f"update_sidecar: sidecar_id {sidecar_id!r} is not a live sidecar",
             event_id=entry.event_id,
             action=TimelineActionName.UPDATE_SIDECAR,
             cause=KeyError(sidecar_id),
@@ -829,11 +846,10 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             action=TimelineActionName.UPDATE_SIDECAR,
             cause=KeyError(sidecar.asset_id),
         )
-    kind = SidecarKind(sidecar.kind)
     started = time.monotonic_ns()
     invocation_index: int | None = None
     bytes_, argv = regenerate_sidecar(
-        kind=kind,
+        kind=sidecar.kind,
         language=sidecar.language,
         sidecar_id=sidecar_id,
         resolved_seed=ctx.resolved_seed,
@@ -950,6 +966,7 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     temp_output.replace(sidecar_path)
     new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
+    ctx.live_sidecars[sidecar_id] = LiveSidecar(kind=kind, language=language, asset_id=asset_id)
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,

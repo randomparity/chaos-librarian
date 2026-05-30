@@ -153,6 +153,38 @@ def test_remove_sidecar_real(tmp_path: Path) -> None:
     assert all(s.path != "a0.eng.srt" for s in manifest.sidecars)
 
 
+def test_create_update_remove_same_sidecar(tmp_path: Path) -> None:
+    """create -> update -> remove a sidecar that never reaches the final manifest.
+
+    WHY (issue #112): update_sidecar previously resolved metadata from the
+    final manifest, where the removed sidecar no longer survives, so the run
+    failed with E_MATERIALIZE_MEDIA_FAILED. The live sidecar registry resolves
+    it from the create_sidecar dispatch instead.
+    """
+    out = tmp_path / "run-cur"
+    artifacts = materialize_scenario(FIXTURE_DIR / "create-update-remove-sidecar.yaml", out)
+    assert artifacts.materialization_report.outcome is Outcome.SUCCESS
+    # The created+removed deu sidecar is gone from the final manifest and disk.
+    manifest = _load_current_manifest(out)
+    assert all(s.language != "deu" for s in manifest.sidecars)
+    assert not (out / "library" / "movies" / "T - hd.deu.srt").exists()
+
+
+def test_update_then_remove_declared_sidecar(tmp_path: Path) -> None:
+    """A declared subtitle updated then removed resolves from the initial seed.
+
+    The declared eng subtitle has no create_sidecar journal entry, so the
+    registry must be seeded from the initial manifest for update_sidecar to
+    resolve it before remove_sidecar drops it (issue #112).
+    """
+    out = tmp_path / "run-utr"
+    artifacts = materialize_scenario(FIXTURE_DIR / "update-then-remove-sidecar.yaml", out)
+    assert artifacts.materialization_report.outcome is Outcome.SUCCESS
+    manifest = _load_current_manifest(out)
+    assert manifest.sidecars == []
+    assert not (out / "library" / "movies" / "T - hd.eng.srt").exists()
+
+
 def test_subtitle_ops_on_mp4_asset_use_mov_text(tmp_path: Path) -> None:
     out = tmp_path / "run-008"
     artifacts = materialize_scenario(FIXTURE_DIR / "subtitle-ops-on-mp4.yaml", out)

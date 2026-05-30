@@ -192,6 +192,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             ffprobe_version=ctx.caps.ffprobe.version or "unknown",
             invocations=phase_a.invocations,
             manifest=ctx.plan_artifacts.current_manifest,
+            initial_manifest=ctx.plan_artifacts.initial_manifest,
         )
         for entry in ctx.plan_artifacts.journal:
             dispatch_phase_b_entry(phase_b_state, entry)
