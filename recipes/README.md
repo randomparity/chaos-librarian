@@ -52,16 +52,20 @@ Copy races and network/filesystem timing artifacts.
 | `mtime-touch.yaml` | A bare mtime change with no content change. | converges | filesystem-artifacts |
 | `nfs-lag-visibility.yaml` | A network mount delays a re-added file's visibility. | converges | network-fs-lag |
 
-### `identity/` — durable identity through mutation
-Identity must survive moves, renames, root changes, and container swaps.
-(chaos-librarian has no content-hash dedup knob, so these exercise identity
-survival, not collision authoring.)
+### `identity/` — durable identity through mutation and content dedup
+Identity must survive moves, renames, root changes, and container swaps, and
+dedup must handle byte-identical content and truncated-hash collisions. The
+`hash-collision-simulation` recipe authors an *oracle-recorded* prefix collision
+(the manifest records a colliding hash; the on-disk bytes differ); a true on-disk
+sha256 collision is a tracked follow-up.
 
 | Recipe | Tests | Expected response | Requires |
 | --- | --- | --- | --- |
 | `move-and-rename.yaml` | Identity survives a move then a rename. | converges | none |
 | `cross-root-move.yaml` | Identity survives a move between roots. | converges | none |
 | `remux-container.yaml` | Identity survives a container swap (mkv→mp4). | converges | none |
+| `same-content-duplicate.yaml` | Two byte-identical assets share one content hash. | converges | none |
+| `hash-collision-simulation.yaml` | Recorded hashes share a truncated prefix but differ in full. | diverges | none |
 
 ### `metadata/` — metadata corruption
 Corruption injected via profile-gated timeline events.

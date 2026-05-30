@@ -1,0 +1,64 @@
+# Recipe: Hash-collision simulation
+# Category: identity
+# Tests: a dedup consumer that truncates content hashes must not treat a shared prefix as a true duplicate.
+# Expected consumer response: diverges — the two recorded hashes share an 8-char prefix but differ at full length, so a truncated-hash dedup would wrongly collide them.
+# Requires: none
+# Note: this is an ORACLE-RECORDED prefix collision. The manifest records a content
+# hash whose first collision_prefix_len hex chars match the referent's; the on-disk
+# file's real sha256 does NOT share the prefix. It exercises consumers that dedup on
+# the recorded/manifest hash, not consumers that re-hash files on disk. A true
+# on-disk sha256 prefix collision (nonce grind) is tracked as a follow-up.
+schema_version: 25
+scenario_id: recipe-identity-hash-collision-simulation
+seed: 1802
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: w_collide
+    title: Hash Collision Simulation
+    layout: movie_flat
+    variants:
+      - id: v_referent
+        label: referent
+        bundle:
+          id: b_referent
+          assets:
+            - id: asset_referent
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: v_decoy
+        label: decoy
+        bundle:
+          id: b_decoy
+          assets:
+            - id: asset_decoy
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+              hash_collision_with: asset_referent
+              collision_prefix_len: 8
+series: []
+artists: []
+timeline: []

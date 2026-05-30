@@ -1,0 +1,58 @@
+# Recipe: Same-content duplicate
+# Category: identity
+# Tests: two assets with byte-identical content must be detected as a true duplicate (same full content hash).
+# Expected consumer response: converges — dedup recognizes one shared content hash across two paths.
+# Requires: none
+schema_version: 25
+scenario_id: recipe-identity-same-content-duplicate
+seed: 1801
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: w_dup
+    title: Same Content Duplicate
+    layout: movie_flat
+    variants:
+      - id: v_original
+        label: original
+        bundle:
+          id: b_original
+          assets:
+            - id: asset_original
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+      - id: v_duplicate
+        label: duplicate
+        bundle:
+          id: b_duplicate
+          assets:
+            - id: asset_duplicate
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+              same_content_as: asset_original
+series: []
+artists: []
+timeline: []
