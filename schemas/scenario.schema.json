@@ -201,6 +201,18 @@
           ],
           "default": null
         },
+        "hardlinked_to": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Hardlinked To"
+        },
         "hash_collision_with": {
           "anyOf": [
             {
