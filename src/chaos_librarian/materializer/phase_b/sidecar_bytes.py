@@ -3,8 +3,9 @@
 - ``render_nfo``: pure Python XML template. Returns bytes.
 - ``poster_ffmpeg_argv``: returns the ffmpeg argv that will write a
   PNG via lavfi color source. The caller runs it.
+- ``cue_payload``: pure Python CUE-sheet bytes (authored body or default).
 - ``regenerate_sidecar``: dispatch by kind. Returns ``(bytes, None)``
-  for subtitle/NFO; ``(None, argv)`` for poster.
+  for subtitle/NFO/CUE; ``(None, argv)`` for poster.
 
 The update_sidecar perturbed sub-seed is derived as
 ``sha256(f"{resolved_seed}/sidecar_update/{sidecar_id}/{event_id}")``
@@ -22,6 +23,7 @@ from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 __all__ = [
+    "cue_payload",
     "encode_subtitle_body",
     "perturbed_seed_for_update",
     "poster_ffmpeg_argv",
@@ -54,6 +56,24 @@ def encode_subtitle_body(text: str, encoding: str | None) -> bytes:
     if name == "utf8_bom":
         return b"\xef\xbb\xbf" + body
     return body
+
+
+def cue_payload(*, body: str | None, sidecar_id: str) -> bytes:
+    """Return CUE-sheet bytes: an authored ``body`` verbatim, else a default.
+
+    The default is a minimal single-track CUE keyed on ``sidecar_id`` so two
+    sidecars on the same run produce distinct, deterministic sheets.
+    """
+    if body is not None:
+        return body.encode("utf-8")
+    return (
+        'PERFORMER "Chaos Librarian"\n'
+        f'TITLE "{sidecar_id}"\n'
+        f'FILE "{sidecar_id}.flac" WAVE\n'
+        "  TRACK 01 AUDIO\n"
+        '    TITLE "Track 1"\n'
+        "    INDEX 01 00:00:00\n"
+    ).encode()
 
 
 def _seed_hash(*, stream: str, seed: int, keys: tuple[str, ...]) -> int:
@@ -177,6 +197,9 @@ def regenerate_sidecar(
         if body is not None:
             return body.encode("utf-8"), None
         return render_nfo(sidecar_id=sidecar_id), None
+    if kind == SidecarKind.CUE:
+        # Authored body verbatim, else the minimal default keyed on sidecar_id.
+        return cue_payload(body=body, sidecar_id=sidecar_id), None
     if kind == SidecarKind.POSTER:
         if output_path is None:
             raise ValueError("poster regeneration requires output_path")

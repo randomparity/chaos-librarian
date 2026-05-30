@@ -38,6 +38,7 @@ from chaos_librarian.materializer.actions import (
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+    cue_payload,
     encode_subtitle_body,
     poster_ffmpeg_argv,
     regenerate_sidecar,
@@ -961,6 +962,8 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             temp_output.write_bytes(body_text.encode("utf-8"))
         else:
             temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+    elif kind == SidecarKind.CUE:
+        temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
     elif kind == SidecarKind.POSTER:
         argv = poster_ffmpeg_argv(
             output_path=temp_output,

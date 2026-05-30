@@ -6,6 +6,7 @@ from pathlib import Path
 
 from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+    cue_payload,
     encode_subtitle_body,
     perturbed_seed_for_update,
     poster_ffmpeg_argv,
@@ -208,3 +209,44 @@ def test_regenerate_sidecar_poster_returns_argv():
     assert bytes_ is None
     assert argv is not None
     assert argv[0] == "ffmpeg"
+
+
+def test_cue_payload_uses_authored_body_verbatim():
+    body = 'FILE "album.flac" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n'
+    assert cue_payload(body=body, sidecar_id="sc-1") == body.encode("utf-8")
+
+
+def test_cue_payload_default_is_deterministic_and_nonempty():
+    a = cue_payload(body=None, sidecar_id="sc-1")
+    b = cue_payload(body=None, sidecar_id="sc-1")
+    assert a == b
+    assert a.startswith(b"PERFORMER ")
+    assert b"TRACK 01 AUDIO" in a
+
+
+def test_regenerate_sidecar_cue_uses_authored_body():
+    bytes_, argv = regenerate_sidecar(
+        kind=SidecarKind.CUE,
+        language=None,
+        sidecar_id="sc-1",
+        resolved_seed=42,
+        event_id="ev_us_001",
+        duration_s=1.0,
+        body='FILE "x.flac" WAVE\n  TRACK 01 AUDIO',
+    )
+    assert argv is None
+    assert bytes_ == b'FILE "x.flac" WAVE\n  TRACK 01 AUDIO'
+
+
+def test_regenerate_sidecar_cue_default_when_no_body():
+    bytes_, argv = regenerate_sidecar(
+        kind=SidecarKind.CUE,
+        language=None,
+        sidecar_id="sc-1",
+        resolved_seed=42,
+        event_id="ev_us_001",
+        duration_s=1.0,
+    )
+    assert argv is None
+    assert bytes_ is not None
+    assert bytes_.startswith(b"PERFORMER ")
