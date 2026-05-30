@@ -179,6 +179,21 @@ _RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
 }
 
 
+def _resolution_pixels_for(resolution: str) -> tuple[int, int]:
+    """Return the ``(width, height)`` pixels for a scenario resolution name.
+
+    Raises ValueError when ``resolution`` isn't a known name; the caller
+    wraps that in a MediaActionError so the user sees
+    E_MATERIALIZE_MEDIA_FAILED instead of ffmpeg silently emitting SD.
+    """
+    pixels = _RESOLUTION_PIXELS.get(resolution)
+    if pixels is None:
+        raise ValueError(
+            f"unknown video resolution {resolution!r}; supported: {sorted(_RESOLUTION_PIXELS)}"
+        )
+    return pixels
+
+
 @dataclass(frozen=True, slots=True)
 class _VersionOutput:
     version_id: str
@@ -284,7 +299,16 @@ def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     output_path = ctx.library_root / str(delta["output_path"])
     temp_output = temp_sibling(output_path, ctx.resolved_seed)
     resolution = str(delta["resolution"])
-    width, height = _RESOLUTION_PIXELS.get(resolution, (640, 480))
+    try:
+        width, height = _resolution_pixels_for(resolution)
+    except ValueError as exc:
+        raise MediaActionError(
+            f"reencode_video: unknown resolution {resolution!r} for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.REENCODE_VIDEO,
+            cause=exc,
+            asset_id=entry.target_ids[0] if entry.target_ids else None,
+        ) from exc
     codec = str(delta["codec"])
     argv = [
         "ffmpeg",
