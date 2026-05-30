@@ -17,6 +17,7 @@ from chaos_librarian.validation.rules.asset_path_safety import (
     rule_asset_id_container_safe,
     rule_remux_container_safe,
 )
+from chaos_librarian.validation.rules.content_reference import rule_content_reference
 from chaos_librarian.validation.rules.create_sidecar_content import (
     rule_create_sidecar_content,
 )
@@ -63,6 +64,7 @@ _RULES: list[Rule] = [
     rule_path_duplicate,
     rule_duration_syntax,
     rule_target_unknown,
+    rule_content_reference,
     rule_profile_opt_in,
     rule_profile_budgets,
     rule_root_unknown,
