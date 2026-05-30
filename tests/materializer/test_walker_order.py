@@ -70,7 +70,7 @@ def _variant(variant_id: str, bundle_id: str, asset: Asset) -> Variant:
 
 def _multi_tree_scenario() -> Scenario:
     return Scenario(
-        schema_version=25,
+        schema_version=26,
         scenario_id="walker-order",
         seed=1,
         duration_scale=DurationScale.SHORT,

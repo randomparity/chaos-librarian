@@ -1,4 +1,4 @@
-schema_version: 25
+schema_version: 26
 scenario_id: voom-ci-malformed-media-header
 seed: 9705
 duration_scale: short

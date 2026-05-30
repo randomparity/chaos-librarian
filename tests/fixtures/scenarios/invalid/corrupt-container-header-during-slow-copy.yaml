@@ -1,5 +1,5 @@
 # expected: E_LIFECYCLE_INVALID
-schema_version: 25
+schema_version: 26
 scenario_id: corrupt-container-header-during-slow-copy
 seed: 42
 duration_scale: short

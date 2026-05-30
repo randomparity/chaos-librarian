@@ -4,7 +4,7 @@
 # Expected consumer response: errors or diverges — detect the media kind by
 #   content, not by extension; do not treat it as artwork.
 # Requires: none
-schema_version: 25
+schema_version: 26
 scenario_id: recipe-sidecar-poster-is-video
 seed: 1813
 duration_scale: short

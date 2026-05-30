@@ -1,5 +1,5 @@
 # expected: E_PATH_CONTAINMENT
-schema_version: 25
+schema_version: 26
 scenario_id: asset-container-separator
 seed: 1
 duration_scale: short

@@ -4,7 +4,7 @@
 #   the final path visible (the temp .part file should be ignored).
 # Expected consumer response: converges — ingest on commit, never index the temp.
 # Requires: none
-schema_version: 25
+schema_version: 26
 scenario_id: recipe-watcher-slow-copy-race
 seed: 1101
 duration_scale: short

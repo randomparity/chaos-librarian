@@ -953,7 +953,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[25]
+    schema_version: Literal[26]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

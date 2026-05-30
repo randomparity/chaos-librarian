@@ -1,5 +1,5 @@
 # expected: E_SLOW_COPY_PATH_COLLISION
-schema_version: 25
+schema_version: 26
 scenario_id: sc_temp_equals_final
 seed: 1
 duration_scale: short
