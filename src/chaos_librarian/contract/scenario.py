@@ -304,12 +304,14 @@ class SubtitleTimingProfile(enum.StrEnum):
 class SidecarKind(enum.StrEnum):
     """Kind of a sidecar — extends Sprint 6's subtitle-only assumption.
 
-    Subtitle requires ``language``; poster and NFO forbid it.
+    Subtitle requires ``language``; poster, NFO, and CUE forbid it. CUE (#118)
+    is an authored ``.cue`` index sheet — like NFO it accepts an inline ``body``.
     """
 
     SUBTITLE = "subtitle"
     POSTER = "poster"
     NFO = "nfo"
+    CUE = "cue"
 
 
 class SidecarMediaType(enum.StrEnum):
@@ -772,8 +774,8 @@ class CreateSidecarEvent(_TimelineEventBase):
             ):
                 if value is not None:
                     raise ValueError(f"{name} is only valid for subtitle sidecars")
-        if self.kind != SidecarKind.NFO and self.body is not None:
-            raise ValueError("body is only valid for nfo sidecars")
+        if self.kind not in {SidecarKind.NFO, SidecarKind.CUE} and self.body is not None:
+            raise ValueError("body is only valid for nfo and cue sidecars")
         if self.kind != SidecarKind.POSTER and self.media_type is not None:
             raise ValueError("media_type is only valid for poster sidecars")
         return self

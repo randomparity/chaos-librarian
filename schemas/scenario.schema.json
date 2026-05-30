@@ -2205,11 +2205,12 @@
       "type": "string"
     },
     "SidecarKind": {
-      "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster and NFO forbid it.",
+      "description": "Kind of a sidecar \u2014 extends Sprint 6's subtitle-only assumption.\n\nSubtitle requires ``language``; poster, NFO, and CUE forbid it. CUE (#118)\nis an authored ``.cue`` index sheet \u2014 like NFO it accepts an inline ``body``.",
       "enum": [
         "subtitle",
         "poster",
-        "nfo"
+        "nfo",
+        "cue"
       ],
       "title": "SidecarKind",
       "type": "string"
