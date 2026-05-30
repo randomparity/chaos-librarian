@@ -4,7 +4,7 @@
 # Expected consumer response: errors or diverges — a hardened parser rejects or
 #   neutralizes the payload; do not expand external entities.
 # Requires: none
-schema_version: 27
+schema_version: 28
 scenario_id: recipe-sidecar-nfo-xml-injection
 seed: 1812
 duration_scale: short

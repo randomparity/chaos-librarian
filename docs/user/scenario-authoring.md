@@ -173,6 +173,14 @@ timeline:
 | `wrong_oracle_hash` | `target` |
 | `network_lag_start` | `effect`, `target`, `after`, `duration` |
 | `network_lag_commit` | `for` |
+| `change_permissions` | `target` (asset id or library path), `mode` (octal, e.g. `000`) |
+| `simulate_quota_exceeded` | `target` (asset id) |
+| `toggle_readonly` | `target` (asset id or library path), `mode` (`readonly`/`readwrite`) |
+| `simulate_stale_handle` | `target` (asset id) |
+| `unmount_path` | `target` (asset id or library path) |
+| `remount_path` | `for` (the `unmount_path` event id) |
+| `acquire_lock` | `target` (asset id), `lock_type` (`shared`/`exclusive`) |
+| `release_lock` | `for` (the `acquire_lock` event id) |
 | `renumber_episode` | `target`, `episode_number`; optional `absolute_number` |
 | `move_episode_to_season` | `target`, `to_season`, `episode_number`; optional `absolute_number` |
 | `rename_season` | `target`, `title` |
@@ -193,6 +201,7 @@ Supported profile labels are:
 - `performance-scale`
 - `performance-stress`
 - `network-fs-lag`
+- `network-fs-chaos`
 - `filesystem-artifacts`
 - `negative-oracle`
 
@@ -216,3 +225,20 @@ profiles:
 `network_lag_start` uses `effect`, `target`, `after`, and `duration`.
 `network_lag_commit` uses `for`. The start event must share the referenced
 event's `at:` value and immediately follow it in declaration order.
+
+The broader network-filesystem chaos actions require the `network-fs-chaos`
+profile:
+
+```yaml
+profiles:
+  - network-fs-chaos
+```
+
+`change_permissions` and `toggle_readonly` apply a real `chmod` under the run's
+`library/` tree (restored when the run ends); `simulate_quota_exceeded`,
+`simulate_stale_handle`, `acquire_lock`/`release_lock`, and
+`unmount_path`/`remount_path` record neutral injected conditions
+(`ENOSPC`/`ESTALE`/`EAGAIN`/unavailable) that a consumer's adapter interprets.
+`release_lock` references its `acquire_lock` event id via `for`, and
+`remount_path` references its `unmount_path` event id via `for`; the close event
+must not precede its open in declaration order or in logical time.

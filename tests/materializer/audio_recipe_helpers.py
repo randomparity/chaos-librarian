@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 AUDIO_NOISE_SCENARIO = """\
-schema_version: 27
+schema_version: 28
 scenario_id: audio-noise-capability-test
 seed: 133
 duration_scale: short

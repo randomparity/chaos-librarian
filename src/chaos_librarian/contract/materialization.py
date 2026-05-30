@@ -20,10 +20,26 @@ from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import (
+    LockType,
     Mp4MoovPlacement,
     NetworkLagEffect,
+    ReadonlyState,
     TimelineActionName,
 )
+
+
+class NetworkFsChaosCondition(enum.StrEnum):
+    """The neutral errno / condition a network-fs-chaos action injects.
+
+    Recorded as a fact in ``NetworkFsChaosAction``; chaos-librarian attaches no
+    expected consumer verdict to it.
+    """
+
+    EACCES = "eacces"
+    ENOSPC = "enospc"
+    ESTALE = "estale"
+    EAGAIN = "eagain"
+    UNAVAILABLE = "unavailable"
 
 
 class Outcome(enum.StrEnum):
@@ -239,12 +255,36 @@ class NetworkLagAction(BaseModel):
     enforced: bool
 
 
+class NetworkFsChaosAction(BaseModel):
+    """One network-filesystem chaos audit record (neutral injected condition).
+
+    Records what condition was injected, on what target, and whether it was
+    really enforced on disk (a real ``os.chmod`` for permissions/readonly) or
+    only recorded (the kernel-level conditions). Carries no expected consumer
+    verdict — the consumer's adapter reads the condition and applies its own
+    policy.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    action: TimelineActionName
+    target_ref: str
+    condition: NetworkFsChaosCondition
+    enforced: bool
+    mode: str | None = None
+    readonly_state: ReadonlyState | None = None
+    lock_type: LockType | None = None
+    related_event_id: str | None = None
+    related_target_ref: str | None = None
+
+
 class MaterializationReport(BaseModel):
     """Top-level ``materialization.json`` body."""
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[15]
+    schema_version: Literal[16]
     run_id: uuid.UUID
     outcome: Outcome
     platform: str
@@ -260,6 +300,7 @@ class MaterializationReport(BaseModel):
     corruption_actions: list[CorruptionAction] = Field(default_factory=list)
     oracle_hash_actions: list[OracleHashAction] = Field(default_factory=list)
     network_lag_actions: list[NetworkLagAction] = Field(default_factory=list)
+    network_fs_chaos_actions: list[NetworkFsChaosAction] = Field(default_factory=list)
     requested_duration_ns: int | None = None
     actual_duration_ns: int | None = None
     speed_multiplier: str | None = None

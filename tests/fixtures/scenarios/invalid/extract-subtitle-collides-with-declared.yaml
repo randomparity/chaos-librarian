@@ -1,5 +1,5 @@
 # expected: E_SIDECAR_PATH_COLLISION
-schema_version: 27
+schema_version: 28
 scenario_id: sc_inv_xs_002
 seed: 1
 duration_scale: short

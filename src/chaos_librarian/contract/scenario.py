@@ -54,6 +54,14 @@ class TimelineActionName(enum.StrEnum):
     WRONG_ORACLE_HASH = "wrong_oracle_hash"
     NETWORK_LAG_START = "network_lag_start"
     NETWORK_LAG_COMMIT = "network_lag_commit"
+    CHANGE_PERMISSIONS = "change_permissions"
+    SIMULATE_QUOTA_EXCEEDED = "simulate_quota_exceeded"
+    TOGGLE_READONLY = "toggle_readonly"
+    SIMULATE_STALE_HANDLE = "simulate_stale_handle"
+    UNMOUNT_PATH = "unmount_path"
+    REMOUNT_PATH = "remount_path"
+    ACQUIRE_LOCK = "acquire_lock"
+    RELEASE_LOCK = "release_lock"
     RENUMBER_EPISODE = "renumber_episode"
     MOVE_EPISODE_TO_SEASON = "move_episode_to_season"
     RENAME_SEASON = "rename_season"
@@ -308,6 +316,20 @@ class NetworkLagEffect(enum.StrEnum):
     DELAYED_VISIBILITY = "delayed_visibility"
     DELAYED_RENAME = "delayed_rename"
     HELD_HANDLE = "held_handle"
+
+
+class ReadonlyState(enum.StrEnum):
+    """Read/write state requested by ``toggle_readonly``."""
+
+    READONLY = "readonly"
+    READWRITE = "readwrite"
+
+
+class LockType(enum.StrEnum):
+    """Advisory lock kind requested by ``acquire_lock``."""
+
+    SHARED = "shared"
+    EXCLUSIVE = "exclusive"
 
 
 class PacketStreamKind(enum.StrEnum):
@@ -840,6 +862,69 @@ class NetworkLagCommitEvent(_TimelineEventBase):
     )
 
 
+# Octal permission string for change_permissions: 3 or 4 octal digits.
+_PERMISSION_MODE_PATTERN: Final = r"^[0-7]{3,4}$"
+
+
+class ChangePermissionsEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.CHANGE_PERMISSIONS] = TimelineActionName.CHANGE_PERMISSIONS
+    # target is a declared asset id or a library-relative subtree path.
+    target: str
+    mode: str = Field(pattern=_PERMISSION_MODE_PATTERN)
+
+
+class SimulateQuotaExceededEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.SIMULATE_QUOTA_EXCEEDED] = (
+        TimelineActionName.SIMULATE_QUOTA_EXCEEDED
+    )
+    target: str
+
+
+class ToggleReadonlyEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.TOGGLE_READONLY] = TimelineActionName.TOGGLE_READONLY
+    # target is a declared asset id or a library-relative subtree path.
+    target: str
+    mode: ReadonlyState
+
+
+class SimulateStaleHandleEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.SIMULATE_STALE_HANDLE] = (
+        TimelineActionName.SIMULATE_STALE_HANDLE
+    )
+    target: str
+
+
+class UnmountPathEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.UNMOUNT_PATH] = TimelineActionName.UNMOUNT_PATH
+    # target is a declared asset id or a library-relative subtree path.
+    target: str
+
+
+class RemountPathEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.REMOUNT_PATH] = TimelineActionName.REMOUNT_PATH
+    # `for` is a Python keyword; keep the same Python/YAML split as slow copy.
+    # References the unmount_path event id this remount closes.
+    for_: str = Field(
+        validation_alias=AliasChoices("for_", "for"),
+        serialization_alias="for",
+    )
+
+
+class AcquireLockEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.ACQUIRE_LOCK] = TimelineActionName.ACQUIRE_LOCK
+    target: str
+    lock_type: LockType
+
+
+class ReleaseLockEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.RELEASE_LOCK] = TimelineActionName.RELEASE_LOCK
+    # References the acquire_lock event id this release closes.
+    for_: str = Field(
+        validation_alias=AliasChoices("for_", "for"),
+        serialization_alias="for",
+    )
+
+
 class RenumberEpisodeEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.RENUMBER_EPISODE] = TimelineActionName.RENUMBER_EPISODE
     target: str
@@ -972,6 +1057,14 @@ TimelineEvent = Annotated[
     | WrongOracleHashEvent
     | NetworkLagStartEvent
     | NetworkLagCommitEvent
+    | ChangePermissionsEvent
+    | SimulateQuotaExceededEvent
+    | ToggleReadonlyEvent
+    | SimulateStaleHandleEvent
+    | UnmountPathEvent
+    | RemountPathEvent
+    | AcquireLockEvent
+    | ReleaseLockEvent
     | RenumberEpisodeEvent
     | MoveEpisodeToSeasonEvent
     | RenameSeasonEvent
@@ -988,7 +1081,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[27]
+    schema_version: Literal[28]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

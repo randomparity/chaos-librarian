@@ -3,7 +3,7 @@
 # Tests: durable identity must survive a move followed by a rename of one asset.
 # Expected consumer response: converges — one stable identity across both ops.
 # Requires: none
-schema_version: 27
+schema_version: 28
 scenario_id: recipe-identity-move-and-rename
 seed: 1201
 duration_scale: short

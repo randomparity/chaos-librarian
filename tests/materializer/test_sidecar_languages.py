@@ -22,7 +22,7 @@ def _scenario_with_timeline(*events: CreateSidecarEvent) -> Scenario:
 def _movie_scenario() -> Scenario:
     return Scenario.model_validate(
         {
-            "schema_version": 27,
+            "schema_version": 28,
             "scenario_id": "materializer-sidecar-language-test",
             "seed": 1,
             "duration_scale": "short",

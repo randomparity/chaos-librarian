@@ -4,7 +4,7 @@
 # Expected consumer response: converges — no re-probe/re-hash storm from a bare
 #   mtime bump.
 # Requires: filesystem-artifacts
-schema_version: 27
+schema_version: 28
 scenario_id: recipe-watcher-mtime-touch
 seed: 1104
 duration_scale: short

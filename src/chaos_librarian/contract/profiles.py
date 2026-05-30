@@ -14,6 +14,7 @@ class ProfileName(enum.StrEnum):
     PERFORMANCE_SCALE = "performance-scale"
     PERFORMANCE_STRESS = "performance-stress"
     NETWORK_FS_LAG = "network-fs-lag"
+    NETWORK_FS_CHAOS = "network-fs-chaos"
     FILESYSTEM_ARTIFACTS = "filesystem-artifacts"
     NEGATIVE_ORACLE = "negative-oracle"
     FUZZ_SMOKE = "fuzz-smoke"
