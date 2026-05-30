@@ -13,7 +13,7 @@ from chaos_librarian.contract.observed_state import ObservedState
 def load_observed_state(path: Path) -> ObservedState:
     """Load and validate a consumer-exported observed-state JSON file."""
     try:
-        data = path.read_bytes()
+        data = path.read_text()
         return ObservedState.model_validate_json(data)
     except (OSError, ValueError, ValidationError) as exc:
         raise AdapterInputError(

@@ -89,7 +89,7 @@ def run_validation(run_input: RunInput) -> ValidationReport:
             severity=ValidationSeverity.ERROR,
             message=(f"top-level YAML is {type(raw_data).__name__}, expected mapping"),
             loc=(),
-            line_index=LineIndex(),
+            line_index=line_index,
         )
         return _assemble_report(scenario_id="<unknown>", collector=collector)
 

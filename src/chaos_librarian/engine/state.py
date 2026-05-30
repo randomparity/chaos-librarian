@@ -36,10 +36,13 @@ from chaos_librarian.contract.manifest import (
     ManifestVersion,
 )
 from chaos_librarian.contract.scenario import (
+    Artist,
     ArtistLayout,
     EpisodeNaming,
+    Movie,
     MovieLayout,
     Scenario,
+    Series,
     SeriesLayout,
     SidecarKind,
     SubtitleMode,
@@ -408,7 +411,13 @@ def build_initial_state(scenario: Scenario, ids: IdAllocator) -> WorldState:
 
 
 def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
-    for movie in scenario.movies:
+    _seed_movie_rows(state, scenario.movies)
+    _seed_series_rows(state, scenario.series)
+    _seed_artist_rows(state, scenario.artists)
+
+
+def _seed_movie_rows(state: WorldState, movies: tuple[Movie, ...]) -> None:
+    for movie in movies:
         state.movies[movie.id] = ManifestMovie(
             id=movie.id,
             title=movie.title,
@@ -416,7 +425,10 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
         )
         for variant in movie.variants:
             _seed_variant_bundle_rows(state, variant, ParentKind.MOVIE, movie.id)
-    for series in scenario.series:
+
+
+def _seed_series_rows(state: WorldState, series_list: tuple[Series, ...]) -> None:
+    for series in series_list:
         state.series[series.id] = ManifestSeries(
             id=series.id,
             title=series.title,
@@ -441,7 +453,10 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
                 )
                 for variant in episode.variants:
                     _seed_variant_bundle_rows(state, variant, ParentKind.EPISODE, episode.id)
-    for artist in scenario.artists:
+
+
+def _seed_artist_rows(state: WorldState, artists: tuple[Artist, ...]) -> None:
+    for artist in artists:
         state.artists[artist.id] = ManifestArtist(
             id=artist.id,
             name=artist.name,
