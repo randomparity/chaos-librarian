@@ -88,7 +88,7 @@ def _write_batch(
             )
             write_generated_scenario(path, generated.data)
         except Exception as exc:  # rollback then re-report any generation/write failure
-            removed = _rollback(written)
+            removed, unremoved = _rollback(written)
             typer.echo(
                 f"generate: failed at profile={profile.value} lane={item.lane.value} "
                 f"seed={item.seed}: {exc}",
@@ -98,6 +98,13 @@ def _write_batch(
                 joined = ", ".join(str(p) for p in removed)
                 typer.echo(
                     f"generate: rolled back {len(removed)} partially written files: {joined}",
+                    err=True,
+                )
+            if unremoved:
+                joined = ", ".join(str(p) for p in unremoved)
+                typer.echo(
+                    f"generate: WARNING: could not remove {len(unremoved)} files during "
+                    f"rollback (remove them before re-running): {joined}",
                     err=True,
                 )
             raise typer.Exit(code=1) from exc
@@ -143,15 +150,21 @@ def _assert_scenario_id(profile: FuzzProfileName, item: BatchItem, generated_id:
         )
 
 
-def _rollback(written: list[Path]) -> list[Path]:
+def _rollback(written: list[Path]) -> tuple[list[Path], list[Path]]:
+    """Best-effort remove this batch's files; return ``(removed, unremoved)``.
+
+    Unlink failures are reported via ``unremoved`` rather than swallowed, so the
+    caller can warn that the directory was not left fully clean.
+    """
     removed: list[Path] = []
+    unremoved: list[Path] = []
     for path in written:
         try:
             path.unlink(missing_ok=True)
             removed.append(path)
         except OSError:
-            pass
-    return removed
+            unremoved.append(path)
+    return removed, unremoved
 
 
 def _batch_summary_json(out_dir: Path, records: list[tuple[Path, bytes, Scenario]]) -> str:

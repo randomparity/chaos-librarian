@@ -418,3 +418,40 @@ def test_batch_rollback_removes_written_files_on_failure(
     assert "rolled back" in _plain_output(result)
     # first file was written then rolled back; nothing remains
     assert list(out.glob("*.yaml")) == []
+
+
+def test_batch_rollback_warns_when_a_file_cannot_be_removed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "gen"
+    out.mkdir()
+    target = "fuzz-smoke-smoke-seed-42.yaml"
+
+    real_generate = generate_cmd.generate_scenario
+    calls = {"n": 0}
+
+    def failing_generate(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_generate(**kwargs)
+
+    real_unlink = Path.unlink
+
+    def selective_unlink(self: Path, *args: Any, **kwargs: Any) -> None:
+        if self.name == target:
+            raise OSError("locked")
+        real_unlink(self, *args, **kwargs)
+
+    monkeypatch.setattr(generate_cmd, "generate_scenario", failing_generate)
+    monkeypatch.setattr(Path, "unlink", selective_unlink)
+
+    result = _run(
+        ["generate", "--profile", "fuzz-smoke", "--count", "3", "--seed", "42", "--out", str(out)]
+    )
+
+    assert result.exit_code == 1
+    assert "could not remove" in _plain_output(result)
+    # the un-removable file is still on disk and surfaced, not silently dropped
+    assert (out / target).exists()
+    assert target in _plain_output(result)
