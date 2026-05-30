@@ -20,7 +20,7 @@ existing schema before scoping.
 | --- | --- | --- |
 | Tag corruption (malformed ID3 / null bytes) | New action; reuses the `malformed-media` profile gate + `CorruptionRecord`/`CorruptionAction` plumbing | **Ship** |
 | CUE sheet sidecar | New `SidecarKind.CUE`; reuses the #181 `create_sidecar` + `body` machinery | **Ship** |
-| Album-art format variety (jpeg/webp) | Small extension to the PNG-only cover-art format enum | **Ship** |
+| Album-art format variety (jpeg/webp) | New poster-sidecar `image_format` selector; reuses the #181 `create_sidecar` poster path (attaches to any asset, including music tracks) | **Ship** |
 | Album-art format *change* over time (JPG→WebP) | `update_sidecar` cannot change a sidecar's format/extension today; larger question | Defer → issue |
 | Multi-track single-file album | Genuinely new topology (one asset spanning multiple tracks) | Defer → issue |
 | Embedded lyrics | `edit_metadata.fields` already maps `lyrics=...` to `ffmpeg -metadata` (timeline-embedded form already expressible); a phase-A `embedded_lyrics` asset field is new | Defer → issue (document `edit_metadata` covers the timeline form) |
@@ -42,20 +42,33 @@ sanitizes values and could never produce null bytes or a malformed frame.
 
 A closed `TagCorruptionFlavor` StrEnum selects the corruption shape:
 
-- `null_bytes` — overwrite a leading byte run with `0x00`, modelling embedded null
-  bytes in an ID3 text frame.
-- `malformed_frame` — prepend/overwrite the head with a syntactically invalid ID3v2
-  frame header (`ID3` magic + deterministic-but-invalid size/flags bytes), modelling a
-  malformed ID3 tag.
+- `null_bytes` — overwrite the first `bytes` head bytes with `0x00`, modelling embedded
+  null bytes in an ID3 text frame. This needs a **new zero-fill helper** in
+  `corruption_bytes.py` (e.g. `zero_range`); `overwrite_range` cannot do it — it fills
+  with `replacement_bytes`, which is sha256-derived and never zero.
+- `malformed_frame` — overwrite the head **in place** (no length change) with a fixed,
+  deterministic, syntactically invalid ID3v2 header byte pattern: the `ID3` magic
+  (`0x49 0x44 0x33`), a bogus version (`0xFF 0xFF`), a flags byte, and a deliberately
+  invalid (non-syndsafe) size field, padded/truncated to the requested `bytes` length.
+  This is a **new fixed-pattern helper** in `corruption_bytes.py` (e.g.
+  `malformed_id3_header(byte_count)`); it does not prepend or grow the file, so all
+  downstream offsets are unchanged.
+
+In both flavors the `bytes` knob is the count of in-place head bytes the corruptor
+writes; the file size is unchanged. `corruption_bytes` already rejects a range longer
+than the file (`overwrite_range` raises `ValueError`); the new helpers apply the same
+length guard so a file shorter than `bytes` is a clear materialization error rather than
+silent partial corruption.
 
 The action records a `CorruptionRecord` (profile `malformed-media`, `corruptor`
 `tag_corruption_v1`, `seed_material`, `metadata={"flavor": ...}`) on the new version,
-and a `CorruptionAction` from the materializer, exactly mirroring `truncate_file`. The
-corrupted output is probed; `probe_outcome` records whether ffprobe still reads it.
+and a `CorruptionAction` from the materializer, mirroring `corrupt_container_header`
+(byte-overwrite at the head, no ffmpeg). The corrupted output is probed; `probe_outcome`
+records whether ffprobe still reads it.
 
 `CorruptTagsEvent` shape: `target: str`, `flavor: TagCorruptionFlavor`,
-`bytes: int = Field(default=64, ge=1, le=4096)` (count of head bytes affected, matching
-`corrupt_container_header`'s knob).
+`bytes: int = Field(default=64, ge=1, le=4096)` (count of in-place head bytes affected,
+matching `corrupt_container_header`'s knob).
 
 ### Q3 — CUE sheet: new `SidecarKind.CUE`, authored via `create_sidecar`
 
@@ -77,22 +90,49 @@ Materialization: `_apply_create_sidecar` gains a `cue` branch writing
 `regenerate_sidecar` dispatch (`update_sidecar`) gains the same `cue` branch.
 `LiveSidecar` already carries `body`, so update regenerates faithfully.
 
-### Q4 — Album-art format variety: scenario-side only, manifest stays v10
+### Q4 — Album-art format variety: poster-sidecar selector, manifest stays v10
 
-Extend `CoverArtImageFormat` (`png` only today) to add `jpeg` and `webp`. This enum
-drives `EmbeddedCoverArt.image_format` (cover art embedded in the audio container). The
-cover-art prelude already writes `cover.{image_format.value}` and lets ffmpeg select the
-encoder from the extension, so the only synthesis change is allowing the two new values
-(plus a validation/capability check that the encoder is available).
+Album art for music is delivered as a **poster sidecar**, not embedded cover art.
+`EmbeddedCoverArt`/`CoverArtImageFormat` is validation-gated to mp4 **video** assets
+(`rule_materialize_media_matrix._check_video_embedded_metadata`) and rejected outright
+on track/audio assets (`_check_track_asset`), so it cannot serve a music library. A
+poster sidecar via `create_sidecar(kind=poster)` attaches to **any** asset, including a
+music track, and is the music-relevant reading of #118's "album-art sidecar."
 
-**Manifest verification (Q4 gate):** the embedded cover-art bytes are recorded in the
-asset's existing `content_hash`, and the format is recorded in the existing
-`ContentSourceEvidence.cover_art_image_format` replay evidence — both already present.
-A poster/album-art **sidecar** records via `ManifestSidecar`, whose `kind` and `path`
-(carrying the author-chosen extension) and `content_hash` are already present. **No new
-manifest or materialization field is required → `MANIFEST_SCHEMA_VERSION` stays 10 and
-`MATERIALIZATION_SCHEMA_VERSION` is unchanged.** Confirmed against
-`contract/manifest.py` and `contract/content_sources.py`.
+Add a new `image_format` field to the poster path of `CreateSidecarEvent`, typed as a
+dedicated **`PosterImageFormat` StrEnum (`png`, `jpeg`, `webp`)** (see enum rationale
+below). `None`/`png` keeps today's behavior (a 400x600 single-color PNG). `jpeg`/`webp`
+synthesize the same color frame in that format. The selector drives both the synthesized
+bytes (the ffmpeg argv's pixel/codec choice) and the deterministic rendered extension on
+the sidecar `path` — the materializer derives the encoder/extension from `image_format`
+rather than relying on implicit ffmpeg extension inference from the author's `to:`.
+
+`image_format` is poster-only (forbidden on subtitle/nfo/cue, enforced in the extended
+`CreateSidecarEvent.model_validator`). It is incompatible with `media_type=video`
+(image format applies only to image posters); the validator rejects the combination.
+
+**Capability guard:** `jpeg`/`webp` require their ffmpeg encoders (`mjpeg`, `libwebp`).
+A validation/materialization guard checks availability via the existing
+`_ffmpeg_encoder_available` (`materializer/tooling/capabilities.py`) and surfaces
+`E_MATERIALIZE_UNSUPPORTED` when the encoder is absent, mirroring how the subtitle
+recipe matrix and HEVC paths gate on synthesis capability. `png` needs no guard.
+
+**Enum rationale (no conflation):** a poster sidecar is a standalone image file; embedded
+cover art is an attached-picture stream muxed into an mp4 and carries its own validation
+surface and `ContentSourceEvidence.cover_art_image_format` replay field. Reusing
+`CoverArtImageFormat` would couple the poster's format contract to the embedded-only
+evidence/validation surface and force the poster to track future embedded-only enum
+additions. A dedicated `PosterImageFormat` keeps the two artifacts' format contracts
+independent. The two enums happen to share `png`/`jpeg`/`webp` token spellings today;
+that is incidental, not a shared concept.
+
+**Manifest verification (Q4 gate):** a poster sidecar records via `ManifestSidecar`,
+whose `kind`, `path` (carrying the format-derived extension), and `content_hash` are all
+already present. The format selection only changes the synthesized bytes (recorded in
+the existing `content_hash`) and the rendered extension (recorded in the existing
+`path`). **No new manifest or materialization field is required →
+`MANIFEST_SCHEMA_VERSION` stays 10 and `MATERIALIZATION_SCHEMA_VERSION` is unchanged.**
+Confirmed against `contract/manifest.py`.
 
 ### Q5 — Profile gates
 
@@ -108,7 +148,8 @@ sidecar and cover-art formats are not corruption → no gate.
 - `TimelineActionName.CORRUPT_TAGS` + `CorruptTagsEvent` (added to the `TimelineEvent`
   union and the discriminator).
 - `SidecarKind.CUE`.
-- `CoverArtImageFormat.JPEG`, `CoverArtImageFormat.WEBP`.
+- `PosterImageFormat` StrEnum (`png`, `jpeg`, `webp`) + `CreateSidecarEvent.image_format`
+  (poster-only).
 - `REQUIRED_PROFILES_BY_ACTION[corrupt_tags] = malformed-media`.
 
 No other `*_SCHEMA_VERSION` changes (manifest, materialization, journal, replay,
@@ -135,14 +176,17 @@ No new validation code unless a gap surfaces during TDD; if one does, surface it
 ## Materialization
 
 - `corrupt_tags`: new `_apply_corrupt_tags` handler in `phase_b/corruption.py`, added to
-  `_HANDLERS` and `supports_corruption_action`. Reuses `overwrite_range` (null_bytes:
-  zero fill; malformed_frame: deterministic invalid ID3v2 header bytes via a new
-  byte-builder in `corruption_bytes.py`). Atomic temp-sibling write + `_finalize`,
-  probe, `CorruptionAction` with `metadata={"flavor": ...}`.
+  `_HANDLERS` and `supports_corruption_action`. Two new pure helpers in
+  `corruption_bytes.py`: `zero_range` (null_bytes flavor — fixed `0x00` fill, same
+  length guard as `overwrite_range`) and `malformed_id3_header` (malformed_frame flavor —
+  fixed invalid ID3v2 header pattern, in-place, length-guarded). Atomic temp-sibling
+  write + `_finalize`, probe, `CorruptionAction` with `metadata={"flavor": ...}`.
 - CUE sidecar: `cue_payload(...)` in `phase_b/sidecar_bytes.py` (pure Python), wired into
   `_apply_create_sidecar` and `regenerate_sidecar`.
-- Cover-art formats: `_run_cover_art_prelude` is format-agnostic already; the change is
-  enum-level plus a capability/validation guard for the chosen encoder.
+- Poster `image_format`: `poster_ffmpeg_argv` gains an `image_format` parameter selecting
+  the encoder/pixel-format and output extension (`png`/`jpeg`/`webp`); the create-sidecar
+  and update-sidecar paths thread it through, and `LiveSidecar` carries it for faithful
+  regeneration. Capability guard via `_ffmpeg_encoder_available` (`mjpeg`/`libwebp`).
 
 ## Policy-neutral oracle / manifest impact
 
@@ -150,8 +194,9 @@ No new validation code unless a gap surfaces during TDD; if one does, surface it
 corruptor, seed_material, flavor metadata, probe outcome via the materialization
 report) — the oracle states *what corruption was applied and whether the output still
 probes*, never a policy verdict. CUE sidecars record a `ManifestSidecar` row
-(`kind=cue`, path, content_hash). Cover-art format records the format in the existing
-content-source evidence. Manifest version unchanged.
+(`kind=cue`, path, content_hash). A poster sidecar's `image_format` is reflected in the
+existing `ManifestSidecar.path` (format-derived extension) and `content_hash` (synthesized
+bytes). Manifest version unchanged.
 
 ## Backward compatibility
 
@@ -159,8 +204,9 @@ Existing music/movie/TV/podcast scenarios stay valid after the mandatory
 `schema_version: 32` re-pin. Omitting every new field is byte-identical to v31 output.
 A regression test asserts a representative movie, TV, and podcast scenario materialize
 to byte-identical manifests/content vs. the v31 baseline (other than the version
-literal). `CoverArtImageFormat.PNG` remains the default, so existing embedded-cover-art
-assets are unchanged.
+literal). Poster `image_format` defaults to `png` (omitted = today's behavior), so
+existing poster sidecars are byte-identical; `EmbeddedCoverArt`/`CoverArtImageFormat`
+(mp4 video cover art) is untouched by this change.
 
 ## Deferred → GitHub issues (filed before merge, deduped vs backlog)
 
@@ -177,6 +223,12 @@ assets are unchanged.
   cohesive).
 - A dedicated `cue_sheet` asset field tying CUE to track offsets (couples to the
   deferred multi-track-single-file topology; over-scoped).
+- Album-art format via `EmbeddedCoverArt`/`CoverArtImageFormat` (embedded, not a sidecar;
+  validation-gated to mp4 video and rejected on audio tracks, so it serves no music
+  library — it's the wrong artifact for #118's "album-art sidecar").
 - Free-string image format (admits unsynthesizable values; off-pattern vs. the closed
   media-field convention).
-- Bumping the manifest version for cover-art formats (no new field required — Q4).
+- Overloading `CoverArtImageFormat` for the poster sidecar (couples the poster's format
+  contract to the embedded-cover-art evidence/validation surface; a dedicated
+  `PosterImageFormat` keeps the two artifacts independent).
+- Bumping the manifest version for poster image format (no new field required — Q4).
