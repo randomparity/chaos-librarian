@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import ProbedMedia
+from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
 
 
 class ObservedAction(enum.StrEnum):
@@ -112,7 +113,7 @@ class ObservedSidecar(BaseModel):
     observed_ref: str
     kind: str
     path: str
-    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
 
     @field_validator("path")
     @classmethod
@@ -152,7 +153,7 @@ class ObservedAsset(BaseModel):
 
     observed_ref: str
     current_path: str | None
-    content_hash: str | None = Field(default=None, pattern=r"^sha256:[0-9a-f]{64}$")
+    content_hash: str | None = Field(default=None, pattern=SHA256_URI_PATTERN)
     probed: ProbedMedia | None = None
     variant_ref: str | None = None
     bundle_ref: str | None = None
