@@ -33,6 +33,9 @@ from chaos_librarian.validation.rules._common import (
     _Loc,
     iter_asset_contexts,
 )
+from chaos_librarian.validation.rules._subtitle_recipe import (
+    SUBTITLE_RECIPE_MATRIX as _SUBTITLE_RECIPE_MATRIX,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
@@ -50,15 +53,6 @@ _WEBM_REJECTED_VIDEO_FIELDS: Final[tuple[str, ...]] = (
     "hdr_mode",
     "resolution_sequence",
 )
-_SRT_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset(
-    {"utf8", "utf8_bom", "utf16_le", "iso_8859_1"}
-)
-_ASS_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset({"utf8", "utf8_bom"})
-_SUBTITLE_RECIPE_MATRIX: Final[dict[tuple[str, str], frozenset[str]]] = {
-    ("srt", "generated_srt"): _SRT_SUBTITLE_ENCODINGS,
-    ("ass", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
-    ("ssa", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
-}
 _SUBTITLE_TIMING_PROFILES: Final[frozenset[str]] = frozenset({"normal", "overlap", "out_of_range"})
 
 
