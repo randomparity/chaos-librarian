@@ -201,6 +201,15 @@ materialize tests), `uv` / `ruff` / `ty`. Linux/macOS POSIX filesystem (CI:
     out_dir))], exit_code=0, duration_ns=...)`; build `MaterializedAsset` (same fields as
     the copy helper); return `MaterializeAssetResult(invocation=..., materialized_asset=...,
     probed=probed, sidecar_hashes={}, content_sources=(), prelude_invocations=())`.
+  - **`os.link` is non-overwriting (`EEXIST`) — no guard needed; do NOT add unlink-first
+    logic.** Unlike `shutil.copyfile` (which `same_content_as` uses and which silently
+    overwrites), `os.link` raises `FileExistsError` if `output_path` already exists. Phase A
+    always writes into a **freshly-created** library tree — every entry point `mkdir()`s
+    `<out_dir>/library` without `exist_ok` (`replay.py:161`, `wall_clock.py:268`; the run
+    path constructs a fresh `out_dir`), so `output_path` never pre-exists when
+    `_hardlink_asset` runs. A bare `os.link(referent_path, output_path)` is therefore
+    correct; adding an `output_path.unlink(missing_ok=True)` first would be dead defensive
+    code masking a real invariant violation if the tree were ever dirty. Keep it bare.
   - The orchestrator threads the referrer's `MaterializedAsset.invocation_index` exactly
     as the copy/synthesis paths do (`model_copy(update={"invocation_index":
     len(phase_a.invocations)})` then append the invocation), so do **not** also set it in
