@@ -199,6 +199,36 @@ def test_change_permissions_applies_and_restores_mode(tmp_path: Path) -> None:
     shutil.rmtree(out_dir)
 
 
+def test_stacked_chmods_restore_to_original_mode(tmp_path: Path) -> None:
+    # Two change_permissions on the same asset: restore must return the file to
+    # its true pre-chaos mode, not the intermediate 000.
+    timeline = dedent(
+        """\
+        timeline:
+          - id: chmod_001
+            at: 1s
+            action: change_permissions
+            target: asset_main
+            mode: "000"
+          - id: chmod_002
+            at: 2s
+            action: change_permissions
+            target: asset_main
+            mode: "444"
+        """
+    )
+    artifacts, out_dir = _run(tmp_path, timeline)
+
+    assert len(artifacts.materialization_report.network_fs_chaos_actions) == 2
+    library_file = _library_file(out_dir)
+    final_mode = stat.S_IMODE(library_file.stat().st_mode)
+    # The fake synthesizer writes the file with the process default (not 000/444),
+    # so a correct restore leaves a writable, non-444 mode.
+    assert final_mode & stat.S_IWUSR
+    assert final_mode != 0o444
+    shutil.rmtree(out_dir)
+
+
 def test_toggle_readonly_clears_write_bits_then_restores(tmp_path: Path) -> None:
     timeline = dedent(
         """\

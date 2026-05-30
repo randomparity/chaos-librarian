@@ -55,20 +55,16 @@ _WRITE_BITS = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
 
 
 @dataclass(slots=True)
-class _CapturedMode:
-    """One real-chmod target whose original mode must be restored at teardown."""
-
-    path: Path
-    original_mode: int
-
-
-@dataclass(slots=True)
 class NetworkFsChaosState:
     """Wall-clock network-fs-chaos accumulator threaded on the dispatch state."""
 
     library_root: Path
     actions: list[NetworkFsChaosAction] = field(default_factory=list)
-    captured_modes: list[_CapturedMode] = field(default_factory=list)
+    # Original mode per real-chmod path, captured the FIRST time the path is
+    # touched. Keyed by path so stacked chmods (e.g. change_permissions then
+    # toggle_readonly on the same asset) restore to the true pre-chaos mode, not
+    # an intermediate one.
+    captured_modes: dict[Path, int] = field(default_factory=dict)
     # Open windows keyed by the open event's id, holding the open's recorded facts.
     open_locks: dict[str, dict[str, object]] = field(default_factory=dict)
     open_unmounts: dict[str, dict[str, object]] = field(default_factory=dict)
@@ -133,9 +129,9 @@ def restore_chaos_modes(state: NetworkFsChaosState) -> None:
     Idempotent: each restore clears the captured list, so a finalize after a
     failure-path restore is a no-op.
     """
-    for captured in state.captured_modes:
-        if captured.path.exists():
-            captured.path.chmod(captured.original_mode)
+    for path, original_mode in state.captured_modes.items():
+        if path.exists():
+            path.chmod(original_mode)
     state.captured_modes.clear()
 
 
@@ -209,7 +205,9 @@ def _apply_chmod(state: NetworkFsChaosState, resolved: Path | None, new_mode: in
 
 
 def _capture_mode(state: NetworkFsChaosState, path: Path, original_mode: int) -> None:
-    state.captured_modes.append(_CapturedMode(path=path, original_mode=original_mode))
+    # First touch wins: a later chmod on the same path must not overwrite the
+    # true pre-chaos mode with an intermediate (e.g. 000) one.
+    state.captured_modes.setdefault(path, original_mode)
 
 
 def _resolve_entry_path(state: NetworkFsChaosState, entry: JournalEntry) -> Path | None:
