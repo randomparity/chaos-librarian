@@ -539,10 +539,23 @@ class Bundle(BaseModel):
     assets: tuple[Asset, ...]
 
 
+class EditionKind(enum.StrEnum):
+    """Movie release/edition cut, rendered as a Plex/Jellyfin {edition-...} token."""
+
+    THEATRICAL = "theatrical"
+    DIRECTORS_CUT = "directors_cut"
+    EXTENDED = "extended"
+    UNRATED = "unrated"
+
+
 class Variant(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
     label: str
+    # Optional movie edition (theatrical/director's cut/...). None for the common
+    # single-edition case and for non-movie variants; only the movie render branch
+    # emits the {edition-...} token. See ADR 0010.
+    edition: EditionKind | None = None
     bundle: Bundle
 
 
@@ -1180,7 +1193,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[30]
+    schema_version: Literal[31]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

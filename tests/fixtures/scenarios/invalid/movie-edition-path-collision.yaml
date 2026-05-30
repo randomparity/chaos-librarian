@@ -1,0 +1,56 @@
+# expected: E_PATH_COLLISION
+schema_version: 31
+scenario_id: movie-edition-path-collision
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: movies
+      path: movies
+movies:
+  # Two variants with the same label AND the same edition render to the same
+  # path (the edition token does not disambiguate identical (label, edition)
+  # pairs), so they collide.
+  - id: movie_orbit
+    title: Synthetic Orbit
+    layout: movie_flat
+    variants:
+      - id: variant_one
+        label: 1080p
+        edition: extended
+        bundle:
+          id: bundle_one
+          assets:
+            - id: asset_one
+              role: primary_video
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_two
+        label: 1080p
+        edition: extended
+        bundle:
+          id: bundle_two
+          assets:
+            - id: asset_two
+              role: primary_video
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline: []

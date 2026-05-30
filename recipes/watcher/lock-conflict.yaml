@@ -5,7 +5,7 @@
 # Expected consumer response: a writer that hits the lock retries or backs off
 #   rather than failing the asset outright, and proceeds once the lock is released.
 # Requires: network-fs-chaos
-schema_version: 30
+schema_version: 31
 scenario_id: recipe-watcher-lock-conflict
 seed: 5112
 duration_scale: short

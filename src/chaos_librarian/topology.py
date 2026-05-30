@@ -263,6 +263,7 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
         episode_slug=(
             context.podcast_episode.slug if context.podcast_episode is not None else None
         ),
+        edition=context.variant.edition,
         variant_label=context.variant.label,
         asset_role=context.asset.role,
         asset_container=context.asset.container,

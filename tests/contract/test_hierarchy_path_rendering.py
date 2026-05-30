@@ -12,6 +12,7 @@ import pytest
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     ArtistLayout,
+    EditionKind,
     EpisodeNaming,
     MovieLayout,
     PodcastEpisodeNaming,
@@ -49,6 +50,7 @@ def _ctx(**overrides: object) -> RenderableAssetContext:
         "podcast_title": None,
         "published_at": None,
         "episode_slug": None,
+        "edition": None,
         "variant_label": "1080p",
         "asset_role": "feature",
         "asset_container": "mkv",
@@ -84,6 +86,50 @@ def test_movie_flat_path() -> None:
 def test_movie_folder_path() -> None:
     assert render_asset_path(_ctx(layout=MovieLayout.MOVIE_FOLDER)) == (
         "Movies/Orbit/Orbit - 1080p.mkv"
+    )
+
+
+def test_movie_flat_with_edition_renders_token() -> None:
+    assert render_asset_path(_ctx(edition=EditionKind.DIRECTORS_CUT)) == (
+        "Movies/Orbit - 1080p {edition-Director's Cut}.mkv"
+    )
+
+
+def test_movie_folder_with_edition_renders_token() -> None:
+    assert render_asset_path(
+        _ctx(layout=MovieLayout.MOVIE_FOLDER, edition=EditionKind.EXTENDED)
+    ) == ("Movies/Orbit/Orbit - 1080p {edition-Extended}.mkv")
+
+
+def test_movie_edition_none_renders_unchanged() -> None:
+    assert render_asset_path(_ctx(edition=None)) == "Movies/Orbit - 1080p.mkv"
+
+
+def test_movie_edition_token_follows_role_suffix_for_multi_asset_bundle() -> None:
+    assert render_asset_path(_ctx(bundle_asset_count=2, edition=EditionKind.UNRATED)) == (
+        "Movies/Orbit - 1080p - feature {edition-Unrated}.mkv"
+    )
+
+
+@pytest.mark.parametrize(
+    ("edition", "token"),
+    [
+        (EditionKind.THEATRICAL, "Theatrical"),
+        (EditionKind.DIRECTORS_CUT, "Director's Cut"),
+        (EditionKind.EXTENDED, "Extended"),
+        (EditionKind.UNRATED, "Unrated"),
+    ],
+)
+def test_each_edition_kind_renders_title_case_token(edition: EditionKind, token: str) -> None:
+    assert render_asset_path(_ctx(edition=edition)) == (
+        f"Movies/Orbit - 1080p {{edition-{token}}}.mkv"
+    )
+
+
+def test_edition_sidecar_inherits_edition_stem() -> None:
+    media = "Movies/Orbit - 1080p {edition-Director's Cut}.mkv"
+    assert render_declared_sidecar_path(media, "en", codec="srt") == (
+        "Movies/Orbit - 1080p {edition-Director's Cut}.en.srt"
     )
 
 

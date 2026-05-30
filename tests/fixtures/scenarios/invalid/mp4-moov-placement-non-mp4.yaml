@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 30
+schema_version: 31
 scenario_id: invalid-mp4-moov-placement-non-mp4
 seed: 136
 duration_scale: short

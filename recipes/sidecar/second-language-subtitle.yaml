@@ -5,7 +5,7 @@
 # Expected consumer response: converges — two subtitle tracks, distinct
 #   languages, one asset.
 # Requires: none
-schema_version: 30
+schema_version: 31
 scenario_id: recipe-sidecar-second-language-subtitle
 seed: 1403
 duration_scale: short

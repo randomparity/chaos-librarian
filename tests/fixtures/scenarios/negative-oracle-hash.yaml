@@ -1,4 +1,4 @@
-schema_version: 30
+schema_version: 31
 scenario_id: negative-oracle-hash
 seed: 116
 duration_scale: short

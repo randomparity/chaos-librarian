@@ -1,4 +1,4 @@
-schema_version: 30
+schema_version: 31
 scenario_id: hdr-video
 seed: 132
 duration_scale: short

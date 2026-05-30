@@ -842,6 +842,17 @@
       "title": "EditMetadataEvent",
       "type": "object"
     },
+    "EditionKind": {
+      "description": "Movie release/edition cut, rendered as a Plex/Jellyfin {edition-...} token.",
+      "enum": [
+        "theatrical",
+        "directors_cut",
+        "extended",
+        "unrated"
+      ],
+      "title": "EditionKind",
+      "type": "string"
+    },
     "EmbedSubtitleEvent": {
       "additionalProperties": false,
       "properties": {
@@ -2792,6 +2803,17 @@
         "bundle": {
           "$ref": "#/$defs/Bundle"
         },
+        "edition": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EditionKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -3084,7 +3106,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 30,
+      "const": 31,
       "title": "Schema Version",
       "type": "integer"
     },

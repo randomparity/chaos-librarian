@@ -1,4 +1,4 @@
-schema_version: 30
+schema_version: 31
 scenario_id: active-library-churn
 seed: 17
 duration_scale: short

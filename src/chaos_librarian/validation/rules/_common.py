@@ -27,6 +27,7 @@ from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     HIERARCHY_TIMELINE_ACTIONS,
     ArtistLayout,
+    EditionKind,
     EpisodeNaming,
     MovieLayout,
     PodcastEpisodeNaming,
@@ -2085,11 +2086,14 @@ def _movie_renderable_context(
     tail = _tail_render_fields(raw_context)
     if layout is None or movie_title is None or tail is None:
         return None
+    # _enum tolerates None/absent; only the movie branch reads edition (ADR 0010).
+    edition = _enum(EditionKind, raw_context.variant.get("edition"))
     return RenderableAssetContext(
         parent_kind=parent_kind,
         root_path=root_path,
         layout=layout,
         movie_title=movie_title,
+        edition=edition,
         variant_label=tail[0],
         asset_role=tail[1],
         asset_container=tail[2],
