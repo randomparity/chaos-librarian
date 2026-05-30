@@ -1,0 +1,58 @@
+schema_version: 28
+scenario_id: network-fs-chaos-asset-target
+seed: 42
+duration_scale: short
+profiles:
+  - network-fs-chaos
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_001
+    title: Chaos Asset Target
+    layout: movie_flat
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: chmod_001
+    at: 1s
+    action: change_permissions
+    target: asset_main
+    mode: "444"
+  - id: quota_001
+    at: 2s
+    action: simulate_quota_exceeded
+    target: asset_main
+  - id: stale_001
+    at: 3s
+    action: simulate_stale_handle
+    target: asset_main
+  - id: acquire_001
+    at: 4s
+    action: acquire_lock
+    target: asset_main
+    lock_type: exclusive
+  - id: release_001
+    at: 5s
+    action: release_lock
+    for: acquire_001
