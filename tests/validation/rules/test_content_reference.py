@@ -98,3 +98,28 @@ def test_collision_forward_reference_rejected() -> None:
     raw = _scenario([_asset("a1", hash_collision_with="a2", collision_prefix_len=8), _asset("a2")])
     issues = _run(raw)
     assert [i.code for i in issues] == [E_TARGET_UNKNOWN]
+
+
+def test_valid_hardlink_reference_passes() -> None:
+    raw = _scenario([_asset("a1"), _asset("a2", hardlinked_to="a1")])
+    assert _run(raw) == []
+
+
+def test_unknown_hardlink_reference_rejected() -> None:
+    raw = _scenario([_asset("a1"), _asset("a2", hardlinked_to="nope")])
+    issues = _run(raw)
+    assert [i.code for i in issues] == [E_TARGET_UNKNOWN]
+    assert issues[0].path is not None
+    assert issues[0].path.endswith("hardlinked_to")
+
+
+def test_hardlink_self_reference_rejected() -> None:
+    raw = _scenario([_asset("a1", hardlinked_to="a1")])
+    issues = _run(raw)
+    assert [i.code for i in issues] == [E_TARGET_UNKNOWN]
+
+
+def test_hardlink_forward_reference_rejected() -> None:
+    raw = _scenario([_asset("a1", hardlinked_to="a2"), _asset("a2")])
+    issues = _run(raw)
+    assert [i.code for i in issues] == [E_TARGET_UNKNOWN]

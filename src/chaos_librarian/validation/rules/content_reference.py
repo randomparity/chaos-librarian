@@ -1,16 +1,17 @@
-"""Content-dedup reference checks (E_TARGET_UNKNOWN).
+"""Content-dedup / shared-inode reference checks (E_TARGET_UNKNOWN).
 
 ``rule_content_reference`` resolves the asset-id references introduced by the
 content-dedup fields ``same_content_as`` and ``hash_collision_with`` (scenario
-v25). A reference is rejected with ``E_TARGET_UNKNOWN`` when it names an
-undeclared asset, names the referencing asset itself, or names an asset declared
-*later* than the referrer.
+v25) and the shared-inode field ``hardlinked_to`` (scenario v26). A reference is
+rejected with ``E_TARGET_UNKNOWN`` when it names an undeclared asset, names the
+referencing asset itself, or names an asset declared *later* than the referrer.
 
 The earlier-declaration requirement is load-bearing: the materializer copies the
-referent's already-written bytes / reads its already-stamped recorded hash in a
-single declaration-ordered pass, so a forward reference does not resolve at the
-point it is needed. The forward case reuses ``E_TARGET_UNKNOWN`` (a documented
-semantic stretch — see ADR 0004 Q4) so the rule carries one code.
+referent's already-written bytes / ``os.link``s its already-written file / reads
+its already-stamped recorded hash in a single declaration-ordered pass, so a
+forward reference does not resolve at the point it is needed. The forward case
+reuses ``E_TARGET_UNKNOWN`` (a documented semantic stretch — see ADR 0004 Q4 and
+ADR 0005 Q2) so the rule carries one code.
 """
 
 from __future__ import annotations
@@ -33,7 +34,11 @@ if TYPE_CHECKING:
 __all__ = ["rule_content_reference"]
 
 
-_CONTENT_REFERENCE_FIELDS: tuple[str, ...] = ("same_content_as", "hash_collision_with")
+_CONTENT_REFERENCE_FIELDS: tuple[str, ...] = (
+    "same_content_as",
+    "hash_collision_with",
+    "hardlinked_to",
+)
 
 
 def rule_content_reference(
