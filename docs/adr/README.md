@@ -8,3 +8,4 @@ accepted; supersede rather than edit.
 | --- | --- | --- |
 | [0001](0001-batch-generate-seed-and-lane-distribution.md) | Batch `generate` — seed derivation and lane distribution | Accepted |
 | [0002](0002-recipe-library-location-and-bitrot-guard.md) | Recipe library location and bit-rot guard | Accepted |
+| [0003](0003-authorable-sidecar-content.md) | Authorable sidecar encoding and body content | Accepted |
