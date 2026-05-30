@@ -54,10 +54,18 @@ Both inputs that can supply this metadata are available before
    initial_manifest` when the journal is empty). This covers declared
    subtitles seeded by `build_initial_state` that have no `create_sidecar`
    journal entry, including a declared-subtitle → update → remove sequence.
-2. Sidecars created by a `create_sidecar` journal entry. Its `state_delta`
-   carries `sidecar_id`, `kind`, and `language`, and `target_ids[0]` is the
-   asset id. The `create_sidecar` entry always precedes any `update_sidecar`
-   on the same sidecar in journal order (lifecycle validation rejects
+2. Sidecars created mid-walk by a journal entry. Two engine handlers
+   allocate a fresh `sidecar_id` and add a row to `state.sidecars`:
+   - `create_sidecar` — `state_delta` carries `sidecar_id`, `kind`,
+     `language`; `target_ids[0]` is the asset id.
+   - `extract_subtitle` — `state_delta` carries `sidecar_id`, `language`
+     (kind is always `subtitle`); `target_ids[0]` is the asset id. This is
+     also a live creation source: an `extract_subtitle(S) → update_sidecar(S)
+     → remove_sidecar(S)` sequence drops `S` from the final manifest exactly
+     like the create case.
+
+   The creating entry always precedes any `update_sidecar` on the same
+   sidecar in journal order (lifecycle validation rejects
    update-before-create).
 
 ## Decision
@@ -69,9 +77,10 @@ Add a **live sidecar registry** to `MediaPhaseBContext`: a
 - `make_media_phase_b_context` seeds the registry from the **per-window
   initial** manifest sidecars (a new `initial_sidecars` argument). This is the
   metadata of every sidecar that exists when the phase-B walk begins.
-- `_apply_create_sidecar` records the created sidecar's metadata into the
-  registry as it is dispatched, so later entries in the same walk can resolve
-  it even if it never survives to the final manifest.
+- `_apply_create_sidecar` and `_apply_extract_subtitle` record the created
+  sidecar's metadata into the registry as they are dispatched, so later entries
+  in the same walk can resolve it even if it never survives to the final
+  manifest.
 - `_apply_update_sidecar` resolves metadata from the live registry. The
   previous final-manifest `sidecar_lookup` is removed: the registry is a strict
   superset of what the final-manifest lookup could resolve, so keeping both
@@ -114,6 +123,8 @@ Behavior tests in `tests/materializer/`:
   embed consumes the sidecar.
 - declared subtitle → update → remove: resolves from the initial-manifest seed
   with no `create_sidecar` entry.
+- extract → update → remove same sidecar: resolves from the `extract_subtitle`
+  registry write, with the sidecar absent from the final manifest.
 - double update on a created sidecar: both updates resolve; second update sees
   the registry entry from create.
 - update of a sidecar that was never created or seeded: still raises
@@ -122,5 +133,5 @@ Behavior tests in `tests/materializer/`:
 ## Out of scope
 
 - No contract / schema / journal changes.
-- No change to `extract_subtitle`, `embed_subtitle`, or `remove_sidecar`
-  handlers beyond what the registry seeding requires.
+- No change to `embed_subtitle` or `remove_sidecar` handlers, and no change to
+  `extract_subtitle` beyond adding its registry write.
