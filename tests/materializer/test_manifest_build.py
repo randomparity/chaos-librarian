@@ -408,8 +408,22 @@ def _materialized(asset_id: str, content_hash: str) -> MaterializedAsset:
     )
 
 
-def _dedup_asset(asset_id: str, **extra: object) -> Asset:
-    return Asset(id=asset_id, role="main", container="mkv", duration_seconds=1.0, **extra)
+def _dedup_asset(
+    asset_id: str,
+    *,
+    same_content_as: str | None = None,
+    hash_collision_with: str | None = None,
+    collision_prefix_len: int | None = None,
+) -> Asset:
+    return Asset(
+        id=asset_id,
+        role="main",
+        container="mkv",
+        duration_seconds=1.0,
+        same_content_as=same_content_as,
+        hash_collision_with=hash_collision_with,
+        collision_prefix_len=collision_prefix_len,
+    )
 
 
 def _probed_media() -> ProbedMedia:
@@ -442,3 +456,43 @@ def test_augment_manifest_stamps_collided_hash() -> None:
     shared = version.content_hash.removeprefix("sha256:")[:8]
     assert shared == referent_hash.removeprefix("sha256:")[:8]
     assert version.content_hash != real
+
+
+def _three_asset_manifest() -> Manifest:
+    """A1 (referent), A2 (same_content_as A1), A3 (hash_collision_with A2)."""
+    base = _collision_manifest(referent_hash=None)
+    base.assets.append(
+        ManifestAsset(id="a3", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0)
+    )
+    base.versions.append(ManifestVersion(id="ver_a3", asset_id="a3", index=0, content_hash=None))
+    return base
+
+
+def test_collision_referencing_same_content_duplicate_reads_copied_hash() -> None:
+    """A collision whose referent is itself a same_content_as duplicate shares the
+    duplicate's *copied* full hash prefix (the one cross-feature interaction the
+    spec permits)."""
+    manifest = _three_asset_manifest()
+    copied_hash = "sha256:" + "c" * 64  # A2's copied (== A1's) full hash
+    probed = _probed_media()
+    # Stamp A2 (same_content_as A1) with the copied full hash.
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", same_content_as="a1"),
+        _materialized("a2", copied_hash),
+        probed,
+        {},
+    )
+    # A3 collides with A2; its prefix must come from A2's stamped (copied) hash.
+    real = "sha256:" + "d" * 64
+    augment_manifest(
+        manifest,
+        _dedup_asset("a3", hash_collision_with="a2", collision_prefix_len=8),
+        _materialized("a3", real),
+        probed,
+        {},
+    )
+    a3_hash = next(v.content_hash for v in manifest.versions if v.asset_id == "a3")
+    assert a3_hash is not None
+    assert a3_hash.removeprefix("sha256:")[:8] == copied_hash.removeprefix("sha256:")[:8]
+    assert a3_hash != real
