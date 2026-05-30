@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset, SidecarKind
+from chaos_librarian.materializer.phase_b.oracle_hash import collided_hash_for
 
 __all__ = [
     "augment_manifest",
@@ -50,9 +51,10 @@ def augment_manifest(
     against a run-dir-relative string and either miss the file or resolve
     against an unrelated local ``library/`` from the CLI cwd.
     """
+    recorded_hash = _recorded_content_hash(manifest, asset, materialized.content_hash)
     for version in manifest.versions:
         if version.asset_id == asset.id:
-            version.content_hash = materialized.content_hash
+            version.content_hash = recorded_hash
             version.probed = probed
             break
     for sub in asset.subtitles:
@@ -65,6 +67,31 @@ def augment_manifest(
         existing = find_sidecar_for(manifest, asset.id, language=sub.language)
         if existing is not None:
             existing.content_hash = content_hash
+
+
+def _recorded_content_hash(manifest: Manifest, asset: Asset, real_hash: str) -> str:
+    """Return the hash to record on ``asset``'s version row.
+
+    Identity for ordinary assets. For a ``hash_collision_with`` asset, the
+    recorded hash is overridden to share ``collision_prefix_len`` leading hex
+    chars with the referent's *already-stamped* recorded hash (the referent is
+    declared earlier, so its version row carries a hash in both the live and the
+    run/replay stamping passes). Recomputed identically in both passes via the
+    pure ``collided_hash_for`` — the oracle-recorded collision (ADR 0004 Q3).
+    """
+    if asset.hash_collision_with is None or asset.collision_prefix_len is None:
+        return real_hash
+    referent_hash = _version_hash_for(manifest, asset.hash_collision_with)
+    if referent_hash is None:
+        return real_hash  # unreachable in practice — the validator guarantees an earlier referent
+    return collided_hash_for(referent_hash, real_hash, asset.collision_prefix_len)
+
+
+def _version_hash_for(manifest: Manifest, asset_id: str) -> str | None:
+    for version in manifest.versions:
+        if version.asset_id == asset_id:
+            return version.content_hash
+    return None
 
 
 def augment_timeline_sidecars(

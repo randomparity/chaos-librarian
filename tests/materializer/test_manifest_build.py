@@ -22,13 +22,16 @@ from chaos_librarian.contract.manifest import (
     ManifestVersion,
     ProbedMedia,
 )
-from chaos_librarian.contract.scenario import SidecarKind
+from chaos_librarian.contract.materialization import MaterializedAsset
+from chaos_librarian.contract.scenario import Asset, SidecarKind
 from chaos_librarian.materializer.manifest_build import (
+    augment_manifest,
     augment_timeline_sidecars,
     augment_updated_sidecars,
     augment_versions,
     find_sidecar_for,
 )
+from chaos_librarian.materializer.phase_b.oracle_hash import collided_hash_for
 
 
 def _build_manifest_with_sidecar(
@@ -359,3 +362,83 @@ def test_find_sidecar_for_subtitle_keeps_language_keyed_lookup() -> None:
     manifest = _minimal_manifest_with_one_sidecar("sidecar_0001", "a.eng.srt", language="eng")
     found = find_sidecar_for(manifest, "a", language="eng", kind=SidecarKind.SUBTITLE)
     assert found is not None
+
+
+def _collision_manifest(referent_hash: str | None) -> Manifest:
+    """Two-asset manifest: referent (a1) with a stamped version, collider (a2)."""
+    return Manifest(
+        schema_version=MANIFEST_SCHEMA_VERSION,
+        movies=[ManifestMovie(id="m0", title="W", layout="movie_flat")],
+        series=[],
+        seasons=[],
+        episodes=[],
+        artists=[],
+        albums=[],
+        discs=[],
+        tracks=[],
+        variants=[
+            ManifestVariant(id="v0", parent_kind=ParentKind.MOVIE, parent_id="m0", label="hd")
+        ],
+        bundles=[ManifestBundle(id="b0", variant_id="v0")],
+        assets=[
+            ManifestAsset(
+                id="a1", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0
+            ),
+            ManifestAsset(
+                id="a2", bundle_id="b0", role="main", container="mkv", duration_seconds=1.0
+            ),
+        ],
+        versions=[
+            ManifestVersion(id="ver_a1", asset_id="a1", index=0, content_hash=referent_hash),
+            ManifestVersion(id="ver_a2", asset_id="a2", index=0, content_hash=None),
+        ],
+        locations=[],
+        sidecars=[],
+    )
+
+
+def _materialized(asset_id: str, content_hash: str) -> MaterializedAsset:
+    return MaterializedAsset(
+        asset_id=asset_id,
+        location_path=f"library/{asset_id}.mkv",
+        content_hash=content_hash,
+        size_bytes=16,
+        duration_seconds=1.0,
+        invocation_index=0,
+    )
+
+
+def _dedup_asset(asset_id: str, **extra: object) -> Asset:
+    return Asset(id=asset_id, role="main", container="mkv", duration_seconds=1.0, **extra)
+
+
+def _probed_media() -> ProbedMedia:
+    return ProbedMedia(container="matroska", duration_seconds=1.0, size_bytes=16, streams=[])
+
+
+def test_augment_manifest_stamps_real_hash_without_collision() -> None:
+    real = "sha256:" + "a" * 64
+    manifest = _collision_manifest(referent_hash="sha256:" + "b" * 64)
+    augment_manifest(manifest, _dedup_asset("a2"), _materialized("a2", real), _probed_media(), {})
+    version = next(v for v in manifest.versions if v.asset_id == "a2")
+    assert version.content_hash == real
+
+
+def test_augment_manifest_stamps_collided_hash() -> None:
+    referent_hash = "sha256:" + "b" * 64
+    real = "sha256:" + "a" * 64
+    manifest = _collision_manifest(referent_hash=referent_hash)
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", hash_collision_with="a1", collision_prefix_len=8),
+        _materialized("a2", real),
+        _probed_media(),
+        {},
+    )
+    version = next(v for v in manifest.versions if v.asset_id == "a2")
+    expected = collided_hash_for(referent_hash, real, 8)
+    assert version.content_hash == expected
+    assert version.content_hash is not None
+    shared = version.content_hash.removeprefix("sha256:")[:8]
+    assert shared == referent_hash.removeprefix("sha256:")[:8]
+    assert version.content_hash != real
