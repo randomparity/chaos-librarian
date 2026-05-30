@@ -186,6 +186,15 @@ timeline:
 | `rename_season` | `target`, `title` |
 | `renumber_disc` | `target`, `disc_number` |
 | `move_track_to_disc` | `target`, `to_disc`, `track_number` |
+| `swap_episode_numbers` | `target`, `with_episode` (two same-season episodes exchange `episode_number`) |
+| `swap_disc_numbers` | `target`, `with_disc` (two same-album discs exchange `disc_number`) |
+| `swap_track_numbers` | `target`, `with_track` (two same-disc tracks exchange `track_number`) |
+
+The `swap_*` actions are the sanctioned way to exchange two siblings' numbering:
+a plain `renumber_*` into a number a sibling already holds is rejected
+(`E_HIERARCHY_INVALID`), because the hierarchy engine does not perform implicit
+swaps. A `swap_*` exchanges both numbers atomically — the two entities must be
+distinct and share the same parent.
 
 Timeline events are ordered by logical time and declaration order. Lifecycle
 validation rejects operations that the engine cannot execute, such as adding an

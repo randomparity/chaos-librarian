@@ -65,7 +65,7 @@ def _add_destination_series(raw: dict[str, object], *, episode_naming: str) -> N
 
 def _write_music_scenario(path: Path, *, timeline: str) -> None:
     path.write_text(
-        f"""schema_version: 28
+        f"""schema_version: 29
 scenario_id: music-action-validation
 seed: 1
 duration_scale: short
@@ -1153,3 +1153,340 @@ def test_rendered_track_path_uses_music_layout_for_collision_check(
     issues = _issues_for(raw, empty_index)
 
     assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def _add_second_episode(raw: dict[str, object], *, episode_number: int = 2) -> None:
+    series = _items(raw["series"])[0]
+    season = _items(series["seasons"])[0]
+    episodes = _items(season["episodes"])
+    second = dict(episodes[0])
+    second["id"] = "episode_two"
+    second["episode_number"] = episode_number
+    second["variants"] = []
+    episodes.append(second)
+
+
+def _add_second_disc(raw: dict[str, object], *, disc_number: int = 2) -> None:
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    _items(album["discs"]).append({"id": "disc_two", "disc_number": disc_number, "tracks": []})
+
+
+def _add_second_track(raw: dict[str, object], *, track_number: int = 2) -> None:
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    disc = _items(album["discs"])[0]
+    tracks = _items(disc["tracks"])
+    second = dict(tracks[0])
+    second["id"] = "track_two"
+    second["track_number"] = track_number
+    second["variants"] = []
+    tracks.append(second)
+
+
+def test_swap_episode_numbers_valid_same_season_pair(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            }
+        ]
+    )
+    _add_second_episode(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(
+        issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN} for issue in issues
+    )
+
+
+def test_swap_episode_numbers_unknown_target(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_missing",
+                "with_episode": "episode_two",
+            }
+        ]
+    )
+    _add_second_episode(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_TARGET_UNKNOWN and issue.path == "$.timeline[0].target"
+        for issue in issues
+    )
+
+
+def test_swap_episode_numbers_unknown_with_episode(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_missing",
+            }
+        ]
+    )
+    _add_second_episode(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_TARGET_UNKNOWN and issue.path == "$.timeline[0].with_episode"
+        for issue in issues
+    )
+
+
+def test_swap_episode_numbers_wrong_kind_with_yields_target_unknown(
+    series_scenario, empty_index
+) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "season_one",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_TARGET_UNKNOWN and issue.path == "$.timeline[0].with_episode"
+        for issue in issues
+    )
+    assert not any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_episode_numbers_self_swap_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_one",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_episode_numbers_different_season_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            }
+        ]
+    )
+    series = _items(raw["series"])[0]
+    seasons = _items(series["seasons"])
+    seasons.append(
+        {
+            "id": "season_two",
+            "season_number": 2,
+            "title": "Season 2",
+            "episodes": [
+                {
+                    "id": "episode_two",
+                    "episode_number": 1,
+                    "title": "Other",
+                    "aired_on": "2024-06-01",
+                    "absolute_number": 9,
+                    "variants": [],
+                }
+            ],
+        }
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_disc_numbers_valid_same_album_pair(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_disc_numbers",
+                "target": "disc_one",
+                "with_disc": "disc_two",
+            }
+        ]
+    )
+    _add_second_disc(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(
+        issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN} for issue in issues
+    )
+
+
+def test_swap_disc_numbers_self_swap_rejected(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_disc_numbers",
+                "target": "disc_one",
+                "with_disc": "disc_one",
+            }
+        ]
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_track_numbers_valid_same_disc_pair(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_track_numbers",
+                "target": "track_one",
+                "with_track": "track_two",
+            }
+        ]
+    )
+    _add_second_track(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(
+        issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN} for issue in issues
+    )
+
+
+def test_swap_track_numbers_different_disc_rejected(music_scenario, empty_index) -> None:
+    raw = music_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_track_numbers",
+                "target": "track_one",
+                "with_track": "track_two",
+            }
+        ]
+    )
+    artist = _items(raw["artists"])[0]
+    album = _items(artist["albums"])[0]
+    _items(album["discs"]).append(
+        {
+            "id": "disc_two",
+            "disc_number": 2,
+            "tracks": [
+                {
+                    "id": "track_two",
+                    "track_number": 1,
+                    "title": "Other",
+                    "performers": ["North Index"],
+                    "variants": [],
+                }
+            ],
+        }
+    )
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in issues)
+
+
+def test_swap_episode_numbers_with_pending_slow_copy_rejected(series_scenario, empty_index) -> None:
+    raw = series_scenario(
+        timeline=[
+            {
+                "id": "ev_sc",
+                "at": "1s",
+                "action": "slow_copy_start",
+                "target": "asset_episode",
+                "to": "TV/copying.mkv",
+                "temp_path": "TV/copying.mkv.part",
+                "duration": "5s",
+            },
+            {
+                "id": "ev_swap",
+                "at": "2s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            },
+        ]
+    )
+    _add_second_episode(raw)
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(
+        issue.code == codes.E_LIFECYCLE_INVALID and "pending slow_copy" in issue.message
+        for issue in issues
+    )
+
+
+def test_implicit_renumber_swap_rejected_explicit_swap_accepted(
+    series_scenario, empty_index
+) -> None:
+    """The forbidden implicit swap stays rejected; the explicit swap validates clean."""
+    implicit = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "renumber_episode",
+                "target": "episode_one",
+                "episode_number": 2,
+            }
+        ]
+    )
+    _add_second_episode(implicit)
+    implicit_issues = _issues_for(implicit, empty_index)
+    assert any(issue.code == codes.E_HIERARCHY_INVALID for issue in implicit_issues)
+
+    explicit = series_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_one",
+                "with_episode": "episode_two",
+            }
+        ]
+    )
+    _add_second_episode(explicit)
+    explicit_issues = _issues_for(explicit, empty_index)
+    assert not any(
+        issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN}
+        for issue in explicit_issues
+    )

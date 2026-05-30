@@ -3,7 +3,7 @@
 # Tests: two paths are hardlinks to one inode (shared st_ino, link count 2) — a scanner must recognize the same file, not two independent copies.
 # Expected consumer response: converges — same-inode detection treats the two paths as one underlying file, distinct from a byte-identical copy.
 # Requires: none
-schema_version: 28
+schema_version: 29
 scenario_id: recipe-scanner-hardlink-duplicates
 seed: 1901
 duration_scale: short

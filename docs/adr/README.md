@@ -13,3 +13,4 @@ accepted; supersede rather than edit.
 | [0005](0005-hardlink-shared-inode.md) | Author hardlinked assets that share one inode | Accepted |
 | [0006](0006-symlink-entity-policy.md) | Author symlink assets (in-root and library-escaping) | Accepted |
 | [0007](0007-network-fs-chaos.md) | Network-filesystem chaos beyond latency | Accepted |
+| [0008](0008-numbering-swap-actions.md) | Explicit numbering swap actions for hierarchy moves | Accepted |

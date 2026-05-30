@@ -1234,7 +1234,10 @@
         "move_episode_to_season",
         "rename_season",
         "renumber_disc",
-        "move_track_to_disc"
+        "move_track_to_disc",
+        "swap_episode_numbers",
+        "swap_disc_numbers",
+        "swap_track_numbers"
       ],
       "title": "TimelineActionName",
       "type": "string"

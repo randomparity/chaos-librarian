@@ -23,6 +23,7 @@ from chaos_librarian.validation.rules._common import (
     HierarchyProjection,
     RawAssetContext,
     Reporter,
+    SwapValidity,
     _as_list,
     _as_mapping,
     _iter_timeline_events,
@@ -95,6 +96,11 @@ def rule_hierarchy_timeline(
         if not is_hierarchy_action(action):
             projection.project_non_hierarchy_event(event, pending_slow_copies)
             continue
+        if _check_swap_operands(
+            projection=projection, event=event, event_idx=idx, reporter=reporter
+        ):
+            projection.apply(event)  # no-ops the exchange; advances renderer-managed state
+            continue
         mutation = projection.apply(event)
         _check_hierarchy_rendered_paths(mutation=mutation, event_idx=idx, reporter=reporter)
         _check_hierarchy_mutation_numbers(
@@ -127,6 +133,29 @@ def rule_media_action_compatible_with_parent(
         if context is None or context.parent_kind != ParentKind.TRACK.value:
             continue
         _check_track_media_action(event=event, event_idx=idx, reporter=reporter)
+
+
+def _check_swap_operands(
+    *,
+    projection: HierarchyProjection,
+    event: Mapping[str, object],
+    event_idx: int,
+    reporter: Reporter,
+) -> bool:
+    """Report self-swap / not-same-parent and return True if the swap is invalid.
+
+    A True result means the rule has reported ``E_HIERARCHY_INVALID`` and the
+    projection's ``apply`` will no-op the number exchange. ``OK`` / ``MISSING``
+    (unknown operand, already reported by ``rule_target_unknown``) return False.
+    """
+    validity = projection.swap_validity(event)
+    if validity is SwapValidity.SELF_SWAP:
+        _report_error(reporter, "swap requires two distinct entities", _event_loc(event_idx))
+        return True
+    if validity is SwapValidity.NOT_SAME_PARENT:
+        _report_error(reporter, "swap requires two same-parent siblings", _event_loc(event_idx))
+        return True
+    return False
 
 
 def _check_hierarchy_rendered_paths(

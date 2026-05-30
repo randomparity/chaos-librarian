@@ -492,6 +492,9 @@ _DISPATCH: Final[
     TimelineActionName.RENAME_SEASON: _hierarchy_moves,
     TimelineActionName.RENUMBER_DISC: _hierarchy_moves,
     TimelineActionName.MOVE_TRACK_TO_DISC: _hierarchy_moves,
+    TimelineActionName.SWAP_EPISODE_NUMBERS: _hierarchy_moves,
+    TimelineActionName.SWAP_DISC_NUMBERS: _hierarchy_moves,
+    TimelineActionName.SWAP_TRACK_NUMBERS: _hierarchy_moves,
 }
 
 _HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS

@@ -484,3 +484,106 @@ def test_hierarchy_entry_with_no_moves_is_noop(tmp_path: Path) -> None:
     )
 
     assert _apply(library, entry) is None
+
+
+def test_swap_disc_numbers_crosses_paths_collision_free(tmp_path: Path) -> None:
+    """WHY: a swap_* action with mutually-crossed path_moves must round-trip on disk.
+
+    Locks the design claim that the existing two-phase temp dance handles
+    A.from == B.to and B.from == A.to with no collision and no temp residue,
+    so swaps need no new materializer code.
+    """
+    library = tmp_path / "library"
+    (library / "music").mkdir(parents=True)
+    first = library / "music" / "Disc 1 - 01 Song.flac"
+    second = library / "music" / "Disc 2 - 01 Song.flac"
+    first.write_bytes(b"disc-one-bytes")
+    second.write_bytes(b"disc-two-bytes")
+    assert first.read_bytes() != second.read_bytes()  # distinct sentinels pre-swap
+    entry = _atomic_entry(
+        event_id="swap_disc_001",
+        action=TimelineActionName.SWAP_DISC_NUMBERS,
+        target="disc_1",
+        state_delta={
+            "metadata": {
+                "target": {"disc_number": {"before": 1, "after": 2}},
+                "with": {"disc_number": {"before": 2, "after": 1}},
+            },
+            "path_moves": [
+                {
+                    "asset_id": "asset_first",
+                    "location_id": "location_0001",
+                    "from_path": "music/Disc 1 - 01 Song.flac",
+                    "to_path": "music/Disc 2 - 01 Song.flac",
+                },
+                {
+                    "asset_id": "asset_second",
+                    "location_id": "location_0002",
+                    "from_path": "music/Disc 2 - 01 Song.flac",
+                    "to_path": "music/Disc 1 - 01 Song.flac",
+                },
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    action = _apply(library, entry)
+
+    assert action is not None
+    assert action.action == TimelineActionName.SWAP_DISC_NUMBERS
+    assert first.read_bytes() == b"disc-two-bytes"  # exact exchange
+    assert second.read_bytes() == b"disc-one-bytes"
+    # directory holds exactly the two final names, no .chaos-hierarchy-* residue
+    assert sorted(p.name for p in (library / "music").iterdir()) == [
+        "Disc 1 - 01 Song.flac",
+        "Disc 2 - 01 Song.flac",
+    ]
+
+
+def test_swap_track_numbers_crosses_paths_collision_free(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    (library / "music").mkdir(parents=True)
+    first = library / "music" / "01 Song.flac"
+    second = library / "music" / "02 Song.flac"
+    first.write_bytes(b"track-one-bytes")
+    second.write_bytes(b"track-two-bytes")
+    assert first.read_bytes() != second.read_bytes()
+    entry = _atomic_entry(
+        event_id="swap_track_001",
+        action=TimelineActionName.SWAP_TRACK_NUMBERS,
+        target="track_1",
+        state_delta={
+            "metadata": {
+                "target": {"track_number": {"before": 1, "after": 2}},
+                "with": {"track_number": {"before": 2, "after": 1}},
+            },
+            "path_moves": [
+                {
+                    "asset_id": "asset_first",
+                    "location_id": "location_0001",
+                    "from_path": "music/01 Song.flac",
+                    "to_path": "music/02 Song.flac",
+                },
+                {
+                    "asset_id": "asset_second",
+                    "location_id": "location_0002",
+                    "from_path": "music/02 Song.flac",
+                    "to_path": "music/01 Song.flac",
+                },
+            ],
+            "sidecar_moves": [],
+            "skipped_deleted_asset_ids": [],
+        },
+    )
+
+    action = _apply(library, entry)
+
+    assert action is not None
+    assert action.action == TimelineActionName.SWAP_TRACK_NUMBERS
+    assert first.read_bytes() == b"track-two-bytes"
+    assert second.read_bytes() == b"track-one-bytes"
+    assert sorted(p.name for p in (library / "music").iterdir()) == [
+        "01 Song.flac",
+        "02 Song.flac",
+    ]

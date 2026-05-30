@@ -677,6 +677,36 @@ def project_sidecars_for_hierarchy_mutation(
                 projection[(asset_id, new_sidecar_path)] = value
 
 
+class SwapValidity(enum.StrEnum):
+    """Result of validating a numbering-swap event's two operands.
+
+    ``MISSING`` (an operand id does not resolve) is treated as OK by the
+    timeline rule because ``rule_target_unknown`` already reported the missing
+    id; ``apply`` no-ops the exchange in every non-``OK`` case.
+    """
+
+    OK = "ok"
+    SELF_SWAP = "self_swap"
+    NOT_SAME_PARENT = "not_same_parent"
+    MISSING = "missing"
+
+
+# Each swap action's second-operand field plus the projection entity-map attribute
+# and the parent-id attribute used for the same-parent check.
+_SWAP_SPEC_BY_ACTION: Final[dict[str, tuple[str, str, str]]] = {
+    TimelineActionName.SWAP_EPISODE_NUMBERS: ("with_episode", "episodes", "season_id"),
+    TimelineActionName.SWAP_DISC_NUMBERS: ("with_disc", "discs", "album_id"),
+    TimelineActionName.SWAP_TRACK_NUMBERS: ("with_track", "tracks", "disc_id"),
+}
+
+# The mutable number field each swap exchanges on the projection entity state.
+_SWAP_NUMBER_FIELD_BY_ACTION: Final[dict[str, str]] = {
+    TimelineActionName.SWAP_EPISODE_NUMBERS: "episode_number",
+    TimelineActionName.SWAP_DISC_NUMBERS: "disc_number",
+    TimelineActionName.SWAP_TRACK_NUMBERS: "track_number",
+}
+
+
 class HierarchyProjection:
     """Mutable validation-only projection for hierarchy timeline actions."""
 
@@ -719,6 +749,8 @@ class HierarchyProjection:
             albums.update(self._apply_renumber_disc(event))
         elif action == TimelineActionName.MOVE_TRACK_TO_DISC:
             discs.update(self._apply_move_track(event))
+        elif action in _SWAP_SPEC_BY_ACTION:
+            self._apply_swap(event, seasons=seasons, albums=albums, discs=discs)
         path_changes = self._refresh_paths(affected_assets, before)
         return HierarchyMutation(
             affected_asset_ids=frozenset(affected_assets),
@@ -756,10 +788,15 @@ class HierarchyProjection:
 
     def affected_asset_ids(self, event: Mapping[str, object]) -> set[str]:
         """Return assets under the hierarchy entity targeted by ``event``."""
+        action = event.get("action")
+        if isinstance(action, str) and action in _SWAP_SPEC_BY_ACTION:
+            return self._swap_affected_asset_ids(action, event)
         target = event.get("target")
         if not isinstance(target, str):
             return set()
-        action = event.get("action")
+        return self._single_target_affected_asset_ids(action, target)
+
+    def _single_target_affected_asset_ids(self, action: object, target: str) -> set[str]:
         if action in {
             TimelineActionName.RENUMBER_EPISODE,
             TimelineActionName.MOVE_EPISODE_TO_SEASON,
@@ -774,6 +811,77 @@ class HierarchyProjection:
             track = self.tracks.get(target)
             return set() if track is None else set(track.asset_ids)
         return set()
+
+    def swap_validity(self, event: Mapping[str, object]) -> SwapValidity:
+        """Classify a numbering-swap event's two operands without mutating state."""
+        action = event.get("action")
+        if not isinstance(action, str) or action not in _SWAP_SPEC_BY_ACTION:
+            return SwapValidity.OK
+        target = event.get("target")
+        with_field, entity_attr, parent_attr = _SWAP_SPEC_BY_ACTION[action]
+        other = event.get(with_field)
+        if not isinstance(target, str) or not isinstance(other, str):
+            return SwapValidity.MISSING
+        if target == other:
+            return SwapValidity.SELF_SWAP
+        entities: Mapping[str, object] = getattr(self, entity_attr)
+        a = entities.get(target)
+        b = entities.get(other)
+        if a is None or b is None:
+            return SwapValidity.MISSING
+        if getattr(a, parent_attr) != getattr(b, parent_attr):
+            return SwapValidity.NOT_SAME_PARENT
+        return SwapValidity.OK
+
+    def _swap_affected_asset_ids(self, action: str, event: Mapping[str, object]) -> set[str]:
+        with_field, _entity_attr, _parent_attr = _SWAP_SPEC_BY_ACTION[action]
+        affected: set[str] = set()
+        for entity_id in (event.get("target"), event.get(with_field)):
+            if isinstance(entity_id, str):
+                affected.update(self._swap_entity_asset_ids(action, entity_id))
+        return affected
+
+    def _swap_entity_asset_ids(self, action: str, entity_id: str) -> set[str]:
+        if action == TimelineActionName.SWAP_EPISODE_NUMBERS:
+            episode = self.episodes.get(entity_id)
+            return set() if episode is None else set(episode.asset_ids)
+        if action == TimelineActionName.SWAP_DISC_NUMBERS:
+            return self._asset_ids_for_disc(entity_id)
+        track = self.tracks.get(entity_id)
+        return set() if track is None else set(track.asset_ids)
+
+    def _apply_swap(
+        self,
+        event: Mapping[str, object],
+        *,
+        seasons: set[str],
+        albums: set[str],
+        discs: set[str],
+    ) -> None:
+        action = event.get("action")
+        if not isinstance(action, str) or action not in _SWAP_SPEC_BY_ACTION:
+            return
+        if self.swap_validity(event) is not SwapValidity.OK:
+            return  # rule layer reports SELF_SWAP / NOT_SAME_PARENT; MISSING is target-unknown
+        with_field, entity_attr, parent_attr = _SWAP_SPEC_BY_ACTION[action]
+        number_field = _SWAP_NUMBER_FIELD_BY_ACTION[action]
+        target = event.get("target")
+        other = event.get(with_field)
+        if not isinstance(target, str) or not isinstance(other, str):
+            return
+        entities: Mapping[str, object] = getattr(self, entity_attr)
+        a = entities[target]
+        b = entities[other]
+        a_number = getattr(a, number_field)
+        setattr(a, number_field, getattr(b, number_field))
+        setattr(b, number_field, a_number)
+        affected_parent = {getattr(a, parent_attr)}
+        if action == TimelineActionName.SWAP_EPISODE_NUMBERS:
+            seasons.update(affected_parent)
+        elif action == TimelineActionName.SWAP_DISC_NUMBERS:
+            albums.update(affected_parent)
+        else:
+            discs.update(affected_parent)
 
     def render_asset_path(self, asset_id: str) -> str | None:
         """Render one asset from the current hierarchy snapshot."""

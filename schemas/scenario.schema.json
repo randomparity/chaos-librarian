@@ -2258,6 +2258,111 @@
       "title": "SubtitleTrack",
       "type": "object"
     },
+    "SwapDiscNumbersEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "swap_disc_numbers",
+          "default": "swap_disc_numbers",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "with_disc": {
+          "title": "With Disc",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "with_disc"
+      ],
+      "title": "SwapDiscNumbersEvent",
+      "type": "object"
+    },
+    "SwapEpisodeNumbersEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "swap_episode_numbers",
+          "default": "swap_episode_numbers",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "with_episode": {
+          "title": "With Episode",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "with_episode"
+      ],
+      "title": "SwapEpisodeNumbersEvent",
+      "type": "object"
+    },
+    "SwapTrackNumbersEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "swap_track_numbers",
+          "default": "swap_track_numbers",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        },
+        "with_track": {
+          "title": "With Track",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "with_track"
+      ],
+      "title": "SwapTrackNumbersEvent",
+      "type": "object"
+    },
     "SymlinkTarget": {
       "additionalProperties": false,
       "description": "Declares the target of an asset materialized as an ``os.symlink``.\n\nExactly one of the two forms is set: ``to_asset`` references another\nearlier-declared asset whose in-library file the link points at (an\nin-root link), and ``to_run_dir_path`` is a relative path resolving inside\nthe run dir but outside ``library/`` (a library-escaping link). The two\nforms validate differently \u2014 ``to_asset`` is an asset-id reference\n(``rule_content_reference`` \u2192 ``E_TARGET_UNKNOWN``), ``to_run_dir_path`` is\na sandboxed path (``rule_symlink_target_escape`` \u2192 ``E_SYMLINK_TARGET_ESCAPE``).",
@@ -2800,7 +2905,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 28,
+      "const": 29,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -2858,6 +2963,9 @@
             "simulate_stale_handle": "#/$defs/SimulateStaleHandleEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
             "slow_copy_start": "#/$defs/SlowCopyStartEvent",
+            "swap_disc_numbers": "#/$defs/SwapDiscNumbersEvent",
+            "swap_episode_numbers": "#/$defs/SwapEpisodeNumbersEvent",
+            "swap_track_numbers": "#/$defs/SwapTrackNumbersEvent",
             "toggle_readonly": "#/$defs/ToggleReadonlyEvent",
             "touch_mtime": "#/$defs/TouchMtimeEvent",
             "truncate_file": "#/$defs/TruncateFileEvent",
@@ -2982,6 +3090,15 @@
           },
           {
             "$ref": "#/$defs/MoveTrackToDiscEvent"
+          },
+          {
+            "$ref": "#/$defs/SwapEpisodeNumbersEvent"
+          },
+          {
+            "$ref": "#/$defs/SwapDiscNumbersEvent"
+          },
+          {
+            "$ref": "#/$defs/SwapTrackNumbersEvent"
           }
         ]
       },

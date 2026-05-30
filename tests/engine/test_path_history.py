@@ -302,3 +302,49 @@ def test_path_history_projects_hierarchy_path_moves() -> None:
     assert entry.from_path == "library/tv/Show/S01E01.mkv"
     assert entry.to_path == "library/tv/Show/S01E02.mkv"
     assert entry.temp_path is None
+
+
+def test_path_history_projects_swap_episode_crossed_paths() -> None:
+    """WHY: each swapped asset's history reflects the crossing from its own side."""
+    journal = [
+        _validated_entry(
+            _atomic(
+                event_id="ev_swap",
+                action=TimelineActionName.SWAP_EPISODE_NUMBERS,
+                logical_time_ns=1_000_000_000,
+                target="episode_1",
+                target_ids=["episode_1", "episode_2", "asset_a", "asset_b"],
+                metadata={
+                    "target": {"episode_number": {"before": 1, "after": 2}},
+                    "with": {"episode_number": {"before": 2, "after": 1}},
+                },
+                path_moves=[
+                    {
+                        "asset_id": "asset_a",
+                        "location_id": "location_0001",
+                        "from_path": "library/tv/Show/S01E01.mkv",
+                        "to_path": "library/tv/Show/S01E02.mkv",
+                    },
+                    {
+                        "asset_id": "asset_b",
+                        "location_id": "location_0002",
+                        "from_path": "library/tv/Show/S01E02.mkv",
+                        "to_path": "library/tv/Show/S01E01.mkv",
+                    },
+                ],
+                sidecar_moves=[],
+                skipped_deleted_asset_ids=[],
+            )
+        )
+    ]
+
+    (a_entry,) = derive_path_history("asset_a", journal)
+    (b_entry,) = derive_path_history("asset_b", journal)
+
+    assert a_entry.from_path == "library/tv/Show/S01E01.mkv"
+    assert a_entry.to_path == "library/tv/Show/S01E02.mkv"
+    assert b_entry.from_path == "library/tv/Show/S01E02.mkv"
+    assert b_entry.to_path == "library/tv/Show/S01E01.mkv"
+    # each side's to_path crosses to the other side's from_path
+    assert a_entry.to_path == b_entry.from_path
+    assert b_entry.to_path == a_entry.from_path

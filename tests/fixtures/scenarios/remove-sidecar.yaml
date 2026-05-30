@@ -1,4 +1,4 @@
-schema_version: 28
+schema_version: 29
 scenario_id: sc_remove_sidecar_001
 seed: 42
 duration_scale: short

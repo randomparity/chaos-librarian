@@ -1,0 +1,70 @@
+schema_version: 29
+scenario_id: swap-episode-numbers
+seed: 11901
+duration_scale: short
+library:
+  roots:
+    - id: tv_root
+      path: TV
+movies: []
+series:
+  - id: series_starline
+    title: Starline
+    layout: season_folders
+    episode_naming: sxxexx_title
+    seasons:
+      - id: season_one
+        season_number: 1
+        title: Season 1
+        episodes:
+          - id: episode_one
+            episode_number: 1
+            title: Pilot
+            variants:
+              - id: variant_ep1
+                label: HD
+                bundle:
+                  id: bundle_ep1
+                  assets:
+                    - id: asset_ep1
+                      role: primary_video
+                      container: mkv
+                      duration_seconds: 2
+                      video:
+                        source: color_bars
+                        codec: h264
+                        resolution: sd
+                      audio:
+                        - source: sine
+                          codec: aac
+                          channels: stereo
+                          language: eng
+          - id: episode_two
+            episode_number: 2
+            title: Arrival
+            variants:
+              - id: variant_ep2
+                label: HD
+                bundle:
+                  id: bundle_ep2
+                  assets:
+                    - id: asset_ep2
+                      role: primary_video
+                      container: mkv
+                      duration_seconds: 2
+                      video:
+                        source: color_bars
+                        codec: h264
+                        resolution: sd
+                      audio:
+                        - source: sine
+                          codec: aac
+                          channels: stereo
+                          language: eng
+artists: []
+timeline:
+  - id: ev_swap_episodes
+    at: 1s
+    action: swap_episode_numbers
+    target: episode_one
+    with_episode: episode_two

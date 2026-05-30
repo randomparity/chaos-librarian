@@ -42,7 +42,7 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_current_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 28
+    assert SCENARIO_SCHEMA_VERSION == 29
     assert MANIFEST_SCHEMA_VERSION == 9
     assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
     assert ASSET_REPORT_SCHEMA_VERSION == 9
@@ -127,6 +127,9 @@ def test_hierarchy_timeline_actions_are_contract_owned() -> None:
                 TimelineActionName.RENAME_SEASON,
                 TimelineActionName.RENUMBER_DISC,
                 TimelineActionName.MOVE_TRACK_TO_DISC,
+                TimelineActionName.SWAP_EPISODE_NUMBERS,
+                TimelineActionName.SWAP_DISC_NUMBERS,
+                TimelineActionName.SWAP_TRACK_NUMBERS,
             }
         )
         == scenario_contract.HIERARCHY_TIMELINE_ACTIONS

@@ -1,0 +1,67 @@
+schema_version: 29
+scenario_id: swap-track-numbers
+seed: 11903
+duration_scale: short
+library:
+  roots:
+    - id: music_root
+      path: Music
+movies: []
+series: []
+artists:
+  - id: artist_glass
+    name: Glass Harbour
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums:
+      - id: album_tides
+        title: Synthetic Tides
+        release_year: 2026
+        discs:
+          - id: disc_one
+            disc_number: 1
+            tracks:
+              - id: track_one
+                track_number: 1
+                title: Low Tide
+                performers: [Glass Harbour]
+                variants:
+                  - id: variant_t1
+                    label: flac
+                    bundle:
+                      id: bundle_t1
+                      assets:
+                        - id: asset_t1
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 5
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+              - id: track_two
+                track_number: 2
+                title: High Tide
+                performers: [Glass Harbour]
+                variants:
+                  - id: variant_t2
+                    label: flac
+                    bundle:
+                      id: bundle_t2
+                      assets:
+                        - id: asset_t2
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 5
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+timeline:
+  - id: ev_swap_tracks
+    at: 1s
+    action: swap_track_numbers
+    target: track_one
+    with_track: track_two

@@ -4,7 +4,7 @@
 # Expected consumer response: diverges — probe may succeed but decode of the
 #   affected range fails; consumers differ on whether they detect it.
 # Requires: malformed-media
-schema_version: 28
+schema_version: 29
 scenario_id: recipe-metadata-corrupt-packet-range
 seed: 1303
 duration_scale: short
