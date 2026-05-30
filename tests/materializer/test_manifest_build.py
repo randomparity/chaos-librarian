@@ -496,3 +496,37 @@ def test_collision_referencing_same_content_duplicate_reads_copied_hash() -> Non
     assert a3_hash is not None
     assert a3_hash.removeprefix("sha256:")[:8] == copied_hash.removeprefix("sha256:")[:8]
     assert a3_hash != real
+
+
+def test_same_content_referencing_collision_decoy_records_real_hash() -> None:
+    """A same_content_as duplicate of a hash_collision_with decoy records the
+    decoy's *real* bytes hash, not the decoy's collided hash (the spec's
+    intentionally-asymmetric edge case)."""
+    manifest = _three_asset_manifest()
+    probed = _probed_media()
+    referent_hash = "sha256:" + "a" * 64
+    # a1 is the collision referent (ordinary asset already stamped).
+    augment_manifest(manifest, _dedup_asset("a1"), _materialized("a1", referent_hash), probed, {})
+    # a2 is the decoy colliding with a1: its version records the collided hash.
+    decoy_real = "sha256:" + "b" * 64
+    augment_manifest(
+        manifest,
+        _dedup_asset("a2", hash_collision_with="a1", collision_prefix_len=8),
+        _materialized("a2", decoy_real),
+        probed,
+        {},
+    )
+    decoy_recorded = next(v.content_hash for v in manifest.versions if v.asset_id == "a2")
+    assert decoy_recorded != decoy_real  # decoy carries a collided hash
+    # a3 is a same_content_as duplicate of the decoy a2. The copy path gives a3
+    # the decoy's REAL bytes hash; augment_manifest stamps it unchanged.
+    augment_manifest(
+        manifest,
+        _dedup_asset("a3", same_content_as="a2"),
+        _materialized("a3", decoy_real),
+        probed,
+        {},
+    )
+    dup_recorded = next(v.content_hash for v in manifest.versions if v.asset_id == "a3")
+    assert dup_recorded == decoy_real
+    assert dup_recorded != decoy_recorded

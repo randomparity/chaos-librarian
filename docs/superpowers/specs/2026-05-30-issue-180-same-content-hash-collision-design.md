@@ -393,6 +393,16 @@ prefix collision, not an on-disk sha256 collision.
 - **`hash_collision_with` an asset that is itself a `same_content_as` duplicate** →
   allowed; the referent's recorded hash is whatever was stamped (the duplicated full
   hash), and the collision prefix is taken from it.
+- **`same_content_as` an asset that is itself a `hash_collision_with` decoy** →
+  allowed, and *intentionally asymmetric*: the duplicate copies the decoy's real
+  on-disk bytes, so it records the decoy's **real** content hash — **not** the decoy's
+  synthetic collided hash. The decoy's own version row still carries its collided hash.
+  So this byte-identical pair records two *different* recorded hashes (decoy = collided
+  synthetic, duplicate = real bytes). This is the neutral-oracle contract: the
+  oracle-recorded collision is a property of the *decoy's* version row only, and a
+  duplicate honestly records the bytes it holds. (Authors who want both assets to carry
+  the same collided hash should point `same_content_as` at the decoy's *referent*, not
+  the decoy.) Locked by a unit test.
 - **Schema bump** → every fixture/recipe `Literal[24]` mismatch fails the corpus tests
   until bumped to 25 (the intended forcing function).
 
