@@ -68,7 +68,7 @@ _HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_AC
 # Podcast staleness records a neutral oracle fact; the file lingers untouched on
 # disk, so this has no filesystem effect (like wrong_oracle_hash) — supported but
 # not dispatched to a filesystem handler.
-_PODCAST_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+PODCAST_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.MARK_EPISODE_STALE,
     }
@@ -101,5 +101,5 @@ SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
     | _ORACLE_HASH_ACTIONS
     | _FILESYSTEM_ARTIFACT_ACTIONS
     | _HIERARCHY_ACTIONS
-    | _PODCAST_ACTIONS
+    | PODCAST_ACTIONS
 )

@@ -9,8 +9,8 @@ from chaos_librarian.materializer.actions import (
     _HIERARCHY_ACTIONS,
     _MEDIA_ACTIONS,
     _ORACLE_HASH_ACTIONS,
-    _PODCAST_ACTIONS,
     _STDLIB_ACTIONS,
+    PODCAST_ACTIONS,
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S7_ACTIONS,
     SUPPORTED_S10_ACTIONS,
@@ -80,7 +80,7 @@ def test_supported_s10_actions_includes_corruption_actions() -> None:
         | _ORACLE_HASH_ACTIONS
         | _FILESYSTEM_ARTIFACT_ACTIONS
         | _HIERARCHY_ACTIONS
-        | _PODCAST_ACTIONS
+        | PODCAST_ACTIONS
     )
 
 
@@ -104,7 +104,7 @@ def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
 
 
 def test_mark_episode_stale_is_supported_without_filesystem_effect() -> None:
-    assert frozenset({TimelineActionName.MARK_EPISODE_STALE}) == _PODCAST_ACTIONS
+    assert frozenset({TimelineActionName.MARK_EPISODE_STALE}) == PODCAST_ACTIONS
     assert TimelineActionName.MARK_EPISODE_STALE in SUPPORTED_S10_ACTIONS
     # No on-disk change: the file lingers, so there is no filesystem handler.
     assert not supports_filesystem_action(TimelineActionName.MARK_EPISODE_STALE)

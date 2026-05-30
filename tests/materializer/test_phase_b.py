@@ -161,6 +161,20 @@ def test_dispatch_phase_b_entry_routes_oracle_hash_actions(
     assert state.oracle_hash_actions == [expected]
 
 
+def test_dispatch_phase_b_entry_treats_mark_episode_stale_as_no_op(tmp_path: Path) -> None:
+    # mark_episode_stale records a neutral oracle fact; the file lingers, so
+    # phase-B must accept it without raising and without any on-disk action.
+    state = _state(tmp_path)
+    entry = _entry(TimelineActionName.MARK_EPISODE_STALE)
+
+    phase_b.dispatch_phase_b_entry(state, entry)
+
+    assert state.filesystem_actions == []
+    assert state.media_actions == []
+    assert state.corruption_actions == []
+    assert state.oracle_hash_actions == []
+
+
 def test_dispatch_phase_b_entry_rejects_actions_outside_current_dispatch_sets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
