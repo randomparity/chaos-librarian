@@ -88,13 +88,18 @@ Modified files:
 - `src/chaos_librarian/engine/state.py` — `pending_locks`, `pending_unmounts`
 - `src/chaos_librarian/engine/events.py` — seven handlers + handler-table rows
 - `schemas/scenario.schema.json`, `schemas/materialization.schema.json` — regenerated
+- `docs/user/scenario-authoring.md` — seven actions added to the timeline-action table (line ~149) and `network-fs-chaos` added to the profiles list (line ~191); **load-bearing** — `tests/docs/test_documentation.py::test_user_docs_cover_commands_and_timeline_actions` iterates every `TimelineActionName` and asserts its value appears in this file, so this edit must land in the same commit that adds the enum members (Task 1) or that test goes red
 - every `tests/fixtures/scenarios/**` + `recipes/**` `schema_version: 27` → `28`
 
 ---
 
 ## Task 1 — Schema: enums, event variants, profile, report record (RED → GREEN)
 
-Pure contract change; no version bump yet (so the corpus stays green until Task 2).
+No version bump yet (so the fixture corpus stays green until Task 2), **but the
+user-docs update is mandatory in this commit** because
+`test_user_docs_cover_commands_and_timeline_actions` iterates every
+`TimelineActionName` — adding the enum members without documenting them turns that test
+red and breaks the never-red invariant.
 
 - [ ] **Test first** (`tests/contract/test_network_fs_chaos.py`): each of the eight
   event classes round-trips through its own `model_validate` (build the event dict,
@@ -117,7 +122,13 @@ Pure contract change; no version bump yet (so the corpus stays green until Task 
   (`extra="forbid"`, fields per spec "Report record"); add
   `network_fs_chaos_actions: list[NetworkFsChaosAction] = Field(default_factory=list)`
   to `MaterializationReport`. (Leave the report `schema_version` literal for Task 2.)
-- [ ] **Verify:** `uv run ty check src tests`, `uv run ruff check`, `pytest tests/contract/test_network_fs_chaos.py -q` green.
+- [ ] **Implement** in `docs/user/scenario-authoring.md`: add the seven actions (with
+  their fields) to the timeline-action table and `network-fs-chaos` to the profiles list,
+  mirroring the existing `network_lag_*` / `network-fs-lag` rows. This satisfies the
+  issue's "documentation for each new action" criterion and keeps
+  `test_user_docs_cover_commands_and_timeline_actions` green.
+- [ ] **Verify:** `uv run ty check src tests`, `uv run ruff check`, and the **full**
+  `pytest -q` (not just the new contract test — the docs-coverage test must pass too).
 - [ ] **Commit:** `feat: add network-fs-chaos event variants and report record`
 
 ## Task 2 — Version bumps + corpus mass-bump (atomic, RED → GREEN)
@@ -233,8 +244,12 @@ Pure contract change; no version bump yet (so the corpus stays green until Task 
   cross-interaction validation; (c) recursive `toggle_readonly` over a subtree's files;
   (d) finer shared-vs-exclusive lock-window semantics; (e) real ENOSPC/ESTALE/EAGAIN/
   unmount via loopback/FUSE. Reference them in the PR body.
-- [ ] Update any contract docs under `docs/contract/` that enumerate timeline actions or
-  profiles, if such an enumeration exists (grep first; do not invent).
+- [ ] User-facing action/profile docs already landed in Task 1
+  (`docs/user/scenario-authoring.md`). Grep `docs/contract/` and `docs/design/` for any
+  other enumeration of timeline actions or profiles (e.g. a `## Network Filesystem Lag
+  Profile Policy` section has a lag precedent in `test_documentation.py:213`); add a
+  parallel `network-fs-chaos` note only where an existing enumeration would otherwise be
+  incomplete. Do not invent new policy sections the tests don't require.
 - [ ] **Verify + commit** any doc changes: `docs: note network-fs-chaos actions in contract docs`
 
 ## Rollback / cleanup
