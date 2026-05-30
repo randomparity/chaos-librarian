@@ -1,0 +1,62 @@
+# Recipe: Album-art sidecar in WebP/JPEG
+# Category: sidecar
+# Tests: an album ships cover-art poster sidecars in non-PNG formats (WebP and
+#   JPEG), exercising image-format variety beyond the default PNG.
+# Expected consumer response: converges — index the cover art regardless of
+#   image format; the path extension matches the synthesized bytes.
+# Requires: none
+schema_version: 32
+scenario_id: recipe-sidecar-album-art-webp
+seed: 1409
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_art
+    name: Album Art Collective
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_art
+        title: Cover Formats
+        discs:
+          - id: disc_art
+            disc_number: 1
+            tracks:
+              - id: track_art
+                track_number: 1
+                title: Cover Art Track
+                variants:
+                  - id: variant_art
+                    label: flac
+                    bundle:
+                      id: bundle_art
+                      assets:
+                        - id: asset_art
+                          role: main
+                          container: flac
+                          duration_seconds: 2.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: ev_cover_webp
+    at: 1s
+    action: create_sidecar
+    target: asset_art
+    to: music/cover.webp
+    kind: poster
+    image_format: webp
+  - id: ev_cover_jpeg
+    at: 2s
+    action: create_sidecar
+    target: asset_art
+    to: music/folder.jpg
+    kind: poster
+    image_format: jpeg

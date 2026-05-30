@@ -1,0 +1,66 @@
+# Recipe: CUE sheet sidecar
+# Category: sidecar
+# Tests: a single-file album ships a .cue index sheet alongside it, then the
+#   sheet is rewritten (a CUE sync edit).
+# Expected consumer response: converges — index the album by its CUE track
+#   offsets; re-read the sheet after the update.
+# Requires: none
+schema_version: 32
+scenario_id: recipe-sidecar-cue-sheet
+seed: 1407
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_cue
+    name: Single File Society
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums:
+      - id: album_cue
+        title: One File Album
+        discs:
+          - id: disc_cue
+            disc_number: 1
+            tracks:
+              - id: track_cue
+                track_number: 1
+                title: Whole Side A
+                variants:
+                  - id: variant_cue
+                    label: flac
+                    bundle:
+                      id: bundle_cue
+                      assets:
+                        - id: asset_cue
+                          role: main
+                          container: flac
+                          duration_seconds: 2.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: ev_create_cue
+    at: 1s
+    action: create_sidecar
+    target: asset_cue
+    to: music/album.cue
+    kind: cue
+    body: |
+      PERFORMER "Single File Society"
+      TITLE "One File Album"
+      FILE "album.flac" WAVE
+        TRACK 01 AUDIO
+          TITLE "Whole Side A"
+          INDEX 01 00:00:00
+  - id: ev_update_cue
+    at: 2s
+    action: update_sidecar
+    target: asset_cue
+    sidecar_path: music/album.cue

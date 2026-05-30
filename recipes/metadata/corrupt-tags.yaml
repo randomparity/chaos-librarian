@@ -1,0 +1,61 @@
+# Recipe: Corrupt audio tags
+# Category: metadata
+# Tests: an audio file's tag region is overwritten with null bytes (and then a
+#   malformed ID3v2 header), modelling malformed ID3 / embedded null bytes.
+# Expected consumer response: tag reads error or diverge; the scanner must not
+#   trust artist/title/genre fields from a corrupted tag region.
+# Requires: malformed-media
+schema_version: 32
+scenario_id: recipe-metadata-corrupt-tags
+seed: 1318
+duration_scale: short
+profiles:
+  - malformed-media
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_tags
+    name: Tag Corruptors
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_tags
+        title: Mangled Metadata
+        discs:
+          - id: disc_tags
+            disc_number: 1
+            tracks:
+              - id: track_tags
+                track_number: 1
+                title: Null Frame
+                variants:
+                  - id: variant_tags
+                    label: flac
+                    bundle:
+                      id: bundle_tags
+                      assets:
+                        - id: asset_tags
+                          role: main
+                          container: flac
+                          duration_seconds: 2.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: ev_null_bytes
+    at: 1s
+    action: corrupt_tags
+    target: asset_tags
+    flavor: null_bytes
+  - id: ev_malformed_frame
+    at: 2s
+    action: corrupt_tags
+    target: asset_tags
+    flavor: malformed_frame
+    bytes: 16
