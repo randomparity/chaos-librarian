@@ -103,8 +103,25 @@ The display name is passed through `clean_display_component`, identical to the
 title and label, so it cannot inject path syntax. The braces `{` `}` and the
 literal `edition-` prefix are added after sanitization; the sanitizer permits
 braces in display components today (it only strips control chars, collapses
-whitespace, and replaces slashes), so the token shape is stable. `_filename`
-gains the edition-suffix step; the episode/track/podcast stems are untouched.
+whitespace, and replaces slashes — verified against `clean_display_component`),
+so the token shape is stable. `_filename` gains the edition-suffix step; the
+episode/track/podcast stems are untouched.
+
+### Sidecar paths inherit the edition-suffixed stem
+
+`render_declared_sidecar_path` derives a sidecar's path from the media path by
+splitting off the final extension and writing `<media stem>.<language>.<codec>`.
+For an edition variant the media filename is
+`Orbit - 1080p {edition-Director's Cut}.mkv`, so the inherited stem is
+`Orbit - 1080p {edition-Director's Cut}` and the declared sidecar renders to
+`Orbit - 1080p {edition-Director's Cut}.en.srt` — beside its edition's media
+file, which is correct: the sidecar must track the edition it belongs to. This
+falls out of the existing media-stem-derived sidecar convention with **no
+sidecar code change**, because the edition token is already in the media stem
+before the sidecar path is derived. `create_sidecar`, `embed_subtitle`, and
+`extract_subtitle` likewise build off the (now edition-suffixed) media path with
+no change. A test asserts a declared subtitle sidecar for an edition variant
+renders next to the edition media file.
 
 ## Validation
 
@@ -130,6 +147,14 @@ variants with the same (label, edition) pair" as a distinct code from
 path-collision), that is a new contract decision and stops for sign-off; the
 current design asserts the path-collision rule is sufficient because identical
 (label, edition) pairs already render identical paths.
+
+**Edition affects paths, not entity identity.** Entity identity stays driven by
+ids: `rule_id_duplicate` rejects duplicate variant/bundle/asset ids regardless
+of edition, and the edition does **not** disambiguate ids. The edition only
+changes the rendered path string. The valid two-edition fixture therefore uses
+distinct variant, bundle, and asset ids for the two editions (only their
+rendered paths differ by the edition token); reusing an id across editions is
+the existing `E_*_DUPLICATE`, unrelated to the edition.
 
 ## Validation projection
 
@@ -174,8 +199,12 @@ existing scenario stays valid beyond the mandatory `schema_version: 31` re-pin:
   timeline action — TV, music, and podcast topology are untouched.
 
 A regression test asserts that a movie scenario **with no editions** plus the
-existing TV/music/podcast fixtures render the same paths, manifests, and journals
-as before (only the `schema_version` literal changes).
+existing TV/music/podcast fixtures render the same paths and produce
+structurally and content-identical manifests and journals as before, modulo any
+embedded `schema_version` value the version bump necessarily changes. (No
+golden manifest/journal artifact pins the scenario version as a literal JSON
+file in the corpus; fixtures are scenario YAMLs re-pinned to 31, and
+manifests/journals are computed in-test.)
 
 ## Schema artifacts and fixtures
 
@@ -203,6 +232,8 @@ to `31`. New movie-edition fixtures join the corpus:
   label — render the same path → `E_PATH_COLLISION` (edge/error path).
 - A variant with `edition: None` renders the pre-change path (no token), and the
   multi-asset role suffix still precedes the edition token when both are present.
+- A declared subtitle sidecar for an edition variant renders next to the edition
+  media file (the sidecar stem inherits the `{edition-...}` token).
 - Backward-compat regression: an existing no-edition movie scenario plus the
   TV/music/podcast fixtures produce unchanged rendered paths, manifests, and
   journals at `schema_version: 31`.
