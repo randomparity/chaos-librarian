@@ -66,3 +66,39 @@ def test_non_subtitle_kind_ignored(minimal_scenario, empty_index) -> None:
         ]
     )
     assert _materialize_codes(raw, empty_index) == []
+
+
+def _poster(to: str, image_format: str | None) -> dict[str, object]:
+    event: dict[str, object] = {
+        "id": "ev",
+        "at": "1s",
+        "action": "create_sidecar",
+        "target": "a",
+        "to": to,
+        "kind": "poster",
+    }
+    if image_format is not None:
+        event["image_format"] = image_format
+    return event
+
+
+def test_poster_image_format_matching_extension_accepted(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(timeline=[_poster("r/cover.webp", "webp")])
+    assert _materialize_codes(raw, empty_index) == []
+
+
+def test_poster_image_format_jpeg_accepts_jpg_and_jpeg(minimal_scenario, empty_index) -> None:
+    jpg = minimal_scenario(timeline=[_poster("r/c.jpg", "jpeg")])
+    jpeg = minimal_scenario(timeline=[_poster("r/c.jpeg", "jpeg")])
+    assert _materialize_codes(jpg, empty_index) == []
+    assert _materialize_codes(jpeg, empty_index) == []
+
+
+def test_poster_image_format_extension_mismatch_rejected(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(timeline=[_poster("r/cover.png", "webp")])
+    assert _materialize_codes(raw, empty_index) == [codes.E_MATERIALIZE_UNSUPPORTED]
+
+
+def test_poster_without_image_format_not_checked(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(timeline=[_poster("r/cover.png", None)])
+    assert _materialize_codes(raw, empty_index) == []
