@@ -10,6 +10,8 @@ subclasses on failure; the orchestrator in ``run.py`` converts them to
 from __future__ import annotations
 
 import hashlib
+import shutil
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -141,21 +143,33 @@ def materialize_assets_phase_a(
     materialize = materialize_one_asset if materialize_asset is None else materialize_asset
     primary_root_path = scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(scenario)
+    rel_path_by_asset: dict[str, str] = {}
     for context in iter_asset_contexts(scenario):
         asset = context.asset
         skip_languages = skip_by_asset.get(asset.id, frozenset())
         invocation_index = len(phase_a.invocations)
-        asset_result = materialize(
-            asset,
-            artifacts.replay_bundle.resolved_seed,
-            out_dir,
-            caps,
-            invocation_index,
-            rendered_relative_path=render_asset_path(
-                renderable_asset_context(context, primary_root_path)
-            ),
-            skip_languages=skip_languages,
+        rendered_relative_path = render_asset_path(
+            renderable_asset_context(context, primary_root_path)
         )
+        rel_path_by_asset[asset.id] = rendered_relative_path
+        if asset.same_content_as is not None:
+            asset_result = _copy_same_content_asset(
+                asset=asset,
+                out_dir=out_dir,
+                rendered_relative_path=rendered_relative_path,
+                referent_rel_path=rel_path_by_asset[asset.same_content_as],
+                invocation_index=invocation_index,
+            )
+        else:
+            asset_result = materialize(
+                asset,
+                artifacts.replay_bundle.resolved_seed,
+                out_dir,
+                caps,
+                invocation_index,
+                rendered_relative_path=rendered_relative_path,
+                skip_languages=skip_languages,
+            )
         phase_a.invocations.extend(asset_result.prelude_invocations)
         materialized_asset = asset_result.materialized_asset.model_copy(
             update={"invocation_index": len(phase_a.invocations)}
@@ -175,6 +189,61 @@ def materialize_assets_phase_a(
                 skip_languages=skip_languages,
             )
     return phase_a
+
+
+def _copy_same_content_asset(
+    *,
+    asset: Asset,
+    out_dir: Path,
+    rendered_relative_path: str,
+    referent_rel_path: str,
+    invocation_index: int,
+) -> MaterializeAssetResult:
+    """Copy a referent asset's already-written bytes for a ``same_content_as`` asset.
+
+    Reproduces every per-asset contribution synthesis makes so the phase-A
+    invariants hold: a synthetic ``same_content_copy`` ``ToolInvocation`` (keeping
+    "one invocation per asset" and giving the duplicate a real
+    ``invocation_index``), a re-probe of the copied file (not a reuse of the
+    referent's probe), empty ``sidecar_hashes`` (``same_content_as`` forbids the
+    asset's own subtitles), and no ``content_sources`` (a copy resolves no
+    synthesis source). The referent materialized earlier in the same
+    declaration-ordered pass, so its file already exists on disk.
+    """
+    library_dir = out_dir / "library"
+    referent_path = library_dir / referent_rel_path
+    output_path = library_dir / rendered_relative_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    shutil.copyfile(referent_path, output_path)
+    duration_ns = time.monotonic_ns() - started
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    probed = probe_file(output_path)
+    invocation = ToolInvocation(
+        tool="same_content_copy",
+        version="n/a",
+        command=["copyfile", asset.same_content_as or "", str(output_path.relative_to(out_dir))],
+        exit_code=0,
+        duration_ns=duration_ns,
+    )
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+        mp4_moov_placement=asset.mp4_moov_placement,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(),
+        prelude_invocations=(),
+    )
 
 
 def stamp_phase_a_manifest(
