@@ -39,6 +39,7 @@ from chaos_librarian.contract.scenario import (
     Asset,
     TimelineActionName,
 )
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.phase_b.content import hash_file
 
@@ -122,7 +123,7 @@ def apply_filesystem_action(
     except Exception as exc:
         # Widened from OSError so contract-drift bugs (e.g. KeyError from a
         # handler reading scenario_assets, or _slow_copy_commit's
-        # ``assert isinstance``) still route through cleanup + exit 5
+        # non-committed-entry guard) still route through cleanup + exit 5
         # instead of escaping the dispatcher unwrapped.
         target_asset = _filesystem_error_asset_id(action, entry)
         raise FilesystemActionError(
@@ -434,7 +435,8 @@ def _slow_copy_commit(ctx: FilesystemPhaseBContext, entry: JournalEntry) -> File
     is unlinked first so the ``replace`` lands on a free path even on
     filesystems that reject ``rename`` over an existing inode.
     """
-    assert isinstance(entry, CommittedJournalEntry)
+    if not isinstance(entry, CommittedJournalEntry):
+        raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
     pending = ctx.pending_slow_copy.pop(entry.related_event_id)
     final_path = str(entry.state_delta["final_path"])
     promote_slow_copy(

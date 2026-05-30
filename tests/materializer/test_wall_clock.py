@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
@@ -19,7 +20,7 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceEvidence,
     ContentTrackKind,
 )
-from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.journal import AtomicJournalEntry, JournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
@@ -32,6 +33,7 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer import phase_b, wall_clock
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
@@ -1357,3 +1359,24 @@ def _corrupted_version_payload(out_dir: Path) -> dict[str, object]:
         if version.get("corruption") is not None:
             return version
     raise AssertionError("expected corrupted version in manifest.current.json")
+
+
+def _atomic_entry_with_action(action: TimelineActionName) -> AtomicJournalEntry:
+    return AtomicJournalEntry(
+        schema_version=1,
+        event_id="ev_corrupt_journal",
+        scenario_id="sc",
+        run_id=uuid.UUID("12345678-1234-5678-1234-567812345678"),
+        logical_time_ns=0,
+        action=action.value,
+        phase=JournalPhase.ATOMIC,
+    )
+
+
+def test_slow_copy_commit_times_rejects_non_committed_entry() -> None:
+    # A corrupt journal carrying a slow_copy_commit action on a non-committed
+    # entry must surface a domain error, not a bare AssertionError (stripped
+    # under -O) or an AttributeError on the missing related_event_id.
+    journal = (_atomic_entry_with_action(TimelineActionName.SLOW_COPY_COMMIT),)
+    with pytest.raises(ChaosLibrarianValueError):
+        wall_clock._slow_copy_commit_times(journal)
