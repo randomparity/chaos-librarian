@@ -53,9 +53,9 @@ exclusivity with `same_content_as` and `hash_collision_with`; the existing seman
 4. **Reference/shape errors only.** Unknown, self, and forward references →
    `E_TARGET_UNKNOWN` (extending `rule_content_reference`). Cross-field misuse (any link
    field paired with `hardlinked_to`; `hardlinked_to` + own `subtitles`) → `E_FIELD_SHAPE`
-   in the model validator. Cross-root references → `E_FIELD_SHAPE` in the semantic rule
-   (an `os.link` cannot cross devices). The `os.link` always succeeds for a valid same-root
-   reference, so there is no `E_*_UNSATISFIABLE` runtime failure.
+   in the model validator. No cross-root rule: all assets share one filesystem under
+   `<run-dir>/library/`, so `os.link` never raises `EXDEV` (Q4). The `os.link` always
+   succeeds for a valid reference, so there is no `E_*_UNSATISFIABLE` runtime failure.
 
 ## Consequences
 
@@ -79,8 +79,10 @@ exclusivity with `same_content_as` and `hash_collision_with`; the existing seman
   **re-probed**; the link contributes **no `ContentSourceEvidence`** (a link resolves no
   synthesis source, and inventing an entry would need a new closed-enum `ContentTrackKind`
   member that drifts two versioned schemas).
-- Cross-root `hardlinked_to` is rejected (`E_FIELD_SHAPE`): library roots may be separate
-  filesystems and `os.link` raises `EXDEV` across devices.
+- No cross-root rule: every asset materializes under one `<run-dir>/library/` tree on a
+  single filesystem (`synthesis.py:144` uses the declared root only as a path-prefix
+  component), so `os.link` never crosses a device and `EXDEV` cannot occur. An `EXDEV`
+  rule is a filed follow-up, needed only if roots are ever mapped to distinct devices.
 - Mutation propagation (write one path, the other reflects it) is an automatic consequence
   of the shared inode, tested on disk at phase A. No timeline action rewrites a hardlinked
   path in place — byte-rewriting actions (`reencode_video`, `truncate_file`, `corrupt_*`)
@@ -115,7 +117,7 @@ exclusivity with `same_content_as` and `hash_collision_with`; the existing seman
 - **Chosen: `E_TARGET_UNKNOWN` for unknown/self/forward references** (extending
   `rule_content_reference`, single code, documented forward-ref stretch — a forward
   reference does not resolve at the point it is needed), and **`E_FIELD_SHAPE`** for
-  cross-field misuse and cross-root references. No new code; no dead failure path.
+  cross-field misuse. No new code; no dead failure path.
 
 **Q3 — What the manifest/oracle records about the inode.**
 - *Rejected: record the runtime inode number* (`st_ino`) on the version/location row.
@@ -132,14 +134,19 @@ exclusivity with `same_content_as` and `hash_collision_with`; the existing seman
   `SCENARIO_SCHEMA_VERSION` bumps.
 
 **Q4 — Cross-filesystem / cross-root hardlinks.**
-- *Rejected: allow cross-root `hardlinked_to` and let `os.link` fail at materialize time*
-  (`EXDEV`). Pushes a statically-detectable error to runtime, producing a confusing
-  materialize crash instead of a clear validate-time message.
-- *Rejected: silently fall back to a copy when roots differ.* Fakes the capability — a copy
-  is not a hardlink (no shared inode), violating the no-phantom-features rule.
-- **Chosen: reject cross-root `hardlinked_to` at validate time (`E_FIELD_SHAPE`).** Library
-  roots may map to different filesystems; a cross-device link is not a hardlink. Within one
-  root the same-filesystem assumption holds.
+- *Context:* `os.link` raises `EXDEV` across devices. But the current materializer lays
+  every asset out under one `<run-dir>/library/` tree on a single filesystem
+  (`synthesis.py:144` reads `roots[0].path` and uses the declared root only as a leading
+  path *component*, not a device boundary), so no two assets are ever on different devices.
+- *Rejected: add a cross-root rejection rule anyway* (`E_FIELD_SHAPE` when referent and
+  referrer declare different roots). It would be **dead** — `os.link` cannot fail with
+  `EXDEV` given the single-filesystem layout — adding validation surface, a semantic-rule
+  branch, and an invalid fixture for a failure mode that cannot occur.
+- *Rejected: allow it and let `os.link` fail at materialize time.* No failure exists to
+  surface; this is a non-issue, not a deferred runtime crash.
+- **Chosen: add no cross-root rule; document the single-filesystem layout as the supported
+  assumption.** If a future change maps library roots to distinct devices, an `EXDEV`
+  rejection rule becomes necessary and is a filed follow-up — not v1 scope.
 
 **Q5 — Mutation propagation as a timeline feature.**
 - *Rejected: add a timeline action that rewrites a hardlinked path in place* to demonstrate

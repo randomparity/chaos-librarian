@@ -69,10 +69,14 @@ short-circuit) but swaps the materialization primitive (`os.link` instead of
 
 ## Non-goals
 
-- **Hardlinking across filesystems / library roots.** `os.link` cannot span devices
-  (`EXDEV`). v1 forbids `hardlinked_to` when referent and referrer resolve to different
-  library roots (validate-time `E_FIELD_SHAPE`); a cross-device link is not a hardlink.
-  See ADR 0005 Q4.
+- **Hardlinking across filesystems.** `os.link` cannot span devices (`EXDEV`). This is a
+  **non-issue for the current materializer**: every asset, regardless of its declared
+  library root, materializes under one `<run-dir>/library/` subtree on a **single**
+  filesystem (`synthesis.py:144` uses `roots[0].path` only as a path-prefix *component*,
+  not a device boundary). So any two assets are link-compatible and `os.link` always
+  succeeds. v1 therefore adds **no** cross-root validation rule; the single-filesystem
+  layout is a stated assumption. If a future change maps roots to distinct devices, an
+  `EXDEV`-rejection rule becomes necessary — filed as a follow-up (ADR 0005 Q4).
 - **Symlinks.** A symlink is a distinct entity (a path that points at another path, not a
   shared inode) and was dropped separately (`scanner/symlink-external`). Out of scope.
 - **A named-inode registry or N-way link groups as a first-class entity.** References are
@@ -152,17 +156,17 @@ These are shape errors local to one asset (no cross-asset context), so they live
 Pydantic validator and surface as `E_FIELD_SHAPE` (the established `same_content_as`
 code).
 
-### Cross-root exclusivity (semantic rule)
+### Single-filesystem assumption (no cross-root rule)
 
-`os.link` cannot cross devices. Library roots may map to different filesystems, so a
-`hardlinked_to` reference whose referent lives under a **different library root** than the
-referrer is rejected at validate time. This needs cross-asset context (each asset's
-resolved root), so it lives in the semantic rule, not the model validator. It surfaces as
-`E_FIELD_SHAPE` (a structural misuse of the field, not an unresolved reference). See the
-"Reference resolution" subsection for where this check is added.
-
-*Within a single root*, the standard same-filesystem assumption holds (every asset under
-one root materializes into one `<run-dir>/library/<root>/…` subtree on one filesystem).
+`os.link` cannot cross devices (`EXDEV`), but the current materializer never crosses one:
+every asset materializes under a single `<run-dir>/library/` tree, with the declared
+library root used only as a leading path *component* (`synthesis.py:144` reads
+`roots[0].path` and splices it into the rendered relative path; assets are not partitioned
+onto distinct devices). Any two assets are therefore link-compatible and `os.link` always
+succeeds. v1 adds **no** cross-root validation rule — there is no `EXDEV` failure mode to
+guard against, and a rule rejecting it would be dead. The single-filesystem layout is the
+stated supported assumption; a follow-up adds an `EXDEV` rule only if roots are ever mapped
+to distinct devices (ADR 0005 Q4).
 
 ### Reference resolution (semantic rule, `E_TARGET_UNKNOWN`)
 
@@ -181,11 +185,9 @@ the referent materialized earlier in the single declaration-ordered pass. Reusin
 (ADR 0004 Q4 / ADR 0005 Q2): a forward reference does not resolve *at the point it is
 needed*.
 
-The cross-root check (above) is added to the same rule as a separate `E_FIELD_SHAPE`
-branch, guarded so it only runs for `hardlinked_to` and only when the reference otherwise
-resolves (it needs a real referent to compare roots against). The per-asset root is
-derived from the asset's owning root in the raw walk; the rule already has the raw scenario
-and the asset loc.
+Adding `"hardlinked_to"` to `_CONTENT_REFERENCE_FIELDS` is the **entire** semantic-rule
+change; no new branch or per-asset root bookkeeping is added (see "Single-filesystem
+assumption").
 
 ### Walker-order coupling invariant
 
@@ -307,7 +309,6 @@ distinct from `same-content-duplicate`'s independent byte copy.
 | `hardlinked_to` references an unknown asset id | semantic rule | `E_TARGET_UNKNOWN` |
 | `hardlinked_to` references the asset's own id (self-ref) | semantic rule | `E_TARGET_UNKNOWN` |
 | `hardlinked_to` references a later-declared asset (forward ref) | semantic rule | `E_TARGET_UNKNOWN` |
-| `hardlinked_to` referent is under a different library root | semantic rule | `E_FIELD_SHAPE` |
 
 ## Failure modes and edge cases
 
@@ -326,8 +327,9 @@ distinct from `same-content-duplicate`'s independent byte copy.
   file's inode. The duplicate's inode is distinct from its own referent's inode (copy), but
   the hardlink to the duplicate shares the duplicate's inode. Link count on the duplicate's
   file becomes 2. Tested.
-- **Cross-root reference** → rejected (`E_FIELD_SHAPE`); `os.link` would raise `EXDEV` at
-  materialize time, so it is rejected at validate time instead.
+- **Cross-root reference** → allowed and link-compatible: all roots share one filesystem
+  under `<run-dir>/library/` (no `EXDEV`). No rule rejects it; see "Single-filesystem
+  assumption".
 - **Schema bump** → every fixture/recipe `Literal[25]` mismatch fails the corpus tests
   until bumped to 26 (the intended forcing function).
 - **Cross-platform note** → CI runs on `ubuntu-latest`; `os.link` provides standard POSIX
@@ -341,7 +343,6 @@ distinct from `same-content-duplicate`'s independent byte copy.
       (`E_FIELD_SHAPE`): both link fields set (either combination), and `hardlinked_to` on
       an asset declaring its own `subtitles`.
 - [ ] Unknown / self / forward `hardlinked_to` references rejected with `E_TARGET_UNKNOWN`.
-- [ ] Cross-root `hardlinked_to` reference rejected with `E_FIELD_SHAPE`.
 - [ ] Two assets linked by `hardlinked_to` materialize files that **share one inode**
       (equal `st_ino`, equal `st_dev`) with **link count >= 2**, byte-identical content, and
       the **same full** `content_hash`; the referrer's `MaterializedAsset` carries an
@@ -363,7 +364,7 @@ distinct from `same-content-duplicate`'s independent byte copy.
   `E_FIELD_SHAPE` (both combinations of link-field pairs; `hardlinked_to` + own
   `subtitles`); round-trips through `Scenario.model_validate`.
 - Validation: invalid fixtures for unknown ref, self ref, forward ref
-  (`# expected: E_TARGET_UNKNOWN`), cross-field misuse and cross-root ref
+  (`# expected: E_TARGET_UNKNOWN`) and cross-field misuse
   (`# expected: E_FIELD_SHAPE`); a valid fixture exercising `hardlinked_to`.
 - Materializer (unit, no ffmpeg — reuses the #180 `_file_writing_fake` +
   `monkeypatch` seam so the referent fake writes a real file the link reads off disk):
@@ -373,11 +374,14 @@ distinct from `same-content-duplicate`'s independent byte copy.
     `phase_a.invocations[i]` whose `tool == "hardlink"`; the link contributes no
     `ContentSourceEvidence`; the linked file is re-probed (size/duration equal the
     referent's).
-  - Mutation propagation: writing new bytes through one path's fd is observed when reading
-    the other path (shared inode), asserted on disk.
-  - Chained hardlink (C → B → A): all three share one inode; link count 3.
+  - Link-not-copy proof: `st_ino` equality is the primary evidence the path is a hardlink
+    and not a `shutil.copyfile`. A secondary mutation-propagation assertion (write new bytes
+    through one path, read them back via the other) makes the shared-inode consequence
+    explicit; it is corroborating, not the sole signal.
+  - Chained hardlink (C → B → A): all three share one inode; link count 3. (Verifies the
+    single `os.link` + earlier-declaration rule compose transitively; no special code.)
   - `hardlinked_to` → a `same_content_as` duplicate: link shares the *duplicate's* inode;
-    link count on the duplicate's file is 2.
+    link count on the duplicate's file is 2. (Verifies the referent can itself be a copy.)
 - Backward-compat (no ffmpeg): with `hardlinked_to` unset, the orchestrator takes the
   pre-change synthesis branch (code-path equality), no `os.link` is called.
 - Recipe corpus: the new `scanner/hardlink-duplicates.yaml` validates clean (existing
