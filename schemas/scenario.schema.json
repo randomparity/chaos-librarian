@@ -274,6 +274,17 @@
           "title": "Subtitles",
           "type": "array"
         },
+        "symlink": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SymlinkTarget"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "video": {
           "anyOf": [
             {
@@ -2036,6 +2047,38 @@
         "mode"
       ],
       "title": "SubtitleTrack",
+      "type": "object"
+    },
+    "SymlinkTarget": {
+      "additionalProperties": false,
+      "description": "Declares the target of an asset materialized as an ``os.symlink``.\n\nExactly one of the two forms is set: ``to_asset`` references another\nearlier-declared asset whose in-library file the link points at (an\nin-root link), and ``to_run_dir_path`` is a relative path resolving inside\nthe run dir but outside ``library/`` (a library-escaping link). The two\nforms validate differently \u2014 ``to_asset`` is an asset-id reference\n(``rule_content_reference`` \u2192 ``E_TARGET_UNKNOWN``), ``to_run_dir_path`` is\na sandboxed path (``rule_symlink_target_escape`` \u2192 ``E_SYMLINK_TARGET_ESCAPE``).",
+      "properties": {
+        "to_asset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Asset"
+        },
+        "to_run_dir_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "To Run Dir Path"
+        }
+      },
+      "title": "SymlinkTarget",
       "type": "object"
     },
     "TouchMtimeEvent": {
