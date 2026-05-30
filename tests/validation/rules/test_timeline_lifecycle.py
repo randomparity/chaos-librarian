@@ -414,7 +414,7 @@ class TestSprint7LifecycleExtensions:
     """Sprint 7 adds 6 new actions to the simulator; all 6 require placed targets.
 
     REMUX, EDIT_METADATA, EMBED_SUBTITLE, EXTRACT_SUBTITLE join
-    _PATH_MUTATING_PASSTHROUGH (rejected against pending slow_copy).
+    _SLOW_COPY_INCOMPATIBLE_OPS (rejected against pending slow_copy).
     UPDATE_SIDECAR and REMOVE_SIDECAR are EXCLUDED — they don't touch
     the asset.
     """
@@ -482,7 +482,7 @@ class TestSprint7LifecycleExtensions:
     def test_update_sidecar_during_pending_slow_copy_valid(
         self, minimal_scenario, empty_index
     ) -> None:
-        # UPDATE_SIDECAR is intentionally NOT in _PATH_MUTATING_PASSTHROUGH
+        # UPDATE_SIDECAR is intentionally NOT in _SLOW_COPY_INCOMPATIBLE_OPS
         # — it touches a sidecar file, not the asset bytes.
         raw = minimal_scenario(
             asset_id="asset_main",
