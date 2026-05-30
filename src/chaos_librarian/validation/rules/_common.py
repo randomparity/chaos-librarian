@@ -19,7 +19,7 @@ import enum
 from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.clock import DurationParseError, parse_duration
@@ -29,6 +29,8 @@ from chaos_librarian.contract.scenario import (
     ArtistLayout,
     EpisodeNaming,
     MovieLayout,
+    PodcastEpisodeNaming,
+    PodcastLayout,
     SeriesLayout,
     SidecarKind,
     TimelineActionName,
@@ -54,6 +56,8 @@ __all__ = [
     "NS_DISC_ID",
     "NS_EPISODE_ID",
     "NS_MOVIE_ID",
+    "NS_PODCAST_EPISODE_ID",
+    "NS_PODCAST_ID",
     "NS_SEASON_ID",
     "NS_SERIES_ID",
     "NS_TRACK_ID",
@@ -163,11 +167,15 @@ class RawAssetContext:
     disc_loc: _Loc | None
     track: _RawMapping | None
     track_loc: _Loc | None
-    variant: _RawMapping
-    variant_loc: _Loc
-    bundle: _RawMapping
-    bundle_loc: _Loc
-    bundle_asset_count: int
+    podcast: _RawMapping | None = None
+    podcast_loc: _Loc | None = None
+    podcast_episode: _RawMapping | None = None
+    podcast_episode_loc: _Loc | None = None
+    variant: _RawMapping = field(default_factory=dict)
+    variant_loc: _Loc = ()
+    bundle: _RawMapping = field(default_factory=dict)
+    bundle_loc: _Loc = ()
+    bundle_asset_count: int = 0
 
 
 # Typo-safe namespace keys for ``iter_global_namespaces`` callers — string
@@ -180,6 +188,8 @@ NS_ARTIST_ID: Final = "artist_id"
 NS_ALBUM_ID: Final = "album_id"
 NS_DISC_ID: Final = "disc_id"
 NS_TRACK_ID: Final = "track_id"
+NS_PODCAST_ID: Final = "podcast_id"
+NS_PODCAST_EPISODE_ID: Final = "podcast_episode_id"
 NS_VARIANT_ID: Final = "variant_id"
 NS_BUNDLE_ID: Final = "bundle_id"
 NS_ASSET_ID: Final = "asset_id"
@@ -438,6 +448,7 @@ def iter_entity_ids(raw: _RawMapping) -> Iterator[tuple[str, str, _Loc]]:
     yield from _iter_movie_entity_ids(raw)
     yield from _iter_series_entity_ids(raw)
     yield from _iter_artist_entity_ids(raw)
+    yield from _iter_podcast_entity_ids(raw)
 
 
 def entity_ids_by_kind(raw: _RawMapping) -> dict[str, set[str]]:
@@ -451,6 +462,8 @@ def entity_ids_by_kind(raw: _RawMapping) -> dict[str, set[str]]:
         "album": set(),
         "disc": set(),
         "track": set(),
+        "podcast": set(),
+        "podcast_episode": set(),
         "variant": set(),
         "bundle": set(),
         "asset": set(),
@@ -466,6 +479,7 @@ def iter_asset_contexts(raw: _RawMapping) -> Iterator[RawAssetContext]:
     yield from _iter_movie_asset_contexts(raw)
     yield from _iter_episode_asset_contexts(raw)
     yield from _iter_track_asset_contexts(raw)
+    yield from _iter_podcast_episode_asset_contexts(raw)
 
 
 def renderable_context_for(
@@ -479,6 +493,8 @@ def renderable_context_for(
         return _episode_renderable_context(raw_context, parent_kind, root_path)
     if parent_kind is ParentKind.TRACK:
         return _track_renderable_context(raw_context, parent_kind, root_path)
+    if parent_kind is ParentKind.PODCAST_EPISODE:
+        return _podcast_renderable_context(raw_context, parent_kind, root_path)
     return None
 
 
@@ -569,6 +585,25 @@ class _TrackState:
     disc_id: str
     track_number: int
     title: str
+    asset_ids: set[str] = field(default_factory=set)
+
+
+@dataclass(slots=True)
+class _PodcastState:
+    id: str
+    title: str
+    layout: PodcastLayout
+    episode_naming: PodcastEpisodeNaming
+
+
+@dataclass(slots=True)
+class _PodcastEpisodeState:
+    id: str
+    podcast_id: str
+    title: str
+    published_at: datetime
+    slug: str
+    stale: bool
     asset_ids: set[str] = field(default_factory=set)
 
 
@@ -723,12 +758,15 @@ class HierarchyProjection:
         self.albums: dict[str, _AlbumState] = {}
         self.discs: dict[str, _DiscState] = {}
         self.tracks: dict[str, _TrackState] = {}
+        self.podcasts: dict[str, _PodcastState] = {}
+        self.podcast_episodes: dict[str, _PodcastEpisodeState] = {}
         self.assets: dict[str, _AssetTail] = {}
         initial_paths = rendered_asset_paths(raw)
         self.current_paths = {asset_id: path for asset_id, (path, _loc) in initial_paths.items()}
         self._renderer_managed_asset_ids = set(initial_paths)
         self._seed_series(raw)
         self._seed_artists(raw)
+        self._seed_podcasts(raw)
         self._seed_assets(raw)
 
     def apply(self, event: Mapping[str, object]) -> HierarchyMutation:
@@ -749,6 +787,8 @@ class HierarchyProjection:
             albums.update(self._apply_renumber_disc(event))
         elif action == TimelineActionName.MOVE_TRACK_TO_DISC:
             discs.update(self._apply_move_track(event))
+        elif action == TimelineActionName.REPUBLISH_EPISODE:
+            self._apply_republish_episode(event)
         elif action in _SWAP_SPEC_BY_ACTION:
             self._apply_swap(event, seasons=seasons, albums=albums, discs=discs)
         path_changes = self._refresh_paths(affected_assets, before)
@@ -810,6 +850,9 @@ class HierarchyProjection:
         if action == TimelineActionName.MOVE_TRACK_TO_DISC:
             track = self.tracks.get(target)
             return set() if track is None else set(track.asset_ids)
+        if action == TimelineActionName.REPUBLISH_EPISODE:
+            episode = self.podcast_episodes.get(target)
+            return set() if episode is None else set(episode.asset_ids)
         return set()
 
     def swap_validity(self, event: Mapping[str, object]) -> SwapValidity:
@@ -891,14 +934,22 @@ class HierarchyProjection:
         root_path = self._render_root_path_for_asset(asset_id)
         if root_path is None:
             return None
+        renderer = self._renderer_for_parent_kind(tail)
+        if renderer is None:
+            return self.current_paths.get(asset_id)
         try:
-            if tail.parent_id in self.episodes:
-                return self._render_episode_asset(tail, root_path=root_path)
-            if tail.parent_id in self.tracks:
-                return self._render_track_asset(tail, root_path=root_path)
+            return renderer(tail, root_path=root_path)
         except ValueError:
             return None
-        return self.current_paths.get(asset_id)
+
+    def _renderer_for_parent_kind(self, tail: _AssetTail) -> Callable[..., str | None] | None:
+        if tail.parent_id in self.episodes:
+            return self._render_episode_asset
+        if tail.parent_id in self.tracks:
+            return self._render_track_asset
+        if tail.parent_id in self.podcast_episodes:
+            return self._render_podcast_asset
+        return None
 
     def _render_root_path_for_asset(self, asset_id: str) -> str | None:
         current_path = self.current_paths.get(asset_id)
@@ -1012,6 +1063,40 @@ class HierarchyProjection:
             self.tracks[track_id] = _TrackState(track_id, disc_id, track_number, title)
         return track_ids
 
+    def _seed_podcasts(self, raw: Mapping[str, object]) -> None:
+        for podcast_obj in _as_list(raw.get("podcasts")) or []:
+            podcast = _as_mapping(podcast_obj)
+            if podcast is None:
+                continue
+            podcast_id = _str(podcast.get("id"))
+            title = _str(podcast.get("title"))
+            layout = _enum(PodcastLayout, podcast.get("layout"))
+            naming = _enum(PodcastEpisodeNaming, podcast.get("episode_naming"))
+            if podcast_id is None or title is None or layout is None or naming is None:
+                continue
+            self.podcasts[podcast_id] = _PodcastState(podcast_id, title, layout, naming)
+            self._seed_podcast_episodes(podcast, podcast_id=podcast_id)
+
+    def _seed_podcast_episodes(self, podcast: Mapping[str, object], *, podcast_id: str) -> None:
+        for episode_obj in _as_list(podcast.get("episodes")) or []:
+            episode = _as_mapping(episode_obj)
+            if episode is None:
+                continue
+            episode_id = _str(episode.get("id"))
+            title = _str(episode.get("title"))
+            slug = _str(episode.get("slug"))
+            published_at = _parse_datetime(episode.get("published_at"))
+            if episode_id is None or title is None or slug is None or published_at is None:
+                continue
+            self.podcast_episodes[episode_id] = _PodcastEpisodeState(
+                id=episode_id,
+                podcast_id=podcast_id,
+                title=title,
+                published_at=published_at,
+                slug=slug,
+                stale=bool(episode.get("stale", False)),
+            )
+
     def _seed_assets(self, raw: Mapping[str, object]) -> None:
         for context in iter_asset_contexts(raw):
             asset_id = _str(context.asset.get("id"))
@@ -1036,6 +1121,8 @@ class HierarchyProjection:
                 self.episodes[context.parent_id].asset_ids.add(asset_id)
             elif context.parent_id in self.tracks:
                 self.tracks[context.parent_id].asset_ids.add(asset_id)
+            elif context.parent_id in self.podcast_episodes:
+                self.podcast_episodes[context.parent_id].asset_ids.add(asset_id)
 
     def _apply_renumber_episode(self, event: Mapping[str, object]) -> set[str]:
         target = event.get("target")
@@ -1050,6 +1137,20 @@ class HierarchyProjection:
         if absolute_number is not None:
             episode.absolute_number = absolute_number
         return {episode.season_id}
+
+    def _apply_republish_episode(self, event: Mapping[str, object]) -> None:
+        target = event.get("target")
+        published_at = _parse_datetime(event.get("published_at"))
+        if not isinstance(target, str) or published_at is None:
+            return
+        episode = self.podcast_episodes.get(target)
+        if episode is None:
+            return
+        episode.published_at = published_at
+        episode.stale = False
+        slug = _str(event.get("slug"))
+        if slug is not None:
+            episode.slug = slug
 
     def _apply_move_episode(self, event: Mapping[str, object]) -> set[str]:
         target = event.get("target")
@@ -1308,6 +1409,27 @@ class HierarchyProjection:
         )
         return render_asset_path(context)
 
+    def _render_podcast_asset(self, tail: _AssetTail, *, root_path: str) -> str | None:
+        episode = self.podcast_episodes[tail.parent_id]
+        podcast = self.podcasts.get(episode.podcast_id)
+        if podcast is None:
+            return None
+        context = RenderableAssetContext(
+            parent_kind=ParentKind.PODCAST_EPISODE,
+            root_path=root_path,
+            layout=podcast.layout,
+            naming=podcast.episode_naming,
+            podcast_title=podcast.title,
+            published_at=episode.published_at,
+            episode_slug=episode.slug,
+            episode_title=episode.title,
+            variant_label=tail.variant_label,
+            asset_role=tail.asset_role,
+            asset_container=tail.asset_container,
+            bundle_asset_count=tail.bundle_asset_count,
+        )
+        return render_asset_path(context)
+
     def _archive_base_path(self, raw: Mapping[str, object]) -> str | None:
         if self.root_path is None:
             return None
@@ -1446,6 +1568,17 @@ def _date(value: object) -> date | None:
         return None
 
 
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
 def _enum[T: enum.StrEnum](enum_type: type[T], value: object) -> T | None:
     if not isinstance(value, str):
         return None
@@ -1559,6 +1692,30 @@ def _iter_track_entity_ids(disc: _RawMapping, *, disc_loc: _Loc) -> Iterator[tup
         yield from _iter_variant_entity_ids(
             track.get("variants"), variants_path=(*track_loc, "variants")
         )
+
+
+def _iter_podcast_entity_ids(raw: _RawMapping) -> Iterator[tuple[str, str, _Loc]]:
+    podcasts = _as_list(raw.get("podcasts"))
+    if podcasts is None:
+        return
+    for podcast_idx, podcast_obj in enumerate(podcasts):
+        podcast = _as_mapping(podcast_obj)
+        if podcast is None:
+            continue
+        podcast_loc: _Loc = ("podcasts", podcast_idx)
+        yield from _entity_id(podcast, namespace=NS_PODCAST_ID, loc=podcast_loc)
+        episodes = _as_list(podcast.get("episodes"))
+        if episodes is None:
+            continue
+        for ep_idx, episode_obj in enumerate(episodes):
+            episode = _as_mapping(episode_obj)
+            if episode is None:
+                continue
+            episode_loc = (*podcast_loc, "episodes", ep_idx)
+            yield from _entity_id(episode, namespace=NS_PODCAST_EPISODE_ID, loc=episode_loc)
+            yield from _iter_variant_entity_ids(
+                episode.get("variants"), variants_path=(*episode_loc, "variants")
+            )
 
 
 def _entity_id(
@@ -1817,6 +1974,63 @@ def _iter_disc_asset_contexts(
             )
 
 
+def _iter_podcast_episode_asset_contexts(raw: _RawMapping) -> Iterator[RawAssetContext]:
+    podcasts = _as_list(raw.get("podcasts"))
+    if podcasts is None:
+        return
+    for podcast_idx, podcast_obj in enumerate(podcasts):
+        podcast = _as_mapping(podcast_obj)
+        if podcast is None:
+            continue
+        podcast_loc: _Loc = ("podcasts", podcast_idx)
+        yield from _iter_podcast_episode_contexts(podcast, podcast_loc=podcast_loc)
+
+
+def _iter_podcast_episode_contexts(
+    podcast: _RawMapping, *, podcast_loc: _Loc
+) -> Iterator[RawAssetContext]:
+    episodes = _as_list(podcast.get("episodes"))
+    if episodes is None:
+        return
+    for ep_idx, episode_obj in enumerate(episodes):
+        episode = _as_mapping(episode_obj)
+        if episode is None:
+            continue
+        episode_loc = (*podcast_loc, "episodes", ep_idx)
+        for tail in _iter_variant_asset_tail(episode.get("variants"), (*episode_loc, "variants")):
+            yield RawAssetContext(
+                asset=tail.asset,
+                asset_loc=tail.asset_loc,
+                parent_kind=ParentKind.PODCAST_EPISODE.value,
+                parent_id=_id_or_empty(episode),
+                movie=None,
+                movie_loc=None,
+                series=None,
+                series_loc=None,
+                season=None,
+                season_loc=None,
+                episode=None,
+                episode_loc=None,
+                artist=None,
+                artist_loc=None,
+                album=None,
+                album_loc=None,
+                disc=None,
+                disc_loc=None,
+                track=None,
+                track_loc=None,
+                podcast=podcast,
+                podcast_loc=podcast_loc,
+                podcast_episode=episode,
+                podcast_episode_loc=episode_loc,
+                variant=tail.variant,
+                variant_loc=tail.variant_loc,
+                bundle=tail.bundle,
+                bundle_loc=tail.bundle_loc,
+                bundle_asset_count=tail.bundle_asset_count,
+            )
+
+
 @dataclass(frozen=True, slots=True)
 class _RawTailContext:
     asset: _RawMapping
@@ -1963,6 +2177,40 @@ def _track_renderable_context(
     )
 
 
+def _podcast_renderable_context(
+    raw_context: RawAssetContext, parent_kind: ParentKind, root_path: str
+) -> RenderableAssetContext | None:
+    if raw_context.podcast is None or raw_context.podcast_episode is None:
+        return None
+    layout = _enum(PodcastLayout, raw_context.podcast.get("layout"))
+    naming = _enum(PodcastEpisodeNaming, raw_context.podcast.get("episode_naming"))
+    podcast_title = _str_field(raw_context.podcast, "title")
+    episode_title = _str_field(raw_context.podcast_episode, "title")
+    slug = _str_field(raw_context.podcast_episode, "slug")
+    published_at = _datetime_field(raw_context.podcast_episode, "published_at")
+    tail = _tail_render_fields(raw_context)
+    if layout is None or naming is None or podcast_title is None:
+        return None
+    if episode_title is None or slug is None or published_at is None:
+        return None
+    if tail is None:
+        return None
+    return RenderableAssetContext(
+        parent_kind=parent_kind,
+        root_path=root_path,
+        layout=layout,
+        naming=naming,
+        podcast_title=podcast_title,
+        published_at=published_at,
+        episode_slug=slug,
+        episode_title=episode_title,
+        variant_label=tail[0],
+        asset_role=tail[1],
+        asset_container=tail[2],
+        bundle_asset_count=tail[3],
+    )
+
+
 def _tail_render_fields(raw_context: RawAssetContext) -> tuple[str, str, str, int] | None:
     variant_label = _str_field(raw_context.variant, "label")
     asset_role = _str_field(raw_context.asset, "role")
@@ -2002,6 +2250,18 @@ def _date_field(mapping: _RawMapping, field: str) -> date | None:
         return None
     try:
         return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def _datetime_field(mapping: _RawMapping, field: str) -> datetime | None:
+    value = mapping.get(field)
+    if isinstance(value, datetime):
+        return value
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value)
     except ValueError:
         return None
 
