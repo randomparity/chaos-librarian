@@ -46,7 +46,7 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 30 |
+| scenario | 31 |
 | manifest | 10 |
 | journal | 1 |
 | replay bundle | 12 |
@@ -67,6 +67,11 @@ Current checked-in contract versions:
 | track report | 1 |
 | observed state | 4 |
 | divergence | 1 |
+
+Scenario v31 adds an optional movie `edition` on variants (`theatrical` /
+`directors_cut` / `extended` / `unrated`), rendered as a Plex/Jellyfin
+`{edition-<Name>}` filename-stem token. The manifest is unchanged (the edition
+is recovered from the rendered path); existing scenarios stay valid unchanged.
 
 Scenario v23 adds explicit declared sidecar subtitle codec, encoding, and
 timing recipe fields. Declared subtitle sidecars can now generate UTF-8/BOM,

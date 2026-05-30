@@ -30,11 +30,21 @@ the variant label, and the asset container:
 - `artist_album_flat`:
   `<root>/<artist name>/<album title>/<track stem> - <variant label>.<container>`
 
+A movie variant may carry an optional `edition` (`theatrical` / `directors_cut`
+/ `extended` / `unrated`). When set, a Plex/Jellyfin `{edition-<Title Case Name>}`
+token is appended to the filename stem, after the variant-label / multi-asset
+role suffix and before the extension — e.g.
+`<root>/<movie title> - <variant label> {edition-Director's Cut}.<container>`.
+The edition is movie-only; TV/music/podcast paths are unaffected. Two variants
+that render to the same path (same label and same edition) are `E_PATH_COLLISION`.
+
 For example, these scenario values render to these initial `Location.path`
 values:
 
 - Movie: root `Movies`, title `Orbit`, layout `movie_flat`, variant `1080p`,
   asset container `mkv` -> `Movies/Orbit - 1080p.mkv`.
+- Movie edition: the same movie with variant `1080p` and edition `directors_cut`
+  -> `Movies/Orbit - 1080p {edition-Director's Cut}.mkv`.
 - TV: root `TV`, series `Starline`, season `1`, episode `1`, title `Pilot`,
   layout `season_folders`, naming `sxxexx_title`, variant `1080p`, asset
   container `mkv` -> `TV/Starline/Season 01/Starline - S01E01 - Pilot - 1080p.mkv`.

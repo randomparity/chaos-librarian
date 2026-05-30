@@ -51,12 +51,16 @@ def _variant_payload(
     variant_id: str = "v0",
     bundle_id: str = "b0",
     label: str = "hd",
+    edition: str | None = None,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "id": variant_id,
         "label": label,
         "bundle": {"id": bundle_id, "assets": [asset]},
     }
+    if edition is not None:
+        payload["edition"] = edition
+    return payload
 
 
 def _minimal_scenario() -> Scenario:
@@ -107,6 +111,82 @@ class TestBuildInitialState:
 
         (loc,) = state.locations.values()
         assert loc.path == "movies-hd/T - hd.mkv"
+
+    def test_initial_location_path_renders_edition_token(self) -> None:
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 31,
+                "scenario_id": "edition",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "movies": [
+                    {
+                        "id": "movie_0",
+                        "title": "T",
+                        "layout": "movie_flat",
+                        "variants": [
+                            _variant_payload(_video_asset_payload(), edition="directors_cut")
+                        ],
+                    }
+                ],
+                "series": [],
+                "artists": [],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+
+        state = build_initial_state(scenario, ids)
+
+        (loc,) = state.locations.values()
+        assert loc.path == "movies-hd/T - hd {edition-Director's Cut}.mkv"
+
+    def test_edition_sidecar_inherits_edition_stem(self) -> None:
+        subtitle: dict[str, object] = {
+            "codec": "srt",
+            "language": "en",
+            "mode": "sidecar",
+        }
+        scenario = _scenario_from_dict(
+            {
+                "schema_version": 31,
+                "scenario_id": "edition-sidecar",
+                "seed": 1,
+                "duration_scale": "short",
+                "library": {"roots": [{"id": "r0", "path": "movies-hd"}]},
+                "movies": [
+                    {
+                        "id": "movie_0",
+                        "title": "T",
+                        "layout": "movie_flat",
+                        "variants": [
+                            _variant_payload(
+                                _video_asset_payload(subtitles=[subtitle]),
+                                edition="directors_cut",
+                            )
+                        ],
+                    }
+                ],
+                "series": [],
+                "artists": [],
+                "timeline": [],
+            }
+        )
+        ids = IdAllocator(TraceRecorder())
+
+        state = build_initial_state(scenario, ids)
+
+        (sidecar,) = state.sidecars.values()
+        assert sidecar.path == "movies-hd/T - hd {edition-Director's Cut}.en.srt"
+
+    def test_no_edition_scenario_has_no_edition_token(self) -> None:
+        scenario = _minimal_scenario()
+        ids = IdAllocator(TraceRecorder())
+
+        state = build_initial_state(scenario, ids)
+
+        assert all("{edition-" not in loc.path for loc in state.locations.values())
 
     def test_world_state_serializes_to_normalized_manifest(self) -> None:
         scenario = _minimal_scenario()
