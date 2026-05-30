@@ -1,13 +1,15 @@
-"""Every shipped recipe under ``recipes/`` must validate clean.
+"""Corpus guard for the pre-built scenario recipe library.
 
-WHY: the recipe library is only useful if every file is a runnable scenario.
-This corpus test is the bit-rot guard — when the scenario schema or validation
-pipeline changes, a recipe that stops validating turns CI red with the offending
-file and its issue codes, exactly as ``chaos-librarian validate`` would. It is
-the enforcement behind issue #108's "all recipes pass validate in CI" and
-"updated when schema changes" acceptance criteria. Because every recipe pins
-``schema_version: 23`` (a ``Literal`` on the model), the next version bump fails
-this test on its own, forcing a deliberate recipe update.
+WHY: recipes are user-facing scenarios shipped in the repo. They must stay valid
+as the scenario schema and validation pipeline evolve. This module re-validates
+every recipe in CI and enforces the per-category floor from issue #108, so a
+schema change that breaks a recipe — or a dropped category — turns CI red.
+
+When ``SCENARIO_SCHEMA_VERSION`` is bumped, every recipe's ``schema_version``
+literal stops validating and ``test_recipe_validates_clean`` goes red for the
+whole corpus at once. That is intentional (see
+``docs/adr/0002-recipe-library-location-and-bitrot-guard.md``): update each
+recipe to the new version and re-confirm it still expresses a valid scenario.
 """
 
 from __future__ import annotations
@@ -19,10 +21,6 @@ import pytest
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 RECIPES_DIR = Path(__file__).resolve().parents[2] / "recipes"
-
-# The six failure-pattern categories from issue #108. Each must ship at least
-# MIN_PER_CATEGORY recipes; the count assertion makes that floor a tested
-# contract rather than a documented hope.
 CATEGORIES = ("scanner", "watcher", "identity", "metadata", "sidecar", "archive")
 MIN_PER_CATEGORY = 3
 
@@ -31,19 +29,27 @@ def _recipe_files() -> list[Path]:
     return sorted(RECIPES_DIR.rglob("*.yaml"))
 
 
-def test_recipes_directory_is_populated() -> None:
-    """Discovery must find recipes — guards against a silent pass.
+def _discovered_categories() -> list[str]:
+    return sorted(p.name for p in RECIPES_DIR.iterdir() if p.is_dir())
 
-    WHY: a parametrized validate test over an empty file list would collect zero
-    cases and report success. This explicit non-empty assertion makes an empty
-    or mis-resolved ``recipes/`` a hard failure instead.
+
+def _floored_categories() -> list[str]:
+    """Every expected category plus any added on disk.
+
+    Union so a *new* category directory cannot be shipped below the floor, and a
+    *dropped* expected category fails (its glob returns nothing).
     """
+    return sorted(set(CATEGORIES) | set(_discovered_categories()))
+
+
+def test_recipes_directory_is_populated() -> None:
+    """At least one recipe exists (guards against a renamed/empty tree)."""
     assert _recipe_files(), f"no recipes discovered under {RECIPES_DIR}"
 
 
-@pytest.mark.parametrize("category", CATEGORIES)
+@pytest.mark.parametrize("category", _floored_categories())
 def test_category_has_minimum_recipes(category: str) -> None:
-    """Each category ships at least MIN_PER_CATEGORY recipes (issue #108 floor)."""
+    """Each category ships at least ``MIN_PER_CATEGORY`` recipes."""
     files = sorted((RECIPES_DIR / category).glob("*.yaml"))
     assert len(files) >= MIN_PER_CATEGORY, (
         f"category {category!r} has {len(files)} recipes, need >= {MIN_PER_CATEGORY}"

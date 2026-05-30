@@ -15,7 +15,12 @@ response, and any required profile.
 **Expected consumer response** is descriptive only — chaos-librarian is
 policy-neutral and does not assert your application's outcome. It emits the
 neutral oracle (journal + manifest); your consumer compares its own observed
-state against that. The column records what a correct consumer *should* do.
+state against that. The column records what a correct consumer *should* do:
+
+- **converges** — settle on the correct end state with no duplicate or orphan entries.
+- **errors** — surface a clear error for the affected asset (the file is unreadable).
+- **diverges** — observed state legitimately differs from the oracle; the consumer
+  should detect the mismatch rather than silently accept it.
 
 ## Schema version and bit-rot guard
 
@@ -45,7 +50,7 @@ Copy races and network/filesystem timing artifacts.
 | `slow-copy-race.yaml` | A slow copy is in flight; only the commit makes the final path visible. | converges | none |
 | `rapid-churn.yaml` | Move, delete, and re-add fire back-to-back on one asset. | converges | none |
 | `mtime-touch.yaml` | A bare mtime change with no content change. | converges | filesystem-artifacts |
-| `nfs-lag-visibility.yaml` | A network mount delays a moved file's visibility. | converges | network-fs-lag |
+| `nfs-lag-visibility.yaml` | A network mount delays a re-added file's visibility. | converges | network-fs-lag |
 
 ### `identity/` — durable identity through mutation
 Identity must survive moves, renames, root changes, and container swaps.
