@@ -1,0 +1,36 @@
+# expected: E_MATERIALIZE_UNSUPPORTED
+schema_version: 24
+scenario_id: invalid-create-sidecar-ass-utf16
+seed: 7
+duration_scale: short
+library:
+  roots:
+    - id: root_main
+      path: movies
+movies:
+  - id: movie_bad
+    title: T
+    layout: movie_flat
+    variants:
+      - id: variant_bad
+        label: hd
+        bundle:
+          id: bundle_bad
+          assets:
+            - id: asset_bad
+              role: main
+              container: mkv
+              duration_seconds: 1.0
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+series: []
+artists: []
+timeline:
+  - id: ev_cs
+    at: 1s
+    action: create_sidecar
+    target: asset_bad
+    to: movies/asset_bad.eng.srt
+    language: eng
+    codec: ass
+    encoding: utf16_le
