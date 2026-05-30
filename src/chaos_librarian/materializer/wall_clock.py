@@ -585,7 +585,8 @@ def _wall_clock_slow_copy_commit(
     state: _DispatchState,
     entry: JournalEntry,
 ) -> FilesystemAction:
-    assert isinstance(entry, CommittedJournalEntry)
+    if not isinstance(entry, CommittedJournalEntry):
+        raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
     session = state.slow_copies.pop(entry.related_event_id)
     initial_path = state.slow_copy_initial_paths.pop(entry.related_event_id)
     temp = state.fs_ctx.library_root / session.temp_path
@@ -628,7 +629,8 @@ def _wall_clock_network_lag_commit(
     state: _DispatchState,
     entry: JournalEntry,
 ) -> NetworkLagAction:
-    assert isinstance(entry, CommittedJournalEntry)
+    if not isinstance(entry, CommittedJournalEntry):
+        raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed network_lag entry")
     session = state.network_lags.pop(entry.related_event_id)
     deferred = state.deferred_network_lag_entries.pop(entry.related_event_id, None)
     if deferred is not None:
@@ -690,7 +692,8 @@ def _finish_active_slow_copies(
         action = TimelineActionName(entry.action)
         if action is not TimelineActionName.SLOW_COPY_COMMIT:
             break
-        assert isinstance(entry, CommittedJournalEntry)
+        if not isinstance(entry, CommittedJournalEntry):
+            raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
         if entry.related_event_id not in state.slow_copies:
             break
         _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
@@ -741,7 +744,8 @@ def _slow_copy_commit_times(journal: tuple[JournalEntry, ...]) -> dict[str, int]
     for entry in journal:
         if TimelineActionName(entry.action) is not TimelineActionName.SLOW_COPY_COMMIT:
             continue
-        assert isinstance(entry, CommittedJournalEntry)
+        if not isinstance(entry, CommittedJournalEntry):
+            raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
         times[entry.related_event_id] = entry.logical_time_ns
     return times
 
