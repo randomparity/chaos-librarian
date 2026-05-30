@@ -148,8 +148,9 @@ independent. The two enums happen to share `png`/`jpeg`/`webp` token spellings t
 that is incidental, not a shared concept.
 
 **Manifest verification (Q4 gate):** a poster sidecar records via `ManifestSidecar`,
-whose `kind`, `path` (carrying the format-derived extension), and `content_hash` are all
-already present. The format selection only changes the synthesized bytes (recorded in
+whose `kind`, `path` (the author's `to:`, whose extension the agreement rule keeps
+consistent with `image_format`), and `content_hash` are all already present. The format
+selection only changes the synthesized bytes (recorded in
 the existing `content_hash`) and the rendered extension (recorded in the existing
 `path`). **No new manifest or materialization field is required →
 `MANIFEST_SCHEMA_VERSION` stays 10 and `MATERIALIZATION_SCHEMA_VERSION` is unchanged.**
