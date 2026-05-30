@@ -57,9 +57,14 @@ report records.
   && `uv run python -m pytest -q` are all green. **Never a red commit.**
 - `uv run python -m chaos_librarian.schema_export --check` passes (regen + commit in the
   same task that changes a contract model).
-- The scenario `schema_version` literal + the materialization `schema_version` literal
-  + the fixture/recipe corpus bump land **together in one atomic commit** (Task 2) so
-  the corpus tests are never red.
+- **The schema models, both `schema_version` literals, the regenerated `schemas/*.json`
+  snapshots, the fixture/recipe corpus bump, and the user-docs update all land together
+  in one atomic commit (Task 1).** They are mutually coupled: changing a Pydantic model
+  immediately staleness-fails `tests/contract/test_schema_export.py::test_committed_schemas_match_models`
+  (which runs `check_all` as a pytest), and the version literal is encoded as a `const`
+  in the snapshot — so the model change, the literal change, and the snapshot regen
+  cannot be separated into different green commits. The corpus bump and docs update are
+  in the same commit for the same never-red reason.
 - Real `os.chmod` is confined to `<run-dir>/library/`; the run-dir root is never
   chmod'd; every captured mode is restored at finalize and on the failure path.
 
@@ -93,13 +98,13 @@ Modified files:
 
 ---
 
-## Task 1 — Schema: enums, event variants, profile, report record (RED → GREEN)
+## Task 1 — Schema + version bumps + corpus + docs (ONE atomic commit, RED → GREEN)
 
-No version bump yet (so the fixture corpus stays green until Task 2), **but the
-user-docs update is mandatory in this commit** because
-`test_user_docs_cover_commands_and_timeline_actions` iterates every
-`TimelineActionName` — adding the enum members without documenting them turns that test
-red and breaks the never-red invariant.
+Task 1 and the former Task 2 are **fused** because they cannot be separated into two
+green commits (see the third Invariant): touching the Pydantic models staleness-fails
+the drift test, and the `schema_version` literal is a `const` in the regenerated
+snapshot. So the model change, the version literals, the snapshot regen, the corpus
+bump, and the user-docs update all land in this one commit.
 
 - [ ] **Test first** (`tests/contract/test_network_fs_chaos.py`): each of the eight
   event classes round-trips through its own `model_validate` (build the event dict,
@@ -107,8 +112,8 @@ red and breaks the never-red invariant.
   `"12345"`, accepts `"000"`/`"644"`/`"4644"`; `remount_path`/`release_lock` accept both
   `for` and `for_` keys; `ToggleReadonlyEvent.mode` rejects a non-`readonly`/`readwrite`
   value; `AcquireLockEvent.lock_type` rejects a bad value; `NetworkFsChaosAction`
-  round-trips and rejects an `extra` field. (These tests build event dicts directly, not
-  a full `Scenario` — the `schema_version` mismatch is avoided until Task 2.)
+  round-trips and rejects an `extra` field. A full-`Scenario` round-trip test asserts a
+  chaos timeline validates at `schema_version: 28`.
 - [ ] **Implement** in `contract/scenario.py`: add `ReadonlyState`, `LockType`,
   `NetworkFsChaosCondition` StrEnums; add the seven `TimelineActionName` members; add the
   eight event classes (one per action; `change_permissions`/`toggle_readonly`/`unmount`
@@ -116,36 +121,30 @@ red and breaks the never-red invariant.
   `change_permissions` adds `mode: str` with a `@field_validator` enforcing
   `^[0-7]{3,4}$`; `toggle_readonly` adds `mode: ReadonlyState`; `remount_path` /
   `release_lock` carry only `for_` via `AliasChoices("for_", "for")`). Add all eight to
-  the `TimelineEvent` union.
+  the `TimelineEvent` union. Bump `Scenario.schema_version: Literal[28]`.
 - [ ] **Implement** in `contract/profiles.py`: `ProfileName.NETWORK_FS_CHAOS = "network-fs-chaos"`.
 - [ ] **Implement** in `contract/materialization.py`: `NetworkFsChaosAction`
   (`extra="forbid"`, fields per spec "Report record"); add
   `network_fs_chaos_actions: list[NetworkFsChaosAction] = Field(default_factory=list)`
-  to `MaterializationReport`. (Leave the report `schema_version` literal for Task 2.)
-- [ ] **Implement** in `docs/user/scenario-authoring.md`: add the seven actions (with
-  their fields) to the timeline-action table and `network-fs-chaos` to the profiles list,
-  mirroring the existing `network_lag_*` / `network-fs-lag` rows. This satisfies the
-  issue's "documentation for each new action" criterion and keeps
-  `test_user_docs_cover_commands_and_timeline_actions` green.
-- [ ] **Verify:** `uv run ty check src tests`, `uv run ruff check`, and the **full**
-  `pytest -q` (not just the new contract test — the docs-coverage test must pass too).
-- [ ] **Commit:** `feat: add network-fs-chaos event variants and report record`
-
-## Task 2 — Version bumps + corpus mass-bump (atomic, RED → GREEN)
-
-- [ ] **Implement:** `contract/__init__.py` `SCENARIO_SCHEMA_VERSION` 27 → 28,
-  `MATERIALIZATION_SCHEMA_VERSION` 15 → 16; `Scenario.schema_version: Literal[28]`;
-  `MaterializationReport.schema_version: Literal[16]`.
+  to `MaterializationReport`; bump `MaterializationReport.schema_version: Literal[16]`.
+- [ ] **Implement** in `contract/__init__.py`: `SCENARIO_SCHEMA_VERSION` 27 → 28,
+  `MATERIALIZATION_SCHEMA_VERSION` 15 → 16.
 - [ ] **Mass-bump** every `schema_version: 27` → `28` under `tests/fixtures/scenarios/**`
   and `recipes/**` in one step (leave `yaml-parse-error.yaml` untouched — it never
   parses). Verify with `rg -l "schema_version: 27" tests recipes` returning only the
   intentional exception(s).
 - [ ] **Regenerate:** `uv run python -m chaos_librarian.schema_export --write`; confirm
   only `scenario.schema.json` and `materialization.schema.json` changed.
-- [ ] **Verify:** full `pytest -q`, `schema_export --check`, `ty`, `ruff` green.
-- [ ] **Commit:** `feat: bump scenario v28 / materialization v16 for network-fs-chaos`
+- [ ] **Implement** in `docs/user/scenario-authoring.md`: add the seven actions (with
+  their fields) to the timeline-action table and `network-fs-chaos` to the profiles list,
+  mirroring the existing `network_lag_*` / `network-fs-lag` rows. Satisfies the issue's
+  "documentation for each new action" criterion and keeps
+  `test_user_docs_cover_commands_and_timeline_actions` green.
+- [ ] **Verify:** the **full** `pytest -q` (drift test, docs-coverage test, and corpus
+  tests all pass), `schema_export --check`, `ty check src tests`, `ruff check`.
+- [ ] **Commit:** `feat: add network-fs-chaos schema, profile, and report record`
 
-## Task 3 — Profile gate + target validation (RED → GREEN)
+## Task 2 — Profile gate + target validation (RED → GREEN)
 
 - [ ] **Test first** (`tests/validation/rules/test_network_fs_chaos.py` + invalid
   fixtures): for each new action, a fixture **without** `network-fs-chaos` →
@@ -164,7 +163,7 @@ red and breaks the never-red invariant.
   `semantic.py` `_RULES`.
 - [ ] **Verify + commit:** `feat: gate network-fs-chaos actions and validate targets`
 
-## Task 4 — Pairing + window validation (RED → GREEN)
+## Task 3 — Pairing + window validation (RED → GREEN)
 
 - [ ] **Test first**: `release_lock.for` / `remount_path.for` referencing an unknown
   open → `E_LIFECYCLE_INVALID`; an open with zero or >1 matching close →
@@ -180,7 +179,7 @@ red and breaks the never-red invariant.
   via `try_parse_duration`). Register in `semantic.py`.
 - [ ] **Verify + commit:** `feat: validate network-fs-chaos open/close pairing`
 
-## Task 5 — Engine handlers (RED → GREEN)
+## Task 4 — Engine handlers (RED → GREEN)
 
 - [ ] **Test first** (engine-level): a single-shot action emits one `AtomicJournalEntry`
   with the neutral `state_delta` (target_ref, condition, mode where relevant); an
@@ -195,7 +194,7 @@ red and breaks the never-red invariant.
   `_location_ids_for_target` when the target is a known asset.
 - [ ] **Verify + commit:** `feat: engine handlers for network-fs-chaos actions`
 
-## Task 6 — Wall-clock realization + teardown (RED → GREEN)
+## Task 5 — Wall-clock realization + teardown (RED → GREEN)
 
 - [ ] **Test first** (`tests/materializer/test_wall_clock_network_fs_chaos.py`, no ffmpeg):
   - `change_permissions` to `000` on an asset: `os.stat().st_mode & 0o777 == 0` during
@@ -216,16 +215,16 @@ red and breaks the never-red invariant.
   restore-at-finalize + restore-on-failure try/finally.
 - [ ] **Verify + commit:** `feat: realize network-fs-chaos in the wall-clock runner`
 
-## Task 7 — Preflight rejection in static materialize (RED → GREEN)
+## Task 6 — Preflight rejection in static materialize (RED → GREEN)
 
 - [ ] **Test first:** static `materialize` of a scenario with each new action raises
   `TimelineUnsupportedError` (`E_MATERIALIZE_TIMELINE_UNSUPPORTED`) — no run-dir
   allocation. (Confirms `allow_network_fs_chaos` defaults `False` in the static path.)
 - [ ] **Implement:** verify the static-materialize call site passes neither
-  `allow_*` flag (likely no code change beyond Task 6; the test is the guard).
+  `allow_*` flag (likely no code change beyond Task 5; the test is the guard).
 - [ ] **Verify + commit:** `test: static materialize rejects network-fs-chaos actions`
 
-## Task 8 — Recipes + valid-fixture corpus + backward-compat (RED → GREEN)
+## Task 7 — Recipes + valid-fixture corpus + backward-compat (RED → GREEN)
 
 - [ ] **Test first:** the two recipes are discovered by
   `tests/recipes/test_recipe_corpus.py` and validate clean; a valid asset-target and a
@@ -237,7 +236,7 @@ red and breaks the never-red invariant.
   and the `network-fs-chaos` profile; add the valid fixtures.
 - [ ] **Verify + commit:** `feat: ship network-fs-chaos recipes and corpus fixtures`
 
-## Task 9 — Follow-up issues + docs sweep
+## Task 8 — Follow-up issues + docs sweep
 
 - [ ] File the deferred follow-ups (dedup against #186/#188/#189/#191/#192/#193/#195
   first): (a) fuzz-lane / generation emission of network-fs-chaos actions; (b) lag⇄chaos
@@ -254,13 +253,14 @@ red and breaks the never-red invariant.
 
 ## Rollback / cleanup
 
-- Each task is one green commit; revert is per-task. Tasks 1–2 are the schema
-  foundation; reverting Task 2 alone would leave the corpus red, so Tasks 1+2 revert
-  together if the schema direction is abandoned.
+- Each task is one green commit; revert is per-task. Task 1 is the self-contained
+  schema foundation (models + version literals + snapshots + corpus + docs in one
+  commit), so reverting it cleanly undoes the whole schema direction with no red
+  intermediate state.
 - No external state, no migrations: the only "migration" is the fixture/recipe
-  `schema_version` bump, fully contained in Task 2.
+  `schema_version` bump, fully contained in Task 1.
 - Real-FS safety is the only runtime cleanup concern, fully handled by the
-  restore-at-finalize + restore-on-failure try/finally (Task 6); a test asserts the run
+  restore-at-finalize + restore-on-failure try/finally (Task 5); a test asserts the run
   dir is removable after a Phase-B failure following a `change_permissions`.
 
 ## Verification gates (final, before PR)
