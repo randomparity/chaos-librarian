@@ -56,6 +56,22 @@ FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
 }
 
 
+CANONICAL_FUZZ_LANES: Final[dict[FuzzProfileName, tuple[FuzzLaneName, ...]]] = {
+    FuzzProfileName.FUZZ_SMOKE: (FuzzLaneName.SMOKE,),
+    FuzzProfileName.FUZZ_REGRESSION: (
+        FuzzLaneName.CORE_FS,
+        FuzzLaneName.MEDIA_REWRITE,
+        FuzzLaneName.SIDECAR_SUBTITLE,
+        FuzzLaneName.MALFORMED,
+        FuzzLaneName.NEGATIVE_ORACLE,
+        FuzzLaneName.FILESYSTEM_ARTIFACT,
+        FuzzLaneName.NETWORK_LAG,
+        FuzzLaneName.TV_TOPOLOGY,
+        FuzzLaneName.MUSIC_TOPOLOGY,
+    ),
+}
+
+
 class CorruptionProbeOutcome(enum.StrEnum):
     FAILED_EXPECTED = "failed_expected"
     STILL_PROBEABLE = "still_probeable"
