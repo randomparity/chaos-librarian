@@ -131,53 +131,116 @@ The loc points at the offending field: `("...asset path...", "same_content_as")`
 #### Declaration-order requirement
 
 `same_content_as` copies the referent's **already-written file**, so the referent must
-materialize **before** the referrer. The materializer iterates in declaration order,
-so the rule additionally requires the referenced asset to be declared **earlier** than
-the referrer (forward references rejected). This mirrors the existing ordered-lifecycle
-rules (`slow_copy` start-before-commit). A forward or same-position reference emits
-`E_TARGET_UNKNOWN` with a message naming the ordering requirement.
+materialize **before** the referrer. The materializer iterates in declaration order, so
+the rule additionally requires the referenced asset to be declared **earlier** than the
+referrer (forward and same-position references rejected). `hash_collision_with` shares
+the **same** requirement: the colliding hash is computed from the referent's *recorded*
+hash, only known after the referent is stamped. Single ordered pass, no second
+materialize pass.
 
-`hash_collision_with` shares the **same** declaration-order requirement: the colliding
-hash is computed from the referent's *recorded* hash, which is only known after the
-referent is stamped. Single ordered pass, no second materialize pass.
+**Error code for forward/same-position references (resolves spec-challenge finding 4).**
+The cited ordering precedent, `slow_copy`, uses a *dedicated* timing code
+(`E_SLOW_COPY_TIMING`), and the general "shape-valid timeline the engine can't execute"
+code is `E_LIFECYCLE_INVALID`. Neither is reusable here: `E_SLOW_COPY_TIMING` is
+slow-copy-specific, and `E_LIFECYCLE_INVALID` is **timeline-scoped** by contract ("reject
+*timelines* that can't execute," simulating timeline operations) — `same_content_as` /
+`hash_collision_with` are **asset-declaration** fields, not timeline events, so routing
+them through a timeline-lifecycle code would misclassify them. We therefore reuse
+**`E_TARGET_UNKNOWN`** for the forward/same-position case as well, with a message that
+explicitly names the ordering requirement (e.g. `"same_content_as 'X' must reference an
+earlier-declared asset"`). This is a deliberate, documented semantic stretch:
+`E_TARGET_UNKNOWN`'s literal meaning is "this reference does not resolve," and a forward
+reference does not resolve *at the point it is needed* (the referent isn't materialized
+yet). Dangling and self references stay `E_TARGET_UNKNOWN` for their natural meaning.
+Keeping one code across all three reference failures also keeps the new rule single-code
+and the contract surface minimal.
+
+#### Walker-order coupling invariant (resolves spec-challenge finding 3)
+
+Correctness of both features depends on the **validator's** declaration-order check and
+the **materializer's** actual copy/stamp order agreeing. These are two independent
+`iter_asset_contexts` implementations — `validation/rules/_common.py` (raw-dict walk) and
+`topology.py` (model walk) — that today both yield movies → episodes → tracks in
+declaration order, but nothing pins them in lockstep. A future reorder of either walker
+would silently turn a "valid" scenario into a materialize-time crash (missing referent
+file) or a wrong-hash stamp, with no guardrail.
+
+This change adds an explicit invariant test: for a representative multi-tree scenario
+(at least one movie, one episode, one track asset), assert
+
+```python
+[c.asset["id"] for c in validation.iter_asset_contexts(raw)]
+    == [c.asset.id for c in topology.iter_asset_contexts(scenario)]
+```
+
+so a future divergence of either walker fails loudly rather than corrupting a collision
+or duplicate scenario.
 
 ### Materialization
 
-#### `same_content_as` — copy the referent's bytes
+#### `same_content_as` — copy the referent's bytes (orchestrator layer)
 
-In `materialize_one_asset` (or a thin wrapper in `synthesis.py`), when
-`asset.same_content_as` is set:
+The copy is handled in the **orchestrator** `materialize_assets_phase_a` (not in
+`materialize_one_asset`). `materialize_one_asset` is a per-asset, **injected/pluggable**
+function (the `materialize_asset` param of `materialize_assets_phase_a`) with a fixed
+signature and no visibility into previously-materialized assets — the wrong layer for a
+cross-asset copy. **`materialize_one_asset`'s signature is unchanged.**
 
-- Resolve the referent's already-written output path (the referent materialized
-  earlier in the same phase-A loop). Copy its bytes to this asset's
-  `rendered_relative_path` with `shutil.copyfile` (or read+write), then compute this
-  asset's `content_hash` from the copied file. Because the bytes are identical, the
-  full sha256 is identical → `augment_manifest` stamps the **same** `content_hash` on
-  both versions. **No new manifest field, no override.**
-- The asset still gets its own `ManifestLocation` / path (a duplicate is a *separate
-  file* with *identical content*, which is exactly the dedup scenario).
-- ffprobe still runs on the copied file (duration/size are real). The referent and
-  referrer must be **probe-compatible** by construction (identical bytes ⇒ identical
-  probe), so no extra capability gate is needed.
-- The phase-A loop threads a `dict[str, Path]` of `asset_id -> written output path`
-  (or reuses `phase_a.materialized_assets[*].location_path`) so the referent's path is
-  available. The referent is guaranteed present because the rule enforces
-  earlier-declaration.
+In the `materialize_assets_phase_a` loop, when `asset.same_content_as` is set, the
+orchestrator short-circuits the per-asset synthesis call and instead:
+
+- Resolves the referent's already-written output path. The orchestrator computes each
+  asset's `rendered_relative_path` in the loop and knows `out_dir`; the referent
+  materialized earlier, so its file lives at
+  `out_dir / "library" / <referent rendered_relative_path>`. The referrer's own
+  `rendered_relative_path` is the destination.
+- Copies the referent's bytes to the referrer's path with `shutil.copyfile` (creating
+  parent dirs as synthesis does), then computes the referrer's `content_hash` from the
+  copied file. Identical bytes ⇒ identical full sha256 → `augment_manifest` stamps the
+  **same** `content_hash` on both versions. **No new manifest field, no override.**
+- Builds the referrer's `MaterializedAsset` (own `asset_id`, own `location_path`, the
+  copied `content_hash`) and runs ffprobe on the copied file for `size_bytes` /
+  `duration_seconds`. The referent and referrer are **probe-compatible** by
+  construction (identical bytes ⇒ identical probe), so no extra capability gate.
+- The referrer still gets its own `ManifestLocation` / path: a duplicate is a *separate
+  file* with *identical content*, which is exactly the dedup scenario.
+
+The orchestrator threads an `asset_id -> rendered_relative_path` map across the loop so
+the referent's path is available; the referent is guaranteed present because the
+validation rule enforces earlier-declaration.
 
 No ffmpeg is invoked for the copy itself, so this path works even when ffmpeg is
-unavailable **if** the referent was synthesized — but the referent's own synthesis
-needs ffmpeg, so the asset pair as a whole carries the referent's normal capability
-requirements. (No new gate; the referent gates itself.)
+unavailable **if** the referent was synthesized — but the referent's own synthesis needs
+ffmpeg, so the asset pair as a whole carries the referent's normal capability
+requirements (no new gate; the referent gates itself).
 
-#### `hash_collision_with` — override the recorded hash to share a prefix
+#### `hash_collision_with` — recompute a prefix-sharing recorded hash in `augment_manifest`
 
-The asset synthesizes **normally** (its own real bytes, its own real sha256). Then, at
-the `augment_manifest` chokepoint, the recorded `content_hash` is **overridden** so its
-first `collision_prefix_len` hex chars equal the referent's recorded hash, while the
-remaining chars differ from both the referent's hash and this asset's real hash.
+This mirrors **exactly** how `wrong_oracle_hash` achieves run/replay parity, verified
+against `materializer/replay.py`, `materializer/run.py`, and `synthesis.py`.
+`wrong_oracle_hash` does **not** store its reported hash on `MaterializedAsset`:
+`MaterializedAsset.content_hash` holds the **real** synthesized hash in every path. The
+override is a deterministic re-derivation applied at stamp time, recomputed identically
+on each run/replay because it is a pure function of values already present. We reuse that
+mechanism. (The only difference of layer — phase-A asset field vs phase-B timeline event
+— does not change the parity mechanic, since both stamp through `augment_manifest`.)
 
-A new helper `collided_hash_for(referent_hash, real_hash, prefix_len)` (next to
-`false_hash_for` in `phase_b/oracle_hash.py`, or a new `manifest_collision.py`):
+The collision asset synthesizes **normally**: its own real bytes, its own real sha256,
+stored on `MaterializedAsset.content_hash` (the real hash — same as every other asset
+and same as `wrong_oracle_hash`; **no second `MaterializedAsset` field, no
+`MATERIALIZATION_SCHEMA_VERSION` bump**). The recorded manifest hash is overridden in a
+collision-aware `augment_manifest`:
+
+- `augment_manifest` already receives the `Asset` and the accumulating `Manifest`. When
+  `asset.hash_collision_with` is set, it reads the **referent's already-stamped**
+  `ManifestVersion.content_hash` from that same manifest (the referent is declared and
+  stamped earlier, so its row already carries a hash in both the live loop and
+  `stamp_phase_a_manifest`), computes the collided hash via `collided_hash_for`, and
+  stamps **that** on the collision asset's version row instead of
+  `materialized.content_hash`.
+
+`collided_hash_for(referent_hash, real_hash, prefix_len)` is a new pure helper next to
+`false_hash_for` in `phase_b/oracle_hash.py`:
 
 ```
 prefix  = referent_hash_hex[:prefix_len]              # shared hex prefix
@@ -191,34 +254,39 @@ if candidate in (referent_hash, real_hash):
 
 The result is a valid `sha256:[0-9a-f]{64}` URI (prefix and suffix are both hex), shares
 exactly `prefix_len` leading chars with the referent's recorded hash, and is
-deterministic (seeded only by the two real hashes + prefix length). Determinism is
+deterministic (a pure function of the two hashes + prefix length, exactly as
+`false_hash_for` is a pure function of `seed_material` + `actual_hash`). Determinism is
 verified by a test asserting byte-stable output across runs.
 
-The override is applied at the **manifest stamp** point only; the on-disk file is the
-asset's real synthesized bytes. This is the *oracle-recorded* collision (ADR 0004 Q3b):
-a consumer that dedups on the recorded/manifest hash sees the prefix collision; a
-consumer that re-hashes the file on disk does not. This limitation is documented in the
-spec, ADR, recipe header, and PR body, and the on-disk nonce-grind is a filed
-follow-up.
+The on-disk file is the asset's real synthesized bytes; only the manifest version row
+carries the collided hash. This is the *oracle-recorded* collision (ADR 0004 Q3b): a
+consumer that dedups on the recorded/manifest hash sees the prefix collision; a consumer
+that re-hashes the file on disk does not.
 
-The plumbing: `materialize_assets_phase_a` records each asset's stamped
-`content_hash` as it goes (in declaration order). When it reaches a
-`hash_collision_with` asset, it looks up the referent's recorded hash from that map,
-computes the collided hash, and stamps **that** instead of the real hash on the
-asset's `ManifestVersion`. The asset's `MaterializedAsset.content_hash` (replay/audit)
-records the **real** hash; only the manifest version row carries the collided hash —
-matching `wrong_oracle_hash`, which records both `actual_content_hash` and
-`reported_content_hash`.
+**Audit-trail note (resolves spec-challenge finding 1):** unlike `wrong_oracle_hash`'s
+`OracleHashAction` — a phase-B timeline action that records *both*
+`actual_content_hash` and `reported_content_hash` — `hash_collision_with` is an asset
+field with no per-event action record. `MaterializedAsset.content_hash` retains the
+**real** hash (so the materialization report carries the real value), and the manifest
+version row carries the **collided** hash. There is **no** dedicated `reported`-vs-
+`actual` report field for the asset-field collision; we do **not** add one (it would be
+a `MATERIALIZATION_SCHEMA_VERSION` bump for a niche field). The spec's earlier
+"both recorded like wrong_oracle_hash" framing is dropped: the real hash lives in
+`MaterializedAsset`, the collided hash lives in the manifest, and that asymmetry is the
+accepted contract.
 
-### Stamped-hash bookkeeping (replay/run parity)
+### Run/replay parity
 
-`stamp_phase_a_manifest` re-stamps a fresh manifest from stored phase-A metadata for
-run/replay. To keep run/replay identical to materialize, the **collided** hash (not the
-real one) must be what lands on the manifest version in both paths. Options resolved in
-the plan: store the collided hash on the phase-A record so both `augment_manifest` and
-`stamp_phase_a_manifest` stamp the same value. The plan specifies the exact field/flow;
-the invariant tested is *materialize manifest == replay manifest* for a collision
-scenario.
+Parity is structural, not bolted on: both the live materialize path
+(`materialize_assets_phase_a` → `augment_manifest`) and the run/replay path
+(`stamp_phase_a_manifest` → `augment_manifest`, `synthesis.py:180-201`) stamp the
+manifest through the **same** collision-aware `augment_manifest`, iterating assets in the
+same declaration order against an accumulating manifest. Because `collided_hash_for` is a
+pure function of the (already-stamped) referent hash and the asset's real hash (both
+stable across runs), the collided value is identical in both paths — the same property
+that makes `wrong_oracle_hash` replay-stable. The invariant is bound by a test asserting
+the **materialize manifest equals the replay manifest** (version `content_hash` values
+included) for a `hash_collision_with` scenario.
 
 ### Schema version
 
@@ -296,6 +364,8 @@ prefix collision, not an on-disk sha256 collision.
       exactly `collision_prefix_len` leading hex chars and differ at full length; the
       collided hash is deterministic.
 - [ ] Run/replay manifest equals materialize manifest for a collision scenario.
+- [ ] The validator's `iter_asset_contexts` id order equals the materializer's, pinned
+      by a test (so a future walker reorder fails loudly).
 - [ ] Omitting the new fields produces byte-identical output and the same code path as
       pre-change.
 - [ ] Two new `identity/` recipes ship and validate clean.
@@ -325,6 +395,9 @@ prefix collision, not an on-disk sha256 collision.
   the real `materialized.content_hash` unchanged (code-path equality, not a frozen
   hash), and the synthesis path is unchanged.
 - Run/replay parity: a collision scenario's replayed manifest version hash equals the
-  materialized one.
+  materialized one (full manifest equality including the collided `content_hash`).
+- Walker-order coupling: `[c.asset["id"] for c in validation.iter_asset_contexts(raw)]`
+  equals `[c.asset.id for c in topology.iter_asset_contexts(scenario)]` for a multi-tree
+  scenario, pinning the two walkers in lockstep.
 - Recipe corpus: the two new recipes validate clean (existing
   `test_recipe_corpus.py`).

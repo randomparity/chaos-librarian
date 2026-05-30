@@ -63,8 +63,17 @@ value; the wire shape is unchanged).
   and `augment_manifest` paths are unchanged when all three fields are `None`.
 - `same_content_as` requires the referent to be declared **earlier** (single ordered
   materialize pass, no second pass). Forward references are rejected at validate time.
-- The collided hash is deterministic (seeded by the two real hashes + prefix length),
-  so materialize/run/replay record the same value.
+- The collided hash is deterministic (a pure function of the referent's recorded hash,
+  the asset's real hash, and the prefix length), and is recomputed in a collision-aware
+  `augment_manifest` shared by both the live materialize path and the run/replay
+  `stamp_phase_a_manifest` path. So materialize, run, and replay stamp the identical
+  value with no extra plumbing — the same parity mechanism `wrong_oracle_hash` relies on.
+- `MaterializedAsset.content_hash` retains the **real** synthesized hash (no new field,
+  no `MATERIALIZATION_SCHEMA_VERSION` bump); the manifest version row carries the
+  **collided** hash. Unlike `wrong_oracle_hash`'s `OracleHashAction` (which records both
+  `actual` and `reported` hashes), the asset-field collision keeps no per-event
+  `reported`-vs-`actual` record — the real hash is in `MaterializedAsset`, the collided
+  hash is in the manifest, and that asymmetry is the accepted contract.
 
 ## Considered & rejected
 
@@ -113,9 +122,21 @@ value; the wire shape is unchanged).
   `E_FIELD_*`). Cross-asset reference resolution needs the declared-id set and
   declaration order — that is semantic-rule territory, not a single-model shape check;
   and it diverges from `rule_target_unknown`'s `E_TARGET_UNKNOWN`.
-- **Chosen: `E_TARGET_UNKNOWN` (semantic rule) for unknown/self/forward references;
-  `E_FIELD_*`/value errors (model_validator) for cross-field exclusivity.** Reuses the
-  existing reference contract; no new code; no dead failure path.
+- *Rejected: a distinct ordering code for forward references* (e.g. reuse
+  `E_LIFECYCLE_INVALID` or mint a `same_content`-specific timing code, mirroring
+  `slow_copy`'s dedicated `E_SLOW_COPY_TIMING`). `E_SLOW_COPY_TIMING` is
+  slow-copy-specific; `E_LIFECYCLE_INVALID` is contract-scoped to *timeline* execution
+  order ("reject timelines that can't execute"), but `same_content_as` /
+  `hash_collision_with` are asset-declaration fields, not timeline events — routing them
+  through a timeline-lifecycle code would misclassify them and couple an asset rule to a
+  timeline simulator. A new ordering code would fragment a single-purpose rule.
+- **Chosen: `E_TARGET_UNKNOWN` (semantic rule) for unknown, self, AND forward/
+  same-position references — with a forward-ref message that names the ordering
+  requirement; `E_FIELD_*`/value errors (model_validator) for cross-field exclusivity.**
+  A forward reference does not resolve *at the point it is needed* (the referent is not
+  yet materialized), so `E_TARGET_UNKNOWN` ("this reference does not resolve") is a
+  defensible, documented stretch that keeps the new rule single-code and the contract
+  surface minimal. No new code; no dead failure path.
 
 **Q5 — What the consumer (voom-v2) dedups against — on-disk file sha256 or the
 recorded manifest hash.**
