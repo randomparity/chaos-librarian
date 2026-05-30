@@ -226,14 +226,10 @@ Handler routing in `_apply_create_sidecar`:
 - **subtitle**: build the SRT body, then `.encode(<encoding>)` instead of the hardcoded
   `"utf-8"`. The encoding map (`utf8` → `"utf-8"`, `utf8_bom` → utf-8 with a BOM,
   `utf16_le` → `"utf-16-le"`, `iso_8859_1` → `"iso-8859-1"`) lives next to
-  `srt_payload`. `codec`/`source` other than the SRT default are reserved for a later
-  task (the validate matrix already allows only `(srt, generated_srt)` to reach an
-  encoding other than utf8 paths the recipe needs); for v1 the handler synthesizes an
-  SRT body for every subtitle and applies the requested encoding. `ass`/`ssa` codecs
-  are *validatable* (the matrix accepts `(ass, styled_ass, utf8)`), but the timeline
-  `wrong-encoding` recipe only needs `(srt, generated_srt, utf16_le)`. **Decision: the
-  v1 materializer supports subtitle encoding for the SRT recipe and rejects non-SRT
-  codecs at validate time** — see "Subtitle codec scope" below.
+  `srt_payload`. v1 synthesizes an SRT body for every subtitle and applies the requested
+  encoding. Non-SRT codecs (`ass`/`ssa`) never reach the handler because the timeline
+  SRT-only matrix rejects them at validate time with `E_MATERIALIZE_UNSUPPORTED` (see
+  "Subtitle codec scope") — so the handler only ever sees `codec=None`/`srt`.
 - **nfo**: if `body` is set, write `body.encode("utf-8")` verbatim; else
   `render_nfo(sidecar_id=...)`.
 - **poster**: if `media_type == video`, emit a tiny deterministic video via ffmpeg
