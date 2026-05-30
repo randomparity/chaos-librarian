@@ -57,7 +57,7 @@ not the test suite — and are grouped into category subdirectories.
 - **Add an explicit `schema_version == SCENARIO_SCHEMA_VERSION` assertion.**
   Rejected: redundant. The `Literal[23]` field already fails validation on a
   stale version, so the validate-clean guard covers currency; a second assertion
-  only adds a parallel failure mode replicated across ~19 files.
+  only adds a parallel failure mode replicated across ~21 files.
 - **Do not pin the schema version at all.** Rejected: recipes must declare a
   concrete `schema_version` to parse, and pinning to the current value is what
   makes the bump-time forcing function work.
