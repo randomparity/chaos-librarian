@@ -152,9 +152,10 @@ whose `kind`, `path` (the author's `to:`, whose extension the agreement rule kee
 consistent with `image_format`), and `content_hash` are all already present. The format
 selection only changes the synthesized bytes (recorded in
 the existing `content_hash`) and the rendered extension (recorded in the existing
-`path`). **No new manifest or materialization field is required →
-`MANIFEST_SCHEMA_VERSION` stays 10 and `MATERIALIZATION_SCHEMA_VERSION` is unchanged.**
-Confirmed against `contract/manifest.py`.
+`path`). **The poster `image_format` adds no manifest or materialization field, so it
+alone forces no version bump.** (`MATERIALIZATION_SCHEMA_VERSION` does bump for an
+unrelated reason — the `corrupt_tags` enum value; see Schema impact. The poster change
+keeps `MANIFEST_SCHEMA_VERSION` at 10.) Confirmed against `contract/manifest.py`.
 
 ### Q5 — Profile gates
 
@@ -174,8 +175,16 @@ sidecar and cover-art formats are not corruption → no gate.
   (poster-only).
 - `REQUIRED_PROFILES_BY_ACTION[corrupt_tags] = malformed-media`.
 
-No other `*_SCHEMA_VERSION` changes (manifest, materialization, journal, replay,
-reports unchanged — verified Q4).
+`MATERIALIZATION_SCHEMA_VERSION` bumps 16 → 17: `CorruptionAction.action` is a closed
+`Literal` exported as a fixed enum in `materialization.schema.json`, so adding
+`corrupt_tags` to it widens that enum — a materialization-schema change. Blast radius is
+contained to `materialization.schema.json` (`CorruptionAction` lives only in
+`contract/materialization.py`; replay-bundle imports only `ToolchainInfo`, journal uses a
+free `state_delta` dict). CUE and poster `image_format` add no `CorruptionAction` enum
+members, so they do not independently force this bump.
+
+No other `*_SCHEMA_VERSION` changes (manifest stays 10, journal/replay/reports unchanged
+— verified Q4 and the import graph).
 
 JSON-schema artifacts regenerated with `--write`. All fixtures and recipes mass re-pin
 `schema_version: 31` → `32`.

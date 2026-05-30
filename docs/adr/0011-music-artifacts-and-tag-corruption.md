@@ -58,12 +58,14 @@ Ship three of the five capabilities in v1; defer three as follow-up issues.
    enum (not `CoverArtImageFormat`) keeps the standalone poster sidecar's format contract
    independent of the embedded-cover-art evidence/validation surface.
 
-`SCENARIO_SCHEMA_VERSION` is bumped 31 → 32. `MANIFEST_SCHEMA_VERSION` stays 10 and
-`MATERIALIZATION_SCHEMA_VERSION` is unchanged: tag corruption reuses the existing
-`CorruptionRecord` on `ManifestVersion`, CUE reuses `ManifestSidecar` (`kind` is a free
-`str`), and the poster format is reflected in the existing `ManifestSidecar.path`
-(extension) and `content_hash` (bytes). No new manifest or materialization field is
-required.
+`SCENARIO_SCHEMA_VERSION` is bumped 31 → 32 and `MATERIALIZATION_SCHEMA_VERSION` 16 → 17
+(the new `corrupt_tags` value widens the closed `CorruptionAction.action` enum exported in
+`materialization.schema.json`). `MANIFEST_SCHEMA_VERSION` stays 10: tag corruption reuses
+the existing `CorruptionRecord` on `ManifestVersion`, CUE reuses `ManifestSidecar` (`kind`
+is a free `str`), and the poster format is reflected in the existing `ManifestSidecar.path`
+(extension) and `content_hash` (bytes). No new manifest field is required. CUE and poster
+`image_format` touch no `CorruptionAction` enum and so do not independently force the
+materialization bump.
 
 Deferred to GitHub issues before merge: album-art format-*change* action,
 multi-track single-file album topology, embedded-lyrics phase-A asset field. The
