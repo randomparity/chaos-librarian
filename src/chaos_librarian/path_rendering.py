@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from typing import Final
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
     ArtistLayout,
+    EditionKind,
     EpisodeNaming,
     MovieLayout,
     PodcastEpisodeNaming,
@@ -19,6 +21,16 @@ from chaos_librarian.contract.scenario import (
 _WINDOWS_DRIVE_PREFIX_LENGTH = 2
 _ASCII_C0_CONTROL_LIMIT = 32
 _ASCII_DELETE = 127
+
+# Title-case display names for the {edition-...} path token. Explicit (not derived
+# from the enum value) so 'directors_cut' renders the apostrophe; a new EditionKind
+# member without an entry raises in _edition_suffix rather than rendering wrong.
+_EDITION_DISPLAY_NAME: Final[dict[EditionKind, str]] = {
+    EditionKind.THEATRICAL: "Theatrical",
+    EditionKind.DIRECTORS_CUT: "Director's Cut",
+    EditionKind.EXTENDED: "Extended",
+    EditionKind.UNRATED: "Unrated",
+}
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -44,6 +56,9 @@ class RenderableAssetContext:
     podcast_title: str | None = None
     published_at: datetime | None = None
     episode_slug: str | None = None
+    # Optional movie edition; only movie contexts ever set it (see ADR 0010). When
+    # set, _filename appends a {edition-...} token to the stem.
+    edition: EditionKind | None = None
     variant_label: str
     asset_role: str
     asset_container: str
@@ -132,7 +147,20 @@ def _filename(stem: str, ctx: RenderableAssetContext) -> str:
     if ctx.bundle_asset_count > 1:
         role_suffix = f" - {clean_display_component(ctx.asset_role)}"
     container = clean_asset_container(ctx.asset_container)
-    return f"{stem} - {label}{role_suffix}.{container}"
+    # The edition token is the last stem component (Plex/Jellyfin convention),
+    # after the label/role suffix and before the extension. Only movie contexts
+    # carry a non-None edition, so non-movie stems are unaffected.
+    edition_suffix = _edition_suffix(ctx.edition)
+    return f"{stem} - {label}{role_suffix}{edition_suffix}.{container}"
+
+
+def _edition_suffix(edition: EditionKind | None) -> str:
+    if edition is None:
+        return ""
+    display = _EDITION_DISPLAY_NAME.get(edition)
+    if display is None:
+        raise ValueError(f"no display name for edition {edition!r}")
+    return f" {{edition-{clean_display_component(display)}}}"
 
 
 def clean_asset_container(container: str) -> str:
