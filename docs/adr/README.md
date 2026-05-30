@@ -11,3 +11,4 @@ accepted; supersede rather than edit.
 | [0003](0003-authorable-sidecar-content.md) | Authorable sidecar encoding and body content | Accepted |
 | [0004](0004-same-content-hash-collision.md) | Author same-content and hash-collision assets | Accepted |
 | [0005](0005-hardlink-shared-inode.md) | Author hardlinked assets that share one inode | Accepted |
+| [0006](0006-symlink-entity-policy.md) | Author symlink assets (in-root and library-escaping) | Accepted |
