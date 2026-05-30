@@ -15,7 +15,7 @@ if TYPE_CHECKING:
     from chaos_librarian.validation.pipeline import IssueCollector
 
 
-_REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
+REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
     TimelineActionName.CORRUPT_CONTAINER_HEADER.value: ProfileName.MALFORMED_MEDIA.value,
     TimelineActionName.TRUNCATE_FILE.value: ProfileName.MALFORMED_MEDIA.value,
     TimelineActionName.CORRUPT_PACKET_RANGE.value: ProfileName.MALFORMED_MEDIA.value,
@@ -25,6 +25,13 @@ _REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
     TimelineActionName.NETWORK_LAG_START.value: ProfileName.NETWORK_FS_LAG.value,
     TimelineActionName.NETWORK_LAG_COMMIT.value: ProfileName.NETWORK_FS_LAG.value,
 }
+"""Action value -> profile label required to authorize it.
+
+Single source of truth for which timeline actions are profile-gated. Fuzz
+lane generation derives the gated profile labels it must declare from this
+map, so generated scenarios cannot drift out of sync with the validation
+rule that would otherwise reject them.
+"""
 
 
 def rule_profile_opt_in(
@@ -39,7 +46,7 @@ def rule_profile_opt_in(
         action = event.get("action")
         if not isinstance(action, str):
             continue
-        required_profile = _REQUIRED_PROFILES_BY_ACTION.get(action)
+        required_profile = REQUIRED_PROFILES_BY_ACTION.get(action)
         if required_profile is not None and required_profile not in profiles:
             _emit_required_profile(
                 action=action,

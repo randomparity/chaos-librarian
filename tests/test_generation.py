@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 from ruamel.yaml import YAML
 
-from chaos_librarian import generation_lanes
+from chaos_librarian import generation_planner
 from chaos_librarian.contract.profiles import (
     CANONICAL_FUZZ_LANES,
     FUZZ_LANES_BY_PROFILE,
@@ -29,14 +29,13 @@ from chaos_librarian.generation import (
     scenario_id_for,
     write_generated_scenario,
 )
-from chaos_librarian.generation_lanes import (
-    coverage_for_payload,
-    lane_config_for,
-)
+from chaos_librarian.generation_lanes import coverage_for_payload
+from chaos_librarian.generation_planner import lane_config_for
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.scenario_io import parse_scenario_bytes
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
+from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
 
@@ -99,12 +98,62 @@ def test_lane_config_orders_fuzz_profile_first() -> None:
 
 def test_lane_configs_cover_allowed_lane_contract() -> None:
     configured_by_profile: dict[FuzzProfileName, set[FuzzLaneName]] = {}
-    for profile, lane in generation_lanes.LANE_CONFIGS:
+    for profile, lane in generation_planner.LANE_CONFIGS:
         configured_by_profile.setdefault(profile, set()).add(lane)
 
     assert {
         profile: frozenset(lanes) for profile, lanes in configured_by_profile.items()
     } == FUZZ_LANES_BY_PROFILE
+
+
+def test_lane_profiles_cover_every_profile_gated_action_they_emit() -> None:
+    """WHY: validation owns action->required-profile; generation must not drift.
+
+    Every profile-gated action a lane emits (its action coverage cells) must
+    have its required profile declared, derived from validation's single source
+    of truth. If validation gates an action a lane already covers, this fails
+    until the lane's derived profiles pick it up.
+    """
+    for (profile, lane), config in generation_planner.LANE_CONFIGS.items():
+        declared = {p.value for p in config.profiles}
+        for cell in config.required_cells:
+            action = cell.removeprefix("action:")
+            if cell == action:
+                continue
+            required = REQUIRED_PROFILES_BY_ACTION.get(action)
+            if required is None:
+                continue
+            assert required in declared, (
+                f"{profile.value}/{lane.value} emits gated action {action!r} "
+                f"but does not declare required profile {required!r}"
+            )
+
+
+def test_lane_required_event_builder_satisfies_required_action_cells() -> None:
+    """WHY: required cells and the events that satisfy them are one source.
+
+    Each lane's ``required_events`` builder must emit every action named by the
+    lane's required action cells. This pins the co-located builder to the cells
+    so adding a cell without the matching event (or vice versa) fails here.
+    """
+    for (profile, lane), config in generation_planner.LANE_CONFIGS.items():
+        planner = generation_planner.TimelinePlanner(
+            root_id="r",
+            root_path="r",
+            secondary_root_id="cold-storage",
+            assets=generation_planner._planned_assets(config=config),
+        )
+        config.required_events(planner)
+        emitted = {str(event["action"]) for event in planner.events}
+        required_actions = {
+            cell.removeprefix("action:")
+            for cell in config.required_cells
+            if cell.startswith("action:")
+        }
+        missing = required_actions - emitted
+        assert missing == set(), (
+            f"{profile.value}/{lane.value} required_events omits actions {missing}"
+        )
 
 
 def test_lane_config_rejects_profile_mismatch() -> None:
@@ -292,7 +341,7 @@ def test_seed_manifest_lists_supported_lanes_and_generates_valid_yaml() -> None:
     assert isinstance(manifest, dict)
 
     cases = _seed_manifest_cases(manifest)
-    expected_cases = frozenset(generation_lanes.LANE_CONFIGS)
+    expected_cases = frozenset(generation_planner.LANE_CONFIGS)
     assert frozenset((profile, lane) for profile, lane, _, _ in cases) == expected_cases
 
     for profile, lane, seed, gates in cases:
@@ -386,9 +435,9 @@ def test_malformed_lane_skips_media_fill_when_all_assets_corrupted(
 ) -> None:
     """WHY: no stable target must mean no fill-in media rewrite events."""
     key = (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MALFORMED)
-    config = generation_lanes.LANE_CONFIGS[key]
+    config = generation_planner.LANE_CONFIGS[key]
     monkeypatch.setitem(
-        generation_lanes.LANE_CONFIGS,
+        generation_planner.LANE_CONFIGS,
         key,
         replace(config, movies=4, timeline_events=8),
     )
@@ -477,9 +526,9 @@ def test_committed_generated_fixtures_match_generator() -> None:
 
 def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPatch) -> None:
     key = (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE)
-    config = generation_lanes.LANE_CONFIGS[key]
+    config = generation_planner.LANE_CONFIGS[key]
     monkeypatch.setitem(
-        generation_lanes.LANE_CONFIGS,
+        generation_planner.LANE_CONFIGS,
         key,
         replace(config, required_cells=frozenset({"missing:required-cell"})),
     )
@@ -494,8 +543,8 @@ def test_generate_rejects_missing_required_coverage(monkeypatch: pytest.MonkeyPa
 
 def test_generate_rejects_budget_overflow(monkeypatch: pytest.MonkeyPatch) -> None:
     key = (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE)
-    config = generation_lanes.LANE_CONFIGS[key]
-    monkeypatch.setitem(generation_lanes.LANE_CONFIGS, key, replace(config, movies=4))
+    config = generation_planner.LANE_CONFIGS[key]
+    monkeypatch.setitem(generation_planner.LANE_CONFIGS, key, replace(config, movies=4))
 
     with pytest.raises(
         GeneratedScenarioValidationError,
