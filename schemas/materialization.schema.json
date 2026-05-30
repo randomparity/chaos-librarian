@@ -1239,7 +1239,8 @@
         "swap_disc_numbers",
         "swap_track_numbers",
         "republish_episode",
-        "mark_episode_stale"
+        "mark_episode_stale",
+        "corrupt_tags"
       ],
       "title": "TimelineActionName",
       "type": "string"

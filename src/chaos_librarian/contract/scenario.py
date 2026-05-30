@@ -72,6 +72,7 @@ class TimelineActionName(enum.StrEnum):
     SWAP_TRACK_NUMBERS = "swap_track_numbers"
     REPUBLISH_EPISODE = "republish_episode"
     MARK_EPISODE_STALE = "mark_episode_stale"
+    CORRUPT_TAGS = "corrupt_tags"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
@@ -366,6 +367,18 @@ class PacketStreamKind(enum.StrEnum):
     VIDEO = "video"
     AUDIO = "audio"
     SUBTITLE = "subtitle"
+
+
+class TagCorruptionFlavor(enum.StrEnum):
+    """Tag-corruption shape for ``corrupt_tags`` (#118).
+
+    ``null_bytes`` overwrites the head with ``0x00`` (embedded null bytes in a
+    tag); ``malformed_frame`` overwrites it with a fixed invalid ID3v2 header.
+    Both are in-place head overwrites — the file size is unchanged.
+    """
+
+    NULL_BYTES = "null_bytes"
+    MALFORMED_FRAME = "malformed_frame"
 
 
 # ---- Library ----------------------------------------------------------------
@@ -922,6 +935,15 @@ class WriteInvalidDurationMetadataEvent(_TimelineEventBase):
     value: str = Field(default="not-a-duration", min_length=1, max_length=128)
 
 
+class CorruptTagsEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.CORRUPT_TAGS] = TimelineActionName.CORRUPT_TAGS
+    target: str
+    flavor: TagCorruptionFlavor
+    # Count of in-place head bytes the corruptor overwrites; matches
+    # corrupt_container_header's knob. The file size is unchanged.
+    bytes: int = Field(default=64, ge=1, le=4096)
+
+
 class TouchMtimeEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.TOUCH_MTIME] = TimelineActionName.TOUCH_MTIME
     target: str
@@ -1203,7 +1225,8 @@ TimelineEvent = Annotated[
     | SwapDiscNumbersEvent
     | SwapTrackNumbersEvent
     | RepublishEpisodeEvent
-    | MarkEpisodeStaleEvent,
+    | MarkEpisodeStaleEvent
+    | CorruptTagsEvent,
     Field(discriminator="action"),
 ]
 

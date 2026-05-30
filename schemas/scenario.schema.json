@@ -604,6 +604,47 @@
       "title": "CorruptPacketRangeEvent",
       "type": "object"
     },
+    "CorruptTagsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "corrupt_tags",
+          "default": "corrupt_tags",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "bytes": {
+          "default": 64,
+          "maximum": 4096,
+          "minimum": 1,
+          "title": "Bytes",
+          "type": "integer"
+        },
+        "flavor": {
+          "$ref": "#/$defs/TagCorruptionFlavor"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "flavor"
+      ],
+      "title": "CorruptTagsEvent",
+      "type": "object"
+    },
     "CoverArtImageFormat": {
       "description": "Image format for embedded cover art.",
       "enum": [
@@ -2600,6 +2641,15 @@
       "title": "SymlinkTarget",
       "type": "object"
     },
+    "TagCorruptionFlavor": {
+      "description": "Tag-corruption shape for ``corrupt_tags`` (#118).\n\n``null_bytes`` overwrites the head with ``0x00`` (embedded null bytes in a\ntag); ``malformed_frame`` overwrites it with a fixed invalid ID3v2 header.\nBoth are in-place head overwrites \u2014 the file size is unchanged.",
+      "enum": [
+        "null_bytes",
+        "malformed_frame"
+      ],
+      "title": "TagCorruptionFlavor",
+      "type": "string"
+    },
     "ToggleReadonlyEvent": {
       "additionalProperties": false,
       "properties": {
@@ -3161,6 +3211,7 @@
             "change_permissions": "#/$defs/ChangePermissionsEvent",
             "corrupt_container_header": "#/$defs/CorruptContainerHeaderEvent",
             "corrupt_packet_range": "#/$defs/CorruptPacketRangeEvent",
+            "corrupt_tags": "#/$defs/CorruptTagsEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
             "delete_file": "#/$defs/DeleteFileEvent",
             "edit_metadata": "#/$defs/EditMetadataEvent",
@@ -3330,6 +3381,9 @@
           },
           {
             "$ref": "#/$defs/MarkEpisodeStaleEvent"
+          },
+          {
+            "$ref": "#/$defs/CorruptTagsEvent"
           }
         ]
       },

@@ -154,7 +154,7 @@ timeline:
 | `add_file` | `target`, `to` |
 | `reencode_video` | `target`, `resolution`, `codec` |
 | `reencode_audio` | `target`, `from_channels`, `to_channels` |
-| `create_sidecar` | `target`, `to`; `language` required for subtitle sidecars; `kind` defaults to `subtitle` |
+| `create_sidecar` | `target`, `to`; `kind` defaults to `subtitle` (`subtitle`/`poster`/`nfo`/`cue`); `language` required for subtitle; `body` for `nfo`/`cue`; poster-only `media_type` and `image_format` (`png`/`jpeg`/`webp`, must match the `to:` extension) |
 | `slow_copy_start` | `target`, `to`, `temp_path`, `duration` |
 | `slow_copy_commit` | `for` |
 | `archive_file` | `target` |
@@ -169,6 +169,7 @@ timeline:
 | `truncate_file` | `target`, `keep_bytes` |
 | `corrupt_packet_range` | `target`, `packet_start`; optional `stream`, `packet_count` |
 | `write_invalid_duration_metadata` | `target`; optional `value` |
+| `corrupt_tags` | `target`, `flavor` (`null_bytes` / `malformed_frame`); optional `bytes` defaults to `64` |
 | `touch_mtime` | `target`, `offset` |
 | `wrong_oracle_hash` | `target` |
 | `network_lag_start` | `effect`, `target`, `after`, `duration` |
@@ -224,7 +225,9 @@ profiles:
 ```
 
 Without the `malformed-media` profile, container-header corruption scenarios
-fail validation.
+fail validation. The other byte corruptors — `truncate_file`,
+`corrupt_packet_range`, `write_invalid_duration_metadata`, and `corrupt_tags`
+(malformed ID3 / null bytes in a tag region) — require the same opt-in.
 
 Network filesystem lag events also require explicit opt-in:
 
