@@ -1,0 +1,26 @@
+# expected: clean
+schema_version: 27
+scenario_id: sc_symlink_escaping
+seed: 1
+duration_scale: short
+library: {roots: [{id: r0, path: library/movies}]}
+movies:
+  - id: w0
+    title: T
+    layout: movie_flat
+    variants:
+      - id: v0
+        label: link
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+              symlink: {to_run_dir_path: external-store/clip.mkv}  # escapes library, inside run dir
+series: []
+artists: []
+timeline: []

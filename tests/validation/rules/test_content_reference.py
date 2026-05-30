@@ -29,7 +29,7 @@ def _asset(asset_id: str, **extra: object) -> dict[str, object]:
 
 def _scenario(assets: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema_version": 26,
+        "schema_version": 27,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",
@@ -123,3 +123,31 @@ def test_hardlink_forward_reference_rejected() -> None:
     raw = _scenario([_asset("a1", hardlinked_to="a2"), _asset("a2")])
     issues = _run(raw)
     assert [i.code for i in issues] == [E_TARGET_UNKNOWN]
+
+
+def test_valid_symlink_to_asset_reference_passes() -> None:
+    raw = _scenario([_asset("a1"), _asset("a2", symlink={"to_asset": "a1"})])
+    assert _run(raw) == []
+
+
+def test_symlink_to_run_dir_path_form_is_ignored() -> None:
+    raw = _scenario([_asset("a1", symlink={"to_run_dir_path": "external-store/x.mkv"})])
+    assert _run(raw) == []
+
+
+def test_unknown_symlink_to_asset_reference_rejected() -> None:
+    raw = _scenario([_asset("a1"), _asset("a2", symlink={"to_asset": "nope"})])
+    issues = _run(raw)
+    assert [i.code for i in issues] == [E_TARGET_UNKNOWN]
+    assert issues[0].path is not None
+    assert issues[0].path.endswith("to_asset")
+
+
+def test_symlink_self_reference_rejected() -> None:
+    raw = _scenario([_asset("a1", symlink={"to_asset": "a1"})])
+    assert [i.code for i in _run(raw)] == [E_TARGET_UNKNOWN]
+
+
+def test_symlink_forward_reference_rejected() -> None:
+    raw = _scenario([_asset("a1", symlink={"to_asset": "a2"}), _asset("a2")])
+    assert [i.code for i in _run(raw)] == [E_TARGET_UNKNOWN]

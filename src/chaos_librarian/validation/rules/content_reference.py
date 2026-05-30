@@ -2,7 +2,8 @@
 
 ``rule_content_reference`` resolves the asset-id references introduced by the
 content-dedup fields ``same_content_as`` and ``hash_collision_with`` (scenario
-v25) and the shared-inode field ``hardlinked_to`` (scenario v26). A reference is
+v25), the shared-inode field ``hardlinked_to`` (scenario v26), and the nested
+in-root symlink reference ``symlink.to_asset`` (scenario v27). A reference is
 rejected with ``E_TARGET_UNKNOWN`` when it names an undeclared asset, names the
 referencing asset itself, or names an asset declared *later* than the referrer.
 
@@ -22,6 +23,7 @@ from typing import TYPE_CHECKING
 from chaos_librarian.validation.codes import E_TARGET_UNKNOWN
 from chaos_librarian.validation.rules._common import (
     Reporter,
+    _as_mapping,
     _Loc,
     entity_ids_by_kind,
     iter_assets_with_loc,
@@ -58,12 +60,23 @@ def rule_content_reference(
         asset_id = asset.get("id")
         for field in _CONTENT_REFERENCE_FIELDS:
             _check_reference(
-                asset=asset,
+                reference=asset.get(field),
+                field_label=field,
+                loc=(*asset_loc, field),
                 asset_id=asset_id,
-                field=field,
                 declared_ids=declared_ids,
                 seen_ids=seen_ids,
-                asset_loc=asset_loc,
+                reporter=reporter,
+            )
+        symlink = _as_mapping(asset.get("symlink"))
+        if symlink is not None:
+            _check_reference(
+                reference=symlink.get("to_asset"),
+                field_label="symlink.to_asset",
+                loc=(*asset_loc, "symlink", "to_asset"),
+                asset_id=asset_id,
+                declared_ids=declared_ids,
+                seen_ids=seen_ids,
                 reporter=reporter,
             )
         if isinstance(asset_id, str):
@@ -72,35 +85,33 @@ def rule_content_reference(
 
 def _check_reference(
     *,
-    asset: Mapping[str, object],
+    reference: object,
+    field_label: str,
+    loc: _Loc,
     asset_id: object,
-    field: str,
     declared_ids: set[str],
     seen_ids: set[str],
-    asset_loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    reference = asset.get(field)
     if not isinstance(reference, str):
         return  # Pydantic owns shape; None / non-string is not this rule's concern.
-    loc = (*asset_loc, field)
     if reference not in declared_ids:
         reporter.error(
             code=E_TARGET_UNKNOWN,
-            message=f"{field} references unknown asset {reference!r}",
+            message=f"{field_label} references unknown asset {reference!r}",
             loc=loc,
         )
         return
     if reference == asset_id:
         reporter.error(
             code=E_TARGET_UNKNOWN,
-            message=f"{field} must not reference the asset itself",
+            message=f"{field_label} must not reference the asset itself",
             loc=loc,
         )
         return
     if reference not in seen_ids:
         reporter.error(
             code=E_TARGET_UNKNOWN,
-            message=f"{field} {reference!r} must reference an earlier-declared asset",
+            message=f"{field_label} {reference!r} must reference an earlier-declared asset",
             loc=loc,
         )

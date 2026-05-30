@@ -1,4 +1,4 @@
-schema_version: 26
+schema_version: 27
 scenario_id: sc_remux_001
 seed: 42
 duration_scale: short

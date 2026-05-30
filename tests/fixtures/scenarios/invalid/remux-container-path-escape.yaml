@@ -1,5 +1,5 @@
 # expected: E_PATH_CONTAINMENT
-schema_version: 26
+schema_version: 27
 scenario_id: remux-container-path-escape
 seed: 42
 duration_scale: short

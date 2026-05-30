@@ -24,7 +24,7 @@ state against that. The column records what a correct consumer *should* do:
 
 ## Schema version and bit-rot guard
 
-Every recipe pins `schema_version: 26` (the current `SCENARIO_SCHEMA_VERSION`).
+Every recipe pins `schema_version: 27` (the current `SCENARIO_SCHEMA_VERSION`).
 `tests/recipes/test_recipe_corpus.py` re-validates every recipe in CI and asserts
 each category ships at least three. Because `schema_version` is a fixed literal
 on the model, the next schema bump makes the recipes fail validation, turning the

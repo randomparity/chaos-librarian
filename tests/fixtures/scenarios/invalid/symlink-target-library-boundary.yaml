@@ -1,0 +1,26 @@
+# expected: E_SYMLINK_TARGET_ESCAPE
+schema_version: 27
+scenario_id: sc_inv_sllb_001
+seed: 1
+duration_scale: short
+library: {roots: [{id: r0, path: library/movies}]}
+movies:
+  - id: w0
+    title: T
+    layout: movie_flat
+    variants:
+      - id: v0
+        label: hd
+        bundle:
+          id: b0
+          assets:
+            - id: a0
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video: {source: color_bars, codec: h264, resolution: hd}
+              audio: [{codec: aac, channels: stereo, language: eng}]
+              symlink: {to_run_dir_path: library/../library/x.mkv}  # reaches into library via ..
+series: []
+artists: []
+timeline: []
