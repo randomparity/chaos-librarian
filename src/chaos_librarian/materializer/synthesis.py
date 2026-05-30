@@ -599,7 +599,10 @@ def _resolve_resolution_switch_inputs(
             resolution_sequence=video.resolution_sequence,
         ),
     )
-    return (sd_resolution.evidence,), (sd_resolution.ffmpeg_input, hd_resolution.ffmpeg_input)
+    return (
+        (sd_resolution.evidence, hd_resolution.evidence),
+        (sd_resolution.ffmpeg_input, hd_resolution.ffmpeg_input),
+    )
 
 
 def _run_resolution_switch_segments(
