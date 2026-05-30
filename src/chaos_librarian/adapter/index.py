@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Hashable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import NamedTuple, TypedDict
+from typing import NamedTuple, Protocol, TypedDict
 
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.contract.domain import ParentKind
@@ -186,21 +186,7 @@ class OracleIndex:
                 topology,
                 id_of=lambda view: view.asset_id,
                 keys_of=lambda view: (
-                    topology_key(
-                        parent_kind=view.parent_kind,
-                        variant_label=view.variant_label,
-                        bundle_member_count=len(view.bundle_asset_ids),
-                        movie_title=view.movie_title,
-                        series_title=view.series_title,
-                        season_number=view.season_number,
-                        episode_number=view.episode_number,
-                        episode_title=view.episode_title,
-                        artist_name=view.artist_name,
-                        album_title=view.album_title,
-                        disc_number=view.disc_number,
-                        track_number=view.track_number,
-                        track_title=view.track_title,
-                    ),
+                    topology_key_for_view(view, bundle_member_count=len(view.bundle_asset_ids)),
                 ),
             ),
         )
@@ -276,21 +262,7 @@ class ObservedIndex:
                 topology,
                 id_of=lambda view: view.observed_ref,
                 keys_of=lambda view: (
-                    topology_key(
-                        parent_kind=view.parent_kind,
-                        variant_label=view.variant_label,
-                        bundle_member_count=len(view.bundle_asset_refs),
-                        movie_title=view.movie_title,
-                        series_title=view.series_title,
-                        season_number=view.season_number,
-                        episode_number=view.episode_number,
-                        episode_title=view.episode_title,
-                        artist_name=view.artist_name,
-                        album_title=view.album_title,
-                        disc_number=view.disc_number,
-                        track_number=view.track_number,
-                        track_title=view.track_title,
-                    ),
+                    topology_key_for_view(view, bundle_member_count=len(view.bundle_asset_refs)),
                 ),
             ),
         )
@@ -363,6 +335,65 @@ def topology_key(
             ),
         )
     return key
+
+
+class _TopologyKeyView(Protocol):
+    """Shared topology fields exposed by oracle and observed topology views.
+
+    Members are read-only properties so the oracle view's non-optional
+    ``parent_kind`` satisfies the protocol's ``ParentKind | None`` covariantly.
+    """
+
+    @property
+    def parent_kind(self) -> ParentKind | None: ...
+    @property
+    def variant_label(self) -> str | None: ...
+    @property
+    def movie_title(self) -> str | None: ...
+    @property
+    def series_title(self) -> str | None: ...
+    @property
+    def season_number(self) -> int | None: ...
+    @property
+    def episode_number(self) -> int | None: ...
+    @property
+    def episode_title(self) -> str | None: ...
+    @property
+    def artist_name(self) -> str | None: ...
+    @property
+    def album_title(self) -> str | None: ...
+    @property
+    def disc_number(self) -> int | None: ...
+    @property
+    def track_number(self) -> int | None: ...
+    @property
+    def track_title(self) -> str | None: ...
+
+
+def topology_key_for_view(
+    view: _TopologyKeyView, *, bundle_member_count: int
+) -> TopologyKey | None:
+    """Build the topology key from a topology view's 13 shared domain fields.
+
+    ``bundle_member_count`` is passed separately because the oracle and observed
+    views name the member collection differently (``bundle_asset_ids`` vs
+    ``bundle_asset_refs``).
+    """
+    return topology_key(
+        parent_kind=view.parent_kind,
+        variant_label=view.variant_label,
+        bundle_member_count=bundle_member_count,
+        movie_title=view.movie_title,
+        series_title=view.series_title,
+        season_number=view.season_number,
+        episode_number=view.episode_number,
+        episode_title=view.episode_title,
+        artist_name=view.artist_name,
+        album_title=view.album_title,
+        disc_number=view.disc_number,
+        track_number=view.track_number,
+        track_title=view.track_title,
+    )
 
 
 def format_topology_key(key: TopologyKey) -> str:

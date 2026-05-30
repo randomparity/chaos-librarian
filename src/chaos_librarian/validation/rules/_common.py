@@ -16,7 +16,7 @@ walkers. See issue #27.
 from __future__ import annotations
 
 import enum
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import date
@@ -236,6 +236,69 @@ def _iter_timeline_events(raw: _RawMapping) -> Iterator[tuple[int, _RawMapping]]
         if event is None:
             continue
         yield idx, event
+
+
+def index_start_commit_events(
+    events: Iterable[tuple[int, _RawMapping]],
+    *,
+    start_action: str,
+    commit_action: str,
+) -> tuple[dict[str, tuple[int, _RawMapping]], list[tuple[int, _RawMapping]]]:
+    """Split timeline ``(idx, event)`` pairs into ``(starts_by_id, commits)``.
+
+    Shared by the slow-copy and network-lag pairing rules: each indexes a start
+    event by its ``id`` and collects the matching commit events, preserving the
+    original timeline index for error ``loc`` reporting.
+    """
+    starts: dict[str, tuple[int, _RawMapping]] = {}
+    commits: list[tuple[int, _RawMapping]] = []
+    for idx, event in events:
+        action = event.get("action")
+        event_id = event.get("id")
+        if action == start_action and isinstance(event_id, str):
+            starts[event_id] = (idx, event)
+        elif action == commit_action:
+            commits.append((idx, event))
+    return starts, commits
+
+
+def report_unpaired_start(
+    *,
+    reporter: Reporter,
+    code: str,
+    start_noun: str,
+    commit_noun: str,
+    event_id: str,
+    idx: int,
+    matching_commit_count: int,
+) -> None:
+    """Emit a start/commit cardinality error unless the start has exactly one commit.
+
+    No-op when ``matching_commit_count == 1``. Shared by the slow-copy and
+    network-lag pairing rules, which use identical orphan/duplicate templates.
+    """
+    if matching_commit_count == 1:
+        return
+    if matching_commit_count == 0:
+        message = f"{start_noun} {event_id!r} has no matching {commit_noun}"
+    else:
+        message = (
+            f"{start_noun} {event_id!r} has {matching_commit_count} matching commits (expected 1)"
+        )
+    reporter.error(code=code, message=message, loc=("timeline", idx, "id"))
+
+
+def first_or_duplicate[K, V](seen: dict[K, V], key: K, value: V) -> V | None:
+    """Track first occurrences in ``seen`` for duplicate-detection rules.
+
+    Returns the previously-stored value when ``key`` is a duplicate; otherwise
+    records ``value`` and returns None. Callers own the per-rule duplicate
+    message, error code, and severity.
+    """
+    if key in seen:
+        return seen[key]
+    seen[key] = value
+    return None
 
 
 def try_parse_duration(raw_str: str) -> int | None:
@@ -1704,19 +1767,7 @@ def _movie_renderable_context(
         parent_kind=parent_kind,
         root_path=root_path,
         layout=layout,
-        naming=None,
         movie_title=movie_title,
-        series_title=None,
-        season_number=None,
-        episode_number=None,
-        episode_title=None,
-        aired_on=None,
-        absolute_number=None,
-        artist_name=None,
-        album_title=None,
-        disc_number=None,
-        track_number=None,
-        track_title=None,
         variant_label=tail[0],
         asset_role=tail[1],
         asset_container=tail[2],
@@ -1753,18 +1804,12 @@ def _episode_renderable_context(
         root_path=root_path,
         layout=layout,
         naming=naming,
-        movie_title=None,
         series_title=series_title,
         season_number=season_number,
         episode_number=episode_number,
         episode_title=episode_title,
         aired_on=aired_on,
         absolute_number=absolute_number,
-        artist_name=None,
-        album_title=None,
-        disc_number=None,
-        track_number=None,
-        track_title=None,
         variant_label=tail[0],
         asset_role=tail[1],
         asset_container=tail[2],
@@ -1798,13 +1843,6 @@ def _track_renderable_context(
         root_path=root_path,
         layout=layout,
         naming=naming,
-        movie_title=None,
-        series_title=None,
-        season_number=None,
-        episode_number=None,
-        episode_title=None,
-        aired_on=None,
-        absolute_number=None,
         artist_name=artist_name,
         album_title=album_title,
         disc_number=disc_number,

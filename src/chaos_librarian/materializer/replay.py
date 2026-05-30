@@ -37,6 +37,12 @@ from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     MediaActionError,
 )
+from chaos_librarian.materializer.network_lag_fields import (
+    network_lag_effect,
+    network_lag_int,
+    network_lag_optional_str,
+    network_lag_str,
+)
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import build_sentinel
 from chaos_librarian.materializer.persistence.reports import (
@@ -405,25 +411,16 @@ def _run_replay_network_lag_action(
 
 
 def _network_lag_effect(entry: JournalEntry) -> NetworkLagEffect:
-    return NetworkLagEffect(_network_lag_str(entry, "effect"))
+    return network_lag_effect(entry, error_type=ReplayIntegrityError)
 
 
 def _network_lag_str(entry: JournalEntry, key: str) -> str:
-    value = entry.state_delta.get(key)
-    if not isinstance(value, str):
-        raise ReplayIntegrityError(f"{entry.event_id}: missing network-lag {key}")
-    return value
+    return network_lag_str(entry, key, error_type=ReplayIntegrityError)
 
 
 def _network_lag_optional_str(entry: JournalEntry, key: str) -> str | None:
-    value = entry.state_delta.get(key)
-    if value is None or isinstance(value, str):
-        return value
-    raise ReplayIntegrityError(f"{entry.event_id}: invalid network-lag {key}")
+    return network_lag_optional_str(entry, key, error_type=ReplayIntegrityError)
 
 
 def _network_lag_int(entry: JournalEntry, key: str) -> int:
-    value = entry.state_delta.get(key)
-    if isinstance(value, int):
-        return value
-    raise ReplayIntegrityError(f"{entry.event_id}: missing network-lag {key}")
+    return network_lag_int(entry, key, error_type=ReplayIntegrityError)

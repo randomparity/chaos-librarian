@@ -11,7 +11,7 @@ from chaos_librarian.adapter.index import (
     OracleAssetView,
     OracleIndex,
     format_topology_key,
-    topology_key,
+    topology_key_for_view,
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
 from chaos_librarian.adapter.probe import compare_probed_media
@@ -190,35 +190,11 @@ def _compare_topology(
     observed_topology = observed_index.topology.get(match.observed_ref)
     if oracle_topology is None or observed_topology is None:
         return []
-    oracle_key = topology_key(
-        parent_kind=oracle_topology.parent_kind,
-        variant_label=oracle_topology.variant_label,
-        bundle_member_count=len(oracle_topology.bundle_asset_ids),
-        movie_title=oracle_topology.movie_title,
-        series_title=oracle_topology.series_title,
-        season_number=oracle_topology.season_number,
-        episode_number=oracle_topology.episode_number,
-        episode_title=oracle_topology.episode_title,
-        artist_name=oracle_topology.artist_name,
-        album_title=oracle_topology.album_title,
-        disc_number=oracle_topology.disc_number,
-        track_number=oracle_topology.track_number,
-        track_title=oracle_topology.track_title,
+    oracle_key = topology_key_for_view(
+        oracle_topology, bundle_member_count=len(oracle_topology.bundle_asset_ids)
     )
-    observed_key = topology_key(
-        parent_kind=observed_topology.parent_kind,
-        variant_label=observed_topology.variant_label,
-        bundle_member_count=len(observed_topology.bundle_asset_refs),
-        movie_title=observed_topology.movie_title,
-        series_title=observed_topology.series_title,
-        season_number=observed_topology.season_number,
-        episode_number=observed_topology.episode_number,
-        episode_title=observed_topology.episode_title,
-        artist_name=observed_topology.artist_name,
-        album_title=observed_topology.album_title,
-        disc_number=observed_topology.disc_number,
-        track_number=observed_topology.track_number,
-        track_title=observed_topology.track_title,
+    observed_key = topology_key_for_view(
+        observed_topology, bundle_member_count=len(observed_topology.bundle_asset_refs)
     )
     if oracle_key is None or observed_key is None or oracle_key == observed_key:
         return []

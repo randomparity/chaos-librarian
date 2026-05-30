@@ -22,6 +22,7 @@ from chaos_librarian.validation.codes import E_SIDECAR_LANGUAGE_INVALID
 from chaos_librarian.validation.rules._common import (
     Reporter,
     _iter_timeline_events,
+    first_or_duplicate,
 )
 
 if TYPE_CHECKING:
@@ -51,14 +52,13 @@ def rule_sidecar_language_consistent(
         if not isinstance(target, str) or not isinstance(language, str):
             continue  # Pydantic owns the type checks
         key = (target, language)
-        if key in seen:
+        first_index = first_or_duplicate(seen, key, index)
+        if first_index is not None:
             reporter.error(
                 code=E_SIDECAR_LANGUAGE_INVALID,
                 message=(
                     f"duplicate create_sidecar for ({target!r}, {language!r}); "
-                    f"first event was at index {seen[key]}"
+                    f"first event was at index {first_index}"
                 ),
                 loc=("timeline", index, "language"),
             )
-        else:
-            seen[key] = index

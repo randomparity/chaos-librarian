@@ -27,6 +27,7 @@ from chaos_librarian.validation.rules._common import (
     archive_base_path,
     build_hierarchy_projection,
     current_root_for_path,
+    index_start_commit_events,
     is_hierarchy_action,
     iter_declared_roots,
     project_deleted_path,
@@ -34,6 +35,7 @@ from chaos_librarian.validation.rules._common import (
     project_slow_copy_start,
     project_to_field_path,
     rendered_asset_paths,
+    report_unpaired_start,
     swap_extension,
     try_parse_duration,
 )
@@ -102,16 +104,11 @@ def _index_starts_and_commits(
     Entries preserve the original timeline index for error ``loc`` reporting.
     Used by Rule 5a (which inspects both) and Rule 5b (which only needs starts).
     """
-    starts: dict[str, tuple[int, _RawMapping]] = {}
-    commits: list[tuple[int, _RawMapping]] = []
-    for idx, event in _iter_timeline_events(raw):
-        action = event.get("action")
-        ev_id = event.get("id")
-        if action == TimelineActionName.SLOW_COPY_START and isinstance(ev_id, str):
-            starts[ev_id] = (idx, event)
-        elif action == TimelineActionName.SLOW_COPY_COMMIT:
-            commits.append((idx, event))
-    return starts, commits
+    return index_start_commit_events(
+        _iter_timeline_events(raw),
+        start_action=TimelineActionName.SLOW_COPY_START,
+        commit_action=TimelineActionName.SLOW_COPY_COMMIT,
+    )
 
 
 def _report_orphan_starts(
@@ -122,17 +119,15 @@ def _report_orphan_starts(
 ) -> None:
     """Emit E_SLOW_COPY_UNPAIRED for any start with zero or >1 matching commits."""
     for sid, count in commits_per_start.items():
-        if count == 0:
-            message = f"slow_copy_start {sid!r} has no matching slow_copy_commit"
-        elif count > 1:
-            message = f"slow_copy_start {sid!r} has {count} matching commits (expected 1)"
-        else:
-            continue
         s_idx, _ = starts[sid]
-        reporter.error(
+        report_unpaired_start(
+            reporter=reporter,
             code=E_SLOW_COPY_UNPAIRED,
-            message=message,
-            loc=("timeline", s_idx, "id"),
+            start_noun="slow_copy_start",
+            commit_noun="slow_copy_commit",
+            event_id=sid,
+            idx=s_idx,
+            matching_commit_count=count,
         )
 
 
