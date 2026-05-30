@@ -43,11 +43,16 @@ tests), `uv` / `ruff` / `ty`.
 
 ---
 
-## Task 1: Add `SidecarMediaType` enum + bump schema version
+## Task 1: Add the `SidecarMediaType` enum (no version bump yet)
+
+> **Phase-ordering note:** the `schema_version` literal bump is deliberately NOT in this
+> task. Bumping the model's `Literal[24]` while the 146 fixtures are still at 23 would
+> make `test_sample_scenario_loads` (which runs `Scenario.model_validate` on every
+> fixture) fail — a red commit. Task 2 bumps the model literal AND the fixtures in one
+> atomic commit so no commit is ever red. This task adds only the standalone enum.
 
 **Files:**
-- Modify: `src/chaos_librarian/contract/scenario.py` (near `SidecarKind`, ~line 283; `schema_version` ~line 894)
-- Modify: `src/chaos_librarian/contract/__init__.py:16`
+- Modify: `src/chaos_librarian/contract/scenario.py` (near `SidecarKind`, ~line 283)
 - Test: `tests/contract/test_scenario.py`
 
 - [ ] **Step 1: Write the failing test**
@@ -66,7 +71,7 @@ def test_sidecar_media_type_enum_values():
 Run: `uv run python -m pytest tests/contract/test_scenario.py::test_sidecar_media_type_enum_values -q`
 Expected: FAIL with `ImportError`/`AttributeError` for `SidecarMediaType`.
 
-- [ ] **Step 3: Add the enum and bump the version**
+- [ ] **Step 3: Add the enum**
 
 In `scenario.py`, after the `SidecarKind` class add:
 
@@ -82,21 +87,24 @@ class SidecarMediaType(enum.StrEnum):
     VIDEO = "video"
 ```
 
-In `scenario.py`, change `schema_version: Literal[23]` to `schema_version: Literal[24]`
-(the `Scenario` class field, ~line 894).
+Do **not** change `schema_version` or `SCENARIO_SCHEMA_VERSION` here (see the
+phase-ordering note above).
 
-In `contract/__init__.py`, change `SCENARIO_SCHEMA_VERSION: Final = 23` to `= 24`.
+- [ ] **Step 4: Run test + full suite to verify green**
 
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `uv run python -m pytest tests/contract/test_scenario.py::test_sidecar_media_type_enum_values -q`
-Expected: PASS.
+Run:
+```bash
+uv run python -m pytest tests/contract/test_scenario.py::test_sidecar_media_type_enum_values -q
+uv run python -m pytest -q
+```
+Expected: the new test PASSES and the full suite stays green (the enum is unused so far,
+fixtures still at 23, model still `Literal[23]`).
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/chaos_librarian/contract/scenario.py src/chaos_librarian/contract/__init__.py tests/contract/test_scenario.py
-git commit -m "feat: add SidecarMediaType enum and bump scenario schema to 24
+git add src/chaos_librarian/contract/scenario.py tests/contract/test_scenario.py
+git commit -m "feat: add SidecarMediaType enum
 
 Refs #181
 
@@ -105,9 +113,16 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 ---
 
-## Task 2: Bump all fixtures/recipes to schema_version 24 and regenerate schema
+## Task 2: Bump model literal + all fixtures/recipes to 24 (one atomic commit)
+
+> This task changes the model's `Literal[23]` → `Literal[24]`, the
+> `SCENARIO_SCHEMA_VERSION` constant, AND every fixture/recipe in a **single commit**,
+> so the tree is green before and after but never red mid-way (the model literal and the
+> fixtures must move together — see the Task 1 phase-ordering note).
 
 **Files:**
+- Modify: `src/chaos_librarian/contract/scenario.py` (`schema_version` ~line 894)
+- Modify: `src/chaos_librarian/contract/__init__.py:16`
 - Modify: 146 files matching `schema_version: 23` under `tests/` and `recipes/`
 - Modify: `schemas/scenario.schema.json` (regenerated)
 
@@ -120,9 +135,12 @@ Run: `rg -rn "schema_version:" tests/fixtures/scenarios/invalid/yaml-parse-error
 Expected: `schema_version: 11` — this fixture expects `E_YAML_PARSE`, never parses, and
 must stay at 11. It is not among the 146.
 
-- [ ] **Step 2: Bulk-bump the 146 files**
+- [ ] **Step 2: Bump the model literal, the constant, and the 146 fixtures**
 
-Run:
+In `scenario.py`, change the `Scenario` field `schema_version: Literal[23]` to
+`schema_version: Literal[24]`. In `contract/__init__.py`, change
+`SCENARIO_SCHEMA_VERSION: Final = 23` to `= 24`. Then bulk-bump the fixtures:
+
 ```bash
 rg -l "schema_version: 23" tests recipes | xargs sed -i '' 's/schema_version: 23/schema_version: 24/'
 ```
@@ -146,11 +164,11 @@ uv run python -m chaos_librarian.schema_export --check
 ```
 Expected: all PASS (drift gate exits 0).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: Commit (model + fixtures + schema together)**
 
 ```bash
-git add tests recipes schemas
-git commit -m "chore: bump fixtures and recipes to scenario schema 24
+git add src/chaos_librarian/contract/scenario.py src/chaos_librarian/contract/__init__.py tests recipes schemas
+git commit -m "feat!: bump scenario schema to 24
 
 Refs #181
 
@@ -411,44 +429,51 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing test**
 
-Create `tests/validation/rules/test_create_sidecar_content.py`. Model it on
-`tests/validation/rules/test_sidecar_language.py` (build raw dict + `LineIndex`, call
-the rule, inspect the collector). First read that file to copy the harness exactly.
+Create `tests/validation/rules/test_create_sidecar_content.py`. It uses the **real**
+per-rule harness from `tests/validation/rules/conftest.py`: the `minimal_scenario`
+builder fixture (default asset id `"a"`), `IssueCollector()`, and `run_semantic_pass`.
+There is **no** `collect_issues` helper — drive the collector directly, exactly as
+`test_sidecar_language.py` does:
 
 ```python
-from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
-from chaos_librarian.validation.rules.create_sidecar_content import (
-    rule_create_sidecar_content,
-)
-from tests.validation.rules.conftest import collect_issues  # if present; else inline
+from __future__ import annotations
+
+from chaos_librarian.scenario_io import LineIndex
+from chaos_librarian.validation import codes
+from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.semantic import run_semantic_pass
 
 
-def _scenario_with_create_sidecar(extra: dict) -> dict:
-    event = {
+def _materialize_codes(raw: dict[str, object], line_index: LineIndex) -> list[str]:
+    collector = IssueCollector()
+    run_semantic_pass(raw, line_index, collector)
+    return [
+        i.code for i in collector.issues if i.code == codes.E_MATERIALIZE_UNSUPPORTED
+    ]
+
+
+def _create_sidecar(extra: dict[str, object]) -> dict[str, object]:
+    return {
         "id": "ev", "at": "1s", "action": "create_sidecar",
-        "target": "asset_main", "to": "x.srt", "language": "eng", **extra,
+        "target": "a", "to": "r/a.eng.srt", "language": "eng", **extra,
     }
-    return {"timeline": [event]}
 
 
-def test_srt_utf16_accepted():
-    issues = collect_issues(
-        rule_create_sidecar_content,
-        _scenario_with_create_sidecar({"encoding": "utf16_le"}),
+def test_srt_utf16_accepted(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(timeline=[_create_sidecar({"encoding": "utf16_le"})])
+    assert _materialize_codes(raw, empty_index) == []
+
+
+def test_ass_codec_rejected(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(
+        timeline=[_create_sidecar({"codec": "ass", "encoding": "utf16_le"})]
     )
-    assert issues == []
-
-
-def test_ass_codec_rejected():
-    issues = collect_issues(
-        rule_create_sidecar_content,
-        _scenario_with_create_sidecar({"codec": "ass", "encoding": "utf16_le"}),
-    )
-    assert [i.code for i in issues] == [E_MATERIALIZE_UNSUPPORTED]
+    assert _materialize_codes(raw, empty_index) == [codes.E_MATERIALIZE_UNSUPPORTED]
 ```
 
-If no `collect_issues` helper exists, inline the collector setup the same way
-`test_sidecar_language.py` does.
+The load-bearing parts: the `minimal_scenario` / `empty_index` conftest fixtures,
+`IssueCollector`, `run_semantic_pass`, and filtering `collector.issues` by `.code`.
+`LineIndex` is imported from `chaos_librarian.scenario_io`.
 
 - [ ] **Step 2: Run test to verify it fails**
 
