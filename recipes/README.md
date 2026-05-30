@@ -42,6 +42,7 @@ Filesystem changes a scanner must tolerate mid-scan.
 | `renamed-during-scan.yaml` | A file is renamed in place mid-scan. | converges | none |
 | `delete-then-restore.yaml` | A file disappears then reappears at a new path. | converges | none |
 | `hardlink-duplicates.yaml` | Two paths are hardlinks to one inode (shared `st_ino`, link count 2). | converges | none |
+| `symlink-external.yaml` | One path is an `os.symlink` to another in-library asset's file (in-root link). | converges | none |
 
 ### `watcher/` — watcher/daemon stress
 Copy races and network/filesystem timing artifacts.
