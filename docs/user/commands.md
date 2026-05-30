@@ -13,7 +13,7 @@ uv run chaos-librarian validate scenario.yaml --json
 
 Use `validate` while authoring YAML or when CI needs a fast contract check.
 
-## `generate --profile PROFILE [--lane LANE] --seed SEED --out SCENARIO [--json]`
+## `generate --profile PROFILE [--lane LANE] [--count N] --seed SEED --out OUT [--json]`
 
 Generate deterministic fuzz scenario YAML:
 
@@ -36,6 +36,23 @@ Use `generate` when a test needs bounded randomized coverage. The output is
 ordinary scenario YAML with explicit timeline events and generation metadata.
 `--lane` defaults to `smoke` for `fuzz-smoke`; `fuzz-regression` requires an
 explicit lane such as `core-fs`.
+
+Generate a batch into a directory with `--count N` (default `1`). With
+`--count 1`, `--out` is a new file (as above). With `--count > 1`, `--out` must
+be an existing directory and each scenario is written as `<scenario_id>.yaml`:
+
+```bash
+# 9 fuzz-regression scenarios, one per lane, seeds 42..50
+uv run chaos-librarian generate --profile fuzz-regression --count 9 --seed 42 --out ./generated/
+
+# 20 fuzz-smoke scenarios, seeds 42..61
+uv run chaos-librarian generate --profile fuzz-smoke --count 20 --seed 42 --out ./generated/
+```
+
+Item `i` uses `seed + i`. For `fuzz-regression` without `--lane`, lanes cycle the
+canonical order; with `--lane L`, all items use lane `L`. Output is deterministic
+for a given `(profile, seed, count, lane)`. On any failure the batch removes the
+files it wrote so the command can be re-run.
 
 ## `plan SCENARIO --out RUN_DIR [--steps N] [--json]`
 

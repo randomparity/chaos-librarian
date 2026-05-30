@@ -11,6 +11,7 @@ from ruamel.yaml import YAML
 
 from chaos_librarian import generation_lanes
 from chaos_librarian.contract.profiles import (
+    CANONICAL_FUZZ_LANES,
     FUZZ_LANES_BY_PROFILE,
     FuzzLaneName,
     FuzzProfileName,
@@ -19,9 +20,13 @@ from chaos_librarian.contract.profiles import (
 from chaos_librarian.contract.scenario import EmbedSubtitleEvent, ExtractSubtitleEvent, Scenario
 from chaos_librarian.engine import run_plan
 from chaos_librarian.generation import (
+    BatchItem,
     GeneratedScenarioCoverageError,
     GeneratedScenarioValidationError,
+    generate_scenario,
     generate_scenario_yaml,
+    plan_generation_batch,
+    scenario_id_for,
     write_generated_scenario,
 )
 from chaos_librarian.generation_lanes import (
@@ -511,3 +516,67 @@ def test_atomic_write_rejects_existing_destination(tmp_path: Path) -> None:
         write_generated_scenario(out, b"replacement")
 
     assert out.read_text(encoding="utf-8") == "existing"
+
+
+def test_scenario_id_for_matches_generated_scenario_id() -> None:
+    generated = generate_scenario(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.CORE_FS,
+        seed=456,
+    )
+    assert generated.scenario.scenario_id == scenario_id_for(
+        FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS, 456
+    )
+    assert scenario_id_for(FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE, 7) == (
+        "fuzz-smoke-smoke-seed-7"
+    )
+
+
+def test_plan_batch_fixed_lane_increments_seed() -> None:
+    items = plan_generation_batch(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.CORE_FS,
+        seed=99,
+        count=3,
+    )
+    assert items == (
+        BatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
+        BatchItem(lane=FuzzLaneName.CORE_FS, seed=100),
+        BatchItem(lane=FuzzLaneName.CORE_FS, seed=101),
+    )
+
+
+def test_plan_batch_cycles_lanes_when_lane_is_none() -> None:
+    order = CANONICAL_FUZZ_LANES[FuzzProfileName.FUZZ_REGRESSION]
+    n = len(order)
+    items = plan_generation_batch(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=None,
+        seed=42,
+        count=n + 2,
+    )
+    assert len(items) == n + 2
+    assert [it.lane for it in items[:n]] == list(order)
+    assert items[n].lane == order[0]
+    assert items[n].seed == 42 + n
+    assert [it.seed for it in items] == list(range(42, 42 + n + 2))
+
+
+def test_plan_batch_smoke_uses_smoke_lane() -> None:
+    items = plan_generation_batch(profile=FuzzProfileName.FUZZ_SMOKE, lane=None, seed=5, count=4)
+    assert all(it.lane == FuzzLaneName.SMOKE for it in items)
+    assert [it.seed for it in items] == [5, 6, 7, 8]
+
+
+def test_plan_batch_count_one_returns_single_item() -> None:
+    items = plan_generation_batch(
+        profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=1
+    )
+    assert items == (BatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
+
+
+def test_plan_batch_rejects_non_positive_count() -> None:
+    with pytest.raises(ValueError, match="count must be >= 1"):
+        plan_generation_batch(
+            profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=0
+        )

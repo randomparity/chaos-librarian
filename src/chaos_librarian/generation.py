@@ -14,7 +14,11 @@ from pathlib import Path
 from ruamel.yaml import YAML
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
+from chaos_librarian.contract.profiles import (
+    CANONICAL_FUZZ_LANES,
+    FuzzLaneName,
+    FuzzProfileName,
+)
 from chaos_librarian.contract.scenario import (
     FUZZ_GENERATION_PROFILE_VERSION,
     Scenario,
@@ -36,6 +40,42 @@ class GeneratedScenario:
 
     data: bytes
     scenario: Scenario
+
+
+@dataclass(frozen=True, slots=True)
+class BatchItem:
+    """One unit of batch work: the lane and seed for a single scenario."""
+
+    lane: FuzzLaneName
+    seed: int
+
+
+def scenario_id_for(profile: FuzzProfileName, lane: FuzzLaneName, seed: int) -> str:
+    """Return the canonical ``scenario_id`` for a generated fuzz scenario.
+
+    Single source of truth shared by the generator and the batch path planner so
+    file names and the ``scenario_id`` embedded in the YAML cannot drift.
+    """
+    return f"{profile.value}-{lane.value}-seed-{seed}"
+
+
+def plan_generation_batch(
+    profile: FuzzProfileName,
+    lane: FuzzLaneName | None,
+    seed: int,
+    count: int,
+) -> tuple[BatchItem, ...]:
+    """Return the deterministic ``(lane, seed)`` work-list for a batch.
+
+    ``seed_i = seed + i``. When ``lane`` is ``None`` the lanes cycle the canonical
+    order for the profile; otherwise every item uses ``lane``.
+    """
+    if count < 1:
+        raise ValueError("count must be >= 1")
+    if lane is None:
+        order = CANONICAL_FUZZ_LANES[profile]
+        return tuple(BatchItem(lane=order[i % len(order)], seed=seed + i) for i in range(count))
+    return tuple(BatchItem(lane=lane, seed=seed + i) for i in range(count))
 
 
 class GeneratedScenarioCoverageError(ValueError):
@@ -84,7 +124,7 @@ def _generate_scenario_yaml_unvalidated(
     )
     payload: dict[str, object] = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
-        "scenario_id": f"{profile.value}-{resolved_lane.value}-seed-{seed}",
+        "scenario_id": scenario_id_for(profile, resolved_lane, seed),
         "seed": seed,
         "duration_scale": "short",
         "profiles": [label.value for label in config.profiles],
