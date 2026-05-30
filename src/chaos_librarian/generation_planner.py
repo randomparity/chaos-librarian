@@ -353,6 +353,9 @@ def _artists_payload(
                             ],
                         },
                         {
+                            # Intentionally non-sequential (gap after disc_001=1):
+                            # the timeline renumbers disc_001 to 2, so disc_002
+                            # must stay at 3 to avoid a disc_number collision.
                             "id": "disc_002",
                             "disc_number": 3,
                             "tracks": [],

@@ -17,6 +17,7 @@ from chaos_librarian.materializer import (
     ContainmentViolationError,
     CorruptionActionError,
     FilesystemActionError,
+    MaterializeArtifacts,
     MediaActionError,
     ProbeParseError,
     ScenarioValidationError,
@@ -86,7 +87,7 @@ def run(
         typer.echo(f"run: wrote {out}")
 
 
-def _success_payload(artifacts, out: Path) -> dict[str, object]:
+def _success_payload(artifacts: MaterializeArtifacts, out: Path) -> dict[str, object]:
     report = artifacts.materialization_report
     replay = artifacts.replay_bundle
     run_input = prepare_run_input_from_bytes(

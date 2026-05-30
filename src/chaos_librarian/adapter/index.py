@@ -567,7 +567,7 @@ def _observed_domain_fields(
         "artist_name": artist.name if artist else None,
         "album_title": album.title if album else None,
         "disc_number": disc.disc_number if disc else None,
-        "track_number": track.track_number if track else None,
+        "track_number": track.track_number,
         "track_title": track.title,
     }
 

@@ -378,6 +378,9 @@ def build_resolution_switch_concat_command(
     output_path: Path,
 ) -> list[str]:
     """Build argv for stream-copy concatenation of MPEG-TS segments."""
+    # -safe 0 allows the concat demuxer to accept the segment paths in the list
+    # file; safe here because those paths are generated and escaped by us, not
+    # taken from untrusted input.
     argv = ["ffmpeg", "-hide_banner", "-y", "-f", "concat", "-safe", "0"]
     argv.extend(["-i", str(concat_list_path), "-c", "copy"])
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
