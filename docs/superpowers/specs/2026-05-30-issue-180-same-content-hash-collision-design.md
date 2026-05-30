@@ -235,10 +235,16 @@ spec-challenge-2 findings 1–3):
   declares its own `subtitles` (see "Cross-field exclusivity" below), so the referrer
   declares no sidecars and `sidecar_hashes` for the copy is trivially **empty** and
   consistent with `augment_manifest`'s sidecar loop (which then stamps nothing).
-- **`content_sources` (finding 2).** The copy contributes a **single
-  `ContentSourceEvidence` entry** describing `copied from <referent asset_id>`, so the
-  per-asset source audit is never silently empty for a duplicated asset. (Field shape
-  matches the existing evidence model; the plan pins the exact constructor.)
+- **`content_sources` (finding 2 / spec-challenge-3).** The copy contributes **zero**
+  `ContentSourceEvidence` — a pure file copy resolves no synthesis content source, so an
+  absent entry is honest. This is deliberate and keeps the change **schema-neutral**:
+  `ContentSourceEvidence.track_kind` is a *closed* `ContentTrackKind` enum
+  (video/audio/subtitle/chapters/cover_art/muxing) with no whole-file-copy member, and
+  the model is embedded in both the `materialization` and `replay-bundle` schemas;
+  inventing a copy entry would either fabricate a misleading `track_kind`/`recipe_digest`
+  or add an enum member that drifts two versioned schemas. Nothing requires per-asset
+  `content_sources` to be non-empty. The copy's audit record is the synthetic
+  `ToolInvocation` above, not a content-source entry.
 
 The orchestrator threads an `asset_id -> rendered_relative_path` map across the loop so
 the referent's path is available; the referent is guaranteed present because the
@@ -398,8 +404,8 @@ prefix collision, not an on-disk sha256 collision.
 - [ ] Unknown / self / forward references rejected with `E_TARGET_UNKNOWN`.
 - [ ] Two assets linked by `same_content_as` materialize byte-identical files and
       record the **same full** `content_hash`; the duplicate's `MaterializedAsset`
-      carries an `invocation_index` resolving to a synthetic copy `ToolInvocation`, and
-      its `content_sources` carries a "copied from <referent>" audit entry.
+      carries an `invocation_index` resolving to a synthetic copy `ToolInvocation` (the
+      copy contributes no `ContentSourceEvidence`).
 - [ ] Two assets linked by `hash_collision_with` record content hashes that share
       exactly `collision_prefix_len` leading hex chars and differ at full length; the
       collided hash is deterministic.
@@ -426,10 +432,9 @@ prefix collision, not an on-disk sha256 collision.
   hash-override logic are unit-tested without ffmpeg):
   - `same_content_as`: copied file bytes equal referent bytes; both manifest versions
     carry the same full `content_hash`; the duplicate's `MaterializedAsset.invocation_index`
-    resolves to a `phase_a.invocations[i]` whose `tool == "same_content_copy"`; the
-    duplicate's `content_sources` has one "copied from <referent>" entry; the copied
-    file is re-probed (its `probed`/`size_bytes`/`duration_seconds` equal the
-    referent's).
+    resolves to a `phase_a.invocations[i]` whose `tool == "same_content_copy"`; the copy
+    contributes no `ContentSourceEvidence`; the copied file is re-probed (its
+    `probed`/`size_bytes`/`duration_seconds` equal the referent's).
   - `hash_collision_with`: `collided_hash_for` shares exactly `prefix_len` chars with
     the referent hash, differs from referent and real hashes at full length, is a valid
     `sha256:` URI, and is deterministic across runs.

@@ -71,9 +71,12 @@ value; the wire shape is unchanged).
   `ToolInvocation`** (`tool="same_content_copy"`, `exit_code=0`) keeps the "one
   invocation per asset" invariant and gives the duplicate's `MaterializedAsset` a real
   `invocation_index`; the copied file is **re-probed** (not reusing the referent's
-  probe); and a single "copied from <referent>" `ContentSourceEvidence` entry keeps the
-  per-asset source audit non-empty. No `MaterializedAsset` /
-  `MATERIALIZATION_SCHEMA_VERSION` change.
+  probe). The copy contributes **no `ContentSourceEvidence`** — a pure copy resolves no
+  synthesis source, and inventing an entry would need a new closed-enum `ContentTrackKind`
+  member that drifts the `materialization` and `replay-bundle` schemas; the synthetic
+  `ToolInvocation` is the copy's audit record. The only contract bump in this change is
+  `SCENARIO_SCHEMA_VERSION` 24 → 25; `MaterializedAsset`, `ContentSourceEvidence`,
+  `ManifestVersion`, and all non-scenario schema versions are unchanged.
 - The collided hash is deterministic (a pure function of the referent's recorded hash,
   the asset's real hash, and the prefix length), and is recomputed in a collision-aware
   `augment_manifest` shared by both the live materialize path and the run/replay
