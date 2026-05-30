@@ -39,12 +39,9 @@ uv run ruff check && uv run ruff format --check . && uv run ty check src tests &
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `tests/test_generation.py`:
+Add `scenario_id_for` to the **existing top-of-file** `from chaos_librarian.generation import ...` block (do not add a new import lower in the file — ruff `E402` rejects module-level imports after code). Then append this test function:
 
 ```python
-from chaos_librarian.generation import scenario_id_for
-
-
 def test_scenario_id_for_matches_generated_scenario_id() -> None:
     generated = generation.generate_scenario(
         profile=FuzzProfileName.FUZZ_REGRESSION,
@@ -59,7 +56,7 @@ def test_scenario_id_for_matches_generated_scenario_id() -> None:
     )
 ```
 
-Confirm the test module already imports `generation`, `FuzzProfileName`, `FuzzLaneName`; if not, add:
+Confirm the test module already imports `generation`, `FuzzProfileName`, `FuzzLaneName` in its top import block; if not, add them there (top of file, not mid-file):
 
 ```python
 from chaos_librarian import generation
@@ -198,13 +195,9 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `tests/test_generation.py`:
+Extend the **existing top-of-file** import blocks: add `BatchItem, plan_generation_batch` to the `from chaos_librarian.generation import ...` line and `CANONICAL_FUZZ_LANES` to the `from chaos_librarian.contract.profiles import ...` line (top of file — no mid-file imports, ruff `E402`). Then append these test functions:
 
 ```python
-from chaos_librarian.generation import BatchItem, plan_generation_batch
-from chaos_librarian.contract.profiles import CANONICAL_FUZZ_LANES
-
-
 def test_plan_batch_fixed_lane_increments_seed() -> None:
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_REGRESSION,
@@ -547,12 +540,9 @@ The implementation already exists from Task 4; this task adds the tests that exe
 
 - [ ] **Step 1: Write the failing tests**
 
-Append to `tests/cli/test_generate.py`:
+Add `CANONICAL_FUZZ_LANES, FuzzProfileName` to the **existing top-of-file** `from chaos_librarian.contract.profiles import ...` line (it already imports `FuzzLaneName`) — do not add a new mid-file import (ruff `E402`). Then append these helpers and test functions:
 
 ```python
-from chaos_librarian.contract.profiles import CANONICAL_FUZZ_LANES, FuzzProfileName
-
-
 def _run(args: list[str]) -> Result:
     return runner.invoke(app, args)
 
@@ -589,10 +579,13 @@ def test_batch_regression_cycles_lanes(tmp_path: Path) -> None:
     )
 
     assert result.exit_code == 0, _plain_output(result)
-    lanes = {
-        _load_generated(p).generation.lane.value  # type: ignore[union-attr]
-        for p in out.glob("*.yaml")
-    }
+    # `ty` rejects `.generation.lane` on the optional and does not honor
+    # `# type: ignore`; narrow with an assert, matching the file's convention.
+    lanes: set[str] = set()
+    for path in out.glob("*.yaml"):
+        gen = _load_generated(path).generation
+        assert gen is not None
+        lanes.add(gen.lane.value)
     assert lanes == {lane.value for lane in order}
     assert len(list(out.glob("*.yaml"))) == len(order)
 
