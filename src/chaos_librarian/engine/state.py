@@ -273,6 +273,10 @@ class WorldState:
         )
         if variant.parent_kind is ParentKind.MOVIE:
             movie = self.movies[variant.parent_id]
+            # No movie hierarchy/path action re-renders from manifest context, so
+            # the edition (carried only on the scenario Variant, not ManifestVariant)
+            # is not needed here; initial seeding renders it through
+            # topology.renderable_asset_context. See ADR 0010.
             return RenderableAssetContext(
                 parent_kind=ParentKind.MOVIE,
                 root_path=root_path,

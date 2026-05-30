@@ -7,12 +7,20 @@ from typing import get_type_hints
 import pytest
 
 from chaos_librarian.contract.domain import ParentKind
-from chaos_librarian.contract.scenario import Asset, Bundle, Movie, Scenario, Variant
+from chaos_librarian.contract.scenario import (
+    Asset,
+    Bundle,
+    EditionKind,
+    Movie,
+    Scenario,
+    Variant,
+)
 from chaos_librarian.topology import (
     AssetContext,
     asset_contexts_by_id,
     asset_ids_under_target,
     iter_asset_contexts,
+    renderable_asset_context,
 )
 
 
@@ -142,6 +150,49 @@ def _scenario() -> Scenario:
             "timeline": [],
         }
     )
+
+
+def _movie_scenario_with_edition(edition: str) -> Scenario:
+    variant = _variant_payload("variant_movie", "bundle_movie", _video_asset_payload("asset_movie"))
+    variant["edition"] = edition
+    return Scenario.model_validate(
+        {
+            "schema_version": 31,
+            "scenario_id": "topology-edition",
+            "seed": 1,
+            "duration_scale": "short",
+            "profiles": [],
+            "library": {"roots": [{"id": "primary", "path": "Library"}]},
+            "movies": [
+                {
+                    "id": "movie_orbit",
+                    "title": "Orbit",
+                    "layout": "movie_flat",
+                    "variants": [variant],
+                }
+            ],
+            "series": [],
+            "artists": [],
+            "timeline": [],
+        }
+    )
+
+
+def test_renderable_asset_context_threads_movie_edition() -> None:
+    scenario = _movie_scenario_with_edition("directors_cut")
+    context = next(iter_asset_contexts(scenario))
+
+    renderable = renderable_asset_context(context, "Library")
+
+    assert renderable.edition is EditionKind.DIRECTORS_CUT
+
+
+def test_renderable_asset_context_movie_edition_defaults_none() -> None:
+    context = next(iter_asset_contexts(_scenario()))
+
+    renderable = renderable_asset_context(context, "Library")
+
+    assert renderable.edition is None
 
 
 def _podcast_scenario() -> Scenario:

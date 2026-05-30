@@ -1093,6 +1093,53 @@ def test_rendered_initial_asset_path_collision_is_rejected(minimal_scenario, emp
     )
 
 
+def _movie_second_variant(*, label: str, edition: str | None) -> dict[str, object]:
+    variant: dict[str, object] = {
+        "id": "v_two",
+        "label": label,
+        "bundle": {
+            "id": "b_two",
+            "assets": [
+                {
+                    "id": "asset_two",
+                    "role": "main",
+                    "container": "mkv",
+                    "duration_seconds": 1,
+                    "video": {"source": "color_bars", "codec": "h264", "resolution": "sd"},
+                    "audio": [
+                        {"source": "sine", "codec": "aac", "channels": "stereo", "language": "eng"}
+                    ],
+                }
+            ],
+        },
+    }
+    if edition is not None:
+        variant["edition"] = edition
+    return variant
+
+
+def test_two_editions_same_label_render_distinct_paths(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    movie = _mapping(_items(raw["movies"])[0])
+    _mapping(_items(movie["variants"])[0])["edition"] = "theatrical"
+    _items(movie["variants"]).append(_movie_second_variant(label="l", edition="directors_cut"))
+
+    issues = _issues_for(raw, empty_index)
+
+    assert not any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_two_variants_same_label_and_edition_collide(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario()
+    movie = _mapping(_items(raw["movies"])[0])
+    _mapping(_items(movie["variants"])[0])["edition"] = "extended"
+    _items(movie["variants"]).append(_movie_second_variant(label="l", edition="extended"))
+
+    issues = _issues_for(raw, empty_index)
+
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
 def test_rendered_title_dot_segment_is_rejected(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario()
     _mapping(_items(raw["movies"])[0])["title"] = "."
