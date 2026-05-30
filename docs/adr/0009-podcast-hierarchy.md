@@ -36,12 +36,15 @@ existing error codes unless the contract genuinely differs.
 2. **Datetime publish-time ordering.** `PodcastEpisode.published_at` is a
    required aware RFC3339 `datetime` and the first-class ordering attribute.
    Podcast episodes carry no `episode_number` / `season_number`.
-3. **Date + slug + title render into the path.** A single layout
-   (`PODCAST_FOLDER`) and naming recipe (`DATE_SLUG_TITLE`) render
+3. **Date + slug + title render into the path; `published_at` is UTC.** A single
+   layout (`PODCAST_FOLDER`) and naming recipe (`DATE_SLUG_TITLE`) render
    `<root>/<Podcast Title>/<YYYY-MM-DD> - <slug> - <Episode Title> - <label>.<ext>`.
-   `published_at` keeps full datetime precision for deterministic ordering, but
-   only the **date portion** renders. `slug` is a required uniqueness tiebreaker,
-   cleaned through the existing `clean_display_component` sanitizer.
+   `published_at` keeps full datetime precision for deterministic instant
+   ordering, but only the UTC **date portion** renders. `published_at` is
+   required to be UTC (a non-UTC offset is `E_HIERARCHY_INVALID`) so the same
+   instant cannot render two different date components. `slug` is a required
+   uniqueness tiebreaker, cleaned through the existing `clean_display_component`
+   sanitizer.
 4. **Duplicate `published_at` allowed; rendered path must be unique.** Two
    episodes may share a `published_at`; they MUST carry distinct slugs or the
    rendered paths collide (`E_PATH_COLLISION`). No new validation code.
@@ -61,7 +64,10 @@ existing error codes unless the contract genuinely differs.
    absent from the source feed. `mark_episode_stale` is the primary chaos
    mechanism — the transition that sets the same state the field represents, so
    "is this episode stale" has one source of truth. A born-stale declared
-   episode is a valid-but-secondary case.
+   episode is a valid-but-secondary case. `mark_episode_stale` requires a live
+   location (stale-after-full-delete and double-stale are `E_LIFECYCLE_INVALID`,
+   matching the existing fail-loud lifecycle guards); `republish_episode` on a
+   stale episode is the inverse transition and clears the flag.
 8. **Reuse existing error codes.** `E_HIERARCHY_INVALID` (structural /
    projection, non-episode target), `E_PATH_COLLISION` (rendered clash),
    `E_TARGET_UNKNOWN` (unknown operand). No new code.

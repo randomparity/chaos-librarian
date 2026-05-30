@@ -62,10 +62,17 @@ A single layout (`PODCAST_FOLDER`) and a single naming recipe
 (`DATE_SLUG_TITLE`) ship in v1. A second layout / naming recipe is speculative
 surface (AGENTS Rule 3) and is filed as a follow-up.
 
-`published_at` is a full aware RFC3339 datetime so two same-day episodes order
-deterministically. Only the **date portion** (`YYYY-MM-DD`), the `slug`, and the
-title render into the path. `slug` is the uniqueness tiebreaker; two episodes
-sharing a `published_at` MUST carry distinct slugs or the rendered paths collide
+`published_at` is a full aware RFC3339 datetime so two same-instant episodes
+order deterministically. **Timezone rule:** `published_at` is required to be
+UTC (a `Z` / `+00:00` offset); a non-UTC offset is `E_HIERARCHY_INVALID`. This
+removes the ambiguity where the same instant in two offsets would render two
+different `YYYY-MM-DD` date components and would order differently by wall-clock
+vs. instant. Ordering is by the UTC instant; the rendered date component is the
+UTC date.
+
+Only the **date portion** (`YYYY-MM-DD`), the `slug`, and the title render into
+the path. `slug` is the uniqueness tiebreaker; two episodes sharing a
+`published_at` MUST carry distinct slugs or the rendered paths collide
 (`E_PATH_COLLISION`).
 
 `slug` is cleaned through the existing `clean_display_component` path-component
@@ -118,6 +125,26 @@ Two new `TimelineActionName` members and `TimelineEvent` variants:
   `stale` state to true. Does **not** move or remove the file; it is *not* a
   hierarchy path mutation, so it stays out of `HIERARCHY_TIMELINE_ACTIONS`.
 
+### `mark_episode_stale` lifecycle contract
+
+`mark_episode_stale` records the episode's current rendered path, so it requires
+the episode to still have at least one live location. The lifecycle rule
+(`rule_timeline_lifecycle`) rejects, with `E_LIFECYCLE_INVALID`:
+
+- `mark_episode_stale` on an episode all of whose assets were already
+  `delete_file`'d (no live location — "lingering" is contradictory when the file
+  is gone), mirroring the existing delete-after-delete guard.
+- a second `mark_episode_stale` on an already-stale episode (idempotency is an
+  error, not a silent no-op, matching the codebase's fail-loud convention for
+  redundant lifecycle transitions).
+
+`republish_episode` on a stale episode is **allowed** (a re-published episode is
+no longer stale; the engine clears the stale flag and re-renders). This keeps
+"is this episode stale" single-valued: republish is the inverse transition.
+Path actions (`move_asset` / `rename_file`) on a stale episode's assets stay
+governed by the existing per-asset lifecycle rules unchanged — staleness is an
+episode-level fact, not an asset-level lock.
+
 ## Validation
 
 Reuse existing error codes only (ADR 0008 / #179 precedent):
@@ -133,6 +160,18 @@ Reuse existing error codes only (ADR 0008 / #179 precedent):
 `mark_episode_stale` needs no genuinely new error code: an unknown target is
 `E_TARGET_UNKNOWN`; a target that is not a podcast episode is
 `E_HIERARCHY_INVALID`. No new code is introduced.
+
+**Id namespace and target-kind resolution.** Podcast episodes get their own
+disjoint id namespace: `NS_PODCAST_EPISODE_ID` (kind `"podcast_episode"`) is
+added to `iter_entity_ids` / `iter_global_namespaces` and to the fixed
+`entity_ids_by_kind` dict, alongside a `podcast` namespace for the podcast row.
+Both `republish_episode` and `mark_episode_stale` map to
+`target_kind="podcast_episode"` in `_HIERARCHY_TARGET_KIND_BY_ACTION`. Because
+the kind id sets are disjoint, a TV-episode id passed to a podcast action
+resolves to nothing and yields `E_TARGET_UNKNOWN` — a podcast action cannot
+silently act on a TV episode (mirroring the swap cross-kind note in
+`target_unknown.py`). This is the structural guard that keeps podcast semantics
+from leaking into TV.
 
 The hierarchy invariant rule (`rule_hierarchy_invariants`) gains a
 `_check_podcasts` walker that validates each podcast's episode `slug`s render
@@ -206,9 +245,13 @@ fixtures for the path-collision and bad-target cases) join the corpus with the
   `republish_episode` that creates a collision → `E_PATH_COLLISION`.
 - `mark_episode_stale` records the neutral `stale` delta, leaves the path
   unchanged, and the manifest episode row reflects `stale: true`. Born-stale
-  declared episode round-trips.
-- Edge/error: unknown target → `E_TARGET_UNKNOWN`; non-podcast-episode target
-  for a podcast action → `E_HIERARCHY_INVALID`.
+  declared episode round-trips. `republish_episode` on a stale episode clears
+  the flag and re-renders.
+- Lifecycle edges: `mark_episode_stale` after all assets deleted →
+  `E_LIFECYCLE_INVALID`; double `mark_episode_stale` → `E_LIFECYCLE_INVALID`.
+- Edge/error: unknown target → `E_TARGET_UNKNOWN`; a TV-episode id passed to a
+  podcast action → `E_TARGET_UNKNOWN` (disjoint namespaces); non-UTC
+  `published_at` → `E_HIERARCHY_INVALID`.
 - Regression: movie/TV/music topology unchanged (paths, manifest, journal).
 - Existing scenarios stay valid at v30; the v29→30 / v9→10 bumps are asserted.
 
