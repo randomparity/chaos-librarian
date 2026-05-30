@@ -510,6 +510,41 @@
           "title": "At",
           "type": "string"
         },
+        "body": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Body"
+        },
+        "codec": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SubtitleCodec"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "encoding": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SubtitleEncoding"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "id": {
           "title": "Id",
           "type": "string"
@@ -529,6 +564,28 @@
           ],
           "default": null,
           "title": "Language"
+        },
+        "media_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SidecarMediaType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SubtitleSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "target": {
           "title": "Target",
@@ -1762,6 +1819,15 @@
         "nfo"
       ],
       "title": "SidecarKind",
+      "type": "string"
+    },
+    "SidecarMediaType": {
+      "description": "Synthesized media kind for a poster sidecar.\n\n``image`` is the default PNG poster; ``video`` writes a small deterministic\nvideo at the poster path \u2014 the ``poster-is-video`` chaos.",
+      "enum": [
+        "image",
+        "video"
+      ],
+      "title": "SidecarMediaType",
       "type": "string"
     },
     "SlowCopyCommitEvent": {

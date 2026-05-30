@@ -1525,6 +1525,115 @@ def test_create_sidecar_poster_round_trip():
     assert event.language is None
 
 
+def test_create_sidecar_subtitle_accepts_codec_source_encoding():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.eng.srt",
+            "language": "eng",
+            "codec": "srt",
+            "source": "generated_srt",
+            "encoding": "utf16_le",
+        }
+    )
+    assert event.encoding == SubtitleEncoding.UTF16_LE
+    assert event.codec == SubtitleCodec.SRT
+    assert event.source == SubtitleSource.GENERATED_SRT
+
+
+def test_create_sidecar_nfo_accepts_body():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.nfo",
+            "kind": "nfo",
+            "body": "<movie>x</movie>",
+        }
+    )
+    assert event.body == "<movie>x</movie>"
+
+
+def test_create_sidecar_poster_accepts_media_type():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.poster.jpg",
+            "kind": "poster",
+            "media_type": "video",
+        }
+    )
+    assert event.media_type == SidecarMediaType.VIDEO
+
+
+def test_create_sidecar_encoding_on_nfo_rejected():
+    with pytest.raises(ValidationError, match="encoding"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.nfo",
+                "kind": "nfo",
+                "encoding": "utf16_le",
+            }
+        )
+
+
+def test_create_sidecar_body_on_poster_rejected():
+    with pytest.raises(ValidationError, match="body"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "p.jpg",
+                "kind": "poster",
+                "body": "<x/>",
+            }
+        )
+
+
+def test_create_sidecar_media_type_on_subtitle_rejected():
+    with pytest.raises(ValidationError, match="media_type"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.srt",
+                "language": "eng",
+                "media_type": "video",
+            }
+        )
+
+
+def test_create_sidecar_empty_body_rejected():
+    with pytest.raises(ValidationError):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.nfo",
+                "kind": "nfo",
+                "body": "",
+            }
+        )
+
+
 def test_remux_container_event_round_trip():
     payload = {
         "id": "ev_rmx_001",

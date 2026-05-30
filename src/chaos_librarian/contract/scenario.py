@@ -595,13 +595,33 @@ class CreateSidecarEvent(_TimelineEventBase):
     # (kind in {poster, nfo}, language=None).
     language: str | None = None
     kind: SidecarKind = SidecarKind.SUBTITLE
+    # Authoring knobs (scenario v24). Each is scoped to one kind; the
+    # model_validator forbids cross-kind misuse. None selects the kind's
+    # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster).
+    codec: SubtitleCodec | None = None
+    source: SubtitleSource | None = None
+    encoding: SubtitleEncoding | None = None
+    body: str | None = Field(default=None, min_length=1)
+    media_type: SidecarMediaType | None = None
 
     @model_validator(mode="after")
-    def _check_language_matches_kind(self) -> CreateSidecarEvent:
+    def _check_fields_match_kind(self) -> CreateSidecarEvent:
         if self.kind == SidecarKind.SUBTITLE and self.language is None:
             raise ValueError("subtitle sidecar requires language")
         if self.kind != SidecarKind.SUBTITLE and self.language is not None:
             raise ValueError(f"{self.kind.value} sidecar forbids language")
+        if self.kind != SidecarKind.SUBTITLE:
+            for name, value in (
+                ("codec", self.codec),
+                ("source", self.source),
+                ("encoding", self.encoding),
+            ):
+                if value is not None:
+                    raise ValueError(f"{name} is only valid for subtitle sidecars")
+        if self.kind != SidecarKind.NFO and self.body is not None:
+            raise ValueError("body is only valid for nfo sidecars")
+        if self.kind != SidecarKind.POSTER and self.media_type is not None:
+            raise ValueError("media_type is only valid for poster sidecars")
         return self
 
 
