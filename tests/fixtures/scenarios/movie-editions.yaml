@@ -1,0 +1,59 @@
+schema_version: 31
+scenario_id: movie-editions
+seed: 42
+duration_scale: short
+
+library:
+  roots:
+    - id: movies
+      path: movies
+
+movies:
+  # One movie, two editions at the same resolution label. The {edition-...} token
+  # makes the rendered paths distinct, so the scenario validates clean:
+  #   movies/Synthetic Orbit - 1080p {edition-Theatrical}.mkv
+  #   movies/Synthetic Orbit - 1080p {edition-Director's Cut}.mkv
+  - id: movie_orbit
+    title: Synthetic Orbit
+    layout: movie_folder
+    variants:
+      - id: variant_theatrical
+        label: 1080p
+        edition: theatrical
+        bundle:
+          id: bundle_theatrical
+          assets:
+            - id: asset_theatrical
+              role: primary_video
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+      - id: variant_directors_cut
+        label: 1080p
+        edition: directors_cut
+        bundle:
+          id: bundle_directors_cut
+          assets:
+            - id: asset_directors_cut
+              role: primary_video
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: 1080p
+              audio:
+                - codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+
+timeline: []
