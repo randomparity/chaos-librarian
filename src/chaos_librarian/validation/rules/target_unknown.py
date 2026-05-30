@@ -59,6 +59,9 @@ _ASSET_TARGET_ACTIONS: frozenset[str] = frozenset(
         TimelineActionName.TOUCH_MTIME,
         TimelineActionName.WRONG_ORACLE_HASH,
         TimelineActionName.NETWORK_LAG_START,
+        TimelineActionName.SIMULATE_QUOTA_EXCEEDED,
+        TimelineActionName.SIMULATE_STALE_HANDLE,
+        TimelineActionName.ACQUIRE_LOCK,
     }
 )
 

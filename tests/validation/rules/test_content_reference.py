@@ -29,7 +29,7 @@ def _asset(asset_id: str, **extra: object) -> dict[str, object]:
 
 def _scenario(assets: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema_version": 27,
+        "schema_version": 28,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",

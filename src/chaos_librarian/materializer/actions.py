@@ -72,6 +72,19 @@ NETWORK_LAG_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
+NETWORK_FS_CHAOS_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.CHANGE_PERMISSIONS,
+        TimelineActionName.SIMULATE_QUOTA_EXCEEDED,
+        TimelineActionName.TOGGLE_READONLY,
+        TimelineActionName.SIMULATE_STALE_HANDLE,
+        TimelineActionName.UNMOUNT_PATH,
+        TimelineActionName.REMOUNT_PATH,
+        TimelineActionName.ACQUIRE_LOCK,
+        TimelineActionName.RELEASE_LOCK,
+    }
+)
+
 SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
     _STDLIB_ACTIONS
     | _MEDIA_ACTIONS

@@ -878,6 +878,7 @@
         "performance-scale",
         "performance-stress",
         "network-fs-lag",
+        "network-fs-chaos",
         "filesystem-artifacts",
         "negative-oracle",
         "fuzz-smoke",

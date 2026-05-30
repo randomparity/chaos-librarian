@@ -17,6 +17,7 @@ from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import (
     FilesystemAction,
     MaterializationExecutionMode,
+    NetworkFsChaosAction,
     NetworkLagAction,
     Outcome,
     ToolInvocation,
@@ -45,6 +46,14 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
     ScenarioValidationError,
     TimelineUnsupportedError,
+)
+from chaos_librarian.materializer.network_fs_chaos import (
+    CHAOS_CLOSE_ACTIONS,
+    CHAOS_ENTRY_ACTIONS,
+    NetworkFsChaosState,
+    realize_chaos_close,
+    realize_chaos_entry,
+    restore_chaos_modes,
 )
 from chaos_librarian.materializer.network_lag_fields import (
     network_lag_effect,
@@ -188,7 +197,7 @@ def run_wall_clock_scenario(
             validation_report=validation_report,
         )
     scenario = run_input.scenario
-    preflight_timeline(scenario, allow_network_lag=True)
+    preflight_timeline(scenario, allow_network_lag=True, allow_network_fs_chaos=True)
     resolved_timeline = resolve_timeline(scenario)
     _preflight_wall_clock_slow_copies(resolved_timeline)
     caps = detect_capabilities()
@@ -474,6 +483,7 @@ def _make_dispatch_state(
         media_ctx=state.media_ctx,
         corruption_ctx=state.corruption_ctx,
         oracle_hash_ctx=state.oracle_hash_ctx,
+        chaos=state.chaos,
     )
 
 
@@ -537,7 +547,37 @@ def _execute_entry(
     if action is TimelineActionName.NETWORK_LAG_COMMIT:
         state.network_lag_actions.append(_wall_clock_network_lag_commit(state, entry))
         return
+    if _dispatch_chaos_entry(state, entry, action):
+        return
     dispatch_phase_b_entry(state, entry)
+
+
+def _dispatch_chaos_entry(
+    state: _DispatchState, entry: JournalEntry, action: TimelineActionName
+) -> bool:
+    """Route a network-fs-chaos entry; return whether it was handled."""
+    if action in CHAOS_CLOSE_ACTIONS:
+        realize_chaos_close(_chaos_state(state), entry)
+        return True
+    if action in CHAOS_ENTRY_ACTIONS:
+        realize_chaos_entry(_chaos_state(state), entry)
+        return True
+    return False
+
+
+def _chaos_state(state: _DispatchState) -> NetworkFsChaosState:
+    if state.chaos is None:  # pragma: no cover - always set in _make_dispatch_state
+        raise ChaosLibrarianValueError("network-fs-chaos state not initialized")
+    return state.chaos
+
+
+def _chaos_actions(state: _DispatchState) -> list[NetworkFsChaosAction]:
+    return list(state.chaos.actions) if state.chaos is not None else []
+
+
+def _restore_chaos(state: _DispatchState) -> None:
+    if state.chaos is not None:
+        restore_chaos_modes(state.chaos)
 
 
 def _configure_network_lag_schedule(
@@ -807,6 +847,7 @@ def _finalize_wall_clock_run(
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
+        network_fs_chaos_actions=_chaos_actions(state),
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
@@ -814,6 +855,7 @@ def _finalize_wall_clock_run(
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
+    _restore_chaos(state)
     replay_bundle = _build_final_replay_bundle(
         run_context=run_context,
         artifacts=final_artifacts,
@@ -875,6 +917,7 @@ def _finalize_wall_clock_phase_b_failure(
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
+        network_fs_chaos_actions=_chaos_actions(state),
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed.normalized,
@@ -882,6 +925,7 @@ def _finalize_wall_clock_phase_b_failure(
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
+    _restore_chaos(state)
     replay_bundle = _build_final_replay_bundle(
         run_context=run_context,
         artifacts=final_artifacts,

@@ -1,5 +1,39 @@
 {
   "$defs": {
+    "AcquireLockEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "acquire_lock",
+          "default": "acquire_lock",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "lock_type": {
+          "$ref": "#/$defs/LockType"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "lock_type"
+      ],
+      "title": "AcquireLockEvent",
+      "type": "object"
+    },
     "AddFileEvent": {
       "additionalProperties": false,
       "properties": {
@@ -448,6 +482,42 @@
         "assets"
       ],
       "title": "Bundle",
+      "type": "object"
+    },
+    "ChangePermissionsEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "change_permissions",
+          "default": "change_permissions",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mode": {
+          "pattern": "^[0-7]{3,4}$",
+          "title": "Mode",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "mode"
+      ],
+      "title": "ChangePermissionsEvent",
       "type": "object"
     },
     "CorruptContainerHeaderEvent": {
@@ -1117,6 +1187,15 @@
       "title": "LibraryRoot",
       "type": "object"
     },
+    "LockType": {
+      "description": "Advisory lock kind requested by ``acquire_lock``.",
+      "enum": [
+        "shared",
+        "exclusive"
+      ],
+      "title": "LockType",
+      "type": "string"
+    },
     "MatroskaMuxingProfile": {
       "description": "Matroska/WebM muxing profile for cue and cluster parser surfaces.",
       "enum": [
@@ -1446,12 +1525,22 @@
         "performance-scale",
         "performance-stress",
         "network-fs-lag",
+        "network-fs-chaos",
         "filesystem-artifacts",
         "negative-oracle",
         "fuzz-smoke",
         "fuzz-regression"
       ],
       "title": "ProfileName",
+      "type": "string"
+    },
+    "ReadonlyState": {
+      "description": "Read/write state requested by ``toggle_readonly``.",
+      "enum": [
+        "readonly",
+        "readwrite"
+      ],
+      "title": "ReadonlyState",
       "type": "string"
     },
     "ReencodeAudioEvent": {
@@ -1530,6 +1619,66 @@
         "codec"
       ],
       "title": "ReencodeVideoEvent",
+      "type": "object"
+    },
+    "ReleaseLockEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "release_lock",
+          "default": "release_lock",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "for": {
+          "title": "For",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "for"
+      ],
+      "title": "ReleaseLockEvent",
+      "type": "object"
+    },
+    "RemountPathEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "remount_path",
+          "default": "remount_path",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "for": {
+          "title": "For",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "for"
+      ],
+      "title": "RemountPathEvent",
       "type": "object"
     },
     "RemoveSidecarEvent": {
@@ -1891,6 +2040,66 @@
       "title": "SidecarMediaType",
       "type": "string"
     },
+    "SimulateQuotaExceededEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "simulate_quota_exceeded",
+          "default": "simulate_quota_exceeded",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "SimulateQuotaExceededEvent",
+      "type": "object"
+    },
+    "SimulateStaleHandleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "simulate_stale_handle",
+          "default": "simulate_stale_handle",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "SimulateStaleHandleEvent",
+      "type": "object"
+    },
     "SlowCopyCommitEvent": {
       "additionalProperties": false,
       "properties": {
@@ -2081,6 +2290,40 @@
       "title": "SymlinkTarget",
       "type": "object"
     },
+    "ToggleReadonlyEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "toggle_readonly",
+          "default": "toggle_readonly",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "mode": {
+          "$ref": "#/$defs/ReadonlyState"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "mode"
+      ],
+      "title": "ToggleReadonlyEvent",
+      "type": "object"
+    },
     "TouchMtimeEvent": {
       "additionalProperties": false,
       "properties": {
@@ -2199,6 +2442,36 @@
         "keep_bytes"
       ],
       "title": "TruncateFileEvent",
+      "type": "object"
+    },
+    "UnmountPathEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "unmount_path",
+          "default": "unmount_path",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "UnmountPathEvent",
       "type": "object"
     },
     "UpdateSidecarEvent": {
@@ -2527,7 +2800,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 27,
+      "const": 28,
       "title": "Schema Version",
       "type": "integer"
     },
@@ -2554,8 +2827,10 @@
       "items": {
         "discriminator": {
           "mapping": {
+            "acquire_lock": "#/$defs/AcquireLockEvent",
             "add_file": "#/$defs/AddFileEvent",
             "archive_file": "#/$defs/ArchiveFileEvent",
+            "change_permissions": "#/$defs/ChangePermissionsEvent",
             "corrupt_container_header": "#/$defs/CorruptContainerHeaderEvent",
             "corrupt_packet_range": "#/$defs/CorruptPacketRangeEvent",
             "create_sidecar": "#/$defs/CreateSidecarEvent",
@@ -2571,16 +2846,22 @@
             "network_lag_start": "#/$defs/NetworkLagStartEvent",
             "reencode_audio": "#/$defs/ReencodeAudioEvent",
             "reencode_video": "#/$defs/ReencodeVideoEvent",
+            "release_lock": "#/$defs/ReleaseLockEvent",
+            "remount_path": "#/$defs/RemountPathEvent",
             "remove_sidecar": "#/$defs/RemoveSidecarEvent",
             "remux_container": "#/$defs/RemuxContainerEvent",
             "rename_file": "#/$defs/RenameFileEvent",
             "rename_season": "#/$defs/RenameSeasonEvent",
             "renumber_disc": "#/$defs/RenumberDiscEvent",
             "renumber_episode": "#/$defs/RenumberEpisodeEvent",
+            "simulate_quota_exceeded": "#/$defs/SimulateQuotaExceededEvent",
+            "simulate_stale_handle": "#/$defs/SimulateStaleHandleEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
             "slow_copy_start": "#/$defs/SlowCopyStartEvent",
+            "toggle_readonly": "#/$defs/ToggleReadonlyEvent",
             "touch_mtime": "#/$defs/TouchMtimeEvent",
             "truncate_file": "#/$defs/TruncateFileEvent",
+            "unmount_path": "#/$defs/UnmountPathEvent",
             "update_sidecar": "#/$defs/UpdateSidecarEvent",
             "write_invalid_duration_metadata": "#/$defs/WriteInvalidDurationMetadataEvent",
             "wrong_oracle_hash": "#/$defs/WrongOracleHashEvent"
@@ -2662,6 +2943,30 @@
           },
           {
             "$ref": "#/$defs/NetworkLagCommitEvent"
+          },
+          {
+            "$ref": "#/$defs/ChangePermissionsEvent"
+          },
+          {
+            "$ref": "#/$defs/SimulateQuotaExceededEvent"
+          },
+          {
+            "$ref": "#/$defs/ToggleReadonlyEvent"
+          },
+          {
+            "$ref": "#/$defs/SimulateStaleHandleEvent"
+          },
+          {
+            "$ref": "#/$defs/UnmountPathEvent"
+          },
+          {
+            "$ref": "#/$defs/RemountPathEvent"
+          },
+          {
+            "$ref": "#/$defs/AcquireLockEvent"
+          },
+          {
+            "$ref": "#/$defs/ReleaseLockEvent"
           },
           {
             "$ref": "#/$defs/RenumberEpisodeEvent"

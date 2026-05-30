@@ -1,4 +1,4 @@
-schema_version: 27
+schema_version: 28
 scenario_id: sidecar-create-via-timeline
 seed: 17
 duration_scale: short

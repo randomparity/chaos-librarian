@@ -631,6 +631,15 @@
       "title": "FilesystemAction",
       "type": "object"
     },
+    "LockType": {
+      "description": "Advisory lock kind requested by ``acquire_lock``.",
+      "enum": [
+        "shared",
+        "exclusive"
+      ],
+      "title": "LockType",
+      "type": "string"
+    },
     "MaterializationExecutionMode": {
       "description": "Mode that produced the materialization report.",
       "enum": [
@@ -878,6 +887,109 @@
       "title": "Mp4MoovPlacement",
       "type": "string"
     },
+    "NetworkFsChaosAction": {
+      "additionalProperties": false,
+      "description": "One network-filesystem chaos audit record (neutral injected condition).\n\nRecords what condition was injected, on what target, and whether it was\nreally enforced on disk (a real ``os.chmod`` for permissions/readonly) or\nonly recorded (the kernel-level conditions). Carries no expected consumer\nverdict \u2014 the consumer's adapter reads the condition and applies its own\npolicy.",
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/TimelineActionName"
+        },
+        "condition": {
+          "$ref": "#/$defs/NetworkFsChaosCondition"
+        },
+        "enforced": {
+          "title": "Enforced",
+          "type": "boolean"
+        },
+        "event_id": {
+          "title": "Event Id",
+          "type": "string"
+        },
+        "lock_type": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LockType"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "mode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Mode"
+        },
+        "readonly_state": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ReadonlyState"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "related_event_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Related Event Id"
+        },
+        "related_target_ref": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Related Target Ref"
+        },
+        "target_ref": {
+          "title": "Target Ref",
+          "type": "string"
+        }
+      },
+      "required": [
+        "event_id",
+        "action",
+        "target_ref",
+        "condition",
+        "enforced"
+      ],
+      "title": "NetworkFsChaosAction",
+      "type": "object"
+    },
+    "NetworkFsChaosCondition": {
+      "description": "The neutral errno / condition a network-fs-chaos action injects.\n\nRecorded as a fact in ``NetworkFsChaosAction``; chaos-librarian attaches no\nexpected consumer verdict to it.",
+      "enum": [
+        "eacces",
+        "enospc",
+        "estale",
+        "eagain",
+        "unavailable"
+      ],
+      "title": "NetworkFsChaosCondition",
+      "type": "string"
+    },
     "NetworkLagAction": {
       "additionalProperties": false,
       "description": "One watcher-visible network filesystem lag audit record.",
@@ -1073,6 +1185,15 @@
       "title": "Outcome",
       "type": "string"
     },
+    "ReadonlyState": {
+      "description": "Read/write state requested by ``toggle_readonly``.",
+      "enum": [
+        "readonly",
+        "readwrite"
+      ],
+      "title": "ReadonlyState",
+      "type": "string"
+    },
     "TimelineActionName": {
       "description": "All valid ``action:`` values for a timeline event.\n\nThis is the single source of truth: discriminator literals on the\nvariant classes below, the JSONPath formatter in ``validation.codes``,\nand the per-action path-field map in ``validation.semantic`` all\nreference these members instead of bare strings.",
       "enum": [
@@ -1101,6 +1222,14 @@
         "wrong_oracle_hash",
         "network_lag_start",
         "network_lag_commit",
+        "change_permissions",
+        "simulate_quota_exceeded",
+        "toggle_readonly",
+        "simulate_stale_handle",
+        "unmount_path",
+        "remount_path",
+        "acquire_lock",
+        "release_lock",
         "renumber_episode",
         "move_episode_to_season",
         "rename_season",
@@ -1293,6 +1422,13 @@
       "title": "Media Actions",
       "type": "array"
     },
+    "network_fs_chaos_actions": {
+      "items": {
+        "$ref": "#/$defs/NetworkFsChaosAction"
+      },
+      "title": "Network Fs Chaos Actions",
+      "type": "array"
+    },
     "network_lag_actions": {
       "items": {
         "$ref": "#/$defs/NetworkLagAction"
@@ -1337,7 +1473,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 15,
+      "const": 16,
       "title": "Schema Version",
       "type": "integer"
     },

@@ -24,6 +24,14 @@ REQUIRED_PROFILES_BY_ACTION: Final[dict[str, str]] = {
     TimelineActionName.WRONG_ORACLE_HASH.value: ProfileName.NEGATIVE_ORACLE.value,
     TimelineActionName.NETWORK_LAG_START.value: ProfileName.NETWORK_FS_LAG.value,
     TimelineActionName.NETWORK_LAG_COMMIT.value: ProfileName.NETWORK_FS_LAG.value,
+    TimelineActionName.CHANGE_PERMISSIONS.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.SIMULATE_QUOTA_EXCEEDED.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.TOGGLE_READONLY.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.SIMULATE_STALE_HANDLE.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.UNMOUNT_PATH.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.REMOUNT_PATH.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.ACQUIRE_LOCK.value: ProfileName.NETWORK_FS_CHAOS.value,
+    TimelineActionName.RELEASE_LOCK.value: ProfileName.NETWORK_FS_CHAOS.value,
 }
 """Action value -> profile label required to authorize it.
 

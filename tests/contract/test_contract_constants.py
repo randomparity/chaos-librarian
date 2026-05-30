@@ -42,7 +42,7 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_current_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 27
+    assert SCENARIO_SCHEMA_VERSION == 28
     assert MANIFEST_SCHEMA_VERSION == 9
     assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
     assert ASSET_REPORT_SCHEMA_VERSION == 9
@@ -61,8 +61,8 @@ def test_domain_report_schema_versions_start_at_one() -> None:
     assert TRACK_REPORT_SCHEMA_VERSION == 1
 
 
-def test_materialization_schema_version_bumped_to_15() -> None:
-    assert MATERIALIZATION_SCHEMA_VERSION == 15
+def test_materialization_schema_version_bumped_to_16() -> None:
+    assert MATERIALIZATION_SCHEMA_VERSION == 16
 
 
 def test_capabilities_schema_version_bumped_to_7() -> None:
@@ -70,17 +70,19 @@ def test_capabilities_schema_version_bumped_to_7() -> None:
 
 
 def test_issue_138_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 27
-    assert MATERIALIZATION_SCHEMA_VERSION == 15
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
-    assert CAPABILITIES_SCHEMA_VERSION == 7
+    # Issue 138 shipped at scenario v24 / materialization v15; the constants
+    # only move forward, so assert the floor rather than re-pinning each bump.
+    assert SCENARIO_SCHEMA_VERSION >= 24
+    assert MATERIALIZATION_SCHEMA_VERSION >= 15
+    assert REPLAY_BUNDLE_SCHEMA_VERSION >= 12
+    assert CAPABILITIES_SCHEMA_VERSION >= 7
 
 
 def test_issue_139_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 27
-    assert MATERIALIZATION_SCHEMA_VERSION == 15
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
-    assert CAPABILITIES_SCHEMA_VERSION == 7
+    assert SCENARIO_SCHEMA_VERSION >= 24
+    assert MATERIALIZATION_SCHEMA_VERSION >= 15
+    assert REPLAY_BUNDLE_SCHEMA_VERSION >= 12
+    assert CAPABILITIES_SCHEMA_VERSION >= 7
 
 
 def test_all_schema_versions_are_positive_integers() -> None:

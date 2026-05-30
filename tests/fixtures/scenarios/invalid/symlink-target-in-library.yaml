@@ -1,5 +1,5 @@
 # expected: E_SYMLINK_TARGET_ESCAPE
-schema_version: 27
+schema_version: 28
 scenario_id: sc_inv_slil_001
 seed: 1
 duration_scale: short

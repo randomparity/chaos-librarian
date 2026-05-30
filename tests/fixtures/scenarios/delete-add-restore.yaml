@@ -1,4 +1,4 @@
-schema_version: 27
+schema_version: 28
 scenario_id: delete-add-restore
 seed: 11
 duration_scale: short

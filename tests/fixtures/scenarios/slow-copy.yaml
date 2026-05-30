@@ -1,4 +1,4 @@
-schema_version: 27
+schema_version: 28
 scenario_id: slow-copy
 seed: 7
 duration_scale: short
