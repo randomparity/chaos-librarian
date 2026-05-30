@@ -575,3 +575,162 @@ def test_add_file_after_delete_keeps_explicit_path_after_later_hierarchy_change(
     assert entry.state_delta["path_moves"] == []
     assert entry.state_delta["sidecar_moves"] == []
     assert entry.state_delta["skipped_deleted_asset_ids"] == []
+
+
+def _series_two_episode_scenario(timeline: list[dict[str, object]]) -> Scenario:
+    """Two episodes in one season, each with one renderable asset, for swap tests."""
+    payload = _series_scenario(timeline).model_dump(mode="json")
+    season = payload["series"][0]["seasons"][0]
+    # Same title + variant label so the only differing rendered-path component is
+    # the episode number; a swap then crosses the two paths exactly (A_new == B_old).
+    season["episodes"][0]["title"] = "Shared"
+    season["episodes"].append(
+        {
+            "id": "episode_2",
+            "episode_number": 2,
+            "absolute_number": 12,
+            "title": "Shared",
+            "variants": [
+                {
+                    "id": "variant_2",
+                    "label": "web",
+                    "bundle": {
+                        "id": "bundle_2",
+                        "assets": [
+                            {
+                                "id": "episode_asset_2",
+                                "role": "primary_video",
+                                "container": "mkv",
+                                "duration_seconds": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+    return Scenario.model_validate(payload)
+
+
+def test_swap_episode_numbers_exchanges_numbers_and_crosses_paths() -> None:
+    """WHY: an explicit swap atomically exchanges both numbers and crosses both paths."""
+    scenario = _series_two_episode_scenario(
+        [
+            {
+                "id": "ev_swap",
+                "at": "1s",
+                "action": "swap_episode_numbers",
+                "target": "episode_1",
+                "with_episode": "episode_2",
+            }
+        ]
+    )
+    state, entry = _apply_timeline(scenario)
+
+    assert isinstance(entry, AtomicJournalEntry)
+    assert entry.action == TimelineActionName.SWAP_EPISODE_NUMBERS
+    assert entry.target_ids == [
+        "episode_1",
+        "episode_2",
+        "episode_asset",
+        "episode_asset_2",
+    ]
+    assert state.episodes["episode_1"].episode_number == 2
+    assert state.episodes["episode_2"].episode_number == 1
+    moves = {m["asset_id"]: (m["from_path"], m["to_path"]) for m in entry.state_delta["path_moves"]}
+    a_from, a_to = moves["episode_asset"]
+    b_from, b_to = moves["episode_asset_2"]
+    assert a_to == b_from
+    assert b_to == a_from
+
+
+def test_swap_disc_numbers_exchanges_disc_numbers() -> None:
+    payload = _music_scenario([]).model_dump(mode="json")
+    discs = payload["artists"][0]["albums"][0]["discs"]
+    discs[1]["tracks"].append(
+        {
+            "id": "track_2",
+            "track_number": 1,
+            "title": "Closer",
+            "variants": [
+                {
+                    "id": "variant_track_2",
+                    "label": "flac",
+                    "bundle": {
+                        "id": "bundle_track_2",
+                        "assets": [
+                            {
+                                "id": "track_asset_2",
+                                "role": "audio",
+                                "container": "flac",
+                                "duration_seconds": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+    payload["timeline"] = [
+        {
+            "id": "ev_swap",
+            "at": "1s",
+            "action": "swap_disc_numbers",
+            "target": "disc_1",
+            "with_disc": "disc_2",
+        }
+    ]
+    scenario = Scenario.model_validate(payload)
+    state, entry = _apply_timeline(scenario)
+
+    assert isinstance(entry, AtomicJournalEntry)
+    assert entry.action == TimelineActionName.SWAP_DISC_NUMBERS
+    assert state.discs["disc_1"].disc_number == 2
+    assert state.discs["disc_2"].disc_number == 1
+    assert "disc_1" in entry.target_ids
+    assert "disc_2" in entry.target_ids
+
+
+def test_swap_track_numbers_exchanges_track_numbers() -> None:
+    payload = _music_scenario([]).model_dump(mode="json")
+    disc = payload["artists"][0]["albums"][0]["discs"][0]
+    disc["tracks"].append(
+        {
+            "id": "track_2",
+            "track_number": 2,
+            "title": "Closer",
+            "variants": [
+                {
+                    "id": "variant_track_2",
+                    "label": "flac",
+                    "bundle": {
+                        "id": "bundle_track_2",
+                        "assets": [
+                            {
+                                "id": "track_asset_2",
+                                "role": "audio",
+                                "container": "flac",
+                                "duration_seconds": 1,
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+    )
+    payload["timeline"] = [
+        {
+            "id": "ev_swap",
+            "at": "1s",
+            "action": "swap_track_numbers",
+            "target": "track_1",
+            "with_track": "track_2",
+        }
+    ]
+    scenario = Scenario.model_validate(payload)
+    state, entry = _apply_timeline(scenario)
+
+    assert isinstance(entry, AtomicJournalEntry)
+    assert entry.action == TimelineActionName.SWAP_TRACK_NUMBERS
+    assert state.tracks["track_1"].track_number == 2
+    assert state.tracks["track_2"].track_number == 1

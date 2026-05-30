@@ -42,6 +42,9 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
+    SwapDiscNumbersEvent,
+    SwapEpisodeNumbersEvent,
+    SwapTrackNumbersEvent,
     TimelineActionName,
     TouchMtimeEvent,
     TruncateFileEvent,
@@ -86,6 +89,9 @@ type _TerminalEvent = (
     | WrongOracleHashEvent
     | NetworkLagStartEvent
     | NetworkLagCommitEvent
+    | SwapEpisodeNumbersEvent
+    | SwapDiscNumbersEvent
+    | SwapTrackNumbersEvent
 )
 
 # Shared id linking the pre-applied slow_copy_start event to the commit
@@ -320,6 +326,15 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
     ),
     TimelineActionName.MOVE_TRACK_TO_DISC: lambda: MoveTrackToDiscEvent(
         id="ev", at="0ns", target="track_001", to_disc="disc_002", track_number=2
+    ),
+    TimelineActionName.SWAP_EPISODE_NUMBERS: lambda: SwapEpisodeNumbersEvent(
+        id="ev", at="0ns", target="episode_001", with_episode="episode_002"
+    ),
+    TimelineActionName.SWAP_DISC_NUMBERS: lambda: SwapDiscNumbersEvent(
+        id="ev", at="0ns", target="disc_001", with_disc="disc_002"
+    ),
+    TimelineActionName.SWAP_TRACK_NUMBERS: lambda: SwapTrackNumbersEvent(
+        id="ev", at="0ns", target="track_001", with_track="track_002"
     ),
     TimelineActionName.REENCODE_VIDEO: lambda: ReencodeVideoEvent(
         id="ev", at="0ns", target="asset_hd_main", resolution="sd", codec="h264"
@@ -562,6 +577,18 @@ def _minimal_scenario_for_action(
         builder = _TERMINAL_EVENT_BUILDERS[action]
         return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
 
+    if action is TimelineActionName.SWAP_EPISODE_NUMBERS:
+        scenario = _build_swap_series_scenario()
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        builder = _TERMINAL_EVENT_BUILDERS[action]
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+
+    if action in {TimelineActionName.SWAP_DISC_NUMBERS, TimelineActionName.SWAP_TRACK_NUMBERS}:
+        scenario = _build_swap_music_scenario()
+        state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        builder = _TERMINAL_EVENT_BUILDERS[action]
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+
     scenario = _build_minimal_scenario(
         roots=[
             ("movies-hd", "library/movies-hd"),
@@ -709,3 +736,78 @@ def _build_minimal_music_scenario() -> Scenario:
             "timeline": [],
         }
     )
+
+
+def _swap_episode_payload(episode_id: str, number: int, asset_id: str) -> dict[str, object]:
+    return {
+        "id": episode_id,
+        "episode_number": number,
+        "title": "Shared",
+        "variants": [
+            {
+                "id": f"variant_{episode_id}",
+                "label": "default",
+                "bundle": {
+                    "id": f"bundle_{episode_id}",
+                    "assets": [
+                        {
+                            "id": asset_id,
+                            "role": "primary_video",
+                            "container": "mkv",
+                            "duration_seconds": 1,
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+
+def _build_swap_series_scenario() -> Scenario:
+    """A series with two same-season episodes, for swap_episode_numbers contract checks."""
+    payload = _build_minimal_series_scenario().model_dump(mode="json")
+    episodes = payload["series"][0]["seasons"][0]["episodes"]
+    episodes[0] = _swap_episode_payload("episode_001", 1, "asset_hd_main")
+    episodes.append(_swap_episode_payload("episode_002", 2, "asset_episode_002"))
+    return Scenario.model_validate(payload)
+
+
+def _swap_track_payload(track_id: str, number: int, asset_id: str) -> dict[str, object]:
+    return {
+        "id": track_id,
+        "track_number": number,
+        "title": "Song",
+        "variants": [
+            {
+                "id": f"variant_{track_id}",
+                "label": "default",
+                "bundle": {
+                    "id": f"bundle_{track_id}",
+                    "assets": [
+                        {
+                            "id": asset_id,
+                            "role": "audio",
+                            "container": "flac",
+                            "duration_seconds": 1,
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+
+def _build_swap_music_scenario() -> Scenario:
+    """A music album with two tracks on disc_001 and a populated disc_002.
+
+    Supports both swap_track_numbers (track_001 <-> track_002 on disc_001) and
+    swap_disc_numbers (disc_001 <-> disc_002).
+    """
+    payload = _build_minimal_music_scenario().model_dump(mode="json")
+    discs = payload["artists"][0]["albums"][0]["discs"]
+    discs[0]["tracks"] = [
+        _swap_track_payload("track_001", 1, "asset_hd_main"),
+        _swap_track_payload("track_002", 2, "asset_track_002"),
+    ]
+    discs[1]["tracks"] = [_swap_track_payload("track_disc2", 1, "asset_disc2")]
+    return Scenario.model_validate(payload)

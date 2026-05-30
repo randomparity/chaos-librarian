@@ -62,6 +62,9 @@ from chaos_librarian.contract.scenario import (
     SimulateStaleHandleEvent,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
+    SwapDiscNumbersEvent,
+    SwapEpisodeNumbersEvent,
+    SwapTrackNumbersEvent,
     TimelineActionName,
     ToggleReadonlyEvent,
     TouchMtimeEvent,
@@ -219,6 +222,15 @@ _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
         {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
     ),
     TimelineActionName.MOVE_TRACK_TO_DISC: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.SWAP_EPISODE_NUMBERS: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.SWAP_DISC_NUMBERS: frozenset(
+        {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
+    ),
+    TimelineActionName.SWAP_TRACK_NUMBERS: frozenset(
         {"metadata", "path_moves", "sidecar_moves", "skipped_deleted_asset_ids"}
     ),
 }
@@ -1653,6 +1665,108 @@ def _handle_move_track_to_disc(
     )
 
 
+def _handle_swap_episode_numbers(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, SwapEpisodeNumbersEvent)
+    asset_ids = state.asset_ids_for_episode(event.target) + state.asset_ids_for_episode(
+        event.with_episode
+    )
+    before = _capture_rendered_paths(state, asset_ids)
+    a = state.episodes[event.target]
+    b = state.episodes[event.with_episode]
+    state.episodes[event.target] = a.model_copy(update={"episode_number": b.episode_number})
+    state.episodes[event.with_episode] = b.model_copy(update={"episode_number": a.episode_number})
+    metadata = _swap_metadata("episode_number", a.episode_number, b.episode_number)
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.SWAP_EPISODE_NUMBERS,
+            hierarchy_target_id=event.target,
+            extra_hierarchy_target_ids=(event.with_episode,),
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_swap_disc_numbers(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, SwapDiscNumbersEvent)
+    asset_ids = state.asset_ids_for_disc(event.target) + state.asset_ids_for_disc(event.with_disc)
+    before = _capture_rendered_paths(state, asset_ids)
+    a = state.discs[event.target]
+    b = state.discs[event.with_disc]
+    state.discs[event.target] = a.model_copy(update={"disc_number": b.disc_number})
+    state.discs[event.with_disc] = b.model_copy(update={"disc_number": a.disc_number})
+    metadata = _swap_metadata("disc_number", a.disc_number, b.disc_number)
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.SWAP_DISC_NUMBERS,
+            hierarchy_target_id=event.target,
+            extra_hierarchy_target_ids=(event.with_disc,),
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _handle_swap_track_numbers(
+    state: WorldState,
+    resolved: ResolvedEvent,
+    ids: IdAllocator,
+    ctx: EngineEventContext,
+) -> tuple[JournalEntry, ...]:
+    del ids
+    event = _checked_event(resolved, SwapTrackNumbersEvent)
+    asset_ids = state.asset_ids_for_track(event.target) + state.asset_ids_for_track(
+        event.with_track
+    )
+    before = _capture_rendered_paths(state, asset_ids)
+    a = state.tracks[event.target]
+    b = state.tracks[event.with_track]
+    state.tracks[event.target] = a.model_copy(update={"track_number": b.track_number})
+    state.tracks[event.with_track] = b.model_copy(update={"track_number": a.track_number})
+    metadata = _swap_metadata("track_number", a.track_number, b.track_number)
+    return (
+        _hierarchy_entry(
+            state=state,
+            resolved=resolved,
+            ctx=ctx,
+            action=TimelineActionName.SWAP_TRACK_NUMBERS,
+            hierarchy_target_id=event.target,
+            extra_hierarchy_target_ids=(event.with_track,),
+            asset_ids=asset_ids,
+            before_paths=before,
+            metadata=metadata,
+        ),
+    )
+
+
+def _swap_metadata(field: str, a_value: int, b_value: int) -> dict[str, dict[str, object]]:
+    """Per-entity before/after for the swapped number field, keyed by operand role."""
+    return {
+        "target": {field: {"before": a_value, "after": b_value}},
+        "with": {field: {"before": b_value, "after": a_value}},
+    }
+
+
 def _capture_rendered_paths(
     state: WorldState,
     asset_ids: list[str],
@@ -1688,6 +1802,7 @@ def _hierarchy_entry(
     asset_ids: list[str],
     before_paths: dict[str, tuple[str, str]],
     metadata: dict[str, dict[str, object]],
+    extra_hierarchy_target_ids: tuple[str, ...] = (),
 ) -> AtomicJournalEntry:
     path_moves: list[dict[str, str]] = []
     sidecar_moves: list[dict[str, str]] = []
@@ -1740,7 +1855,7 @@ def _hierarchy_entry(
         resolved=resolved,
         ctx=ctx,
         action=action,
-        target_ids=[hierarchy_target_id, *asset_ids],
+        target_ids=[hierarchy_target_id, *extra_hierarchy_target_ids, *asset_ids],
         location_ids=[move["location_id"] for move in path_moves],
         state_delta={
             "metadata": metadata,
@@ -1797,4 +1912,7 @@ _HANDLERS: dict[TimelineActionName, _Handler] = {
     TimelineActionName.RENAME_SEASON: _handle_rename_season,
     TimelineActionName.RENUMBER_DISC: _handle_renumber_disc,
     TimelineActionName.MOVE_TRACK_TO_DISC: _handle_move_track_to_disc,
+    TimelineActionName.SWAP_EPISODE_NUMBERS: _handle_swap_episode_numbers,
+    TimelineActionName.SWAP_DISC_NUMBERS: _handle_swap_disc_numbers,
+    TimelineActionName.SWAP_TRACK_NUMBERS: _handle_swap_track_numbers,
 }
