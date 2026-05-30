@@ -5,7 +5,7 @@
 # Expected consumer response: converges — tolerate delayed visibility; no
 #   duplicate ingest when the path finally appears.
 # Requires: network-fs-lag
-schema_version: 30
+schema_version: 31
 scenario_id: recipe-watcher-nfs-lag-visibility
 seed: 1102
 duration_scale: short

@@ -4,7 +4,7 @@
 # Expected consumer response: converges — track the move into the named archive
 #   root.
 # Requires: none
-schema_version: 30
+schema_version: 31
 scenario_id: recipe-archive-explicit-root
 seed: 1502
 duration_scale: short

@@ -47,7 +47,7 @@ def _make_fixture(tmp_path: Path, scenario_name: str, *, steps_limit: int | None
 
 def _corruption_scenario_bytes(seed: str = "42") -> bytes:
     return f"""
-schema_version: 30
+schema_version: 31
 scenario_id: corruption-step-test
 seed: {seed}
 duration_scale: short

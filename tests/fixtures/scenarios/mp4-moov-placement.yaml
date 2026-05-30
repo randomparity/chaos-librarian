@@ -1,4 +1,4 @@
-schema_version: 30
+schema_version: 31
 scenario_id: mp4-moov-placement
 seed: 136
 duration_scale: short

@@ -5,7 +5,7 @@
 # Expected consumer response: converges — one identity across the cross-root move
 #   and the later archive.
 # Requires: none
-schema_version: 30
+schema_version: 31
 scenario_id: recipe-archive-relocate-then-archive
 seed: 1503
 duration_scale: short

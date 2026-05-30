@@ -167,6 +167,30 @@ def _variant_payload(asset: dict[str, object]) -> dict[str, object]:
     }
 
 
+def _movie_variant_payload(edition: str | None = None) -> dict[str, object]:
+    payload = _variant_payload(_video_asset_payload())
+    if edition is not None:
+        payload["edition"] = edition
+    return payload
+
+
+def test_variant_accepts_edition() -> None:
+    variant = Variant.model_validate(_movie_variant_payload(edition="directors_cut"))
+
+    assert variant.edition is scenario_contract.EditionKind.DIRECTORS_CUT
+
+
+def test_variant_edition_defaults_none() -> None:
+    variant = Variant.model_validate(_movie_variant_payload())
+
+    assert variant.edition is None
+
+
+def test_variant_rejects_unknown_edition() -> None:
+    with pytest.raises(ValidationError):
+        Variant.model_validate(_movie_variant_payload(edition="unrated_extended_bogus"))
+
+
 def _base_payload() -> dict[str, object]:
     return {
         "schema_version": SCENARIO_SCHEMA_VERSION,
@@ -259,7 +283,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 30
+    assert scenario.schema_version == 31
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -1129,8 +1153,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_eight() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 30
+def test_scenario_schema_version_is_thirty_one() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 31
 
 
 def test_scenario_accepts_profile_labels() -> None:

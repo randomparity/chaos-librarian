@@ -1,5 +1,5 @@
 # expected: E_TARGET_UNKNOWN
-schema_version: 30
+schema_version: 31
 scenario_id: sc_inv_hlu_001
 seed: 1
 duration_scale: short
