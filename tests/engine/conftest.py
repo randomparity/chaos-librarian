@@ -19,6 +19,7 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     CorruptContainerHeaderEvent,
     CorruptPacketRangeEvent,
+    CorruptTagsEvent,
     CreateSidecarEvent,
     DeleteFileEvent,
     EditMetadataEvent,
@@ -45,6 +46,7 @@ from chaos_librarian.contract.scenario import (
     SwapDiscNumbersEvent,
     SwapEpisodeNumbersEvent,
     SwapTrackNumbersEvent,
+    TagCorruptionFlavor,
     TimelineActionName,
     TouchMtimeEvent,
     TruncateFileEvent,
@@ -85,6 +87,7 @@ type _TerminalEvent = (
     | TruncateFileEvent
     | CorruptPacketRangeEvent
     | WriteInvalidDurationMetadataEvent
+    | CorruptTagsEvent
     | TouchMtimeEvent
     | WrongOracleHashEvent
     | NetworkLagStartEvent
@@ -395,6 +398,9 @@ _TERMINAL_EVENT_BUILDERS: Final[dict[TimelineActionName, Callable[[], _TerminalE
     ),
     TimelineActionName.WRITE_INVALID_DURATION_METADATA: lambda: WriteInvalidDurationMetadataEvent(
         id="ev", at="0ns", target="asset_hd_main", value="not-a-duration"
+    ),
+    TimelineActionName.CORRUPT_TAGS: lambda: CorruptTagsEvent(
+        id="ev", at="0ns", target="asset_hd_main", flavor=TagCorruptionFlavor.NULL_BYTES
     ),
     TimelineActionName.TOUCH_MTIME: lambda: TouchMtimeEvent(
         id="ev", at="0ns", target="asset_hd_main", offset="2s"

@@ -31,6 +31,7 @@ _VERSION_AFFECTING_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.TRUNCATE_FILE,
         TimelineActionName.CORRUPT_PACKET_RANGE,
         TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
         TimelineActionName.WRONG_ORACLE_HASH,
     }
 )
@@ -67,6 +68,13 @@ _PRESERVED_DELTA_KEYS: Final[dict[TimelineActionName, tuple[str, ...]]] = {
         "profile",
         "corruptor",
         "value",
+        "seed_material",
+    ),
+    TimelineActionName.CORRUPT_TAGS: (
+        "profile",
+        "corruptor",
+        "flavor",
+        "byte_count",
         "seed_material",
     ),
     TimelineActionName.WRONG_ORACLE_HASH: ("profile", "algorithm", "seed_material"),

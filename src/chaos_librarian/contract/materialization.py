@@ -194,6 +194,7 @@ class CorruptionAction(BaseModel):
         TimelineActionName.TRUNCATE_FILE,
         TimelineActionName.CORRUPT_PACKET_RANGE,
         TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
     ]
     target_asset_id: str
     input_path: str

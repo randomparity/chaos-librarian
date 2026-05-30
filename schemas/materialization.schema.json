@@ -304,7 +304,8 @@
             "corrupt_container_header",
             "truncate_file",
             "corrupt_packet_range",
-            "write_invalid_duration_metadata"
+            "write_invalid_duration_metadata",
+            "corrupt_tags"
           ],
           "title": "Action",
           "type": "string"
