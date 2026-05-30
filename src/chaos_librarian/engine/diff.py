@@ -25,6 +25,8 @@ from chaos_librarian.engine.journal_io import serialize_journal_bytes
 _DiffKind = Literal["byte_diff", "missing_in_left", "missing_in_right"]
 _TEXT_SUFFIXES = frozenset({".json", ".jsonl", ".yaml", ".yml"})
 _SENTINEL_BASENAME = ".chaos-librarian-run"
+# Max characters of a diffed value shown in a preview line; keeps output within
+# a typical console width.
 _PREVIEW_LIMIT = 80
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
 _RUN_REPLAY_COMPARE_KEYS = frozenset(

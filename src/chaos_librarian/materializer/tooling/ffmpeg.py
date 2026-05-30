@@ -30,6 +30,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
     AUDIO_ENCODER_BY_CODEC,
@@ -558,7 +559,7 @@ def run_ffmpeg(
     )
     duration_ns = time.monotonic_ns() - start
     stderr_bytes = completed.stderr or b""
-    stderr_tail = stderr_bytes[-2048:].decode("utf-8", errors="replace")
+    stderr_tail = stderr_bytes[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
     invocation = ToolInvocation(
         tool="ffmpeg",
         version=ffmpeg_version,

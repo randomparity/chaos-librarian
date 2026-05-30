@@ -21,6 +21,7 @@ from chaos_librarian.materializer.phase_b.corruption_bytes import (
     truncate_bytes,
 )
 from chaos_librarian.materializer.phase_b.packet_probe import resolve_packet_byte_range
+from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 from chaos_librarian.materializer.tooling.ffmpeg import run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 
@@ -110,7 +111,7 @@ def _probe_error_tail(exc: ProbeParseError) -> str:
     if isinstance(path, str) and path:
         tail = tail.replace(path, "<corrupted-output>")
     tail = _FFMPEG_POINTER_RE.sub(r"\1<addr>", tail)
-    return tail[-2048:]
+    return tail[-STDERR_TAIL_BYTES:]
 
 
 def _target_asset_id(entry: JournalEntry) -> str | None:

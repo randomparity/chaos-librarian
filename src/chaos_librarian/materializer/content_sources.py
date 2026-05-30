@@ -52,6 +52,8 @@ RESOLUTION_PIXELS: Final[dict[str, tuple[int, int]]] = {
     "hd": (1280, 720),
     "1080p": (1920, 1080),
 }
+# ffmpeg lavfi geometry for generated cover art; matches CoverArtResolution.SQUARE_320.
+COVER_ART_SIZE: Final = "320x320"
 PROVIDER_NAME: Final = "builtin-lavfi"
 CHAPTER_PROVIDER_NAME: Final = "builtin-chapters"
 COVER_ART_PROVIDER_NAME: Final = "builtin-cover-art"

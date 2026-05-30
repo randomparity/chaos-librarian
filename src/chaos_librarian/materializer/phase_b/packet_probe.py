@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Final
 
 from chaos_librarian.contract.materialization import ToolInvocation
+from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
 _STREAM_SELECTORS: Final[dict[str, str]] = {
@@ -77,7 +78,7 @@ def resolve_packet_byte_range(
     )
     try:
         if completed.returncode != 0:
-            stderr_tail = (completed.stderr or "")[-2048:]
+            stderr_tail = (completed.stderr or "")[-STDERR_TAIL_BYTES:]
             raise ValueError(f"ffprobe packet probe failed for {path}: {stderr_tail}")
         packets = _packet_entries(completed.stdout)
         packet_end = packet_start + packet_count

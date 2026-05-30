@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind
 from chaos_librarian.generation_lanes import LaneConfig
+
+# Header bytes to overwrite for a corrupt-container-header event; within
+# CorruptContainerHeaderEvent's 1..4096 range.
+CORRUPT_HEADER_BYTES: Final = 64
+# Bytes retained when truncating a file for a truncate-file event.
+TRUNCATE_KEEP_BYTES: Final = 4096
 
 
 @dataclass(frozen=True, slots=True)
@@ -363,6 +369,8 @@ def _asset_payload(asset: PlannedAsset, rng: Any) -> dict[str, object]:
         "id": asset.asset_id,
         "role": asset.role,
         "container": asset.container,
+        # Fallback duration (seconds) when the asset declares none; short to
+        # keep generated fixtures cheap to materialize.
         "duration_seconds": asset.duration_seconds or rng.randint(2, 8),
     }
     if asset.video_codec is not None and asset.resolution is not None:
@@ -514,6 +522,8 @@ def _fill_remaining_events(
     else:
         filler_actions = (_move_asset, _rename_file, _create_nfo_sidecar)
     while len(planner.events) < config.timeline_events:
+        # Roughly 1-in-4 filler events update an existing sidecar (when any
+        # live sidecar exists) rather than emitting a move/rename/nfo event.
         if _has_live_sidecars(planner) and rng.randint(0, 3) == 0:
             _update_first_sidecar(planner)
             continue
@@ -750,7 +760,7 @@ def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> 
             "at": planner.at(),
             "action": "corrupt_container_header",
             "target": asset.asset_id,
-            "bytes": 64,
+            "bytes": CORRUPT_HEADER_BYTES,
         }
     )
     planner.media_unstable_assets.add(asset.asset_id)
@@ -763,7 +773,7 @@ def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             "at": planner.at(),
             "action": "truncate_file",
             "target": asset.asset_id,
-            "keep_bytes": 4096,
+            "keep_bytes": TRUNCATE_KEEP_BYTES,
         }
     )
     planner.media_unstable_assets.add(asset.asset_id)

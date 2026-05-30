@@ -23,6 +23,7 @@ from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content_sources import (
+    COVER_ART_SIZE,
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
     AudioSourceRequest,
@@ -473,7 +474,7 @@ def _run_cover_art_prelude(
         "-f",
         "lavfi",
         "-i",
-        f"color=c={color}:s=320x320",
+        f"color=c={color}:s={COVER_ART_SIZE}",
         "-frames:v",
         "1",
         str(output_path),
