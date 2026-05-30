@@ -3,7 +3,7 @@
 # Tests: durable identity must survive moving an asset between library roots.
 # Expected consumer response: converges — same identity under the new root.
 # Requires: none
-schema_version: 23
+schema_version: 24
 scenario_id: recipe-identity-cross-root-move
 seed: 1202
 duration_scale: short

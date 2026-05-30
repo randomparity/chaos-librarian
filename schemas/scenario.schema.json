@@ -2368,7 +2368,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 23,
+      "const": 24,
       "title": "Schema Version",
       "type": "integer"
     },
