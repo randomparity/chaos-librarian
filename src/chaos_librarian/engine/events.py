@@ -1270,6 +1270,18 @@ def _chaos_target_ids(state: WorldState, target: str) -> list[str]:
     return [target] if state.has_location(target) else []
 
 
+def _chaos_resolved_path(state: WorldState, target: str) -> str:
+    """Library-relative path the chaos action acts on.
+
+    For an asset-id target, the current rendered location path; for a
+    subtree-path target, the target string itself. The wall-clock runner
+    resolves this under ``library/`` to find the real-chmod target.
+    """
+    if state.has_location(target):
+        return state.locations[state.location_id_for_asset(target)].path
+    return target
+
+
 def _chaos_window_temp_path(event_id: str) -> str:
     """Synthetic ``temp_path`` for a network-fs-chaos open (StartedJournalEntry).
 
@@ -1297,6 +1309,7 @@ def _handle_change_permissions(
             location_ids=_location_ids_for_target(state, event.target),
             state_delta={
                 "target_ref": event.target,
+                "path": _chaos_resolved_path(state, event.target),
                 "condition": _CHAOS_CONDITION_EACCES,
                 "mode": event.mode,
             },
@@ -1319,7 +1332,11 @@ def _handle_simulate_quota_exceeded(
             action=TimelineActionName.SIMULATE_QUOTA_EXCEEDED,
             target_ids=_chaos_target_ids(state, event.target),
             location_ids=_location_ids_for_target(state, event.target),
-            state_delta={"target_ref": event.target, "condition": _CHAOS_CONDITION_ENOSPC},
+            state_delta={
+                "target_ref": event.target,
+                "path": _chaos_resolved_path(state, event.target),
+                "condition": _CHAOS_CONDITION_ENOSPC,
+            },
         ),
     )
 
@@ -1341,6 +1358,7 @@ def _handle_toggle_readonly(
             location_ids=_location_ids_for_target(state, event.target),
             state_delta={
                 "target_ref": event.target,
+                "path": _chaos_resolved_path(state, event.target),
                 "condition": _CHAOS_CONDITION_EACCES,
                 "readonly_state": event.mode.value,
             },
@@ -1363,7 +1381,11 @@ def _handle_simulate_stale_handle(
             action=TimelineActionName.SIMULATE_STALE_HANDLE,
             target_ids=_chaos_target_ids(state, event.target),
             location_ids=_location_ids_for_target(state, event.target),
-            state_delta={"target_ref": event.target, "condition": _CHAOS_CONDITION_ESTALE},
+            state_delta={
+                "target_ref": event.target,
+                "path": _chaos_resolved_path(state, event.target),
+                "condition": _CHAOS_CONDITION_ESTALE,
+            },
         ),
     )
 
@@ -1378,6 +1400,7 @@ def _handle_acquire_lock(
     event = _checked_event(resolved, AcquireLockEvent)
     state_delta: dict[str, object] = {
         "target_ref": event.target,
+        "path": _chaos_resolved_path(state, event.target),
         "condition": _CHAOS_CONDITION_EAGAIN,
         "lock_type": event.lock_type.value,
     }
@@ -1436,6 +1459,7 @@ def _handle_unmount_path(
     event = _checked_event(resolved, UnmountPathEvent)
     state_delta: dict[str, object] = {
         "target_ref": event.target,
+        "path": _chaos_resolved_path(state, event.target),
         "condition": _CHAOS_CONDITION_UNAVAILABLE,
     }
     state.pending_unmounts[event.id] = state_delta

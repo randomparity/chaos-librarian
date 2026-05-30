@@ -29,6 +29,7 @@ from chaos_librarian.materializer.manifest_build import (
     augment_updated_sidecars,
     augment_versions,
 )
+from chaos_librarian.materializer.network_fs_chaos import NetworkFsChaosState
 from chaos_librarian.materializer.phase_b.corruption import (
     CorruptionPhaseBContext,
     apply_corruption_action,
@@ -71,6 +72,7 @@ class PhaseBState:
     corruption_actions: list[CorruptionAction] = field(default_factory=list)
     oracle_hash_actions: list[OracleHashAction] = field(default_factory=list)
     network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
+    chaos: NetworkFsChaosState | None = None
 
 
 def make_phase_b_state(
@@ -137,6 +139,7 @@ def make_phase_b_state(
             post_phase_b_oracle_hashes=oracle_hashes,
             version_probe_lookup=version_probe_lookup,
         ),
+        chaos=NetworkFsChaosState(library_root=library_root),
     )
 
 

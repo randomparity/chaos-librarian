@@ -264,6 +264,32 @@ def test_preflight_timeline_accepts_network_lag_for_run() -> None:
     preflight_timeline(scenario, allow_network_lag=True)
 
 
+@pytest.mark.parametrize(
+    ("action", "extra"),
+    [
+        ("change_permissions", {"mode": "000"}),
+        ("simulate_quota_exceeded", {}),
+        ("toggle_readonly", {"mode": "readonly"}),
+        ("simulate_stale_handle", {}),
+        ("unmount_path", {}),
+        ("acquire_lock", {"lock_type": "shared"}),
+    ],
+)
+def test_preflight_timeline_rejects_network_fs_chaos_for_materialize(
+    action: str, extra: dict[str, object]
+) -> None:
+    scenario = _scenario_with_timeline([(action, "asset_hd_main", extra)])
+
+    with pytest.raises(TimelineUnsupportedError):
+        preflight_timeline(scenario)
+
+
+def test_preflight_timeline_accepts_network_fs_chaos_for_run() -> None:
+    scenario = _scenario_with_timeline([("change_permissions", "asset_hd_main", {"mode": "000"})])
+
+    preflight_timeline(scenario, allow_network_fs_chaos=True)
+
+
 def test_preflight_accepts_supported_subtitle_recipes() -> None:
     preflight_asset(
         parent_kind=ParentKind.MOVIE,

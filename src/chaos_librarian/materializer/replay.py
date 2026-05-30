@@ -10,6 +10,7 @@ from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import (
     MaterializationExecutionMode,
+    NetworkFsChaosAction,
     NetworkLagAction,
     Outcome,
     ToolInvocation,
@@ -36,6 +37,13 @@ from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
+)
+from chaos_librarian.materializer.network_fs_chaos import (
+    CHAOS_CLOSE_ACTIONS,
+    CHAOS_ENTRY_ACTIONS,
+    realize_chaos_close,
+    realize_chaos_entry,
+    restore_chaos_modes,
 )
 from chaos_librarian.materializer.network_lag_fields import (
     network_lag_effect,
@@ -140,7 +148,7 @@ def _materialize_verified_run_prefix(
     out_dir: Path,
 ) -> MaterializeArtifacts:
     scenario = run_input.scenario
-    preflight_timeline(scenario, allow_network_lag=True)
+    preflight_timeline(scenario, allow_network_lag=True, allow_network_fs_chaos=True)
     caps = detect_capabilities()
     assert_capable_for_static_materialize(caps)
     assert_capable_for_matroska_muxing_profiles(scenario, caps)
@@ -188,6 +196,8 @@ def _materialize_verified_run_prefix(
         )
         raise
     finished_at = datetime.now(UTC)
+    chaos_actions = _replay_chaos_actions(state)
+    _restore_replay_chaos(state)
     report = build_report(
         outcome=Outcome.SUCCESS,
         run_id=source_bundle.run_id,
@@ -202,6 +212,7 @@ def _materialize_verified_run_prefix(
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
+        network_fs_chaos_actions=chaos_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -278,6 +289,8 @@ def _finalize_run_replay_phase_b_failure(
 ) -> None:
     augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
     finished_at = datetime.now(UTC)
+    chaos_actions = _replay_chaos_actions(state)
+    _restore_replay_chaos(state)
     report = build_report(
         outcome=phase_b_failure_outcome(exc),
         run_id=source_bundle.run_id,
@@ -292,6 +305,7 @@ def _finalize_run_replay_phase_b_failure(
         corruption_actions=state.corruption_actions,
         oracle_hash_actions=state.oracle_hash_actions,
         network_lag_actions=state.network_lag_actions,
+        network_fs_chaos_actions=chaos_actions,
         content_sources=phase_a.content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -374,11 +388,37 @@ def _apply_prefix_phase_b(
                 _run_replay_network_lag_action(network_lag_starts, entry)
             )
             continue
+        if _apply_replay_chaos_entry(state, entry, action):
+            continue
         dispatch_phase_b_entry(state, entry)
     augment_phase_b_outputs(artifacts.current_manifest, state)
     if network_lag_starts:
         pending = sorted(network_lag_starts)
         raise ReplayIntegrityError(f"uncommitted network_lag_start entries: {pending}")
+
+
+def _apply_replay_chaos_entry(
+    state: PhaseBState, entry: JournalEntry, action: TimelineActionName
+) -> bool:
+    """Route a network-fs-chaos entry during replay; return whether handled."""
+    if state.chaos is None:  # pragma: no cover - always set in make_phase_b_state
+        return False
+    if action in CHAOS_CLOSE_ACTIONS:
+        realize_chaos_close(state.chaos, entry)
+        return True
+    if action in CHAOS_ENTRY_ACTIONS:
+        realize_chaos_entry(state.chaos, entry)
+        return True
+    return False
+
+
+def _replay_chaos_actions(state: PhaseBState) -> list[NetworkFsChaosAction]:
+    return list(state.chaos.actions) if state.chaos is not None else []
+
+
+def _restore_replay_chaos(state: PhaseBState) -> None:
+    if state.chaos is not None:
+        restore_chaos_modes(state.chaos)
 
 
 def _run_replay_network_lag_action(

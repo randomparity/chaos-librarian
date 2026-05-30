@@ -27,6 +27,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.actions import (
+    NETWORK_FS_CHAOS_ACTIONS,
     NETWORK_LAG_ACTIONS,
     SUPPORTED_S6_ACTIONS,
     SUPPORTED_S10_ACTIONS,
@@ -60,6 +61,7 @@ from chaos_librarian.topology import iter_asset_contexts
 __all__ = [
     "AUDIO_RECIPES",
     "FPS_DEFAULT",
+    "NETWORK_FS_CHAOS_ACTIONS",
     "NETWORK_LAG_ACTIONS",
     "RESOLUTION_PIXELS",
     "SUPPORTED_S6_ACTIONS",
@@ -324,15 +326,24 @@ def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
         )
 
 
-def preflight_timeline(scenario: Scenario, *, allow_network_lag: bool = False) -> None:
+def preflight_timeline(
+    scenario: Scenario,
+    *,
+    allow_network_lag: bool = False,
+    allow_network_fs_chaos: bool = False,
+) -> None:
     """Reject any timeline event outside current materialize support.
 
     Raised before phase A so the matrix-rejection contract (no run-dir
-    allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds.
+    allocation, exit 5, E_MATERIALIZE_TIMELINE_UNSUPPORTED) holds. The
+    network-lag and network-fs-chaos families are wall-clock-only; static
+    ``materialize`` passes neither flag and so rejects both.
     """
     supported_actions = SUPPORTED_S10_ACTIONS
     if allow_network_lag:
         supported_actions = supported_actions | NETWORK_LAG_ACTIONS
+    if allow_network_fs_chaos:
+        supported_actions = supported_actions | NETWORK_FS_CHAOS_ACTIONS
     for index, event in enumerate(scenario.timeline):
         if event.action not in supported_actions:
             raise TimelineUnsupportedError(

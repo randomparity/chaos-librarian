@@ -53,11 +53,12 @@ def test_change_permissions_emits_atomic_entry() -> None:
     assert isinstance(entry, AtomicJournalEntry)
     assert entry.action == TimelineActionName.CHANGE_PERMISSIONS
     assert entry.target_ids == ["asset_hd_main"]
-    assert entry.state_delta == {
-        "target_ref": "asset_hd_main",
-        "condition": "eacces",
-        "mode": "000",
-    }
+    assert entry.state_delta["target_ref"] == "asset_hd_main"
+    assert entry.state_delta["condition"] == "eacces"
+    assert entry.state_delta["mode"] == "000"
+    # The resolved rendered path is recorded so the runner can chmod it.
+    assert isinstance(entry.state_delta["path"], str)
+    assert entry.state_delta["path"].endswith(".mkv")
 
 
 def test_simulate_quota_exceeded_records_enospc() -> None:
