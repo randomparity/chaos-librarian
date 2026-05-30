@@ -207,8 +207,12 @@ peak memory holds a single scenario, not the whole batch.
    `scenario_id` assertion, or any write raises — including a concurrent
    collision (`FileExistsError` from `os.link`), `ENOSPC`, `EACCES`, or an
    `fsync` failure — best-effort `unlink(missing_ok=True)` every path in the
-   written-list, then re-raise wrapped with the failing profile/lane/seed (and
-   the colliding path for collisions). The partially written batch is removed.
+   written-list, then emit a rollback notice to stderr naming the removed paths
+   (`generate: rolled back N partially written files: ...`) and re-raise wrapped
+   with the failing profile/lane/seed (and the colliding path for collisions).
+   The rollback notice is required so the streamed per-item "wrote" lines (see
+   "Output") cannot end as stale success claims for files that no longer exist:
+   stdout shows what was written, stderr shows what was then removed.
 
 Failure-mode table for step 2:
 
@@ -236,8 +240,12 @@ tens of MB; the full `Scenario` model is not retained across items.
 ### Human output
 
 - `--count == 1`: unchanged — `generate: wrote <path>`.
-- `--count > 1`: one `generate: wrote <path>` line per scenario in the planned
-  order, then a final `generate: wrote N scenarios to <dir>` line.
+- `--count > 1`: one `generate: wrote <path>` line per scenario (to stdout) in
+  the planned order as each write succeeds — this doubles as progress for long
+  runs — then a final `generate: wrote N scenarios to <dir>` line on success. On
+  failure, rollback (step 3 above) removes those files and prints a
+  `generate: rolled back N partially written files: ...` notice to stderr, so the
+  final output reflects the true on-disk state (an empty/unchanged directory).
 
 ### JSON output (`--json`)
 
@@ -257,6 +265,12 @@ tens of MB; the full `Scenario` model is not retained across items.
 
   where each element is the same flat summary shape as the single case, and the
   list is sorted by `scenario_path` for stable, diffable output.
+
+The summary JSON is emitted only on success (`"ok"` is always `true` when
+present). On failure the command writes no JSON: it exits non-zero with the
+human stderr lines above, exactly as the `count == 1` path does today. Scripts
+should treat a non-zero exit as failure rather than expecting an `ok: false`
+object.
 
 ## "Works in both materialize and plan modes" (acceptance criterion)
 
