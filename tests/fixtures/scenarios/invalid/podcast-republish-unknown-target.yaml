@@ -1,0 +1,43 @@
+# expected: E_TARGET_UNKNOWN
+schema_version: 30
+scenario_id: podcast-republish-unknown-target
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: podcast_root
+      path: podcasts
+movies: []
+series: []
+artists: []
+podcasts:
+  - id: podcast_daily
+    title: The Daily Signal
+    layout: podcast_folder
+    episode_naming: date_slug_title
+    episodes:
+      - id: episode_one
+        title: Pilot
+        published_at: 2026-05-01T09:00:00Z
+        slug: pilot
+        variants:
+          - id: variant_one
+            label: standard
+            bundle:
+              id: bundle_one
+              assets:
+                - id: asset_one
+                  role: main
+                  container: mp3
+                  duration_seconds: 5
+                  audio:
+                    - source: sine
+                      codec: mp3
+                      channels: stereo
+                      language: eng
+timeline:
+  - id: ev_republish_missing
+    at: 1s
+    action: republish_episode
+    target: no_such_episode
+    published_at: 2026-06-01T09:00:00Z
