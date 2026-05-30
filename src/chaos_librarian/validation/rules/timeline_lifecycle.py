@@ -61,6 +61,7 @@ _LOCATION_DEPENDENT_PASSTHROUGH: frozenset[str] = frozenset(
         TimelineActionName.TRUNCATE_FILE,
         TimelineActionName.CORRUPT_PACKET_RANGE,
         TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
         TimelineActionName.TOUCH_MTIME,
         TimelineActionName.WRONG_ORACLE_HASH,
     }
@@ -84,6 +85,7 @@ _SLOW_COPY_INCOMPATIBLE_OPS: frozenset[str] = frozenset(
         TimelineActionName.TRUNCATE_FILE,
         TimelineActionName.CORRUPT_PACKET_RANGE,
         TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
         TimelineActionName.TOUCH_MTIME,
         TimelineActionName.WRONG_ORACLE_HASH,
     }

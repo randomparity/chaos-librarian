@@ -1,0 +1,47 @@
+# expected: E_PROFILE_REQUIRED
+schema_version: 32
+scenario_id: corrupt-tags-missing-profile
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: music
+      path: music
+movies: []
+series: []
+artists:
+  - id: artist_001
+    name: Null Byte Quartet
+    layout: artist_album_flat
+    track_naming: track_number_title
+    albums:
+      - id: album_001
+        title: Corrupt Tags
+        discs:
+          - id: disc_001
+            disc_number: 1
+            tracks:
+              - id: track_001
+                track_number: 1
+                title: Mangled Frame
+                variants:
+                  - id: variant_flac
+                    label: flac
+                    bundle:
+                      id: bundle_flac
+                      assets:
+                        - id: asset_track
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 1.0
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: zxx
+timeline:
+  - id: corrupt_tags_001
+    at: 1s
+    action: corrupt_tags
+    target: asset_track
+    flavor: null_bytes
