@@ -1,4 +1,4 @@
-schema_version: 23
+schema_version: 24
 scenario_id: voom-ci-static-library-baseline
 seed: 9701
 duration_scale: short

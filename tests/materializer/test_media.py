@@ -30,6 +30,7 @@ from chaos_librarian.materializer.phase_b.media import (
     _subtitle_codec_for_container,
     apply_media_action,
 )
+from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 
 def test_subtitle_codec_mkv_uses_srt():
@@ -1105,6 +1106,78 @@ class TestApplyUpdateSidecar:
         with pytest.raises(MediaActionError, match="not a live sidecar"):
             apply_media_action(ctx, entry)
 
+    def test_update_preserves_authored_encoding(self, tmp_path):
+        """create_sidecar utf16_le -> update_sidecar keeps UTF-16-LE bytes."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_cs_001",
+                action=TimelineActionName.CREATE_SIDECAR,
+                target="a0",
+                state_delta={
+                    "sidecar_path": "a0.eng.srt",
+                    "sidecar_id": "sidecar_live",
+                    "language": "eng",
+                    "kind": "subtitle",
+                    "encoding": "utf16_le",
+                },
+            ),
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_002",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_live", "sidecar_path": "a0.eng.srt"},
+            ),
+        )
+        updated = (tmp_path / "a0.eng.srt").read_bytes()
+        # Still decodes as UTF-16-LE (would raise / mis-decode if reverted to UTF-8).
+        assert "00:00:00,000" in updated.decode("utf-16-le")
+
+    def test_update_preserves_authored_nfo_body(self, tmp_path):
+        """create_sidecar nfo body -> update_sidecar re-emits the exact body."""
+        ctx = MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": _subtitle_asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_cs_001",
+                action=TimelineActionName.CREATE_SIDECAR,
+                target="a0",
+                state_delta={
+                    "sidecar_path": "a0.nfo",
+                    "sidecar_id": "sidecar_nfo",
+                    "language": None,
+                    "kind": "nfo",
+                    "body": "<movie>AUTHORED</movie>",
+                },
+            ),
+        )
+        apply_media_action(
+            ctx,
+            _atomic_entry(
+                event_id="ev_us_002",
+                action=TimelineActionName.UPDATE_SIDECAR,
+                target="a0",
+                state_delta={"sidecar_id": "sidecar_nfo", "sidecar_path": "a0.nfo"},
+            ),
+        )
+        assert (tmp_path / "a0.nfo").read_bytes() == b"<movie>AUTHORED</movie>"
+
 
 class TestApplyCreateSidecar:
     """Sprint 7 routing fix: create_sidecar lives in media.py and dispatches per-kind.
@@ -1225,6 +1298,88 @@ class TestApplyCreateSidecar:
         assert result.tool_invocation_index == 0
         assert ctx.invocations[0].tool == "ffmpeg"
         assert "sidecar_poster" in ctx.post_phase_b_sidecars
+
+    def _ctx(self, tmp_path):
+        return MediaPhaseBContext(
+            library_root=tmp_path,
+            scenario_assets={"a0": self._asset()},
+            resolved_seed=42,
+            ffmpeg_version="7.0",
+            ffprobe_version="7.0",
+        )
+
+    def test_subtitle_default_encoding_is_byte_identical(self, tmp_path):
+        """With encoding omitted the bytes equal the unchanged UTF-8 SRT body."""
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_sub",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.eng.srt",
+                "sidecar_id": "sidecar_sub",
+                "language": "eng",
+                "kind": "subtitle",
+            },
+        )
+        apply_media_action(ctx, entry)
+        on_disk = (tmp_path / "a0.eng.srt").read_bytes()
+        expected = srt_payload(language="eng", duration_s=2.0, seed=42).encode("utf-8")
+        assert on_disk == expected
+
+    def test_subtitle_utf16_le_encoding(self, tmp_path):
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_sub",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.eng.srt",
+                "sidecar_id": "sidecar_sub",
+                "language": "eng",
+                "kind": "subtitle",
+                "encoding": "utf16_le",
+            },
+        )
+        apply_media_action(ctx, entry)
+        on_disk = (tmp_path / "a0.eng.srt").read_bytes()
+        utf8 = srt_payload(language="eng", duration_s=2.0, seed=42).encode("utf-8")
+        assert on_disk != utf8
+        assert on_disk.decode("utf-16-le") == utf8.decode("utf-8")
+
+    def test_nfo_body_written_verbatim(self, tmp_path):
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_nfo",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.nfo",
+                "sidecar_id": "sidecar_nfo",
+                "language": None,
+                "kind": "nfo",
+                "body": "<movie>INJECT</movie>",
+            },
+        )
+        apply_media_action(ctx, entry)
+        assert (tmp_path / "a0.nfo").read_bytes() == b"<movie>INJECT</movie>"
+
+    def test_subtitle_live_sidecar_records_encoding(self, tmp_path):
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_sub",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.eng.srt",
+                "sidecar_id": "sidecar_sub",
+                "language": "eng",
+                "kind": "subtitle",
+                "encoding": "utf16_le",
+            },
+        )
+        apply_media_action(ctx, entry)
+        assert ctx.live_sidecars["sidecar_sub"].encoding == "utf16_le"
 
     def test_poster_kind_ffmpeg_failure_raises_media_action_error(self, monkeypatch, tmp_path):
         def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):

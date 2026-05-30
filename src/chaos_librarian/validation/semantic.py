@@ -17,6 +17,9 @@ from chaos_librarian.validation.rules.asset_path_safety import (
     rule_asset_id_container_safe,
     rule_remux_container_safe,
 )
+from chaos_librarian.validation.rules.create_sidecar_content import (
+    rule_create_sidecar_content,
+)
 from chaos_librarian.validation.rules.duration_syntax import rule_duration_syntax
 from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
@@ -80,6 +83,7 @@ _RULES: list[Rule] = [
     rule_sidecar_language_consistent,
     rule_sidecar_target,
     rule_extract_track_unknown,
+    rule_create_sidecar_content,
 ]
 
 

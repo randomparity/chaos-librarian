@@ -1,0 +1,48 @@
+# Recipe: Wrong Subtitle Encoding
+# Category: sidecar
+# Tests: a subtitle sidecar is written in UTF-16-LE instead of the usual UTF-8.
+# Expected consumer response: converges — decode the declared/sniffed encoding;
+#   do not assume UTF-8.
+# Requires: none
+schema_version: 24
+scenario_id: recipe-sidecar-wrong-encoding
+seed: 1811
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_we
+    title: Wrong Encoding
+    layout: movie_flat
+    variants:
+      - id: v_we
+        label: hd
+        bundle:
+          id: b_we
+          assets:
+            - id: asset_we
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_subs
+    at: 1s
+    action: create_sidecar
+    target: asset_we
+    to: movies/Wrong Encoding - hd.eng.srt
+    kind: subtitle
+    language: eng
+    encoding: utf16_le

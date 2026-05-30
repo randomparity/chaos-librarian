@@ -24,7 +24,7 @@ state against that. The column records what a correct consumer *should* do:
 
 ## Schema version and bit-rot guard
 
-Every recipe pins `schema_version: 23` (the current `SCENARIO_SCHEMA_VERSION`).
+Every recipe pins `schema_version: 24` (the current `SCENARIO_SCHEMA_VERSION`).
 `tests/recipes/test_recipe_corpus.py` re-validates every recipe in CI and asserts
 each category ships at least three. Because `schema_version` is a fixed literal
 on the model, the next schema bump makes the recipes fail validation, turning the
@@ -81,6 +81,9 @@ Subtitle, poster, and NFO sidecar behavior.
 | `late-subtitle.yaml` | A subtitle sidecar materializes after the asset. | converges | none |
 | `poster-and-nfo.yaml` | Non-subtitle companion sidecars (poster, NFO). | converges | none |
 | `second-language-subtitle.yaml` | A French subtitle joins an existing English one. | converges | none |
+| `wrong-encoding.yaml` | A subtitle sidecar written in UTF-16-LE instead of UTF-8. | converges | none |
+| `nfo-xml-injection.yaml` | An NFO sidecar carries an author-supplied XML payload. | errors or diverges | none |
+| `poster-is-video.yaml` | A poster sidecar whose bytes are a video container. | errors or diverges | none |
 
 ### `archive/` — archive and discovery
 Moving assets into archives and across roots.

@@ -38,6 +38,7 @@ from chaos_librarian.materializer.actions import (
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+    encode_subtitle_body,
     poster_ffmpeg_argv,
     regenerate_sidecar,
     render_nfo,
@@ -84,6 +85,13 @@ class LiveSidecar:
     kind: SidecarKind
     language: str | None
     asset_id: str
+    # Authored content knobs (scenario v24). Carried so update_sidecar
+    # regenerates with the same encoding / body / media_type rather than
+    # reverting to the kind's default. None for sidecars seeded from the
+    # initial manifest (which has no authoring inputs).
+    encoding: str | None = None
+    body: str | None = None
+    media_type: str | None = None
 
 
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
@@ -856,6 +864,9 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         event_id=entry.event_id,
         duration_s=asset.duration_seconds,
         output_path=temp_output,
+        encoding=sidecar.encoding,
+        body=sidecar.body,
+        media_type=sidecar.media_type,
     )
     if bytes_ is not None:
         temp_output.parent.mkdir(parents=True, exist_ok=True)
@@ -919,6 +930,12 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     kind = SidecarKind(str(delta["kind"]))
     raw_language = delta.get("language")
     language = str(raw_language) if isinstance(raw_language, str) else None
+    encoding = delta.get("encoding")
+    encoding = str(encoding) if isinstance(encoding, str) else None
+    raw_body = delta.get("body")
+    body_text = str(raw_body) if isinstance(raw_body, str) else None
+    media_type = delta.get("media_type")
+    media_type = str(media_type) if isinstance(media_type, str) else None
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
@@ -933,19 +950,23 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
                 cause=ValueError("language is None"),
                 asset_id=asset_id,
             )
-        body = srt_payload(
+        text = srt_payload(
             language=language,
             duration_s=asset.duration_seconds,
             seed=ctx.resolved_seed,
-        ).encode("utf-8")
-        temp_output.write_bytes(body)
+        )
+        temp_output.write_bytes(encode_subtitle_body(text, encoding))
     elif kind == SidecarKind.NFO:
-        temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+        if body_text is not None:
+            temp_output.write_bytes(body_text.encode("utf-8"))
+        else:
+            temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
     elif kind == SidecarKind.POSTER:
         argv = poster_ffmpeg_argv(
             output_path=temp_output,
             resolved_seed=ctx.resolved_seed,
             sidecar_id=sidecar_id,
+            media_type=media_type,
         )
         invocation_index = _run_ffmpeg_checked(
             ctx,
@@ -966,7 +987,14 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     temp_output.replace(sidecar_path)
     new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
-    ctx.live_sidecars[sidecar_id] = LiveSidecar(kind=kind, language=language, asset_id=asset_id)
+    ctx.live_sidecars[sidecar_id] = LiveSidecar(
+        kind=kind,
+        language=language,
+        asset_id=asset_id,
+        encoding=encoding,
+        body=body_text,
+        media_type=media_type,
+    )
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,

@@ -4,7 +4,7 @@
 # Expected consumer response: errors or diverges — probe sees a short stream;
 #   duration/bitrate should not be trusted.
 # Requires: malformed-media
-schema_version: 23
+schema_version: 24
 scenario_id: recipe-metadata-truncated-file
 seed: 1302
 duration_scale: short

@@ -50,6 +50,7 @@ from chaos_librarian.contract.scenario import (
     Series,
     SeriesLayout,
     SidecarKind,
+    SidecarMediaType,
     SlowCopyCommitEvent,
     SlowCopyStartEvent,
     SubtitleCodec,
@@ -199,7 +200,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 23
+    assert scenario.schema_version == 24
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -962,8 +963,8 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
         VideoTrack.model_validate(payload)
 
 
-def test_scenario_schema_version_is_twenty_three() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 23
+def test_scenario_schema_version_is_twenty_four() -> None:
+    assert SCENARIO_SCHEMA_VERSION == 24
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -1451,6 +1452,11 @@ def test_sidecar_kind_enum_values():
     assert SidecarKind.NFO.value == "nfo"
 
 
+def test_sidecar_media_type_enum_values():
+    assert SidecarMediaType.IMAGE.value == "image"
+    assert SidecarMediaType.VIDEO.value == "video"
+
+
 def test_create_sidecar_default_kind_is_subtitle():
     payload = {
         "id": "ev_cs_001",
@@ -1517,6 +1523,115 @@ def test_create_sidecar_poster_round_trip():
     event = CreateSidecarEvent.model_validate(payload)
     assert event.kind == SidecarKind.POSTER
     assert event.language is None
+
+
+def test_create_sidecar_subtitle_accepts_codec_source_encoding():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.eng.srt",
+            "language": "eng",
+            "codec": "srt",
+            "source": "generated_srt",
+            "encoding": "utf16_le",
+        }
+    )
+    assert event.encoding == SubtitleEncoding.UTF16_LE
+    assert event.codec == SubtitleCodec.SRT
+    assert event.source == SubtitleSource.GENERATED_SRT
+
+
+def test_create_sidecar_nfo_accepts_body():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.nfo",
+            "kind": "nfo",
+            "body": "<movie>x</movie>",
+        }
+    )
+    assert event.body == "<movie>x</movie>"
+
+
+def test_create_sidecar_poster_accepts_media_type():
+    event = CreateSidecarEvent.model_validate(
+        {
+            "id": "ev",
+            "at": "1s",
+            "action": "create_sidecar",
+            "target": "asset_main",
+            "to": "asset_main.poster.jpg",
+            "kind": "poster",
+            "media_type": "video",
+        }
+    )
+    assert event.media_type == SidecarMediaType.VIDEO
+
+
+def test_create_sidecar_encoding_on_nfo_rejected():
+    with pytest.raises(ValidationError, match="encoding"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.nfo",
+                "kind": "nfo",
+                "encoding": "utf16_le",
+            }
+        )
+
+
+def test_create_sidecar_body_on_poster_rejected():
+    with pytest.raises(ValidationError, match="body"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "p.jpg",
+                "kind": "poster",
+                "body": "<x/>",
+            }
+        )
+
+
+def test_create_sidecar_media_type_on_subtitle_rejected():
+    with pytest.raises(ValidationError, match="media_type"):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.srt",
+                "language": "eng",
+                "media_type": "video",
+            }
+        )
+
+
+def test_create_sidecar_empty_body_rejected():
+    with pytest.raises(ValidationError):
+        CreateSidecarEvent.model_validate(
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "create_sidecar",
+                "target": "asset_main",
+                "to": "x.nfo",
+                "kind": "nfo",
+                "body": "",
+            }
+        )
 
 
 def test_remux_container_event_round_trip():

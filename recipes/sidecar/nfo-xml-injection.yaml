@@ -1,0 +1,50 @@
+# Recipe: NFO XML Injection
+# Category: sidecar
+# Tests: an NFO sidecar carries an author-supplied body with an XML payload.
+# Expected consumer response: errors or diverges — a hardened parser rejects or
+#   neutralizes the payload; do not expand external entities.
+# Requires: none
+schema_version: 24
+scenario_id: recipe-sidecar-nfo-xml-injection
+seed: 1812
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_nx
+    title: Nfo Injection
+    layout: movie_flat
+    variants:
+      - id: v_nx
+        label: hd
+        bundle:
+          id: b_nx
+          assets:
+            - id: asset_nx
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_nfo
+    at: 1s
+    action: create_sidecar
+    target: asset_nx
+    to: movies/Nfo Injection - hd.nfo
+    kind: nfo
+    body: |
+      <?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE movie [<!ENTITY xxe "injected">]>
+      <movie><title>&xxe;</title></movie>

@@ -6,11 +6,85 @@ from pathlib import Path
 
 from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+    encode_subtitle_body,
     perturbed_seed_for_update,
     poster_ffmpeg_argv,
     regenerate_sidecar,
     render_nfo,
 )
+
+
+def test_encode_subtitle_default_is_utf8():
+    assert encode_subtitle_body("héllo", None) == "héllo".encode()
+    assert encode_subtitle_body("héllo", "utf8") == "héllo".encode()
+
+
+def test_encode_subtitle_utf16_le():
+    assert encode_subtitle_body("hi", "utf16_le") == "hi".encode("utf-16-le")
+
+
+def test_encode_subtitle_utf8_bom():
+    out = encode_subtitle_body("hi", "utf8_bom")
+    assert out.startswith(b"\xef\xbb\xbf")
+    assert out[3:] == b"hi"
+
+
+def test_encode_subtitle_iso_8859_1():
+    assert encode_subtitle_body("café", "iso_8859_1") == "café".encode("iso-8859-1")
+
+
+def test_regenerate_subtitle_applies_encoding():
+    bytes_, _ = regenerate_sidecar(
+        kind=SidecarKind.SUBTITLE,
+        language="eng",
+        sidecar_id="sidecar_0001",
+        resolved_seed=42,
+        event_id="ev_us_001",
+        duration_s=1.0,
+        encoding="utf16_le",
+    )
+    assert bytes_ is not None
+    decoded = bytes_.decode("utf-16-le")
+    assert "00:00:00,000" in decoded
+
+
+def test_regenerate_nfo_uses_authored_body():
+    bytes_, _ = regenerate_sidecar(
+        kind=SidecarKind.NFO,
+        language=None,
+        sidecar_id="sidecar_0001",
+        resolved_seed=42,
+        event_id="ev_us_001",
+        duration_s=1.0,
+        body="<movie>AUTHORED</movie>",
+    )
+    assert bytes_ == b"<movie>AUTHORED</movie>"
+
+
+def test_regenerate_poster_video_media_type_changes_argv():
+    _, image_argv = regenerate_sidecar(
+        kind=SidecarKind.POSTER,
+        language=None,
+        sidecar_id="s0",
+        resolved_seed=42,
+        event_id="ev",
+        duration_s=1.0,
+        output_path=Path("/tmp/x.mkv"),
+        media_type="image",
+    )
+    _, video_argv = regenerate_sidecar(
+        kind=SidecarKind.POSTER,
+        language=None,
+        sidecar_id="s0",
+        resolved_seed=42,
+        event_id="ev",
+        duration_s=1.0,
+        output_path=Path("/tmp/x.mkv"),
+        media_type="video",
+    )
+    assert image_argv is not None
+    assert video_argv is not None
+    assert image_argv != video_argv
 
 
 def test_render_nfo_is_xml_with_sidecar_id():

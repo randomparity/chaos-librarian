@@ -24,7 +24,7 @@ def _scenario(
     profiles: list[str] | None = None,
 ) -> Scenario:
     payload: dict[str, object] = {
-        "schema_version": 23,
+        "schema_version": 24,
         "scenario_id": "media",
         "seed": 1,
         "duration_scale": "short",
@@ -499,6 +499,11 @@ class TestCreateSidecarHandler:
             "sidecar_id": "sidecar_0001",
             "language": "eng",
             "kind": "subtitle",
+            "codec": None,
+            "source": None,
+            "encoding": None,
+            "body": None,
+            "media_type": None,
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()

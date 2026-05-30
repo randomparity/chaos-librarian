@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 23
+schema_version: 24
 scenario_id: invalid-subtitle-embed-nondefault
 seed: 139
 duration_scale: short
