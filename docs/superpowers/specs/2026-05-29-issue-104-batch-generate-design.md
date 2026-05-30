@@ -240,12 +240,16 @@ tens of MB; the full `Scenario` model is not retained across items.
 ### Human output
 
 - `--count == 1`: unchanged — `generate: wrote <path>`.
-- `--count > 1`: one `generate: wrote <path>` line per scenario (to stdout) in
-  the planned order as each write succeeds — this doubles as progress for long
-  runs — then a final `generate: wrote N scenarios to <dir>` line on success. On
-  failure, rollback (step 3 above) removes those files and prints a
-  `generate: rolled back N partially written files: ...` notice to stderr, so the
-  final output reflects the true on-disk state (an empty/unchanged directory).
+- `--count > 1` (non-`--json` only): one `generate: wrote <path>` line per
+  scenario (to stdout) in the planned order as each write succeeds — this doubles
+  as progress for long runs — then a final `generate: wrote N scenarios to <dir>`
+  line on success. On failure, rollback (step 3 above) removes those files and
+  prints a `generate: rolled back N partially written files: ...` notice to
+  stderr, so the final output reflects the true on-disk state (an
+  empty/unchanged directory).
+- Under `--json` these per-item progress lines are **suppressed** so stdout
+  carries exactly the one summary object (see below); the rollback notice on
+  failure still goes to stderr, which does not corrupt stdout.
 
 ### JSON output (`--json`)
 
@@ -266,11 +270,13 @@ tens of MB; the full `Scenario` model is not retained across items.
   where each element is the same flat summary shape as the single case, and the
   list is sorted by `scenario_path` for stable, diffable output.
 
-The summary JSON is emitted only on success (`"ok"` is always `true` when
-present). On failure the command writes no JSON: it exits non-zero with the
-human stderr lines above, exactly as the `count == 1` path does today. Scripts
-should treat a non-zero exit as failure rather than expecting an `ok: false`
-object.
+Under `--json`, stdout contains exactly this one object and nothing else (no
+per-item progress lines), so `json.loads(stdout)` succeeds just as it does for
+`count == 1`. The summary JSON is emitted only on success (`"ok"` is always
+`true` when present). On failure the command writes no JSON: it exits non-zero
+with the human stderr lines above, exactly as the `count == 1` path does today.
+Scripts should treat a non-zero exit as failure rather than expecting an
+`ok: false` object.
 
 ## "Works in both materialize and plan modes" (acceptance criterion)
 
