@@ -84,26 +84,57 @@ def iter_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
     yield from _track_asset_contexts(scenario)
 
 
+def _asset_context(
+    *,
+    parent_kind: ParentKind,
+    parent_id: str,
+    variant: Variant,
+    bundle: Bundle,
+    asset: Asset,
+    movie: Movie | None = None,
+    series: Series | None = None,
+    season: Season | None = None,
+    episode: Episode | None = None,
+    artist: Artist | None = None,
+    album: Album | None = None,
+    disc: Disc | None = None,
+    track: Track | None = None,
+) -> AssetContext:
+    """Build an AssetContext, defaulting the irrelevant domain rows to None.
+
+    Each walker passes only the domain objects on its branch; the rest stay
+    None and ``bundle_asset_count`` is derived from the bundle.
+    """
+    return AssetContext(
+        parent_kind=parent_kind,
+        parent_id=parent_id,
+        movie=movie,
+        series=series,
+        season=season,
+        episode=episode,
+        artist=artist,
+        album=album,
+        disc=disc,
+        track=track,
+        variant=variant,
+        bundle=bundle,
+        asset=asset,
+        bundle_asset_count=len(bundle.assets),
+    )
+
+
 def _movie_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
     for movie in scenario.movies:
         for variant in movie.variants:
             bundle = variant.bundle
             for asset in bundle.assets:
-                yield AssetContext(
+                yield _asset_context(
                     parent_kind=ParentKind.MOVIE,
                     parent_id=movie.id,
                     movie=movie,
-                    series=None,
-                    season=None,
-                    episode=None,
-                    artist=None,
-                    album=None,
-                    disc=None,
-                    track=None,
                     variant=variant,
                     bundle=bundle,
                     asset=asset,
-                    bundle_asset_count=len(bundle.assets),
                 )
 
 
@@ -114,21 +145,15 @@ def _episode_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                 for variant in episode.variants:
                     bundle = variant.bundle
                     for asset in bundle.assets:
-                        yield AssetContext(
+                        yield _asset_context(
                             parent_kind=ParentKind.EPISODE,
                             parent_id=episode.id,
-                            movie=None,
                             series=series,
                             season=season,
                             episode=episode,
-                            artist=None,
-                            album=None,
-                            disc=None,
-                            track=None,
                             variant=variant,
                             bundle=bundle,
                             asset=asset,
-                            bundle_asset_count=len(bundle.assets),
                         )
 
 
@@ -140,13 +165,9 @@ def _track_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                     for variant in track.variants:
                         bundle = variant.bundle
                         for asset in bundle.assets:
-                            yield AssetContext(
+                            yield _asset_context(
                                 parent_kind=ParentKind.TRACK,
                                 parent_id=track.id,
-                                movie=None,
-                                series=None,
-                                season=None,
-                                episode=None,
                                 artist=artist,
                                 album=album,
                                 disc=disc,
@@ -154,7 +175,6 @@ def _track_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                                 variant=variant,
                                 bundle=bundle,
                                 asset=asset,
-                                bundle_asset_count=len(bundle.assets),
                             )
 
 

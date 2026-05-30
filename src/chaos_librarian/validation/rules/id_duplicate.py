@@ -11,6 +11,7 @@ from chaos_librarian.validation.rules._common import (
     _as_mapping,
     _list_at_path,
     _Loc,
+    first_or_duplicate,
     iter_global_namespaces,
 )
 
@@ -101,16 +102,15 @@ def _record_or_report(
     seen: dict[str, tuple[str, _Loc]],
     reporter: Reporter,
 ) -> None:
-    if value in seen:
-        first_namespace, first_loc = seen[value]
-        first_path = format_jsonpath(first_loc)
-        reporter.error(
-            code=E_ID_DUPLICATE,
-            message=(
-                f"duplicate {namespace} {value!r} "
-                f"(first defined as {first_namespace} at {first_path})"
-            ),
-            loc=loc,
-        )
-    else:
-        seen[value] = (namespace, loc)
+    first = first_or_duplicate(seen, value, (namespace, loc))
+    if first is None:
+        return
+    first_namespace, first_loc = first
+    first_path = format_jsonpath(first_loc)
+    reporter.error(
+        code=E_ID_DUPLICATE,
+        message=(
+            f"duplicate {namespace} {value!r} (first defined as {first_namespace} at {first_path})"
+        ),
+        loc=loc,
+    )

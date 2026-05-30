@@ -167,6 +167,34 @@ def _handle_extract_subtitle(
         )
 
 
+def _lookup_sidecar_or_error(
+    event: Mapping[str, object],
+    *,
+    action: str,
+    idx: int,
+    target: str,
+    projection: SidecarProjection,
+    reporter: Reporter,
+) -> tuple[str, SidecarProjectionRow] | None:
+    """Resolve ``(sidecar_path, row)`` or emit E_SIDECAR_TARGET_UNKNOWN.
+
+    Returns None when ``sidecar_path`` is missing/non-str (the shape pass owns
+    that) or when ``(target, sidecar_path)`` is absent from the projection.
+    """
+    sidecar_path = event.get("sidecar_path")
+    if not isinstance(sidecar_path, str):
+        return None
+    entry = projection.get((target, sidecar_path))
+    if entry is None:
+        reporter.error(
+            code=E_SIDECAR_TARGET_UNKNOWN,
+            message=f"{action} references unknown sidecar {sidecar_path!r} on asset {target!r}",
+            loc=("timeline", idx, "sidecar_path"),
+        )
+        return None
+    return sidecar_path, entry
+
+
 def _handle_embed_subtitle(
     event: Mapping[str, object],
     *,
@@ -176,19 +204,17 @@ def _handle_embed_subtitle(
     reporter: Reporter,
 ) -> None:
     """Emit _TARGET_UNKNOWN, _KIND_MISMATCH, or consume the sidecar."""
-    sidecar_path = event.get("sidecar_path")
-    if not isinstance(sidecar_path, str):
+    resolved = _lookup_sidecar_or_error(
+        event,
+        action="embed_subtitle",
+        idx=idx,
+        target=target,
+        projection=projection,
+        reporter=reporter,
+    )
+    if resolved is None:
         return
-    entry = projection.get((target, sidecar_path))
-    if entry is None:
-        reporter.error(
-            code=E_SIDECAR_TARGET_UNKNOWN,
-            message=(
-                f"embed_subtitle references unknown sidecar {sidecar_path!r} on asset {target!r}"
-            ),
-            loc=("timeline", idx, "sidecar_path"),
-        )
-        return
+    sidecar_path, entry = resolved
     if entry.kind != SidecarKind.SUBTITLE.value:
         reporter.error(
             code=E_SIDECAR_KIND_MISMATCH,
@@ -219,19 +245,18 @@ def _handle_remove_sidecar(
     reporter: Reporter,
 ) -> None:
     """Emit E_SIDECAR_TARGET_UNKNOWN or delete (target, sidecar_path)."""
-    sidecar_path = event.get("sidecar_path")
-    if not isinstance(sidecar_path, str):
+    resolved = _lookup_sidecar_or_error(
+        event,
+        action="remove_sidecar",
+        idx=idx,
+        target=target,
+        projection=projection,
+        reporter=reporter,
+    )
+    if resolved is None:
         return
-    if (target, sidecar_path) not in projection:
-        reporter.error(
-            code=E_SIDECAR_TARGET_UNKNOWN,
-            message=(
-                f"remove_sidecar references unknown sidecar {sidecar_path!r} on asset {target!r}"
-            ),
-            loc=("timeline", idx, "sidecar_path"),
-        )
-    else:
-        del projection[(target, sidecar_path)]
+    sidecar_path, _ = resolved
+    del projection[(target, sidecar_path)]
 
 
 def _handle_update_sidecar(
@@ -243,19 +268,17 @@ def _handle_update_sidecar(
     reporter: Reporter,
 ) -> None:
     """Emit E_SIDECAR_TARGET_UNKNOWN; update_sidecar does not change projection."""
-    sidecar_path = event.get("sidecar_path")
-    if not isinstance(sidecar_path, str):
+    resolved = _lookup_sidecar_or_error(
+        event,
+        action="update_sidecar",
+        idx=idx,
+        target=target,
+        projection=projection,
+        reporter=reporter,
+    )
+    if resolved is None:
         return
-    entry = projection.get((target, sidecar_path))
-    if entry is None:
-        reporter.error(
-            code=E_SIDECAR_TARGET_UNKNOWN,
-            message=(
-                f"update_sidecar references unknown sidecar {sidecar_path!r} on asset {target!r}"
-            ),
-            loc=("timeline", idx, "sidecar_path"),
-        )
-        return
+    sidecar_path, entry = resolved
     if entry.kind == SidecarKind.SUBTITLE.value and not entry.uses_default_subtitle_recipe:
         _report_unsupported_subtitle_recipe(
             action="update_sidecar",

@@ -11,6 +11,7 @@ from chaos_librarian.validation.rules._common import (
     _as_mapping,
     _list_at_path,
     _Loc,
+    first_or_duplicate,
 )
 
 if TYPE_CHECKING:
@@ -43,12 +44,11 @@ def rule_path_duplicate(
         if not isinstance(path, str):
             continue
         loc: _Loc = ("library", "roots", idx, "path")
-        if path in seen:
-            first_path = format_jsonpath(seen[path])
+        first_loc = first_or_duplicate(seen, path, loc)
+        if first_loc is not None:
+            first_path = format_jsonpath(first_loc)
             reporter.warning(
                 code=E_PATH_DUPLICATE,
                 message=f"root path {path!r} already used at {first_path}",
                 loc=loc,
             )
-        else:
-            seen[path] = loc

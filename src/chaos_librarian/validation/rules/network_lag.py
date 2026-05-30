@@ -12,6 +12,8 @@ from chaos_librarian.validation.rules._common import (
     Reporter,
     _iter_timeline_events,
     _RawMapping,
+    index_start_commit_events,
+    report_unpaired_start,
     try_parse_duration,
 )
 
@@ -93,15 +95,16 @@ def rule_network_lag(
 def _index_starts_and_commits(
     timeline: list[tuple[int, _RawMapping]],
 ) -> tuple[dict[str, _LagStart], list[_LagCommit]]:
-    starts: dict[str, _LagStart] = {}
-    commits: list[_LagCommit] = []
-    for idx, event in timeline:
-        action = event.get("action")
-        event_id = event.get("id")
-        if action == TimelineActionName.NETWORK_LAG_START and isinstance(event_id, str):
-            starts[event_id] = _LagStart(idx=idx, event=event, event_id=event_id)
-        elif action == TimelineActionName.NETWORK_LAG_COMMIT:
-            commits.append(_LagCommit(idx=idx, event=event))
+    raw_starts, raw_commits = index_start_commit_events(
+        timeline,
+        start_action=TimelineActionName.NETWORK_LAG_START,
+        commit_action=TimelineActionName.NETWORK_LAG_COMMIT,
+    )
+    starts = {
+        event_id: _LagStart(idx=idx, event=event, event_id=event_id)
+        for event_id, (idx, event) in raw_starts.items()
+    }
+    commits = [_LagCommit(idx=idx, event=event) for idx, event in raw_commits]
     return starts, commits
 
 
@@ -125,30 +128,17 @@ def _check_pairing(
             continue
         commits_by_start[ref].append(commit)
     for start_id, matching_commits in commits_by_start.items():
-        if len(matching_commits) == 1:
-            continue
-        _report_start_pairing(
-            start=starts[start_id],
-            matching_commit_count=len(matching_commits),
+        start = starts[start_id]
+        report_unpaired_start(
             reporter=reporter,
+            code=E_LIFECYCLE_INVALID,
+            start_noun="network_lag_start",
+            commit_noun="network_lag_commit",
+            event_id=start.event_id,
+            idx=start.idx,
+            matching_commit_count=len(matching_commits),
         )
     return commits_by_start
-
-
-def _report_start_pairing(
-    *,
-    start: _LagStart,
-    matching_commit_count: int,
-    reporter: Reporter,
-) -> None:
-    if matching_commit_count == 0:
-        message = f"network_lag_start {start.event_id!r} has no matching network_lag_commit"
-    else:
-        message = (
-            f"network_lag_start {start.event_id!r} has {matching_commit_count} "
-            "matching commits (expected 1)"
-        )
-    reporter.error(code=E_LIFECYCLE_INVALID, message=message, loc=("timeline", start.idx, "id"))
 
 
 def _events_by_id(timeline: list[tuple[int, _RawMapping]]) -> dict[str, tuple[int, _RawMapping]]:

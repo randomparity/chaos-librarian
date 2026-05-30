@@ -24,19 +24,21 @@ class RenderableAssetContext:
     parent_kind: ParentKind
     root_path: str
     layout: MovieLayout | SeriesLayout | ArtistLayout
-    naming: EpisodeNaming | TrackNaming | None
-    movie_title: str | None
-    series_title: str | None
-    season_number: int | None
-    episode_number: int | None
-    episode_title: str | None
-    aired_on: date | None
-    absolute_number: int | None
-    artist_name: str | None
-    album_title: str | None
-    disc_number: int | None
-    track_number: int | None
-    track_title: str | None
+    # Domain fields default to None so builders set only the rows on their branch;
+    # kw_only lets these defaults precede the required tail fields below.
+    naming: EpisodeNaming | TrackNaming | None = None
+    movie_title: str | None = None
+    series_title: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
+    episode_title: str | None = None
+    aired_on: date | None = None
+    absolute_number: int | None = None
+    artist_name: str | None = None
+    album_title: str | None = None
+    disc_number: int | None = None
+    track_number: int | None = None
+    track_title: str | None = None
     variant_label: str
     asset_role: str
     asset_container: str

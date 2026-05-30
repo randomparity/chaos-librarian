@@ -28,6 +28,7 @@ from chaos_librarian.validation.rules._common import (
     _iter_timeline_events,
     _Loc,
     build_hierarchy_projection,
+    first_or_duplicate,
     is_hierarchy_action,
     iter_asset_contexts,
     rendered_asset_paths,
@@ -66,8 +67,9 @@ def rule_rendered_path_collisions(
     seen: dict[str, tuple[str, _Loc]] = {}
     for asset_id, (path, loc) in rendered_asset_paths(raw).items():
         normalized = os.path.normpath(path)
-        if normalized in seen:
-            first_asset_id, first_loc = seen[normalized]
+        first = first_or_duplicate(seen, normalized, (asset_id, loc))
+        if first is not None:
+            first_asset_id, first_loc = first
             first_path = format_jsonpath(first_loc)
             reporter.error(
                 code=E_PATH_COLLISION,
@@ -77,8 +79,6 @@ def rule_rendered_path_collisions(
                 ),
                 loc=loc,
             )
-        else:
-            seen[normalized] = (asset_id, loc)
 
 
 def rule_hierarchy_timeline(
