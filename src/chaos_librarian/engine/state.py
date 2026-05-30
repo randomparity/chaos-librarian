@@ -28,6 +28,8 @@ from chaos_librarian.contract.manifest import (
     ManifestEpisode,
     ManifestLocation,
     ManifestMovie,
+    ManifestPodcast,
+    ManifestPodcastEpisode,
     ManifestSeason,
     ManifestSeries,
     ManifestSidecar,
@@ -41,6 +43,9 @@ from chaos_librarian.contract.scenario import (
     EpisodeNaming,
     Movie,
     MovieLayout,
+    Podcast,
+    PodcastEpisodeNaming,
+    PodcastLayout,
     Scenario,
     Series,
     SeriesLayout,
@@ -72,6 +77,8 @@ class WorldState:
     albums: dict[str, ManifestAlbum] = field(default_factory=dict)
     discs: dict[str, ManifestDisc] = field(default_factory=dict)
     tracks: dict[str, ManifestTrack] = field(default_factory=dict)
+    podcasts: dict[str, ManifestPodcast] = field(default_factory=dict)
+    podcast_episodes: dict[str, ManifestPodcastEpisode] = field(default_factory=dict)
     variants: dict[str, ManifestVariant] = field(default_factory=dict)
     bundles: dict[str, ManifestBundle] = field(default_factory=dict)
     assets: dict[str, ManifestAsset] = field(default_factory=dict)
@@ -238,6 +245,10 @@ class WorldState:
         """Return asset ids under ``track_id`` in manifest order."""
         return self._asset_ids_for_parent(ParentKind.TRACK, track_id)
 
+    def asset_ids_for_podcast_episode(self, episode_id: str) -> list[str]:
+        """Return asset ids under ``episode_id`` in manifest order."""
+        return self._asset_ids_for_parent(ParentKind.PODCAST_EPISODE, episode_id)
+
     def render_path_for_asset(self, asset_id: str) -> str:
         """Render ``asset_id`` from current mutable metadata."""
         return render_asset_path(self.renderable_context_for_asset(asset_id))
@@ -337,6 +348,23 @@ class WorldState:
                 asset_container=asset.container,
                 bundle_asset_count=bundle_asset_count,
             )
+        if variant.parent_kind is ParentKind.PODCAST_EPISODE:
+            episode = self.podcast_episodes[variant.parent_id]
+            podcast = self.podcasts[episode.podcast_id]
+            return RenderableAssetContext(
+                parent_kind=ParentKind.PODCAST_EPISODE,
+                root_path=root_path,
+                layout=PodcastLayout(podcast.layout),
+                naming=PodcastEpisodeNaming(podcast.episode_naming),
+                podcast_title=podcast.title,
+                published_at=episode.published_at,
+                episode_slug=episode.slug,
+                episode_title=episode.title,
+                variant_label=variant.label,
+                asset_role=asset.role,
+                asset_container=asset.container,
+                bundle_asset_count=bundle_asset_count,
+            )
         raise ChaosLibrarianValueError(f"asset {asset_id!r} has unsupported parent kind")
 
     def _asset_ids_for_parent(self, parent_kind: ParentKind, parent_id: str) -> list[str]:
@@ -364,6 +392,8 @@ class WorldState:
             albums=list(self.albums.values()),
             discs=list(self.discs.values()),
             tracks=list(self.tracks.values()),
+            podcasts=list(self.podcasts.values()),
+            podcast_episodes=list(self.podcast_episodes.values()),
             variants=list(self.variants.values()),
             bundles=list(self.bundles.values()),
             assets=list(self.assets.values()),
@@ -419,6 +449,7 @@ def _seed_domain_rows(state: WorldState, scenario: Scenario) -> None:
     _seed_movie_rows(state, scenario.movies)
     _seed_series_rows(state, scenario.series)
     _seed_artist_rows(state, scenario.artists)
+    _seed_podcast_rows(state, scenario.podcasts)
 
 
 def _seed_movie_rows(state: WorldState, movies: tuple[Movie, ...]) -> None:
@@ -491,6 +522,27 @@ def _seed_artist_rows(state: WorldState, artists: tuple[Artist, ...]) -> None:
                     )
                     for variant in track.variants:
                         _seed_variant_bundle_rows(state, variant, ParentKind.TRACK, track.id)
+
+
+def _seed_podcast_rows(state: WorldState, podcasts: tuple[Podcast, ...]) -> None:
+    for podcast in podcasts:
+        state.podcasts[podcast.id] = ManifestPodcast(
+            id=podcast.id,
+            title=podcast.title,
+            layout=podcast.layout.value,
+            episode_naming=podcast.episode_naming.value,
+        )
+        for episode in podcast.episodes:
+            state.podcast_episodes[episode.id] = ManifestPodcastEpisode(
+                id=episode.id,
+                podcast_id=podcast.id,
+                title=episode.title,
+                published_at=episode.published_at,
+                slug=episode.slug,
+                stale=episode.stale,
+            )
+            for variant in episode.variants:
+                _seed_variant_bundle_rows(state, variant, ParentKind.PODCAST_EPISODE, episode.id)
 
 
 def _seed_variant_bundle_rows(
