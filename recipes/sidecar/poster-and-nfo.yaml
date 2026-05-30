@@ -1,0 +1,53 @@
+# Recipe: Poster and NFO
+# Category: sidecar
+# Tests: non-subtitle companion sidecars (poster image, NFO metadata) appear for
+#   an asset; neither carries a language.
+# Expected consumer response: converges — associate artwork/metadata with the
+#   asset; do not treat them as media.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-sidecar-poster-and-nfo
+seed: 1402
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_pn
+    title: Poster And Nfo
+    layout: movie_flat
+    variants:
+      - id: v_pn
+        label: hd
+        bundle:
+          id: b_pn
+          assets:
+            - id: asset_pn
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_poster
+    at: 1s
+    action: create_sidecar
+    target: asset_pn
+    to: movies/Poster And Nfo - hd.poster.jpg
+    kind: poster
+  - id: ev_nfo
+    at: 2s
+    action: create_sidecar
+    target: asset_pn
+    to: movies/Poster And Nfo - hd.nfo
+    kind: nfo

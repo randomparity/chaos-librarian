@@ -1,0 +1,48 @@
+# Recipe: Delete then restore
+# Category: scanner
+# Tests: a file disappears and later reappears at a new path mid-scan.
+# Expected consumer response: converges — re-discover and re-link the asset.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-scanner-delete-then-restore
+seed: 1004
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_restore
+    title: Delete Then Restore
+    layout: movie_flat
+    variants:
+      - id: v_restore
+        label: hd
+        bundle:
+          id: b_restore
+          assets:
+            - id: asset_restore
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_delete
+    at: 1s
+    action: delete_file
+    target: asset_restore
+  - id: ev_readd
+    at: 2s
+    action: add_file
+    target: asset_restore
+    to: movies/Restored.mkv

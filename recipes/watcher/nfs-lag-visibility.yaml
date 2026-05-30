@@ -1,0 +1,63 @@
+# Recipe: NFS lag visibility
+# Category: watcher
+# Tests: a file is re-created on a network mount, but the mount delays the new
+#   path's visibility, so the watcher sees the arrival window-late.
+# Expected consumer response: converges — tolerate delayed visibility; no
+#   duplicate ingest when the path finally appears.
+# Requires: network-fs-lag
+schema_version: 23
+scenario_id: recipe-watcher-nfs-lag-visibility
+seed: 1102
+duration_scale: short
+profiles:
+  - network-fs-lag
+library:
+  roots:
+    - id: library
+      path: library
+movies:
+  - id: w_lag
+    title: NFS Lag Visibility
+    layout: movie_flat
+    variants:
+      - id: v_lag
+        label: hd
+        bundle:
+          id: b_lag
+          assets:
+            - id: asset_lag
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_remove
+    at: 1s
+    action: delete_file
+    target: asset_lag
+  - id: ev_arrive
+    at: 2s
+    action: add_file
+    target: asset_lag
+    to: library/Arrived.mkv
+  - id: lag_start
+    at: 2s
+    action: network_lag_start
+    effect: delayed_visibility
+    target: asset_lag
+    after: ev_arrive
+    duration: 2s
+  - id: lag_commit
+    at: 4s
+    action: network_lag_commit
+    for: lag_start

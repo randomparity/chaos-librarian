@@ -1,0 +1,53 @@
+# Recipe: Slow-copy race
+# Category: watcher
+# Tests: a large file is copied in over several seconds; only the commit makes
+#   the final path visible (the temp .part file should be ignored).
+# Expected consumer response: converges — ingest on commit, never index the temp.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-watcher-slow-copy-race
+seed: 1101
+duration_scale: short
+library:
+  roots:
+    - id: staging
+      path: staging
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: w_copy
+    title: Slow Copy Race
+    layout: movie_flat
+    variants:
+      - id: v_copy
+        label: hd
+        bundle:
+          id: b_copy
+          assets:
+            - id: asset_copy
+              role: main
+              container: mkv
+              duration_seconds: 6
+              video:
+                source: mandelbrot
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: copy_start
+    at: 1s
+    action: slow_copy_start
+    target: asset_copy
+    to: movies-hd/SlowCopy.mkv
+    temp_path: movies-hd/SlowCopy.mkv.part
+    duration: 3s
+  - id: copy_commit
+    at: 4s
+    action: slow_copy_commit
+    for: copy_start

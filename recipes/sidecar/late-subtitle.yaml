@@ -1,0 +1,46 @@
+# Recipe: Late subtitle
+# Category: sidecar
+# Tests: a subtitle sidecar materializes some time after the asset itself.
+# Expected consumer response: converges — attach the subtitle to the existing
+#   asset on a later pass.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-sidecar-late-subtitle
+seed: 1401
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_late
+    title: Late Subtitle
+    layout: movie_flat
+    variants:
+      - id: v_late
+        label: hd
+        bundle:
+          id: b_late
+          assets:
+            - id: asset_late
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_subtitle
+    at: 2s
+    action: create_sidecar
+    target: asset_late
+    to: movies/Late Subtitle - hd.eng.srt
+    language: eng

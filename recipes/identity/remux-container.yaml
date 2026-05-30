@@ -1,0 +1,45 @@
+# Recipe: Remux container
+# Category: identity
+# Tests: durable identity must survive a container swap (mkv -> mp4) with the
+#   same underlying streams.
+# Expected consumer response: converges — same identity, new container.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-identity-remux-container
+seed: 1203
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_remux
+    title: Remux Container
+    layout: movie_flat
+    variants:
+      - id: v_remux
+        label: hd
+        bundle:
+          id: b_remux
+          assets:
+            - id: asset_remux
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_remux
+    at: 1s
+    action: remux_container
+    target: asset_remux
+    to_container: mp4

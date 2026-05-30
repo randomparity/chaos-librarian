@@ -1,0 +1,47 @@
+# Recipe: Wrong oracle hash
+# Category: metadata
+# Tests: the oracle journal records a deliberately wrong content hash for an
+#   asset (a negative-oracle control for the consumer's own hashing).
+# Expected consumer response: diverges — the consumer's computed hash should not
+#   match the (intentionally wrong) oracle value.
+# Requires: negative-oracle
+schema_version: 23
+scenario_id: recipe-metadata-wrong-oracle-hash
+seed: 1304
+duration_scale: short
+profiles:
+  - negative-oracle
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_wrong
+    title: Wrong Oracle Hash
+    layout: movie_flat
+    variants:
+      - id: v_wrong
+        label: hd
+        bundle:
+          id: b_wrong
+          assets:
+            - id: asset_wrong
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_wrong_hash
+    at: 1s
+    action: wrong_oracle_hash
+    target: asset_wrong

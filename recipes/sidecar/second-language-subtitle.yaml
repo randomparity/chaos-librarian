@@ -1,0 +1,51 @@
+# Recipe: Second-language subtitle
+# Category: sidecar
+# Tests: an asset ships with an English subtitle, then a French subtitle sidecar
+#   appears for the same asset.
+# Expected consumer response: converges — two subtitle tracks, distinct
+#   languages, one asset.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-sidecar-second-language-subtitle
+seed: 1403
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+movies:
+  - id: w_2lang
+    title: Second Language
+    layout: movie_flat
+    variants:
+      - id: v_2lang
+        label: hd
+        bundle:
+          id: b_2lang
+          assets:
+            - id: asset_2lang
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+              subtitles:
+                - codec: srt
+                  language: eng
+                  mode: sidecar
+series: []
+artists: []
+timeline:
+  - id: ev_fra_subtitle
+    at: 1s
+    action: create_sidecar
+    target: asset_2lang
+    to: movies/Second Language - hd.fra.srt
+    language: fra

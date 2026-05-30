@@ -1,0 +1,45 @@
+# Recipe: Archive on event
+# Category: archive
+# Tests: an active asset is archived to the default archive location.
+# Expected consumer response: converges — track the asset's move into the
+#   archive; do not treat it as deleted.
+# Requires: none
+schema_version: 23
+scenario_id: recipe-archive-on-event
+seed: 1501
+duration_scale: short
+library:
+  roots:
+    - id: main
+      path: movies
+  archive_root:
+movies:
+  - id: w_arch
+    title: Archive On Event
+    layout: movie_flat
+    variants:
+      - id: v_arch
+        label: hd
+        bundle:
+          id: b_arch
+          assets:
+            - id: asset_arch
+              role: main
+              container: mkv
+              duration_seconds: 2.0
+              video:
+                source: color_bars
+                codec: h264
+                resolution: hd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: ev_archive
+    at: 1s
+    action: archive_file
+    target: asset_arch
