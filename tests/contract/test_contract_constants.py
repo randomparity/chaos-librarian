@@ -130,6 +130,7 @@ def test_hierarchy_timeline_actions_are_contract_owned() -> None:
                 TimelineActionName.SWAP_EPISODE_NUMBERS,
                 TimelineActionName.SWAP_DISC_NUMBERS,
                 TimelineActionName.SWAP_TRACK_NUMBERS,
+                TimelineActionName.REPUBLISH_EPISODE,
             }
         )
         == scenario_contract.HIERARCHY_TIMELINE_ACTIONS

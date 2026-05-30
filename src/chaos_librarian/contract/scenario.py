@@ -70,10 +70,16 @@ class TimelineActionName(enum.StrEnum):
     SWAP_EPISODE_NUMBERS = "swap_episode_numbers"
     SWAP_DISC_NUMBERS = "swap_disc_numbers"
     SWAP_TRACK_NUMBERS = "swap_track_numbers"
+    REPUBLISH_EPISODE = "republish_episode"
+    MARK_EPISODE_STALE = "mark_episode_stale"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
 
+# republish_episode re-renders an episode's path like renumber_episode, so it
+# joins the hierarchy set (path-history projection, lifecycle hierarchy branch,
+# is_hierarchy_action). mark_episode_stale changes a recorded fact, not a path,
+# so it stays out.
 HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.RENUMBER_EPISODE,
@@ -84,6 +90,7 @@ HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.SWAP_EPISODE_NUMBERS,
         TimelineActionName.SWAP_DISC_NUMBERS,
         TimelineActionName.SWAP_TRACK_NUMBERS,
+        TimelineActionName.REPUBLISH_EPISODE,
     }
 )
 
@@ -1027,6 +1034,27 @@ class SwapTrackNumbersEvent(_TimelineEventBase):
     with_track: str
 
 
+class RepublishEpisodeEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.REPUBLISH_EPISODE] = TimelineActionName.REPUBLISH_EPISODE
+    target: str
+    # New UTC publish instant; re-renders the episode's path. An optional slug
+    # lets the author also change the path tiebreaker in the same transition.
+    published_at: datetime
+    slug: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_utc(self) -> RepublishEpisodeEvent:
+        offset = self.published_at.utcoffset()
+        if offset is None or offset.total_seconds() != 0:
+            raise ValueError("published_at must be a UTC datetime (Z / +00:00)")
+        return self
+
+
+class MarkEpisodeStaleEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.MARK_EPISODE_STALE] = TimelineActionName.MARK_EPISODE_STALE
+    target: str
+
+
 class GenerationBudget(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1138,7 +1166,9 @@ TimelineEvent = Annotated[
     | MoveTrackToDiscEvent
     | SwapEpisodeNumbersEvent
     | SwapDiscNumbersEvent
-    | SwapTrackNumbersEvent,
+    | SwapTrackNumbersEvent
+    | RepublishEpisodeEvent
+    | MarkEpisodeStaleEvent,
     Field(discriminator="action"),
 ]
 

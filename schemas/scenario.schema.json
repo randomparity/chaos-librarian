@@ -1196,6 +1196,36 @@
       "title": "LockType",
       "type": "string"
     },
+    "MarkEpisodeStaleEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "mark_episode_stale",
+          "default": "mark_episode_stale",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target"
+      ],
+      "title": "MarkEpisodeStaleEvent",
+      "type": "object"
+    },
     "MatroskaMuxingProfile": {
       "description": "Matroska/WebM muxing profile for cue and cluster parser surfaces.",
       "enum": [
@@ -1997,6 +2027,55 @@
         "episode_number"
       ],
       "title": "RenumberEpisodeEvent",
+      "type": "object"
+    },
+    "RepublishEpisodeEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "const": "republish_episode",
+          "default": "republish_episode",
+          "title": "Action",
+          "type": "string"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "slug": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Slug"
+        },
+        "target": {
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "at",
+        "target",
+        "published_at"
+      ],
+      "title": "RepublishEpisodeEvent",
       "type": "object"
     },
     "ScenarioGeneration": {
@@ -3043,6 +3122,7 @@
             "edit_metadata": "#/$defs/EditMetadataEvent",
             "embed_subtitle": "#/$defs/EmbedSubtitleEvent",
             "extract_subtitle": "#/$defs/ExtractSubtitleEvent",
+            "mark_episode_stale": "#/$defs/MarkEpisodeStaleEvent",
             "move_asset": "#/$defs/MoveAssetEvent",
             "move_between_roots": "#/$defs/MoveBetweenRootsEvent",
             "move_episode_to_season": "#/$defs/MoveEpisodeToSeasonEvent",
@@ -3059,6 +3139,7 @@
             "rename_season": "#/$defs/RenameSeasonEvent",
             "renumber_disc": "#/$defs/RenumberDiscEvent",
             "renumber_episode": "#/$defs/RenumberEpisodeEvent",
+            "republish_episode": "#/$defs/RepublishEpisodeEvent",
             "simulate_quota_exceeded": "#/$defs/SimulateQuotaExceededEvent",
             "simulate_stale_handle": "#/$defs/SimulateStaleHandleEvent",
             "slow_copy_commit": "#/$defs/SlowCopyCommitEvent",
@@ -3199,6 +3280,12 @@
           },
           {
             "$ref": "#/$defs/SwapTrackNumbersEvent"
+          },
+          {
+            "$ref": "#/$defs/RepublishEpisodeEvent"
+          },
+          {
+            "$ref": "#/$defs/MarkEpisodeStaleEvent"
           }
         ]
       },

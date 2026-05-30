@@ -595,7 +595,9 @@
         "move_track_to_disc",
         "swap_episode_numbers",
         "swap_disc_numbers",
-        "swap_track_numbers"
+        "swap_track_numbers",
+        "republish_episode",
+        "mark_episode_stale"
       ],
       "title": "TimelineActionName",
       "type": "string"

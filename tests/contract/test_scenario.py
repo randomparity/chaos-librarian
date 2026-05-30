@@ -617,6 +617,26 @@ def test_timeline_action_discriminator() -> None:
             },
             "SwapTrackNumbersEvent",
         ),
+        (
+            {
+                "id": "ev_republish",
+                "at": "9s",
+                "action": "republish_episode",
+                "target": "podcast_episode_01",
+                "published_at": "2026-06-01T00:00:00Z",
+                "slug": "new-slug",
+            },
+            "RepublishEpisodeEvent",
+        ),
+        (
+            {
+                "id": "ev_mark_stale",
+                "at": "10s",
+                "action": "mark_episode_stale",
+                "target": "podcast_episode_01",
+            },
+            "MarkEpisodeStaleEvent",
+        ),
     ],
 )
 def test_hierarchy_timeline_event_discriminators(
@@ -628,6 +648,33 @@ def test_hierarchy_timeline_event_discriminators(
     scenario = Scenario.model_validate(payload)
 
     assert type(scenario.timeline[0]).__name__ == expected_type
+
+
+def test_republish_episode_event_rejects_non_utc_published_at() -> None:
+    payload = _base_payload()
+    payload["timeline"] = [
+        {
+            "id": "ev_republish",
+            "at": "9s",
+            "action": "republish_episode",
+            "target": "podcast_episode_01",
+            "published_at": "2026-06-01T00:00:00+02:00",
+        }
+    ]
+
+    with pytest.raises(ValidationError):
+        Scenario.model_validate(payload)
+
+
+def test_republish_episode_is_a_hierarchy_action_but_mark_stale_is_not() -> None:
+    assert (
+        scenario_contract.TimelineActionName.REPUBLISH_EPISODE
+        in scenario_contract.HIERARCHY_TIMELINE_ACTIONS
+    )
+    assert (
+        scenario_contract.TimelineActionName.MARK_EPISODE_STALE
+        not in scenario_contract.HIERARCHY_TIMELINE_ACTIONS
+    )
 
 
 def test_swap_event_rejects_unknown_field() -> None:
