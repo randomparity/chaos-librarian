@@ -35,6 +35,10 @@ from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
 from chaos_librarian.validation.rules.materialize_media_matrix import (
     rule_materialize_media_matrix,
 )
+from chaos_librarian.validation.rules.network_fs_chaos import (
+    rule_network_fs_chaos_pairing,
+    rule_network_fs_chaos_target,
+)
 from chaos_librarian.validation.rules.network_lag import rule_network_lag
 from chaos_librarian.validation.rules.path_containment import rule_path_containment
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
@@ -76,6 +80,8 @@ _RULES: list[Rule] = [
     rule_slow_copy_timing,
     rule_slow_copy_path_collision,
     rule_network_lag,
+    rule_network_fs_chaos_target,
+    rule_network_fs_chaos_pairing,
     rule_path_containment,
     rule_timeline_order,
     rule_timeline_lifecycle,

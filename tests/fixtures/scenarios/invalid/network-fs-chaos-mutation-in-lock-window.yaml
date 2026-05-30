@@ -1,0 +1,51 @@
+# expected: E_LIFECYCLE_INVALID
+schema_version: 28
+scenario_id: network-fs-chaos-mutation-in-lock-window
+seed: 42
+duration_scale: short
+profiles:
+  - network-fs-chaos
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_001
+    title: Chaos
+    layout: movie_flat
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: acquire_001
+    at: 1s
+    action: acquire_lock
+    target: asset_main
+    lock_type: exclusive
+  - id: rename_001
+    at: 2s
+    action: rename_file
+    target: asset_main
+    to: movies-hd/renamed.mkv
+  - id: release_001
+    at: 3s
+    action: release_lock
+    for: acquire_001

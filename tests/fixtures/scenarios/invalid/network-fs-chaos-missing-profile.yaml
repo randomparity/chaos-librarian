@@ -1,0 +1,40 @@
+# expected: E_PROFILE_REQUIRED
+schema_version: 28
+scenario_id: network-fs-chaos-missing-profile
+seed: 42
+duration_scale: short
+library:
+  roots:
+    - id: movies_hd
+      path: movies-hd
+movies:
+  - id: movie_001
+    title: Chaos
+    layout: movie_flat
+    variants:
+      - id: variant_hd
+        label: hd
+        bundle:
+          id: bundle_hd
+          assets:
+            - id: asset_main
+              role: primary_video
+              container: mkv
+              duration_seconds: 1
+              video:
+                source: color_bars
+                codec: h264
+                resolution: sd
+              audio:
+                - source: sine
+                  codec: aac
+                  channels: stereo
+                  language: eng
+series: []
+artists: []
+timeline:
+  - id: chmod_001
+    at: 1s
+    action: change_permissions
+    target: asset_main
+    mode: "000"
