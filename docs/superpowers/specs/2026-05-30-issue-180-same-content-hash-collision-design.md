@@ -104,6 +104,16 @@ An `Asset` `model_validator(mode="after")` enforces (raising `ValueError`, surfa
   either a true duplicate or a prefix-collision decoy, never both.
 - `collision_prefix_len` is set **iff** `hash_collision_with` is set
   (`hash_collision_with=None, collision_prefix_len=5` → error; and vice-versa).
+- `same_content_as` is **forbidden** on an asset that declares its own `subtitles`
+  (resolves spec-challenge-2 finding 2). A duplicate's own track spec is ignored for
+  bytes (it gets the referent's bytes), so authoring distinct sidecars on it is
+  contradictory — and the copy path writes no sidecars. This is an explicit, intentional
+  v1 limitation; an asset that needs same-content *and* its own distinct sidecars is a
+  filed follow-up (ADR 0004 Q1 consequences), not a v1 feature. (Authored embedded
+  tracks like `video`/`audio` are likewise ignored for bytes, but only `subtitles`
+  produce *separate sidecar files* the copy would have to materialize, so only
+  `subtitles` is forbidden; the contradiction for video/audio is purely cosmetic and is
+  documented, not rejected, to keep the rule minimal.)
 
 These are *shape* errors local to one asset; they need no cross-asset context, so they
 live in the Pydantic validator.
@@ -198,12 +208,37 @@ orchestrator short-circuits the per-asset synthesis call and instead:
   parent dirs as synthesis does), then computes the referrer's `content_hash` from the
   copied file. Identical bytes ⇒ identical full sha256 → `augment_manifest` stamps the
   **same** `content_hash` on both versions. **No new manifest field, no override.**
-- Builds the referrer's `MaterializedAsset` (own `asset_id`, own `location_path`, the
-  copied `content_hash`) and runs ffprobe on the copied file for `size_bytes` /
-  `duration_seconds`. The referent and referrer are **probe-compatible** by
-  construction (identical bytes ⇒ identical probe), so no extra capability gate.
 - The referrer still gets its own `ManifestLocation` / path: a duplicate is a *separate
   file* with *identical content*, which is exactly the dedup scenario.
+
+**The short-circuit must reproduce *every* per-asset contribution
+`materialize_one_asset` makes**, so the phase-A invariants hold (resolves
+spec-challenge-2 findings 1–3):
+
+- **`invocation` / `invocation_index` (finding 1).** The "exactly one invocation per
+  asset" invariant is preserved: the copy appends a **synthetic `ToolInvocation`** to
+  `phase_a.invocations` describing the byte copy — `tool="same_content_copy"`,
+  `version="n/a"` (or the copy helper version), `command` capturing the referent
+  `asset_id` and the referrer destination path, `exit_code=0`, `duration_ns` measured
+  around the copy. The referrer's `MaterializedAsset.invocation_index` is set to that
+  invocation's position (`len(phase_a.invocations)` after the append), exactly as the
+  synthesis path does (`synthesis.py:160-163`). `prelude_invocations` is **empty** for a
+  copy. A test asserts the copied asset's `invocation_index` resolves to a real
+  `phase_a.invocations[i]` and that the entry describes the copy.
+- **`probed` (finding 3).** The copied file is **re-probed** with ffprobe for
+  `size_bytes` / `duration_seconds` (identical bytes ⇒ identical probe, so it is correct
+  and honest). We deliberately do **not** reuse the referent's stored probe/
+  `MaterializedAsset` — that would couple the referrer to the referent's record and
+  compound the invocation bookkeeping. No extra capability gate (the referent's
+  synthesis already gated ffmpeg/ffprobe).
+- **`sidecar_hashes` (finding 2).** `same_content_as` is **forbidden** on an asset that
+  declares its own `subtitles` (see "Cross-field exclusivity" below), so the referrer
+  declares no sidecars and `sidecar_hashes` for the copy is trivially **empty** and
+  consistent with `augment_manifest`'s sidecar loop (which then stamps nothing).
+- **`content_sources` (finding 2).** The copy contributes a **single
+  `ContentSourceEvidence` entry** describing `copied from <referent asset_id>`, so the
+  per-asset source audit is never silently empty for a duplicated asset. (Field shape
+  matches the existing evidence model; the plan pins the exact constructor.)
 
 The orchestrator threads an `asset_id -> rendered_relative_path` map across the loop so
 the referent's path is available; the referent is guaranteed present because the
@@ -211,8 +246,8 @@ validation rule enforces earlier-declaration.
 
 No ffmpeg is invoked for the copy itself, so this path works even when ffmpeg is
 unavailable **if** the referent was synthesized — but the referent's own synthesis needs
-ffmpeg, so the asset pair as a whole carries the referent's normal capability
-requirements (no new gate; the referent gates itself).
+ffmpeg, and the referrer re-probes with ffprobe, so the asset pair as a whole carries the
+referent's normal capability requirements (no new gate; the referent gates itself).
 
 #### `hash_collision_with` — recompute a prefix-sharing recorded hash in `augment_manifest`
 
@@ -300,10 +335,11 @@ parses) is left untouched, consistent with #181.
 
 `MANIFEST_SCHEMA_VERSION` is **not** bumped — `ManifestVersion` is unchanged (the
 collided hash is a normal `content_hash` value, still a valid `sha256:` URI; the wire
-shape does not change). `MATERIALIZATION_SCHEMA_VERSION` is **not** bumped unless the
-plan finds a `MaterializedAsset` field is required for the stamp bookkeeping; if so the
-plan calls it out and bumps it. Schema artifacts regenerated with `--write` and
-committed.
+shape does not change). `MATERIALIZATION_SCHEMA_VERSION` is **not** bumped — no
+`MaterializedAsset` field is added (finding 1 resolution: the real hash lives in the
+existing `content_hash`, the collided hash is recomputed in `augment_manifest`, and the
+copy reuses the existing `invocation_index`/invocation list via a synthetic
+`ToolInvocation`). Schema artifacts regenerated with `--write` and committed.
 
 ## The recipes
 
@@ -325,6 +361,7 @@ prefix collision, not an on-disk sha256 collision.
 | condition | layer | code |
 | --- | --- | --- |
 | `same_content_as` and `hash_collision_with` both set | model_validator | `E_FIELD_*` |
+| `same_content_as` set on an asset declaring its own `subtitles` | model_validator | `E_FIELD_*` |
 | `collision_prefix_len` set without `hash_collision_with` (or vice-versa) | model_validator | `E_FIELD_*` |
 | `collision_prefix_len` out of `[1, 63]` | Pydantic `Field(ge=1, le=63)` | `E_FIELD_*` |
 | `same_content_as` / `hash_collision_with` references an unknown asset id | semantic rule | `E_TARGET_UNKNOWN` |
@@ -356,10 +393,13 @@ prefix collision, not an on-disk sha256 collision.
 ## Acceptance criteria
 
 - [ ] `Asset` accepts `same_content_as`, `hash_collision_with`, `collision_prefix_len`;
-      cross-field misuse rejected at validate time (`E_FIELD_*`).
+      cross-field misuse rejected at validate time (`E_FIELD_*`), including
+      `same_content_as` on an asset that declares its own `subtitles`.
 - [ ] Unknown / self / forward references rejected with `E_TARGET_UNKNOWN`.
 - [ ] Two assets linked by `same_content_as` materialize byte-identical files and
-      record the **same full** `content_hash`.
+      record the **same full** `content_hash`; the duplicate's `MaterializedAsset`
+      carries an `invocation_index` resolving to a synthetic copy `ToolInvocation`, and
+      its `content_sources` carries a "copied from <referent>" audit entry.
 - [ ] Two assets linked by `hash_collision_with` record content hashes that share
       exactly `collision_prefix_len` leading hex chars and differ at full length; the
       collided hash is deterministic.
@@ -385,7 +425,11 @@ prefix collision, not an on-disk sha256 collision.
 - Materializer (env-gated ffmpeg where the referent needs synthesis; the copy and the
   hash-override logic are unit-tested without ffmpeg):
   - `same_content_as`: copied file bytes equal referent bytes; both manifest versions
-    carry the same full `content_hash`.
+    carry the same full `content_hash`; the duplicate's `MaterializedAsset.invocation_index`
+    resolves to a `phase_a.invocations[i]` whose `tool == "same_content_copy"`; the
+    duplicate's `content_sources` has one "copied from <referent>" entry; the copied
+    file is re-probed (its `probed`/`size_bytes`/`duration_seconds` equal the
+    referent's).
   - `hash_collision_with`: `collided_hash_for` shares exactly `prefix_len` chars with
     the referent hash, differs from referent and real hashes at full length, is a valid
     `sha256:` URI, and is deterministic across runs.

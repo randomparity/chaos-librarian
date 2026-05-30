@@ -63,6 +63,17 @@ value; the wire shape is unchanged).
   and `augment_manifest` paths are unchanged when all three fields are `None`.
 - `same_content_as` requires the referent to be declared **earlier** (single ordered
   materialize pass, no second pass). Forward references are rejected at validate time.
+- `same_content_as` is **forbidden** on an asset that declares its own `subtitles` (v1
+  limitation): the duplicate's track spec is ignored for bytes, so authoring distinct
+  sidecars on it is contradictory, and the copy path writes no sidecars. Same-content
+  with the asset's *own distinct* sidecars is a filed follow-up, not a v1 feature.
+- The copy path reproduces every per-asset contribution synthesis makes: a **synthetic
+  `ToolInvocation`** (`tool="same_content_copy"`, `exit_code=0`) keeps the "one
+  invocation per asset" invariant and gives the duplicate's `MaterializedAsset` a real
+  `invocation_index`; the copied file is **re-probed** (not reusing the referent's
+  probe); and a single "copied from <referent>" `ContentSourceEvidence` entry keeps the
+  per-asset source audit non-empty. No `MaterializedAsset` /
+  `MATERIALIZATION_SCHEMA_VERSION` change.
 - The collided hash is deterministic (a pure function of the referent's recorded hash,
   the asset's real hash, and the prefix length), and is recomputed in a collision-aware
   `augment_manifest` shared by both the live materialize path and the run/replay
