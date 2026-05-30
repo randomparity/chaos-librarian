@@ -144,6 +144,46 @@ def _scenario() -> Scenario:
     )
 
 
+def _podcast_scenario() -> Scenario:
+    return Scenario.model_validate(
+        {
+            "schema_version": 30,
+            "scenario_id": "topology-podcast",
+            "seed": 1,
+            "duration_scale": "short",
+            "profiles": [],
+            "library": {"roots": [{"id": "primary", "path": "Library"}]},
+            "movies": [],
+            "series": [],
+            "artists": [],
+            "podcasts": [
+                {
+                    "id": "podcast_daily",
+                    "title": "The Daily",
+                    "layout": "podcast_folder",
+                    "episode_naming": "date_slug_title",
+                    "episodes": [
+                        {
+                            "id": "podcast_episode_01",
+                            "title": "First Show",
+                            "published_at": "2026-05-01T00:00:00Z",
+                            "slug": "first-show",
+                            "variants": [
+                                _variant_payload(
+                                    "variant_podcast",
+                                    "bundle_podcast",
+                                    _audio_asset_payload("asset_podcast"),
+                                )
+                            ],
+                        }
+                    ],
+                }
+            ],
+            "timeline": [],
+        }
+    )
+
+
 def _multi_asset_bundle_scenario() -> Scenario:
     return Scenario.model_validate(
         {
@@ -231,6 +271,26 @@ def test_asset_contexts_by_id_returns_every_asset() -> None:
     assert contexts["asset_movie"].parent_kind is ParentKind.MOVIE
     assert contexts["asset_episode"].parent_id == "episode_01"
     assert contexts["asset_track"].parent_id == "track_01"
+
+
+def test_iter_asset_contexts_includes_podcast_episodes() -> None:
+    contexts = list(iter_asset_contexts(_podcast_scenario()))
+
+    assert [context.parent_kind for context in contexts] == [ParentKind.PODCAST_EPISODE]
+    context = contexts[0]
+    assert context.parent_id == "podcast_episode_01"
+    assert context.podcast is not None
+    assert context.podcast.title == "The Daily"
+    assert context.podcast_episode is not None
+    assert context.podcast_episode.slug == "first-show"
+
+
+def test_asset_ids_under_podcast_episode_target() -> None:
+    ids = asset_ids_under_target(
+        _podcast_scenario(), target_kind="podcast_episode", target_id="podcast_episode_01"
+    )
+
+    assert ids == ("asset_podcast",)
 
 
 @pytest.mark.parametrize(

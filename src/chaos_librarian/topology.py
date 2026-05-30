@@ -18,6 +18,10 @@ from chaos_librarian.contract.scenario import (
     EpisodeNaming,
     Movie,
     MovieLayout,
+    Podcast,
+    PodcastEpisode,
+    PodcastEpisodeNaming,
+    PodcastLayout,
     Scenario,
     Season,
     Series,
@@ -50,6 +54,8 @@ class AssetContext:
     album: Album | None
     disc: Disc | None
     track: Track | None
+    podcast: Podcast | None
+    podcast_episode: PodcastEpisode | None
     variant: Variant
     bundle: Bundle
     asset: Asset
@@ -71,6 +77,8 @@ _TARGET_GETTERS: dict[str, _TargetGetter] = {
     "album": lambda context: context.album,
     "disc": lambda context: context.disc,
     "track": lambda context: context.track,
+    "podcast": lambda context: context.podcast,
+    "podcast_episode": lambda context: context.podcast_episode,
     "variant": lambda context: context.variant,
     "bundle": lambda context: context.bundle,
     "asset": lambda context: context.asset,
@@ -82,6 +90,7 @@ def iter_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
     yield from _movie_asset_contexts(scenario)
     yield from _episode_asset_contexts(scenario)
     yield from _track_asset_contexts(scenario)
+    yield from _podcast_episode_asset_contexts(scenario)
 
 
 def _asset_context(
@@ -99,6 +108,8 @@ def _asset_context(
     album: Album | None = None,
     disc: Disc | None = None,
     track: Track | None = None,
+    podcast: Podcast | None = None,
+    podcast_episode: PodcastEpisode | None = None,
 ) -> AssetContext:
     """Build an AssetContext, defaulting the irrelevant domain rows to None.
 
@@ -116,6 +127,8 @@ def _asset_context(
         album=album,
         disc=disc,
         track=track,
+        podcast=podcast,
+        podcast_episode=podcast_episode,
         variant=variant,
         bundle=bundle,
         asset=asset,
@@ -178,6 +191,23 @@ def _track_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                             )
 
 
+def _podcast_episode_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
+    for podcast in scenario.podcasts:
+        for episode in podcast.episodes:
+            for variant in episode.variants:
+                bundle = variant.bundle
+                for asset in bundle.assets:
+                    yield _asset_context(
+                        parent_kind=ParentKind.PODCAST_EPISODE,
+                        parent_id=episode.id,
+                        podcast=podcast,
+                        podcast_episode=episode,
+                        variant=variant,
+                        bundle=bundle,
+                        asset=asset,
+                    )
+
+
 def asset_contexts_by_id(scenario: Scenario) -> dict[str, AssetContext]:
     """Return asset id to context for every declared asset."""
     return {context.asset.id: context for context in iter_asset_contexts(scenario)}
@@ -218,7 +248,7 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
         series_title=context.series.title if context.series is not None else None,
         season_number=context.season.season_number if context.season is not None else None,
         episode_number=context.episode.episode_number if context.episode is not None else None,
-        episode_title=context.episode.title if context.episode is not None else None,
+        episode_title=_episode_title_for_context(context),
         aired_on=context.episode.aired_on if context.episode is not None else None,
         absolute_number=context.episode.absolute_number if context.episode is not None else None,
         artist_name=context.artist.name if context.artist is not None else None,
@@ -226,6 +256,13 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
         disc_number=context.disc.disc_number if context.disc is not None else None,
         track_number=context.track.track_number if context.track is not None else None,
         track_title=context.track.title if context.track is not None else None,
+        podcast_title=context.podcast.title if context.podcast is not None else None,
+        published_at=(
+            context.podcast_episode.published_at if context.podcast_episode is not None else None
+        ),
+        episode_slug=(
+            context.podcast_episode.slug if context.podcast_episode is not None else None
+        ),
         variant_label=context.variant.label,
         asset_role=context.asset.role,
         asset_container=context.asset.container,
@@ -233,19 +270,35 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
     )
 
 
-def _layout_for_context(context: AssetContext) -> MovieLayout | SeriesLayout | ArtistLayout:
+def _layout_for_context(
+    context: AssetContext,
+) -> MovieLayout | SeriesLayout | ArtistLayout | PodcastLayout:
     if context.movie is not None:
         return context.movie.layout
     if context.series is not None:
         return context.series.layout
     if context.artist is not None:
         return context.artist.layout
+    if context.podcast is not None:
+        return context.podcast.layout
     raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
 
 
-def _naming_for_context(context: AssetContext) -> EpisodeNaming | TrackNaming | None:
+def _naming_for_context(
+    context: AssetContext,
+) -> EpisodeNaming | TrackNaming | PodcastEpisodeNaming | None:
     if context.series is not None:
         return context.series.episode_naming
     if context.artist is not None:
         return context.artist.track_naming
+    if context.podcast is not None:
+        return context.podcast.episode_naming
+    return None
+
+
+def _episode_title_for_context(context: AssetContext) -> str | None:
+    if context.episode is not None:
+        return context.episode.title
+    if context.podcast_episode is not None:
+        return context.podcast_episode.title
     return None
