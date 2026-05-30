@@ -1,0 +1,70 @@
+schema_version: 29
+scenario_id: swap-disc-numbers
+seed: 11902
+duration_scale: short
+library:
+  roots:
+    - id: music_root
+      path: Music
+movies: []
+series: []
+artists:
+  - id: artist_glass
+    name: Glass Harbour
+    layout: artist_album_disc
+    track_naming: disc_track_number_title
+    albums:
+      - id: album_tides
+        title: Synthetic Tides
+        release_year: 2026
+        discs:
+          - id: disc_one
+            disc_number: 1
+            tracks:
+              - id: track_d1
+                track_number: 1
+                title: Low Tide
+                performers: [Glass Harbour]
+                variants:
+                  - id: variant_d1
+                    label: flac
+                    bundle:
+                      id: bundle_d1
+                      assets:
+                        - id: asset_d1
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 5
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+          - id: disc_two
+            disc_number: 2
+            tracks:
+              - id: track_d2
+                track_number: 1
+                title: High Tide
+                performers: [Glass Harbour]
+                variants:
+                  - id: variant_d2
+                    label: flac
+                    bundle:
+                      id: bundle_d2
+                      assets:
+                        - id: asset_d2
+                          role: primary_audio
+                          container: flac
+                          duration_seconds: 5
+                          audio:
+                            - source: sine
+                              codec: flac
+                              channels: stereo
+                              language: eng
+timeline:
+  - id: ev_swap_discs
+    at: 1s
+    action: swap_disc_numbers
+    target: disc_one
+    with_disc: disc_two

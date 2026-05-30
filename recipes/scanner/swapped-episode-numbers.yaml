@@ -1,0 +1,76 @@
+# Recipe: Swapped episode numbers
+# Category: scanner
+# Tests: two episodes in one season atomically exchange episode_number, crossing
+#   their rendered paths. The sanctioned alternative to an implicit renumber swap.
+# Expected consumer response: converges — same two assets, exchanged numbering/paths.
+# Requires: none
+schema_version: 29
+scenario_id: recipe-scanner-swapped-episode-numbers
+seed: 1009
+duration_scale: short
+library:
+  roots:
+    - id: tv
+      path: tv
+movies: []
+series:
+  - id: s_swap
+    title: Swap Season
+    layout: season_folders
+    episode_naming: sxxexx_title
+    seasons:
+      - id: season_swap
+        season_number: 1
+        title: Season 1
+        episodes:
+          - id: ep_first
+            episode_number: 1
+            title: First
+            variants:
+              - id: v_ep_first
+                label: hd
+                bundle:
+                  id: b_ep_first
+                  assets:
+                    - id: asset_ep_first
+                      role: main
+                      container: mkv
+                      duration_seconds: 2.0
+                      video:
+                        source: color_bars
+                        codec: h264
+                        resolution: hd
+                      audio:
+                        - source: sine
+                          codec: aac
+                          channels: stereo
+                          language: eng
+          - id: ep_second
+            episode_number: 2
+            title: Second
+            variants:
+              - id: v_ep_second
+                label: hd
+                bundle:
+                  id: b_ep_second
+                  assets:
+                    - id: asset_ep_second
+                      role: main
+                      container: mkv
+                      duration_seconds: 2.0
+                      video:
+                        source: color_bars
+                        codec: h264
+                        resolution: hd
+                      audio:
+                        - source: sine
+                          codec: aac
+                          channels: stereo
+                          language: eng
+artists: []
+timeline:
+  - id: ev_swap
+    at: 1s
+    action: swap_episode_numbers
+    target: ep_first
+    with_episode: ep_second
