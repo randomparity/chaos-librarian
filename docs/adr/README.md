@@ -14,3 +14,4 @@ accepted; supersede rather than edit.
 | [0006](0006-symlink-entity-policy.md) | Author symlink assets (in-root and library-escaping) | Accepted |
 | [0007](0007-network-fs-chaos.md) | Network-filesystem chaos beyond latency | Accepted |
 | [0008](0008-numbering-swap-actions.md) | Explicit numbering swap actions for hierarchy moves | Accepted |
+| [0009](0009-podcast-hierarchy.md) | Podcast library hierarchy | Accepted |
