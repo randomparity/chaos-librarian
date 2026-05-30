@@ -499,6 +499,11 @@ class TestCreateSidecarHandler:
             "sidecar_id": "sidecar_0001",
             "language": "eng",
             "kind": "subtitle",
+            "codec": None,
+            "source": None,
+            "encoding": None,
+            "body": None,
+            "media_type": None,
         }
         assert len(state.sidecars) == 1
         (sidecar,) = state.sidecars.values()
