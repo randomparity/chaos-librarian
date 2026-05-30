@@ -7,7 +7,7 @@ assets, locations, etc.). Does NOT describe application policy outcomes.
 from __future__ import annotations
 
 import enum
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -139,6 +139,25 @@ class ManifestTrack(BaseModel):
     performers: list[str] = Field(default_factory=list)
 
 
+class ManifestPodcast(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    title: str
+    layout: str
+    episode_naming: str
+
+
+class ManifestPodcastEpisode(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str
+    podcast_id: str
+    title: str
+    published_at: datetime
+    slug: str
+    # Neutral fact: episode absent from the source feed, file lingering.
+    stale: bool = False
+
+
 class ManifestVariant(BaseModel):
     model_config = ConfigDict(extra="forbid")
     id: str
@@ -201,7 +220,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[9]
+    schema_version: Literal[10]
     movies: list[ManifestMovie]
     series: list[ManifestSeries]
     seasons: list[ManifestSeason]
@@ -210,6 +229,8 @@ class Manifest(BaseModel):
     albums: list[ManifestAlbum]
     discs: list[ManifestDisc]
     tracks: list[ManifestTrack]
+    podcasts: list[ManifestPodcast] = Field(default_factory=list)
+    podcast_episodes: list[ManifestPodcastEpisode] = Field(default_factory=list)
     variants: list[ManifestVariant]
     bundles: list[ManifestBundle]
     assets: list[ManifestAsset]

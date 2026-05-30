@@ -74,6 +74,8 @@ _HIERARCHY_TARGET_KIND_BY_ACTION: dict[str, str] = {
     TimelineActionName.SWAP_EPISODE_NUMBERS: "episode",
     TimelineActionName.SWAP_DISC_NUMBERS: "disc",
     TimelineActionName.SWAP_TRACK_NUMBERS: "track",
+    TimelineActionName.REPUBLISH_EPISODE: "podcast_episode",
+    TimelineActionName.MARK_EPISODE_STALE: "podcast_episode",
 }
 
 # Each swap action's second-operand field and the entity kind it must resolve to.

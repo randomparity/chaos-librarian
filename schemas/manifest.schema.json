@@ -383,6 +383,75 @@
       "title": "ManifestMovie",
       "type": "object"
     },
+    "ManifestPodcast": {
+      "additionalProperties": false,
+      "properties": {
+        "episode_naming": {
+          "title": "Episode Naming",
+          "type": "string"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "layout": {
+          "title": "Layout",
+          "type": "string"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "layout",
+        "episode_naming"
+      ],
+      "title": "ManifestPodcast",
+      "type": "object"
+    },
+    "ManifestPodcastEpisode": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "podcast_id": {
+          "title": "Podcast Id",
+          "type": "string"
+        },
+        "published_at": {
+          "format": "date-time",
+          "title": "Published At",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "stale": {
+          "default": false,
+          "title": "Stale",
+          "type": "boolean"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "podcast_id",
+        "title",
+        "published_at",
+        "slug"
+      ],
+      "title": "ManifestPodcastEpisode",
+      "type": "object"
+    },
     "ManifestSeason": {
       "additionalProperties": false,
       "properties": {
@@ -623,7 +692,8 @@
       "enum": [
         "movie",
         "episode",
-        "track"
+        "track",
+        "podcast_episode"
       ],
       "title": "ParentKind",
       "type": "string"
@@ -956,8 +1026,22 @@
       "title": "Movies",
       "type": "array"
     },
+    "podcast_episodes": {
+      "items": {
+        "$ref": "#/$defs/ManifestPodcastEpisode"
+      },
+      "title": "Podcast Episodes",
+      "type": "array"
+    },
+    "podcasts": {
+      "items": {
+        "$ref": "#/$defs/ManifestPodcast"
+      },
+      "title": "Podcasts",
+      "type": "array"
+    },
     "schema_version": {
-      "const": 9,
+      "const": 10,
       "title": "Schema Version",
       "type": "integer"
     },

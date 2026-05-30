@@ -495,6 +495,7 @@ _DISPATCH: Final[
     TimelineActionName.SWAP_EPISODE_NUMBERS: _hierarchy_moves,
     TimelineActionName.SWAP_DISC_NUMBERS: _hierarchy_moves,
     TimelineActionName.SWAP_TRACK_NUMBERS: _hierarchy_moves,
+    TimelineActionName.REPUBLISH_EPISODE: _hierarchy_moves,
 }
 
 _HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS

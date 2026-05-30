@@ -69,6 +69,42 @@ def test_empty_manifest_roundtrip() -> None:
     assert loaded == m
 
 
+def test_manifest_carries_podcast_rows() -> None:
+    payload = _empty_manifest().model_dump(mode="json")
+    payload["podcasts"] = [
+        {
+            "id": "p1",
+            "title": "The Daily",
+            "layout": "podcast_folder",
+            "episode_naming": "date_slug_title",
+        }
+    ]
+    payload["podcast_episodes"] = [
+        {
+            "id": "pe1",
+            "podcast_id": "p1",
+            "title": "Pilot",
+            "published_at": "2026-05-01T00:00:00Z",
+            "slug": "pilot",
+            "stale": False,
+        }
+    ]
+
+    m = Manifest.model_validate(payload)
+
+    assert m.podcasts[0].id == "p1"
+    assert m.podcast_episodes[0].stale is False
+    assert m.podcast_episodes[0].podcast_id == "p1"
+
+
+def test_manifest_variant_accepts_podcast_episode_parent_kind() -> None:
+    variant = ManifestVariant(
+        id="v1", parent_kind=ParentKind.PODCAST_EPISODE, parent_id="pe1", label="default"
+    )
+
+    assert variant.parent_kind is ParentKind.PODCAST_EPISODE
+
+
 def test_populated_manifest_roundtrip() -> None:
     m = Manifest(
         schema_version=MANIFEST_SCHEMA_VERSION,
@@ -247,8 +283,8 @@ def test_manifest_sidecar_content_hash_optional():
     assert "content_hash" not in payload
 
 
-def test_manifest_schema_version_is_nine():
-    assert MANIFEST_SCHEMA_VERSION == 9
+def test_manifest_schema_version_is_ten():
+    assert MANIFEST_SCHEMA_VERSION == 10
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -300,9 +336,9 @@ def test_manifest_sidecar_kind_remains_free_form():
     assert sidecar.kind == "srt"
 
 
-def test_manifest_v9_schema_version():
+def test_manifest_v10_schema_version():
     manifest = Manifest(
-        schema_version=9,
+        schema_version=10,
         movies=[],
         series=[],
         seasons=[],
@@ -318,7 +354,7 @@ def test_manifest_v9_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 9
+    assert manifest.schema_version == 10
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:

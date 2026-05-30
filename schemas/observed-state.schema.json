@@ -796,7 +796,8 @@
       "enum": [
         "movie",
         "episode",
-        "track"
+        "track",
+        "podcast_episode"
       ],
       "title": "ParentKind",
       "type": "string"

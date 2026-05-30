@@ -120,7 +120,7 @@ def _scenario_yaml(timeline: str) -> str:
     return (
         dedent(
             """\
-        schema_version: 29
+        schema_version: 30
         scenario_id: network-fs-chaos-wall-clock
         seed: 7
         duration_scale: short

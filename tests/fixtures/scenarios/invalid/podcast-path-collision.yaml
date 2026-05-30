@@ -1,0 +1,58 @@
+# expected: E_PATH_COLLISION
+schema_version: 30
+scenario_id: podcast-path-collision
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: podcast_root
+      path: podcasts
+movies: []
+series: []
+artists: []
+podcasts:
+  - id: podcast_daily
+    title: The Daily Signal
+    layout: podcast_folder
+    episode_naming: date_slug_title
+    episodes:
+      # Same published_at date, slug, and title -> identical rendered path.
+      - id: episode_one
+        title: Pilot
+        published_at: 2026-05-01T09:00:00Z
+        slug: pilot
+        variants:
+          - id: variant_one
+            label: standard
+            bundle:
+              id: bundle_one
+              assets:
+                - id: asset_one
+                  role: main
+                  container: mp3
+                  duration_seconds: 5
+                  audio:
+                    - source: sine
+                      codec: mp3
+                      channels: stereo
+                      language: eng
+      - id: episode_two
+        title: Pilot
+        published_at: 2026-05-01T18:00:00Z
+        slug: pilot
+        variants:
+          - id: variant_two
+            label: standard
+            bundle:
+              id: bundle_two
+              assets:
+                - id: asset_two
+                  role: main
+                  container: mp3
+                  duration_seconds: 5
+                  audio:
+                    - source: sine
+                      codec: mp3
+                      channels: stereo
+                      language: eng
+timeline: []

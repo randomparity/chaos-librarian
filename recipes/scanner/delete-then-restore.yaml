@@ -3,7 +3,7 @@
 # Tests: a file disappears and later reappears at a new path mid-scan.
 # Expected consumer response: converges — re-discover and re-link the asset.
 # Requires: none
-schema_version: 29
+schema_version: 30
 scenario_id: recipe-scanner-delete-then-restore
 seed: 1004
 duration_scale: short

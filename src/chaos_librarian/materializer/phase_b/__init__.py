@@ -19,6 +19,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import Asset, Scenario, TimelineActionName
+from chaos_librarian.materializer.actions import PODCAST_ACTIONS
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
@@ -159,6 +160,10 @@ def dispatch_phase_b_entry(state: PhaseBState, entry: JournalEntry) -> None:
         return
     if supports_oracle_hash_action(action):
         state.oracle_hash_actions.append(apply_wrong_oracle_hash(state.oracle_hash_ctx, entry))
+        return
+    if action in PODCAST_ACTIONS:
+        # mark_episode_stale records a neutral oracle fact; the file lingers
+        # untouched, so phase-B has no on-disk work and emits no audit action.
         return
     raise MediaActionError(
         f"unsupported phase-B action {action.value!r}",

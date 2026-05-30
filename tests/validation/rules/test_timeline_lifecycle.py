@@ -825,3 +825,62 @@ class TestInterceptorLifecycle:
 
         issues = [i for i in collector.issues if i.code == E_LIFECYCLE_INVALID]
         assert any(action in i.message and "pending slow_copy" in i.message for i in issues)
+
+
+def _stale_after_delete_timeline() -> list[dict[str, object]]:
+    return [
+        {"id": "del", "at": "1s", "action": "delete_file", "target": "asset_podcast"},
+        {
+            "id": "stale",
+            "at": "2s",
+            "action": "mark_episode_stale",
+            "target": "podcast_episode_one",
+        },
+    ]
+
+
+def test_mark_episode_stale_after_full_delete_is_lifecycle_invalid(
+    podcast_scenario, empty_index
+) -> None:
+    raw = podcast_scenario(timeline=_stale_after_delete_timeline())
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+    assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+
+def test_double_mark_episode_stale_is_lifecycle_invalid(podcast_scenario, empty_index) -> None:
+    raw = podcast_scenario(
+        timeline=[
+            {
+                "id": "s1",
+                "at": "1s",
+                "action": "mark_episode_stale",
+                "target": "podcast_episode_one",
+            },
+            {
+                "id": "s2",
+                "at": "2s",
+                "action": "mark_episode_stale",
+                "target": "podcast_episode_one",
+            },
+        ]
+    )
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+    assert any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)
+
+
+def test_single_mark_episode_stale_is_valid(podcast_scenario, empty_index) -> None:
+    raw = podcast_scenario(
+        timeline=[
+            {
+                "id": "s1",
+                "at": "1s",
+                "action": "mark_episode_stale",
+                "target": "podcast_episode_one",
+            },
+        ]
+    )
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+    assert not any(i.code == E_LIFECYCLE_INVALID for i in collector.issues)

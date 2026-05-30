@@ -65,7 +65,7 @@ def _add_destination_series(raw: dict[str, object], *, episode_naming: str) -> N
 
 def _write_music_scenario(path: Path, *, timeline: str) -> None:
     path.write_text(
-        f"""schema_version: 29
+        f"""schema_version: 30
 scenario_id: music-action-validation
 seed: 1
 duration_scale: short
@@ -1490,3 +1490,127 @@ def test_implicit_renumber_swap_rejected_explicit_swap_accepted(
         issue.code in {codes.E_HIERARCHY_INVALID, codes.E_TARGET_UNKNOWN}
         for issue in explicit_issues
     )
+
+
+def _second_podcast_episode(
+    slug: str, *, published_at: str = "2026-05-01T00:00:00Z", title: str = "Encore"
+) -> dict:
+    return {
+        "id": "podcast_episode_two",
+        "title": title,
+        "published_at": published_at,
+        "slug": slug,
+        "variants": [
+            {
+                "id": "variant_podcast_two",
+                "label": "default",
+                "bundle": {
+                    "id": "bundle_podcast_two",
+                    "assets": [
+                        {
+                            "id": "asset_podcast_two",
+                            "role": "main",
+                            "container": "mp3",
+                            "duration_seconds": 1,
+                            "audio": [
+                                {
+                                    "source": "sine",
+                                    "codec": "mp3",
+                                    "channels": "stereo",
+                                    "language": "eng",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+
+
+def _first_episode(raw: dict[str, object]) -> dict[str, object]:
+    podcast = _mapping(_items(raw["podcasts"])[0])
+    return _mapping(_items(podcast["episodes"])[0])
+
+
+def test_podcast_valid_scenario_has_no_issues(podcast_scenario, empty_index) -> None:
+    issues = _issues_for(podcast_scenario(), empty_index)
+    assert issues == []
+
+
+def test_podcast_duplicate_published_at_allowed_with_distinct_slugs(
+    podcast_scenario, empty_index
+) -> None:
+    raw = podcast_scenario()
+    _items(_mapping(_items(raw["podcasts"])[0])["episodes"]).append(
+        _second_podcast_episode("encore")
+    )
+    issues = _issues_for(raw, empty_index)
+    assert not any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_podcast_same_slug_same_date_is_path_collision(podcast_scenario, empty_index) -> None:
+    raw = podcast_scenario()
+    # Same published_at date, same slug, and same title -> identical rendered path.
+    _items(_mapping(_items(raw["podcasts"])[0])["episodes"]).append(
+        _second_podcast_episode("pilot", title="Pilot")
+    )
+    issues = _issues_for(raw, empty_index)
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_republish_episode_to_existing_path_is_collision(podcast_scenario, empty_index) -> None:
+    # The second episode republishes onto episode one's date+slug+title -> collision.
+    raw = podcast_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "republish_episode",
+                "target": "podcast_episode_two",
+                "published_at": "2026-05-01T00:00:00Z",
+                "slug": "pilot",
+            }
+        ]
+    )
+    _items(_mapping(_items(raw["podcasts"])[0])["episodes"]).append(
+        _second_podcast_episode("encore", title="Pilot")
+    )
+    issues = _issues_for(raw, empty_index)
+    assert any(issue.code == codes.E_PATH_COLLISION for issue in issues)
+
+
+def test_podcast_action_targeting_tv_episode_is_target_unknown(
+    podcast_scenario, series_scenario, empty_index
+) -> None:
+    raw = podcast_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "republish_episode",
+                "target": "episode_one",
+                "published_at": "2026-06-01T00:00:00Z",
+            }
+        ]
+    )
+    series = series_scenario()
+    raw["series"] = series["series"]
+    issues = _issues_for(raw, empty_index)
+    assert any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)
+
+
+def test_republish_unknown_target_is_target_unknown(podcast_scenario, empty_index) -> None:
+    raw = podcast_scenario(
+        timeline=[
+            {
+                "id": "ev",
+                "at": "1s",
+                "action": "republish_episode",
+                "target": "no_such_episode",
+                "published_at": "2026-06-01T00:00:00Z",
+            }
+        ]
+    )
+    issues = _issues_for(raw, empty_index)
+    assert any(issue.code == codes.E_TARGET_UNKNOWN for issue in issues)

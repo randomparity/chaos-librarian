@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import fields
-from datetime import date
+from datetime import UTC, date, datetime
 from typing import cast
 
 import pytest
@@ -14,6 +14,8 @@ from chaos_librarian.contract.scenario import (
     ArtistLayout,
     EpisodeNaming,
     MovieLayout,
+    PodcastEpisodeNaming,
+    PodcastLayout,
     SeriesLayout,
     TrackNaming,
 )
@@ -44,6 +46,9 @@ def _ctx(**overrides: object) -> RenderableAssetContext:
         "disc_number": None,
         "track_number": None,
         "track_title": None,
+        "podcast_title": None,
+        "published_at": None,
+        "episode_slug": None,
         "variant_label": "1080p",
         "asset_role": "feature",
         "asset_container": "mkv",
@@ -203,6 +208,49 @@ def test_music_flat_disc_track_number_path() -> None:
             )
         )
         == "Music/North Index/Winter Index/01-01 - Opening - lossless.flac"
+    )
+
+
+def test_render_podcast_episode_path() -> None:
+    assert (
+        render_asset_path(
+            _ctx(
+                parent_kind=ParentKind.PODCAST_EPISODE,
+                root_path="Podcasts",
+                layout=PodcastLayout.PODCAST_FOLDER,
+                naming=PodcastEpisodeNaming.DATE_SLUG_TITLE,
+                movie_title=None,
+                podcast_title="The Daily",
+                published_at=datetime(2026, 5, 1, 9, 30, tzinfo=UTC),
+                episode_slug="ep-001",
+                episode_title="First Show",
+                variant_label="default",
+                asset_container="mp3",
+            )
+        )
+        == "Podcasts/The Daily/2026-05-01 - ep-001 - First Show - default.mp3"
+    )
+
+
+def test_render_podcast_episode_uses_utc_date_for_non_utc_instant() -> None:
+    # An instant just after UTC midnight renders the UTC date, not a local one.
+    assert (
+        render_asset_path(
+            _ctx(
+                parent_kind=ParentKind.PODCAST_EPISODE,
+                root_path="Podcasts",
+                layout=PodcastLayout.PODCAST_FOLDER,
+                naming=PodcastEpisodeNaming.DATE_SLUG_TITLE,
+                movie_title=None,
+                podcast_title="The Daily",
+                published_at=datetime(2026, 5, 2, 1, 0, tzinfo=UTC),
+                episode_slug="ep-002",
+                episode_title="Next",
+                variant_label="default",
+                asset_container="mp3",
+            )
+        )
+        == "Podcasts/The Daily/2026-05-02 - ep-002 - Next - default.mp3"
     )
 
 

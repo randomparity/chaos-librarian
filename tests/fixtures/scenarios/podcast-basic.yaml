@@ -1,0 +1,66 @@
+schema_version: 30
+scenario_id: podcast-basic
+seed: 11601
+duration_scale: short
+library:
+  roots:
+    - id: podcast_root
+      path: podcasts
+movies: []
+series: []
+artists: []
+podcasts:
+  - id: podcast_daily
+    title: The Daily Signal
+    layout: podcast_folder
+    episode_naming: date_slug_title
+    episodes:
+      - id: episode_signal_1
+        title: First Signal
+        published_at: 2026-05-01T09:00:00Z
+        slug: first-signal
+        variants:
+          - id: variant_signal_1
+            label: standard
+            bundle:
+              id: bundle_signal_1
+              assets:
+                - id: asset_signal_1
+                  role: main
+                  container: mp3
+                  duration_seconds: 5
+                  audio:
+                    - source: sine
+                      codec: mp3
+                      channels: stereo
+                      language: eng
+      - id: episode_signal_2
+        title: Second Signal
+        published_at: 2026-05-08T09:00:00Z
+        slug: second-signal
+        variants:
+          - id: variant_signal_2
+            label: standard
+            bundle:
+              id: bundle_signal_2
+              assets:
+                - id: asset_signal_2
+                  role: main
+                  container: mp3
+                  duration_seconds: 5
+                  audio:
+                    - source: sine
+                      codec: mp3
+                      channels: stereo
+                      language: eng
+timeline:
+  - id: ev_republish_signal_1
+    at: 1s
+    action: republish_episode
+    target: episode_signal_1
+    published_at: 2026-05-02T09:00:00Z
+    slug: first-signal-rerun
+  - id: ev_mark_stale_signal_2
+    at: 2s
+    action: mark_episode_stale
+    target: episode_signal_2

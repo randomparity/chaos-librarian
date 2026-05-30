@@ -11,3 +11,4 @@ class ParentKind(enum.StrEnum):
     MOVIE = "movie"
     EPISODE = "episode"
     TRACK = "track"
+    PODCAST_EPISODE = "podcast_episode"

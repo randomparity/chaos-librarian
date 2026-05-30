@@ -189,6 +189,8 @@ timeline:
 | `swap_episode_numbers` | `target`, `with_episode` (two same-season episodes exchange `episode_number`) |
 | `swap_disc_numbers` | `target`, `with_disc` (two same-album discs exchange `disc_number`) |
 | `swap_track_numbers` | `target`, `with_track` (two same-disc tracks exchange `track_number`) |
+| `republish_episode` | `target` (podcast episode), `published_at` (UTC); optional `slug` — re-renders the episode's path and clears `stale` |
+| `mark_episode_stale` | `target` (podcast episode) — records that the source feed dropped the episode while its file lingers on disk; the path is unchanged |
 
 The `swap_*` actions are the sanctioned way to exchange two siblings' numbering:
 a plain `renumber_*` into a number a sibling already holds is rejected

@@ -72,7 +72,7 @@ def minimal_scenario() -> ScenarioBuilder:
         if asset_subtitles is not None:
             asset["subtitles"] = asset_subtitles
         base: dict[str, object] = {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "t",
             "seed": 1,
             "duration_scale": "short",
@@ -138,7 +138,7 @@ def series_scenario() -> ScenarioBuilder:
             ],
         }
         base: dict[str, object] = {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "series-test",
             "seed": 1,
             "duration_scale": "short",
@@ -161,6 +161,75 @@ def series_scenario() -> ScenarioBuilder:
                 }
             ],
             "artists": [],
+            "timeline": timeline or [],
+        }
+        base.update(overrides)
+        return base
+
+    return _build
+
+
+@pytest.fixture
+def podcast_scenario() -> ScenarioBuilder:
+    """Factory: build a minimal valid-shape podcast hierarchy scenario."""
+
+    def _build(
+        *,
+        episodes: list[dict[str, object]] | None = None,
+        timeline: list[dict[str, object]] | None = None,
+        **overrides: object,
+    ) -> dict[str, object]:
+        episode_payloads = episodes or [
+            {
+                "id": "podcast_episode_one",
+                "title": "Pilot",
+                "published_at": "2026-05-01T00:00:00Z",
+                "slug": "pilot",
+                "variants": [
+                    {
+                        "id": "variant_podcast",
+                        "label": "default",
+                        "bundle": {
+                            "id": "bundle_podcast",
+                            "assets": [
+                                {
+                                    "id": "asset_podcast",
+                                    "role": "main",
+                                    "container": "mp3",
+                                    "duration_seconds": 1,
+                                    "audio": [
+                                        {
+                                            "source": "sine",
+                                            "codec": "mp3",
+                                            "channels": "stereo",
+                                            "language": "eng",
+                                        }
+                                    ],
+                                }
+                            ],
+                        },
+                    }
+                ],
+            }
+        ]
+        base: dict[str, object] = {
+            "schema_version": 30,
+            "scenario_id": "podcast-test",
+            "seed": 1,
+            "duration_scale": "short",
+            "library": {"roots": [{"id": "pods", "path": "Podcasts"}]},
+            "movies": [],
+            "series": [],
+            "artists": [],
+            "podcasts": [
+                {
+                    "id": "podcast_daily",
+                    "title": "The Daily",
+                    "layout": "podcast_folder",
+                    "episode_naming": "date_slug_title",
+                    "episodes": episode_payloads,
+                }
+            ],
             "timeline": timeline or [],
         }
         base.update(overrides)
@@ -200,7 +269,7 @@ def music_scenario() -> ScenarioBuilder:
             ],
         }
         base: dict[str, object] = {
-            "schema_version": 29,
+            "schema_version": 30,
             "scenario_id": "music-test",
             "seed": 1,
             "duration_scale": "short",

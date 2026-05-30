@@ -20,7 +20,7 @@ def _run(raw):
 
 def _scenario(timeline, *, asset_subtitles=None):
     return {
-        "schema_version": 29,
+        "schema_version": 30,
         "scenario_id": "sc",
         "seed": 1,
         "duration_scale": "short",

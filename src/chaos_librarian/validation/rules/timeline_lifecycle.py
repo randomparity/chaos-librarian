@@ -115,6 +115,9 @@ class _LifecycleState:
     """(asset_id, path) -> projection row. Seeded from declared subtitles; updated
     by create_sidecar / extract_subtitle (insert) and
     remove_sidecar / embed_subtitle (delete)."""
+    stale_episodes: set[str] = field(default_factory=set)
+    """Podcast episode ids already flipped stale by mark_episode_stale; a second
+    mark on the same episode is a redundant lifecycle transition."""
 
 
 def rule_timeline_lifecycle(
@@ -199,6 +202,14 @@ def rule_timeline_lifecycle(
             )
         elif action == TimelineActionName.SLOW_COPY_COMMIT:
             _lifecycle_apply_commit(ref=event.get("for"), state=state)
+        elif action == TimelineActionName.MARK_EPISODE_STALE and isinstance(target, str):
+            _lifecycle_check_mark_episode_stale(
+                target=target,
+                state=state,
+                hierarchy_projection=hierarchy_projection,
+                emit=emit,
+                loc=loc,
+            )
 
         if not is_hierarchy_action(action):
             hierarchy_projection.project_non_hierarchy_event(
@@ -222,6 +233,34 @@ def _lifecycle_check_add_file(
     if target in state.placed:
         emit(message=f"add_file on already-placed asset {target!r}", loc=loc)
     state.placed.add(target)
+
+
+def _lifecycle_check_mark_episode_stale(
+    *,
+    target: str,
+    state: _LifecycleState,
+    hierarchy_projection: HierarchyProjection,
+    emit: _Emit,
+    loc: _Loc,
+) -> None:
+    """Reject staling an episode with no live location, or a double stale.
+
+    ``mark_episode_stale`` records the episode's current rendered path, so it
+    needs at least one placed asset; flipping an already-stale episode is a
+    redundant transition. A target that does not resolve to a podcast episode is
+    owned by ``rule_target_unknown`` (E_TARGET_UNKNOWN) and skipped here.
+    """
+    episode = hierarchy_projection.podcast_episodes.get(target)
+    if episode is None:
+        return
+    if target in state.stale_episodes:
+        emit(message=f"mark_episode_stale on already-stale episode {target!r}", loc=loc)
+    if not any(asset_id in state.placed for asset_id in episode.asset_ids):
+        emit(
+            message=f"mark_episode_stale on episode {target!r} with no live location",
+            loc=loc,
+        )
+    state.stale_episodes.add(target)
 
 
 def _lifecycle_check_mutation(

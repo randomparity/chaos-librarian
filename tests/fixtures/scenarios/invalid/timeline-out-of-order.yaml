@@ -1,5 +1,5 @@
 # expected: E_TIMELINE_ORDER
-schema_version: 29
+schema_version: 30
 scenario_id: bad
 seed: 1
 duration_scale: short

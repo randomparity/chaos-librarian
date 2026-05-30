@@ -7,7 +7,7 @@ Timeline events are a discriminated union on ``action``.
 from __future__ import annotations
 
 import enum
-from datetime import date
+from datetime import date, datetime
 from typing import Annotated, Final, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -70,10 +70,16 @@ class TimelineActionName(enum.StrEnum):
     SWAP_EPISODE_NUMBERS = "swap_episode_numbers"
     SWAP_DISC_NUMBERS = "swap_disc_numbers"
     SWAP_TRACK_NUMBERS = "swap_track_numbers"
+    REPUBLISH_EPISODE = "republish_episode"
+    MARK_EPISODE_STALE = "mark_episode_stale"
 
 
 ALL_TIMELINE_ACTIONS: Final[frozenset[str]] = frozenset(TimelineActionName)
 
+# republish_episode re-renders an episode's path like renumber_episode, so it
+# joins the hierarchy set (path-history projection, lifecycle hierarchy branch,
+# is_hierarchy_action). mark_episode_stale changes a recorded fact, not a path,
+# so it stays out.
 HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.RENUMBER_EPISODE,
@@ -84,6 +90,7 @@ HIERARCHY_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
         TimelineActionName.SWAP_EPISODE_NUMBERS,
         TimelineActionName.SWAP_DISC_NUMBERS,
         TimelineActionName.SWAP_TRACK_NUMBERS,
+        TimelineActionName.REPUBLISH_EPISODE,
     }
 )
 
@@ -634,6 +641,46 @@ class Artist(BaseModel):
     albums: tuple[Album, ...]
 
 
+class PodcastLayout(enum.StrEnum):
+    PODCAST_FOLDER = "podcast_folder"
+
+
+class PodcastEpisodeNaming(enum.StrEnum):
+    DATE_SLUG_TITLE = "date_slug_title"
+
+
+class PodcastEpisode(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    title: str
+    # Aware RFC3339 datetime, required UTC (see _require_utc). The full instant
+    # drives deterministic ordering; only the UTC date renders into the path.
+    published_at: datetime
+    # Required uniqueness tiebreaker so two same-published_at episodes still
+    # render distinct paths (scenario v30).
+    slug: str = Field(min_length=1)
+    # Recorded state: episode absent from the source feed but file lingering.
+    # mark_episode_stale is the primary transition; this is the initial value.
+    stale: bool = False
+    variants: tuple[Variant, ...]
+
+    @model_validator(mode="after")
+    def _require_utc(self) -> PodcastEpisode:
+        offset = self.published_at.utcoffset()
+        if offset is None or offset.total_seconds() != 0:
+            raise ValueError("published_at must be a UTC datetime (Z / +00:00)")
+        return self
+
+
+class Podcast(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    id: str
+    title: str
+    layout: PodcastLayout
+    episode_naming: PodcastEpisodeNaming
+    episodes: tuple[PodcastEpisode, ...]
+
+
 # ---- Timeline events --------------------------------------------------------
 
 
@@ -987,6 +1034,27 @@ class SwapTrackNumbersEvent(_TimelineEventBase):
     with_track: str
 
 
+class RepublishEpisodeEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.REPUBLISH_EPISODE] = TimelineActionName.REPUBLISH_EPISODE
+    target: str
+    # New UTC publish instant; re-renders the episode's path. An optional slug
+    # lets the author also change the path tiebreaker in the same transition.
+    published_at: datetime
+    slug: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _require_utc(self) -> RepublishEpisodeEvent:
+        offset = self.published_at.utcoffset()
+        if offset is None or offset.total_seconds() != 0:
+            raise ValueError("published_at must be a UTC datetime (Z / +00:00)")
+        return self
+
+
+class MarkEpisodeStaleEvent(_TimelineEventBase):
+    action: Literal[TimelineActionName.MARK_EPISODE_STALE] = TimelineActionName.MARK_EPISODE_STALE
+    target: str
+
+
 class GenerationBudget(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -1098,7 +1166,9 @@ TimelineEvent = Annotated[
     | MoveTrackToDiscEvent
     | SwapEpisodeNumbersEvent
     | SwapDiscNumbersEvent
-    | SwapTrackNumbersEvent,
+    | SwapTrackNumbersEvent
+    | RepublishEpisodeEvent
+    | MarkEpisodeStaleEvent,
     Field(discriminator="action"),
 ]
 
@@ -1110,7 +1180,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[29]
+    schema_version: Literal[30]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale
@@ -1120,6 +1190,7 @@ class Scenario(BaseModel):
     movies: tuple[Movie, ...]
     series: tuple[Series, ...]
     artists: tuple[Artist, ...]
+    podcasts: tuple[Podcast, ...] = Field(default_factory=tuple)
     timeline: tuple[TimelineEvent, ...]
 
     @model_validator(mode="after")
