@@ -34,6 +34,7 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import wall_clock
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
@@ -206,8 +207,8 @@ def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "assert_capable_for_static_materialize", lambda _caps: None)
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
 
 
@@ -236,7 +237,7 @@ def test_wall_clock_refuses_hdr_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     scenario = tmp_path / "hdr-wall-clock.yaml"
     scenario.write_text(
         (_FIXTURE_DIR / "hevc-mkv.yaml")
@@ -277,7 +278,7 @@ def test_wall_clock_refuses_resolution_switch_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     scenario = tmp_path / "resolution-switch-wall-clock.yaml"
     scenario.write_text(_RESOLUTION_SWITCH_SCENARIO)
     out_dir = tmp_path / "run"
@@ -338,7 +339,7 @@ def test_wall_clock_refuses_muxing_profile_capability_regressions(
             materialize_webm_video=webm_ready,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         wall_clock,
         "materialize_one_asset",
@@ -381,7 +382,7 @@ def test_wall_clock_refuses_audio_noise_when_capability_missing(
             materialize_webm_video=False,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         wall_clock,
         "materialize_one_asset",

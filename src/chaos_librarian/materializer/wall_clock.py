@@ -31,20 +31,12 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.engine import PlanArtifacts, PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
+from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer.capability_gates import (
-    assert_capable_for_audio_recipes,
-    assert_capable_for_hdr_video,
-    assert_capable_for_matroska_muxing_profiles,
-    assert_capable_for_resolution_switch_video,
-    assert_capable_for_webm_video,
-)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
-    ScenarioValidationError,
     TimelineUnsupportedError,
 )
 from chaos_librarian.materializer.network_fs_chaos import (
@@ -85,10 +77,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     phase_b_failure_record,
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
-from chaos_librarian.materializer.preflight import (
-    preflight_asset,
-    preflight_timeline,
-)
+from chaos_librarian.materializer.preparation import prepare_materializer_run
 from chaos_librarian.materializer.scheduler import (
     SpeedMultiplier,
     due_event_count,
@@ -102,13 +91,6 @@ from chaos_librarian.materializer.synthesis import (
     materialize_one_asset,
     stamp_phase_a_manifest,
 )
-from chaos_librarian.materializer.tooling.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
-from chaos_librarian.topology import iter_asset_contexts
-from chaos_librarian.validation import run_validation
-from chaos_librarian.validation.input import prepare_run_input
 
 __all__ = [
     "WallClockSlowCopySession",
@@ -190,49 +172,22 @@ def run_wall_clock_scenario(
     requested_duration_ns = _parse_positive_duration(duration)
     speed_multiplier = parse_speed(speed)
     started_at = _utc_now()
-    run_input = prepare_run_input(scenario_path)
-    validation_report = run_validation(run_input)
-    if not validation_report.ok:
-        raise ScenarioValidationError(
-            "scenario failed semantic validation; refusing to run",
-            payload={"validation_report": validation_report.model_dump(mode="json")},
-            validation_report=validation_report,
-        )
-    scenario = run_input.scenario
-    preflight_timeline(scenario, allow_network_lag=True, allow_network_fs_chaos=True)
-    resolved_timeline = resolve_timeline(scenario)
-    _preflight_wall_clock_slow_copies(resolved_timeline)
-    caps = detect_capabilities()
-    assert_capable_for_static_materialize(caps)
-    assert_capable_for_matroska_muxing_profiles(scenario, caps)
-    assert_capable_for_webm_video(scenario, caps)
-    assert_capable_for_audio_recipes(scenario, caps)
-    assert_capable_for_resolution_switch_video(scenario, caps)
-    assert_capable_for_hdr_video(scenario, caps)
-    run_id = uuid.uuid4()
-    full_artifacts = run_materializer_plan(
-        PlanExecutionRequest(
-            run_input=run_input,
-            validation_report=validation_report,
-            run_id_override=run_id,
-        )
+    prepared = prepare_materializer_run(
+        scenario_path,
+        validation_failure_message="scenario failed semantic validation; refusing to run",
+        validation_payload_exclude_none=False,
+        allow_network_lag=True,
+        allow_network_fs_chaos=True,
+        resolved_timeline_check=_preflight_wall_clock_slow_copies,
     )
-    for context in iter_asset_contexts(scenario):
-        asset = context.asset
-        preflight_asset(
-            parent_kind=context.parent_kind,
-            video=asset.video,
-            audios=asset.audio,
-            subtitles=asset.subtitles,
-            container=asset.container,
-        )
+    scenario = prepared.scenario
 
     staging_dir = _create_staging_dir(out_dir)
     baseline_artifacts = run_materializer_plan(
         PlanExecutionRequest(
-            run_input=run_input,
-            validation_report=validation_report,
-            run_id_override=run_id,
+            run_input=prepared.run_input,
+            validation_report=prepared.validation_report,
+            run_id_override=prepared.run_id,
             applied_events_override=0,
         )
     )
@@ -241,7 +196,7 @@ def run_wall_clock_scenario(
             scenario=scenario,
             out_dir=staging_dir,
             artifacts=baseline_artifacts,
-            caps=caps,
+            caps=prepared.caps,
             stamp_manifest=True,
             materialize_asset=materialize_one_asset,
         )
@@ -249,21 +204,21 @@ def run_wall_clock_scenario(
     _publish_baseline(
         staging_dir=staging_dir,
         out_dir=out_dir,
-        run_input=run_input,
+        run_input=prepared.run_input,
         artifacts=baseline_artifacts,
-        caps=caps,
-        run_id=run_id,
+        caps=prepared.caps,
+        run_id=prepared.run_id,
         started_at=started_at,
         content_sources=phase_a.content_sources,
     )
     return _run_timed_phase(
         run_context=RunContext(
-            run_input=run_input,
+            run_input=prepared.run_input,
             out_dir=out_dir,
-            run_id=run_id,
+            run_id=prepared.run_id,
             started_at=started_at,
-            caps=caps,
-            plan_artifacts=full_artifacts,
+            caps=prepared.caps,
+            plan_artifacts=prepared.plan_artifacts,
         ),
         scenario=scenario,
         phase_a=phase_a,

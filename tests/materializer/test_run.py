@@ -24,7 +24,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import run as run_mod
+from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
@@ -114,7 +114,7 @@ timeline: []
 def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """All Layer 3 tests assume capabilities pass; only behavior we care
     about is the orchestrator's own logic."""
-    monkeypatch.setattr(run_mod, "detect_capabilities", _capabilities)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", _capabilities)
 
 
 def _capabilities(
@@ -184,7 +184,7 @@ def test_materialize_refuses_audio_noise_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_audio_recipes=False),
     )
@@ -231,7 +231,7 @@ def test_materialize_refuses_muxing_profile_capability_regressions(
     asset_id: str,
 ) -> None:
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(**{capability_kwarg: False}),
     )
@@ -421,7 +421,7 @@ def test_orchestrator_refuses_hevc_when_encoder_capability_missing(
     """WHY: HEVC scenarios require libx265. The refusal must happen before
     run-dir allocation so callers do not get a half-created fixture."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_hevc_video=False),
     )
@@ -440,7 +440,7 @@ def test_orchestrator_refuses_hdr_when_capability_missing(
     """WHY: HDR scenarios require libx265 10-bit + setparams. The refusal
     must happen before run-dir allocation."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_hevc_video=True, materialize_hdr_video=False),
     )
@@ -465,7 +465,7 @@ def test_orchestrator_refuses_resolution_switch_when_capability_missing(
     """WHY: sd_to_hd MPEG-TS requires libx264 support. The refusal must
     happen before run-dir allocation so callers do not get partial files."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_resolution_switch_video=False),
     )
