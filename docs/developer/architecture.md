@@ -13,6 +13,8 @@ materialization, and adapter comparison consume those models.
   stable validation reports.
 - `determinism/`: seed resolution, RNG streams, clock helpers, ID allocation,
   and execution trace recording.
+- `generation/`: deterministic fuzz scenario generation, lane coverage
+  vocabulary, and profile/lane-specific payload planning.
 - `engine/`: plan-only timeline resolution, event handling, journal generation,
   reports, replay verification, step mode, and fixture writing.
 - `materializer/`: capability gate, content sources, ffmpeg synthesis, phase-B

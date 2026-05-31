@@ -7,12 +7,12 @@ from pathlib import Path
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
-from chaos_librarian import generation_planner
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import generate_scenario_yaml
-from chaos_librarian.generation_lanes import coverage_for_payload
-from chaos_librarian.generation_planner import lane_config_for
+from chaos_librarian.generation import planner as generation_planner
+from chaos_librarian.generation.lanes import coverage_for_payload
+from chaos_librarian.generation.planner import lane_config_for
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
 LANE_CASES: tuple[tuple[FuzzProfileName, FuzzLaneName], ...] = tuple(

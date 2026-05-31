@@ -9,7 +9,6 @@ from typing import cast
 import pytest
 from ruamel.yaml import YAML
 
-from chaos_librarian import generation_planner
 from chaos_librarian.contract.profiles import (
     CANONICAL_FUZZ_LANES,
     FUZZ_LANES_BY_PROFILE,
@@ -29,8 +28,9 @@ from chaos_librarian.generation import (
     scenario_id_for,
     write_generated_scenario,
 )
-from chaos_librarian.generation_lanes import coverage_for_payload
-from chaos_librarian.generation_planner import lane_config_for
+from chaos_librarian.generation import planner as generation_planner
+from chaos_librarian.generation.lanes import coverage_for_payload
+from chaos_librarian.generation.planner import lane_config_for
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.scenario_io import parse_scenario_bytes
 from chaos_librarian.topology import iter_asset_contexts
@@ -144,7 +144,7 @@ def test_lane_required_event_builder_satisfies_required_action_cells() -> None:
             assets=generation_planner._planned_assets(config=config),
         )
         config.required_events(planner)
-        emitted = {str(event["action"]) for event in planner.events}
+        emitted = {event.action.value for event in planner.events}
         required_actions = {
             cell.removeprefix("action:")
             for cell in config.required_cells

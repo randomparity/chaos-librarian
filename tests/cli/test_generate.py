@@ -11,11 +11,11 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from chaos_librarian import generation
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import generate as generate_cmd
 from chaos_librarian.contract.profiles import CANONICAL_FUZZ_LANES, FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.generation import api as generation_api
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
 runner = CliRunner()
@@ -66,14 +66,14 @@ def test_generate_json_validates_generated_yaml_once(
 ) -> None:
     out = tmp_path / "generated.yaml"
     calls = 0
-    original_run_validation = generation.run_validation
+    original_run_validation = generation_api.run_validation
 
     def counting_run_validation(run_input: Any) -> Any:
         nonlocal calls
         calls += 1
         return original_run_validation(run_input)
 
-    monkeypatch.setattr(generation, "run_validation", counting_run_validation)
+    monkeypatch.setattr(generation_api, "run_validation", counting_run_validation)
 
     result = runner.invoke(
         app,

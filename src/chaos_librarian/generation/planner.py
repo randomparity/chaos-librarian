@@ -1,20 +1,27 @@
 """Content and timeline planning for deterministic fuzz generation.
 
 This module owns the canonical fuzz lane configuration (``LANE_CONFIGS``). Each
-:class:`~chaos_librarian.generation_lanes.LaneConfig` pairs a lane's required
+:class:`~chaos_librarian.generation.lanes.LaneConfig` pairs a lane's required
 coverage cells with the ``required_events`` builder that satisfies them, so the
 two cannot drift apart when a lane is added or changed.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, Final
+from typing import Any, Final, cast
+
+from pydantic import BaseModel, TypeAdapter
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
-from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
-from chaos_librarian.generation_lanes import (
+from chaos_librarian.contract.scenario import (
+    NetworkLagEffect,
+    SidecarKind,
+    TimelineActionName,
+    TimelineEvent,
+)
+from chaos_librarian.generation.lanes import (
     CELL_LAG_EFFECT_PREFIX,
     CELL_SIDE_NFO_OR_POSTER,
     CELL_SIDE_SUBTITLE,
@@ -28,6 +35,7 @@ from chaos_librarian.generation_lanes import (
 CORRUPT_HEADER_BYTES: Final = 64
 # Bytes retained when truncating a file for a truncate-file event.
 TRUNCATE_KEEP_BYTES: Final = 4096
+_TIMELINE_EVENT_ADAPTER: TypeAdapter[TimelineEvent] = TypeAdapter(TimelineEvent)
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +63,7 @@ class TimelinePlanner:
     root_path: str
     secondary_root_id: str
     assets: list[PlannedAsset]
-    events: list[dict[str, object]] = field(default_factory=list)
+    events: list[TimelineEvent] = field(default_factory=list)
     sidecars_by_asset: dict[str, list[tuple[str, str]]] = field(default_factory=dict)
     media_unstable_assets: set[str] = field(default_factory=set)
 
@@ -67,6 +75,10 @@ class TimelinePlanner:
 
     def at(self) -> str:
         return f"{self.next_index()}ns"
+
+    def append_event(self, payload: Mapping[str, object]) -> None:
+        """Validate and append one concrete TimelineEvent model."""
+        self.events.append(_TIMELINE_EVENT_ADAPTER.validate_python(dict(payload)))
 
 
 def plan_payload_parts(
@@ -115,7 +127,19 @@ def plan_payload_parts(
             assets=assets,
             rng=rng,
         ),
-        planner.events,
+        _timeline_payload(planner.events),
+    )
+
+
+def _timeline_payload(events: list[TimelineEvent]) -> list[dict[str, object]]:
+    return [_timeline_event_payload(event) for event in events]
+
+
+def _timeline_event_payload(event: TimelineEvent) -> dict[str, object]:
+    model = cast(BaseModel, event)
+    return cast(
+        "dict[str, object]",
+        model.model_dump(mode="json", by_alias=True, exclude_none=True),
     )
 
 
@@ -529,7 +553,7 @@ def _fill_remaining_events(
 
 
 def _move_asset(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("move"),
             "at": planner.at(),
@@ -556,12 +580,12 @@ def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> EventReferenc
             f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
         ),
     }
-    planner.events.append(event)
+    planner.append_event(event)
     return EventReference(event_id=event_id, at=at)
 
 
 def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("delete"),
             "at": planner.at(),
@@ -572,7 +596,7 @@ def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("add"),
             "at": planner.at(),
@@ -587,7 +611,7 @@ def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _archive_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("archive"),
             "at": planner.at(),
@@ -598,7 +622,7 @@ def _archive_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _move_between_roots(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("move_between_roots"),
             "at": planner.at(),
@@ -613,7 +637,7 @@ def _move_between_roots(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 def _slow_copy_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     start_index = planner.next_index()
     start_id = planner.event_id("slow_copy_start")
-    planner.events.append(
+    planner.append_event(
         {
             "id": start_id,
             "at": f"{start_index}ns",
@@ -624,7 +648,7 @@ def _slow_copy_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
             "duration": "1ns",
         }
     )
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("slow_copy_commit"),
             "at": f"{start_index + 1}ns",
@@ -640,7 +664,7 @@ def _renumber_episode(
     target: str,
     episode_number: int,
 ) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("renumber_episode"),
             "at": planner.at(),
@@ -658,7 +682,7 @@ def _move_episode_to_season(
     to_season: str,
     episode_number: int,
 ) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("move_episode_to_season"),
             "at": planner.at(),
@@ -676,7 +700,7 @@ def _renumber_disc(
     target: str,
     disc_number: int,
 ) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("renumber_disc"),
             "at": planner.at(),
@@ -694,7 +718,7 @@ def _move_track_to_disc(
     to_disc: str,
     track_number: int,
 ) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("move_track_to_disc"),
             "at": planner.at(),
@@ -710,7 +734,7 @@ def _reencode_video(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     if asset.resolution is None:
         raise ValueError(f"reencode_video requires a video asset, got {asset.asset_id}")
     resolution = "1080p" if asset.resolution != "1080p" else "hd"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("reencode_video"),
             "at": planner.at(),
@@ -724,7 +748,7 @@ def _reencode_video(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 def _reencode_audio(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     to_channels = "stereo" if asset.audio_channels != "stereo" else "mono"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("reencode_audio"),
             "at": planner.at(),
@@ -738,7 +762,7 @@ def _reencode_audio(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 def _remux_container(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     to_container = "mp4" if asset.container != "mp4" else "mkv"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("remux"),
             "at": planner.at(),
@@ -750,7 +774,7 @@ def _remux_container(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("corrupt_header"),
             "at": planner.at(),
@@ -763,7 +787,7 @@ def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> 
 
 
 def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("truncate"),
             "at": planner.at(),
@@ -776,7 +800,7 @@ def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("packet_corrupt"),
             "at": planner.at(),
@@ -791,7 +815,7 @@ def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None
 
 
 def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("invalid_duration"),
             "at": planner.at(),
@@ -804,7 +828,7 @@ def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAss
 
 
 def _wrong_oracle_hash(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("wrong_hash"),
             "at": planner.at(),
@@ -815,7 +839,7 @@ def _wrong_oracle_hash(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 
 def _touch_mtime(planner: TimelinePlanner, asset: PlannedAsset) -> None:
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("touch_mtime"),
             "at": planner.at(),
@@ -837,7 +861,7 @@ def _network_lag_pair(
         trigger = _edit_metadata(planner, asset)
 
     start_id = planner.event_id("network_lag_start")
-    planner.events.append(
+    planner.append_event(
         {
             "id": start_id,
             "at": trigger.at,
@@ -848,7 +872,7 @@ def _network_lag_pair(
             "duration": "1ns",
         }
     )
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("network_lag_commit"),
             "at": _one_ns_after(trigger.at),
@@ -874,13 +898,13 @@ def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> EventRefere
         "target": asset.asset_id,
         "fields": {"title": f"Generated Title {planner.next_index():04d}"},
     }
-    planner.events.append(event)
+    planner.append_event(event)
     return EventReference(event_id=event_id, at=at)
 
 
 def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.nfo"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("create_nfo"),
             "at": planner.at(),
@@ -895,7 +919,7 @@ def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 
 def _create_subtitle_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("create_subtitle"),
             "at": planner.at(),
@@ -913,7 +937,7 @@ def _create_subtitle_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> N
 
 def _extract_subtitle(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
-    planner.events.append(
+    planner.append_event(
         {
             "id": planner.event_id("extract_subtitle"),
             "at": planner.at(),
@@ -940,7 +964,7 @@ def _update_first_sidecar(planner: TimelinePlanner) -> None:
         if not sidecars:
             continue
         _, path = sidecars[0]
-        planner.events.append(
+        planner.append_event(
             {
                 "id": planner.event_id("update_sidecar"),
                 "at": planner.at(),
@@ -960,7 +984,7 @@ def _remove_first_sidecar(planner: TimelinePlanner) -> None:
         _, path = sidecars.pop(0)
         if not sidecars:
             del planner.sidecars_by_asset[asset_id]
-        planner.events.append(
+        planner.append_event(
             {
                 "id": planner.event_id("remove_sidecar"),
                 "at": planner.at(),
@@ -982,7 +1006,7 @@ def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
             sidecars.pop(index)
             if not sidecars:
                 del planner.sidecars_by_asset[asset_id]
-            planner.events.append(
+            planner.append_event(
                 {
                     "id": planner.event_id("embed_subtitle"),
                     "at": planner.at(),
@@ -1013,7 +1037,7 @@ def _lane_config(
     """Build a lane config, deriving its gated profiles from required cells.
 
     ``profiles`` is derived from ``required_cells`` via
-    :func:`~chaos_librarian.generation_lanes.derive_required_profiles` rather
+    :func:`~chaos_librarian.generation.lanes.derive_required_profiles` rather
     than hand-listed, so a lane's declared profiles cannot drift from the
     profile-gated actions it actually generates.
     """

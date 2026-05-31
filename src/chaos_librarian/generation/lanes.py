@@ -1,7 +1,7 @@
 """Lane coverage primitives and profile derivation for fuzz generation.
 
 Lane configuration (``LaneConfig``/``LANE_CONFIGS``) lives in
-``generation_planner`` alongside the event builders that satisfy each lane's
+``generation.planner`` alongside the event builders that satisfy each lane's
 required coverage cells, so the required cells and the events that produce
 them cannot drift apart. This module owns the coverage vocabulary (cell
 constants and ``coverage_for_payload``) and derives each lane's required
@@ -19,7 +19,7 @@ from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 
 if TYPE_CHECKING:
-    from chaos_librarian.generation_planner import TimelinePlanner
+    from chaos_librarian.generation.planner import TimelinePlanner
 
 
 @dataclass(frozen=True, slots=True)

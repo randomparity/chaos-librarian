@@ -26,8 +26,8 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.determinism.rng import RngStreams
 from chaos_librarian.determinism.trace import TraceRecorder
-from chaos_librarian.generation_lanes import coverage_for_payload
-from chaos_librarian.generation_planner import lane_config_for, plan_payload_parts
+from chaos_librarian.generation.lanes import coverage_for_payload
+from chaos_librarian.generation.planner import lane_config_for, plan_payload_parts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 
 
