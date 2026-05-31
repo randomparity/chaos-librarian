@@ -69,7 +69,7 @@ from chaos_librarian.materializer.persistence.writer import (
     cleanup_failed_phase_b_run,
     finalize_materialize_run,
 )
-from chaos_librarian.materializer.phase_b import (
+from chaos_librarian.materializer.phase_b.dispatch import (
     PhaseBState,
     PhaseBStateInputs,
     augment_phase_b_outputs,

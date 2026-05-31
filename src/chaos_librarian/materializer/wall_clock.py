@@ -75,7 +75,7 @@ from chaos_librarian.materializer.persistence.writer import (
     finalize_materialize_run,
     publish_wall_clock_baseline,
 )
-from chaos_librarian.materializer.phase_b import (
+from chaos_librarian.materializer.phase_b.dispatch import (
     PhaseBState,
     PhaseBStateInputs,
     augment_phase_b_outputs,

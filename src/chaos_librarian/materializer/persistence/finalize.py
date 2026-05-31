@@ -36,7 +36,7 @@ from chaos_librarian.materializer.persistence.writer import (
     cleanup_failed_run,
     finalize_materialize_run,
 )
-from chaos_librarian.materializer.phase_b import PhaseBError, phase_b_failure_record
+from chaos_librarian.materializer.phase_b.dispatch import PhaseBError, phase_b_failure_record
 
 __all__ = [
     "build_sentinel",
