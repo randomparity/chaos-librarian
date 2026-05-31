@@ -12,13 +12,17 @@ from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
     FilesystemAction,
+    MaterializationExecutionMode,
     MaterializationFailure,
     MaterializedAsset,
     MediaAction,
+    NetworkFsChaosAction,
+    NetworkLagAction,
     OracleHashAction,
     Outcome,
     ToolInvocation,
 )
+from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
 from chaos_librarian.materializer.errors import (
     MaterializationError,
@@ -36,12 +40,18 @@ from chaos_librarian.materializer.persistence.writer import (
     cleanup_failed_run,
     finalize_materialize_run,
 )
-from chaos_librarian.materializer.phase_b.dispatch import PhaseBError, phase_b_failure_record
+from chaos_librarian.materializer.phase_b.dispatch import (
+    PhaseBError,
+    phase_b_failure_outcome,
+    phase_b_failure_record,
+)
 
 __all__ = [
     "build_sentinel",
     "finalize_failure",
     "finalize_failure_phase_b",
+    "finalize_run_replay_phase_b_failure",
+    "finalize_run_replay_success",
     "finalize_success",
 ]
 
@@ -240,4 +250,138 @@ def finalize_failure_phase_b(
             replay_bundle=replay_bundle,
             sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
         ),
+    )
+
+
+def finalize_run_replay_success(
+    ctx: RunContext,
+    source_bundle: MaterializeReplayBundle,
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    *,
+    filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
+    corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
+    network_lag_actions: list[NetworkLagAction],
+    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    content_sources: list[ContentSourceEvidence],
+) -> MaterializeArtifacts:
+    """Run-replay success path: write run-mode metadata via the shared seam."""
+    finished_at = datetime.now(UTC)
+    report = build_report(
+        outcome=Outcome.SUCCESS,
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
+        finished_at=finished_at,
+        invocations=invocations,
+        materialized=materialized,
+        failures=[],
+        filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
+        corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
+        network_lag_actions=network_lag_actions,
+        network_fs_chaos_actions=network_fs_chaos_actions,
+        content_sources=content_sources,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_run_replay_bundle(
+        ctx,
+        source_bundle,
+        finished_at,
+        content_sources,
+    )
+    finalize_materialize_run(
+        ctx.out_dir,
+        build_metadata(
+            plan_artifacts=ctx.plan_artifacts,
+            scenario_yaml_bytes=ctx.run_input.raw_bytes,
+            materialization_report=report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+        ),
+        build_reports(ctx.plan_artifacts),
+    )
+    return MaterializeArtifacts(
+        current_manifest=ctx.plan_artifacts.current_manifest,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+    )
+
+
+def finalize_run_replay_phase_b_failure(
+    ctx: RunContext,
+    source_bundle: MaterializeReplayBundle,
+    exc: PhaseBError,
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    *,
+    filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
+    corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
+    network_lag_actions: list[NetworkLagAction],
+    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    content_sources: list[ContentSourceEvidence],
+) -> None:
+    """Run-replay phase-B failure path: preserve replay metadata before cleanup."""
+    finished_at = datetime.now(UTC)
+    report = build_report(
+        outcome=phase_b_failure_outcome(exc),
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
+        finished_at=finished_at,
+        invocations=invocations,
+        materialized=materialized,
+        failures=[phase_b_failure_record(exc)],
+        filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
+        corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
+        network_lag_actions=network_lag_actions,
+        network_fs_chaos_actions=network_fs_chaos_actions,
+        content_sources=content_sources,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_run_replay_bundle(
+        ctx,
+        source_bundle,
+        finished_at,
+        content_sources,
+    )
+    cleanup_failed_phase_b_run(
+        ctx.out_dir,
+        build_metadata(
+            plan_artifacts=ctx.plan_artifacts,
+            scenario_yaml_bytes=ctx.run_input.raw_bytes,
+            materialization_report=report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+        ),
+    )
+
+
+def _build_run_replay_bundle(
+    ctx: RunContext,
+    source_bundle: MaterializeReplayBundle,
+    created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
+) -> MaterializeReplayBundle:
+    replay_bundle = build_replay_bundle(
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=ctx.plan_artifacts,
+        caps=ctx.caps,
+        created_at=created_at,
+        content_sources=content_sources,
+        execution_mode=ExecutionMode.RUN,
+    )
+    return replay_bundle.model_copy(
+        update={
+            "applied_events": source_bundle.applied_events,
+            "journal_digest": source_bundle.journal_digest,
+        }
     )

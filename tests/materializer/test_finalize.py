@@ -17,12 +17,17 @@ from chaos_librarian.contract.content_sources import (
 from chaos_librarian.contract.materialization import (
     FailureStage,
     FilesystemAction,
+    MaterializationExecutionMode,
     MaterializedAsset,
+    NetworkFsChaosAction,
+    NetworkFsChaosCondition,
+    NetworkLagAction,
     Outcome,
     ToolInvocation,
 )
+from chaos_librarian.contract.replay_bundle import ExecutionMode
 from chaos_librarian.contract.run_sentinel import RunSentinelState
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.persistence import finalize as finalize_mod
@@ -159,6 +164,86 @@ def test_finalize_success_writes_complete_metadata(
     assert artifacts.replay_bundle.content_sources == content_sources
     assert artifacts.materialization_report == metadata.materialization_report
     assert artifacts.current_manifest == ctx.plan_artifacts.current_manifest
+    assert reports.assets
+
+
+def test_finalize_run_replay_success_writes_run_mode_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: list[tuple[Path, MaterializeMetadata, MaterializeReports]] = []
+
+    def fake_finalize(
+        out_dir: Path,
+        metadata: MaterializeMetadata,
+        reports: MaterializeReports,
+    ) -> None:
+        captured.append((out_dir, metadata, reports))
+
+    helper = getattr(finalize_mod, "finalize_run_replay_success", None)
+    assert helper is not None
+    monkeypatch.setattr(finalize_mod, "finalize_materialize_run", fake_finalize)
+    ctx = _run_context(tmp_path)
+    source_bundle = reports_mod.build_replay_bundle(
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=ctx.plan_artifacts,
+        caps=ctx.caps,
+        created_at=ctx.started_at,
+        content_sources=[],
+        execution_mode=ExecutionMode.RUN,
+    ).model_copy(
+        update={
+            "applied_events": 2,
+            "journal_digest": "f" * 64,
+        }
+    )
+    network_lag_action = NetworkLagAction(
+        event_id="lag-start",
+        commit_event_id="lag-commit",
+        effect=NetworkLagEffect.DELAYED_VISIBILITY,
+        target_ref="asset_main",
+        after_event_id="copy-1",
+        logical_start_ns=10,
+        logical_commit_ns=20,
+        requested_duration_ns=10,
+        provider="stdlib-local",
+        enforced=True,
+    )
+    chaos_action = NetworkFsChaosAction(
+        event_id="readonly-1",
+        action=TimelineActionName.TOGGLE_READONLY,
+        target_ref="asset_main",
+        condition=NetworkFsChaosCondition.EACCES,
+        enforced=True,
+    )
+
+    artifacts = helper(
+        ctx,
+        source_bundle,
+        [],
+        [],
+        filesystem_actions=[],
+        media_actions=[],
+        corruption_actions=[],
+        oracle_hash_actions=[],
+        network_lag_actions=[network_lag_action],
+        network_fs_chaos_actions=[chaos_action],
+        content_sources=[],
+    )
+
+    assert len(captured) == 1
+    _, metadata, reports = captured[0]
+    report = metadata.materialization_report
+    assert report.execution_mode is MaterializationExecutionMode.RUN
+    assert report.network_lag_actions == [network_lag_action]
+    assert report.network_fs_chaos_actions == [chaos_action]
+    assert metadata.replay_bundle.execution_mode is ExecutionMode.RUN
+    assert metadata.replay_bundle.applied_events == source_bundle.applied_events
+    assert metadata.replay_bundle.journal_digest == source_bundle.journal_digest
+    assert metadata.sentinel.state is RunSentinelState.COMPLETE
+    assert artifacts.materialization_report == report
+    assert artifacts.replay_bundle == metadata.replay_bundle
     assert reports.assets
 
 

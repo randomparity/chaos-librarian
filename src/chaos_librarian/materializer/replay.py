@@ -7,17 +7,13 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.journal import CommittedJournalEntry, JournalEntry
 from chaos_librarian.contract.materialization import (
-    MaterializationExecutionMode,
     NetworkFsChaosAction,
     NetworkLagAction,
-    Outcome,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
-from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import (
     NetworkLagEffect,
     Scenario,
@@ -58,16 +54,9 @@ from chaos_librarian.materializer.network_lag_fields import (
     network_lag_str,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
-from chaos_librarian.materializer.persistence.finalize import build_sentinel
-from chaos_librarian.materializer.persistence.reports import (
-    build_metadata,
-    build_replay_bundle,
-    build_report,
-    build_reports,
-)
-from chaos_librarian.materializer.persistence.writer import (
-    cleanup_failed_phase_b_run,
-    finalize_materialize_run,
+from chaos_librarian.materializer.persistence.finalize import (
+    finalize_run_replay_phase_b_failure,
+    finalize_run_replay_success,
 )
 from chaos_librarian.materializer.phase_b.dispatch import (
     PhaseBState,
@@ -75,13 +64,10 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     augment_phase_b_outputs,
     dispatch_phase_b_entry,
     make_phase_b_state,
-    phase_b_failure_outcome,
-    phase_b_failure_record,
 )
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.materializer.synthesis import (
     PhaseAInputs,
-    PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
 )
@@ -179,6 +165,14 @@ def _materialize_verified_run_prefix(
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
+    ctx = RunContext(
+        run_input=run_input,
+        out_dir=out_dir,
+        run_id=source_bundle.run_id,
+        started_at=started_at,
+        caps=caps,
+        plan_artifacts=prefix_artifacts,
+    )
     phase_a = materialize_assets_phase_a(
         PhaseAInputs(
             scenario=scenario,
@@ -198,30 +192,31 @@ def _materialize_verified_run_prefix(
     try:
         _apply_prefix_phase_b(state, prefix_artifacts)
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
-        _finalize_run_replay_phase_b_failure(
-            run_input=run_input,
-            prefix_artifacts=prefix_artifacts,
-            source_bundle=source_bundle,
-            out_dir=out_dir,
-            caps=caps,
-            started_at=started_at,
-            phase_a=phase_a,
-            state=state,
-            exc=exc,
+        augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
+        chaos_actions = _replay_chaos_actions(state)
+        _restore_replay_chaos(state)
+        finalize_run_replay_phase_b_failure(
+            ctx,
+            source_bundle,
+            exc,
+            phase_a.invocations,
+            phase_a.materialized_assets,
+            filesystem_actions=state.filesystem_actions,
+            media_actions=state.media_actions,
+            corruption_actions=state.corruption_actions,
+            oracle_hash_actions=state.oracle_hash_actions,
+            network_lag_actions=state.network_lag_actions,
+            network_fs_chaos_actions=chaos_actions,
+            content_sources=phase_a.content_sources,
         )
         raise
-    finished_at = datetime.now(UTC)
     chaos_actions = _replay_chaos_actions(state)
     _restore_replay_chaos(state)
-    report = build_report(
-        outcome=Outcome.SUCCESS,
-        run_id=source_bundle.run_id,
-        caps=caps,
-        started_at=started_at,
-        finished_at=finished_at,
-        invocations=phase_a.invocations,
-        materialized=phase_a.materialized_assets,
-        failures=[],
+    return finalize_run_replay_success(
+        ctx,
+        source_bundle,
+        phase_a.invocations,
+        phase_a.materialized_assets,
         filesystem_actions=state.filesystem_actions,
         media_actions=state.media_actions,
         corruption_actions=state.corruption_actions,
@@ -229,126 +224,6 @@ def _materialize_verified_run_prefix(
         network_lag_actions=state.network_lag_actions,
         network_fs_chaos_actions=chaos_actions,
         content_sources=phase_a.content_sources,
-        execution_mode=MaterializationExecutionMode.RUN,
-    )
-    replay_bundle = _build_run_replay_bundle(
-        run_input=run_input,
-        prefix_artifacts=prefix_artifacts,
-        source_bundle=source_bundle,
-        caps=caps,
-        created_at=finished_at,
-        content_sources=phase_a.content_sources,
-    )
-    ctx = RunContext(
-        run_input=run_input,
-        out_dir=out_dir,
-        run_id=source_bundle.run_id,
-        started_at=started_at,
-        caps=caps,
-        plan_artifacts=prefix_artifacts,
-    )
-    finalize_materialize_run(
-        out_dir,
-        build_metadata(
-            plan_artifacts=prefix_artifacts,
-            scenario_yaml_bytes=run_input.raw_bytes,
-            materialization_report=report,
-            replay_bundle=replay_bundle,
-            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-        ),
-        build_reports(prefix_artifacts),
-    )
-    return MaterializeArtifacts(
-        current_manifest=prefix_artifacts.current_manifest,
-        materialization_report=report,
-        replay_bundle=replay_bundle,
-    )
-
-
-def _build_run_replay_bundle(
-    *,
-    run_input: RunInput,
-    prefix_artifacts: PlanArtifacts,
-    source_bundle: MaterializeReplayBundle,
-    caps,
-    created_at: datetime,
-    content_sources: list[ContentSourceEvidence],
-) -> MaterializeReplayBundle:
-    return build_replay_bundle(
-        run_id=source_bundle.run_id,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        plan_artifacts=prefix_artifacts,
-        caps=caps,
-        created_at=created_at,
-        content_sources=content_sources,
-        execution_mode=ExecutionMode.RUN,
-    ).model_copy(
-        update={
-            "applied_events": source_bundle.applied_events,
-            "journal_digest": source_bundle.journal_digest,
-        }
-    )
-
-
-def _finalize_run_replay_phase_b_failure(
-    *,
-    run_input: RunInput,
-    prefix_artifacts: PlanArtifacts,
-    source_bundle: MaterializeReplayBundle,
-    out_dir: Path,
-    caps,
-    started_at: datetime,
-    phase_a: PhaseAResult,
-    state: PhaseBState,
-    exc: FilesystemActionError | MediaActionError | CorruptionActionError,
-) -> None:
-    augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
-    finished_at = datetime.now(UTC)
-    chaos_actions = _replay_chaos_actions(state)
-    _restore_replay_chaos(state)
-    report = build_report(
-        outcome=phase_b_failure_outcome(exc),
-        run_id=source_bundle.run_id,
-        caps=caps,
-        started_at=started_at,
-        finished_at=finished_at,
-        invocations=phase_a.invocations,
-        materialized=phase_a.materialized_assets,
-        failures=[phase_b_failure_record(exc)],
-        filesystem_actions=state.filesystem_actions,
-        media_actions=state.media_actions,
-        corruption_actions=state.corruption_actions,
-        oracle_hash_actions=state.oracle_hash_actions,
-        network_lag_actions=state.network_lag_actions,
-        network_fs_chaos_actions=chaos_actions,
-        content_sources=phase_a.content_sources,
-        execution_mode=MaterializationExecutionMode.RUN,
-    )
-    replay_bundle = _build_run_replay_bundle(
-        run_input=run_input,
-        prefix_artifacts=prefix_artifacts,
-        source_bundle=source_bundle,
-        caps=caps,
-        created_at=finished_at,
-        content_sources=phase_a.content_sources,
-    )
-    ctx = RunContext(
-        run_input=run_input,
-        out_dir=out_dir,
-        run_id=source_bundle.run_id,
-        started_at=started_at,
-        caps=caps,
-        plan_artifacts=prefix_artifacts,
-    )
-    cleanup_failed_phase_b_run(
-        out_dir,
-        build_metadata(
-            plan_artifacts=prefix_artifacts,
-            scenario_yaml_bytes=run_input.raw_bytes,
-            materialization_report=report,
-            replay_bundle=replay_bundle,
-            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-        ),
     )
 
 

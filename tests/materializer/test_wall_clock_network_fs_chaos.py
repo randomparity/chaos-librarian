@@ -26,6 +26,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.materializer import preparation as preparation_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer import wall_clock
 from chaos_librarian.materializer.errors import FilesystemActionError
@@ -110,8 +111,12 @@ def _fake_runtime(monkeypatch: pytest.MonkeyPatch) -> _FakeClock:
     monkeypatch.setattr(wall_clock, "_monotonic_ns", clock.monotonic_ns)
     monkeypatch.setattr(wall_clock, "_sleep_until", clock.sleep_until)
     monkeypatch.setattr(wall_clock, "_utc_now", clock.utc_now)
-    monkeypatch.setattr(wall_clock, "detect_capabilities", _capabilities)
-    monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(preparation_mod, "detect_capabilities", _capabilities)
+    monkeypatch.setattr(
+        preparation_mod,
+        "assert_capable_for_static_materialize",
+        lambda _caps: None,
+    )
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
     return clock
 
