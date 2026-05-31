@@ -23,6 +23,26 @@ materialization, and adapter comparison consume those models.
   divergence report construction.
 - `cli/`: Typer app and command modules.
 
+## Shared Root Utilities
+
+The package root contains shared utilities that are intentionally outside the
+major workflow packages because they are consumed across several of them:
+
+- `clock.py`: duration parsing and time conversions used by validation,
+  planning, materialization, and scheduling.
+- `errors.py`: project-owned base exception types for domain errors that cross
+  package boundaries.
+- `media_matrix.py`: supported media codec/container matrix shared by validation,
+  capability gates, generation, and materializer tooling.
+- `path_rendering.py`: deterministic library-path rendering for typed topology
+  contexts and validation projections.
+- `scenario_io.py`: YAML parsing plus line/column indexing for validation and
+  CLI error reporting.
+- `topology.py`: typed manifest/scenario traversal helpers used by engine,
+  materializer, adapter, and tests.
+- `schema_export.py`: developer/CI schema export entrypoint; it reads contract
+  models and writes checked-in JSON Schema artifacts.
+
 ## Data Flow
 
 ```text
