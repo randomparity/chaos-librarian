@@ -33,7 +33,7 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
 from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 

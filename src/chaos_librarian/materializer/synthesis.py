@@ -23,7 +23,7 @@ from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
 from chaos_librarian.contract.scenario import Asset, Scenario
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content_sources import (
     COVER_ART_SIZE,

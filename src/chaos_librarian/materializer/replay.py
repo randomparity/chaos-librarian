@@ -20,13 +20,13 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
-from chaos_librarian.engine import (
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import (
     PlanArtifacts,
     PlanExecutionRequest,
     ReplayIntegrityError,
     run_materializer_plan,
 )
-from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.capability_gates import (
     assert_capable_for_audio_recipes,

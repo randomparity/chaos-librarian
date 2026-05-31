@@ -17,7 +17,7 @@ from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.contract.materialization import MaterializationReport
 from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.validation import RunInput
 
 __all__ = ["MaterializeArtifacts", "RunContext"]
