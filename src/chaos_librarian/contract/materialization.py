@@ -12,7 +12,7 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -136,6 +136,25 @@ class MaterializationFailure(BaseModel):
     invocation_index: int | None = None
 
 
+CorruptionTimelineAction = Literal[
+    TimelineActionName.CORRUPT_CONTAINER_HEADER,
+    TimelineActionName.TRUNCATE_FILE,
+    TimelineActionName.CORRUPT_PACKET_RANGE,
+    TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+    TimelineActionName.CORRUPT_TAGS,
+]
+
+CORRUPTION_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
+    }
+)
+
+
 class FilesystemAction(BaseModel):
     """One phase-B filesystem operation audit record.
 
@@ -189,13 +208,7 @@ class CorruptionAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
-    action: Literal[
-        TimelineActionName.CORRUPT_CONTAINER_HEADER,
-        TimelineActionName.TRUNCATE_FILE,
-        TimelineActionName.CORRUPT_PACKET_RANGE,
-        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
-        TimelineActionName.CORRUPT_TAGS,
-    ]
+    action: CorruptionTimelineAction
     target_asset_id: str
     input_path: str
     output_path: str

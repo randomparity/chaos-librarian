@@ -7,11 +7,15 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, Literal
+from typing import Final
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
-from chaos_librarian.contract.materialization import CorruptionAction, ToolInvocation
+from chaos_librarian.contract.materialization import (
+    CorruptionAction,
+    CorruptionTimelineAction,
+    ToolInvocation,
+)
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TagCorruptionFlavor, TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
@@ -89,13 +93,6 @@ class _FinalizedCorruption:
 
 
 _Handler = Callable[[CorruptionPhaseBContext, JournalEntry, int], CorruptionAction]
-_CorruptionTimelineAction = Literal[
-    TimelineActionName.CORRUPT_CONTAINER_HEADER,
-    TimelineActionName.TRUNCATE_FILE,
-    TimelineActionName.CORRUPT_PACKET_RANGE,
-    TimelineActionName.WRITE_INVALID_DURATION_METADATA,
-    TimelineActionName.CORRUPT_TAGS,
-]
 
 
 def _probe_corrupted_output(
@@ -420,7 +417,7 @@ def _run_invalid_duration_copy(
 def _corruption_action(
     *,
     entry: JournalEntry,
-    action: _CorruptionTimelineAction,
+    action: CorruptionTimelineAction,
     finalized: _FinalizedCorruption,
     started: int,
     corruptor: str,

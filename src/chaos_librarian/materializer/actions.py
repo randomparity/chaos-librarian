@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
+from chaos_librarian.contract.materialization import CORRUPTION_TIMELINE_ACTIONS
 from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
 BASE_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
@@ -39,16 +40,6 @@ MEDIA_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 STDLIB_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = (
     BASE_FILESYSTEM_ACTIONS - {TimelineActionName.CREATE_SIDECAR}
 ) | frozenset({TimelineActionName.REMOVE_SIDECAR})
-
-CORRUPTION_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
-    {
-        TimelineActionName.CORRUPT_CONTAINER_HEADER,
-        TimelineActionName.TRUNCATE_FILE,
-        TimelineActionName.CORRUPT_PACKET_RANGE,
-        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
-        TimelineActionName.CORRUPT_TAGS,
-    }
-)
 
 ORACLE_HASH_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
@@ -96,7 +87,7 @@ NETWORK_FS_CHAOS_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
 MATERIALIZE_SUPPORTED_ACTIONS: Final[frozenset[TimelineActionName]] = (
     STDLIB_PHASE_B_ACTIONS
     | MEDIA_PHASE_B_ACTIONS
-    | CORRUPTION_PHASE_B_ACTIONS
+    | CORRUPTION_TIMELINE_ACTIONS
     | ORACLE_HASH_PHASE_B_ACTIONS
     | FILESYSTEM_ARTIFACT_ACTIONS
     | HIERARCHY_PHASE_B_ACTIONS

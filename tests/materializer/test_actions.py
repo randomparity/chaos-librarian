@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+from chaos_librarian.contract.materialization import CORRUPTION_TIMELINE_ACTIONS
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.actions import (
     BASE_FILESYSTEM_ACTIONS,
-    CORRUPTION_PHASE_B_ACTIONS,
     FILESYSTEM_ARTIFACT_ACTIONS,
     HIERARCHY_PHASE_B_ACTIONS,
     MATERIALIZE_SUPPORTED_ACTIONS,
@@ -69,14 +69,14 @@ def test_materialize_supported_actions_include_corruption_actions() -> None:
                 TimelineActionName.CORRUPT_TAGS,
             }
         )
-        == CORRUPTION_PHASE_B_ACTIONS
+        == CORRUPTION_TIMELINE_ACTIONS
     )
     assert frozenset({TimelineActionName.TOUCH_MTIME}) == FILESYSTEM_ARTIFACT_ACTIONS
     assert frozenset({TimelineActionName.WRONG_ORACLE_HASH}) == ORACLE_HASH_PHASE_B_ACTIONS
     assert MATERIALIZE_SUPPORTED_ACTIONS == (
         STDLIB_PHASE_B_ACTIONS
         | MEDIA_PHASE_B_ACTIONS
-        | CORRUPTION_PHASE_B_ACTIONS
+        | CORRUPTION_TIMELINE_ACTIONS
         | ORACLE_HASH_PHASE_B_ACTIONS
         | FILESYSTEM_ARTIFACT_ACTIONS
         | HIERARCHY_PHASE_B_ACTIONS
