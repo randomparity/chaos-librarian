@@ -9,6 +9,7 @@ from typing import cast
 import pytest
 from ruamel.yaml import YAML
 
+from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import (
     CANONICAL_FUZZ_LANES,
     FUZZ_LANES_BY_PROFILE,
@@ -16,7 +17,12 @@ from chaos_librarian.contract.profiles import (
     FuzzProfileName,
     ProfileName,
 )
-from chaos_librarian.contract.scenario import EmbedSubtitleEvent, ExtractSubtitleEvent, Scenario
+from chaos_librarian.contract.scenario import (
+    EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
+    Scenario,
+    TimelineActionName,
+)
 from chaos_librarian.engine import run_plan
 from chaos_librarian.generation import (
     BatchItem,
@@ -34,7 +40,6 @@ from chaos_librarian.generation.planner import lane_config_for
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
-from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
@@ -107,25 +112,25 @@ def test_lane_configs_cover_allowed_lane_contract() -> None:
 
 
 def test_lane_profiles_cover_every_profile_gated_action_they_emit() -> None:
-    """WHY: validation owns action->required-profile; generation must not drift.
+    """WHY: the contract owns action->required-profile; generation must not drift.
 
     Every profile-gated action a lane emits (its action coverage cells) must
-    have its required profile declared, derived from validation's single source
-    of truth. If validation gates an action a lane already covers, this fails
+    have its required profile declared, derived from the contract's single source
+    of truth. If the contract gates an action a lane already covers, this fails
     until the lane's derived profiles pick it up.
     """
     for (profile, lane), config in generation_planner.LANE_CONFIGS.items():
-        declared = {p.value for p in config.profiles}
+        declared = set(config.profiles)
         for cell in config.required_cells:
             action = cell.removeprefix("action:")
             if cell == action:
                 continue
-            required = REQUIRED_PROFILES_BY_ACTION.get(action)
+            required = REQUIRED_PROFILES_BY_ACTION.get(TimelineActionName(action))
             if required is None:
                 continue
             assert required in declared, (
                 f"{profile.value}/{lane.value} emits gated action {action!r} "
-                f"but does not declare required profile {required!r}"
+                f"but does not declare required profile {required.value!r}"
             )
 
 

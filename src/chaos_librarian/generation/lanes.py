@@ -5,7 +5,7 @@ Lane configuration (``LaneConfig``/``LANE_CONFIGS``) lives in
 required coverage cells, so the required cells and the events that produce
 them cannot drift apart. This module owns the coverage vocabulary (cell
 constants and ``coverage_for_payload``) and derives each lane's required
-profile labels from validation's single source of truth.
+profile labels from the contract's profile-gating policy.
 """
 
 from __future__ import annotations
@@ -14,9 +14,9 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final, cast
 
+from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
-from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 
 if TYPE_CHECKING:
     from chaos_librarian.generation.planner import TimelinePlanner
@@ -60,24 +60,26 @@ def derive_required_profiles(
     """Return the profile labels a lane must declare for its required cells.
 
     The base fuzz profile is always first. Any profile-gated action present in
-    ``required_cells`` contributes its required profile, derived from
-    validation's :data:`REQUIRED_PROFILES_BY_ACTION` so generation cannot drift
+    ``required_cells`` contributes its required profile, derived from the
+    contract's :data:`REQUIRED_PROFILES_BY_ACTION` so generation cannot drift
     from the rule that would reject the generated scenario. Gated profiles are
-    appended in their first-appearance order within the validation map for
+    appended in their first-appearance order within the contract map for
     deterministic output.
     """
     base_profile = ProfileName(base.value)
-    gated_actions = {
-        cell.removeprefix(CELL_ACTION_PREFIX)
-        for cell in required_cells
-        if cell.startswith(CELL_ACTION_PREFIX)
-    }
+    gated_actions: set[TimelineActionName] = set()
+    for cell in required_cells:
+        if not cell.startswith(CELL_ACTION_PREFIX):
+            continue
+        try:
+            gated_actions.add(TimelineActionName(cell.removeprefix(CELL_ACTION_PREFIX)))
+        except ValueError:
+            continue
     profiles: list[ProfileName] = [base_profile]
     seen: set[ProfileName] = {base_profile}
-    for action, profile_value in REQUIRED_PROFILES_BY_ACTION.items():
+    for action, profile in REQUIRED_PROFILES_BY_ACTION.items():
         if action not in gated_actions:
             continue
-        profile = ProfileName(profile_value)
         if profile not in seen:
             seen.add(profile)
             profiles.append(profile)

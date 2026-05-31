@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
+from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation import codes
 from chaos_librarian.validation.reporting import IssueCollector
-from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.validation.semantic import run_semantic_pass
 
 _CHAOS_PROFILE = ProfileName.NETWORK_FS_CHAOS.value
@@ -43,7 +43,7 @@ def _codes(collector: IssueCollector) -> set[str]:
 
 @pytest.mark.parametrize("action", _NEW_ACTIONS)
 def test_every_new_action_is_gated_by_network_fs_chaos(action: str) -> None:
-    assert REQUIRED_PROFILES_BY_ACTION[action] == _CHAOS_PROFILE
+    assert REQUIRED_PROFILES_BY_ACTION[TimelineActionName(action)] is (ProfileName.NETWORK_FS_CHAOS)
 
 
 # --- profile gate -----------------------------------------------------------
