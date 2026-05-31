@@ -29,7 +29,7 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     TimelineActionName,
 )
-from chaos_librarian.engine import PlanArtifacts, run_materializer_plan
+from chaos_librarian.engine import PlanArtifacts, PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
 from chaos_librarian.errors import ChaosLibrarianValueError
@@ -77,6 +77,7 @@ from chaos_librarian.materializer.persistence.writer import (
 )
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
+    PhaseBStateInputs,
     augment_phase_b_outputs,
     dispatch_phase_b_entry,
     make_phase_b_state,
@@ -95,6 +96,7 @@ from chaos_librarian.materializer.scheduler import (
     parse_speed,
 )
 from chaos_librarian.materializer.synthesis import (
+    PhaseAInputs,
     PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
@@ -209,9 +211,11 @@ def run_wall_clock_scenario(
     assert_capable_for_hdr_video(scenario, caps)
     run_id = uuid.uuid4()
     full_artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=validation_report,
-        run_id_override=run_id,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=validation_report,
+            run_id_override=run_id,
+        )
     )
     for context in iter_asset_contexts(scenario):
         asset = context.asset
@@ -225,18 +229,22 @@ def run_wall_clock_scenario(
 
     staging_dir = _create_staging_dir(out_dir)
     baseline_artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=validation_report,
-        run_id_override=run_id,
-        applied_events_override=0,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=validation_report,
+            run_id_override=run_id,
+            applied_events_override=0,
+        )
     )
     phase_a = materialize_assets_phase_a(
-        scenario=scenario,
-        out_dir=staging_dir,
-        artifacts=baseline_artifacts,
-        caps=caps,
-        stamp_manifest=True,
-        materialize_asset=materialize_one_asset,
+        PhaseAInputs(
+            scenario=scenario,
+            out_dir=staging_dir,
+            artifacts=baseline_artifacts,
+            caps=caps,
+            stamp_manifest=True,
+            materialize_asset=materialize_one_asset,
+        )
     )
     _publish_baseline(
         staging_dir=staging_dir,
@@ -454,14 +462,16 @@ def _make_dispatch_state(
     invocations: list[ToolInvocation],
 ) -> _DispatchState:
     state = make_phase_b_state(
-        library_root=run_context.out_dir / "library",
-        scenario=scenario,
-        resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
-        ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
-        ffprobe_version=run_context.caps.ffprobe.version or "unknown",
-        invocations=invocations,
-        manifest=run_context.plan_artifacts.current_manifest,
-        initial_manifest=run_context.plan_artifacts.initial_manifest,
+        PhaseBStateInputs(
+            library_root=run_context.out_dir / "library",
+            scenario=scenario,
+            resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
+            ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
+            ffprobe_version=run_context.caps.ffprobe.version or "unknown",
+            invocations=invocations,
+            manifest=run_context.plan_artifacts.current_manifest,
+            initial_manifest=run_context.plan_artifacts.initial_manifest,
+        )
     )
     return _DispatchState(
         fs_ctx=state.fs_ctx,
@@ -939,11 +949,13 @@ def _final_artifacts_for_executed_prefix(
     executed_journal: list[JournalEntry],
 ) -> PlanArtifacts:
     prefix_artifacts = run_materializer_plan(
-        run_input=run_context.run_input,
-        validation_report=run_context.plan_artifacts.validation_report,
-        resolved_seed_override=run_context.plan_artifacts.replay_bundle.resolved_seed,
-        run_id_override=run_context.run_id,
-        applied_events_override=len(executed_journal),
+        PlanExecutionRequest(
+            run_input=run_context.run_input,
+            validation_report=run_context.plan_artifacts.validation_report,
+            resolved_seed_override=run_context.plan_artifacts.replay_bundle.resolved_seed,
+            run_id_override=run_context.run_id,
+            applied_events_override=len(executed_journal),
+        )
     )
     stamp_phase_a_manifest(
         manifest=prefix_artifacts.current_manifest,

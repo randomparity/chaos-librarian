@@ -74,6 +74,7 @@ from chaos_librarian.topology import iter_asset_contexts, renderable_asset_conte
 
 __all__ = [
     "MaterializeAssetResult",
+    "PhaseAInputs",
     "PhaseAResult",
     "materialize_assets_phase_a",
     "materialize_one_asset",
@@ -108,6 +109,19 @@ class PhaseAResult:
 MaterializeAsset = Callable[..., MaterializeAssetResult]
 
 
+@dataclass(slots=True)
+class PhaseAInputs:
+    """Run facts required to synthesize declared assets in phase A."""
+
+    scenario: Scenario
+    out_dir: Path
+    artifacts: PlanArtifacts
+    caps: Capabilities
+    stamp_manifest: bool
+    phase_a_accumulator: PhaseAResult | None = None
+    materialize_asset: MaterializeAsset | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class _ResolvedMediaInputs:
     video_input: FFmpegInput | None
@@ -130,23 +144,16 @@ class _MediaInvocationResult:
     prelude_invocations: tuple[ToolInvocation, ...]
 
 
-def materialize_assets_phase_a(
-    *,
-    scenario: Scenario,
-    out_dir: Path,
-    artifacts: PlanArtifacts,
-    caps: Capabilities,
-    phase_a_accumulator: PhaseAResult | None = None,
-    stamp_manifest: bool,
-    materialize_asset: MaterializeAsset | None = None,
-) -> PhaseAResult:
+def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
     """Synthesize every declared asset and collect Phase-A metadata."""
-    phase_a = PhaseAResult() if phase_a_accumulator is None else phase_a_accumulator
-    materialize = materialize_one_asset if materialize_asset is None else materialize_asset
-    primary_root_path = scenario.library.roots[0].path
-    skip_by_asset = timeline_sidecar_languages(scenario)
+    phase_a = PhaseAResult() if inputs.phase_a_accumulator is None else inputs.phase_a_accumulator
+    materialize = (
+        materialize_one_asset if inputs.materialize_asset is None else inputs.materialize_asset
+    )
+    primary_root_path = inputs.scenario.library.roots[0].path
+    skip_by_asset = timeline_sidecar_languages(inputs.scenario)
     rel_path_by_asset: dict[str, str] = {}
-    for context in iter_asset_contexts(scenario):
+    for context in iter_asset_contexts(inputs.scenario):
         asset = context.asset
         skip_languages = skip_by_asset.get(asset.id, frozenset())
         invocation_index = len(phase_a.invocations)
@@ -162,7 +169,7 @@ def materialize_assets_phase_a(
             )
             asset_result = _symlink_asset(
                 asset=asset,
-                out_dir=out_dir,
+                out_dir=inputs.out_dir,
                 rendered_relative_path=rendered_relative_path,
                 referent_rel_path=referent_rel_path,
                 invocation_index=invocation_index,
@@ -170,7 +177,7 @@ def materialize_assets_phase_a(
         elif asset.hardlinked_to is not None:
             asset_result = _hardlink_asset(
                 asset=asset,
-                out_dir=out_dir,
+                out_dir=inputs.out_dir,
                 rendered_relative_path=rendered_relative_path,
                 referent_rel_path=rel_path_by_asset[asset.hardlinked_to],
                 invocation_index=invocation_index,
@@ -178,7 +185,7 @@ def materialize_assets_phase_a(
         elif asset.same_content_as is not None:
             asset_result = _copy_same_content_asset(
                 asset=asset,
-                out_dir=out_dir,
+                out_dir=inputs.out_dir,
                 rendered_relative_path=rendered_relative_path,
                 referent_rel_path=rel_path_by_asset[asset.same_content_as],
                 invocation_index=invocation_index,
@@ -186,9 +193,9 @@ def materialize_assets_phase_a(
         else:
             asset_result = materialize(
                 asset,
-                artifacts.replay_bundle.resolved_seed,
-                out_dir,
-                caps,
+                inputs.artifacts.replay_bundle.resolved_seed,
+                inputs.out_dir,
+                inputs.caps,
                 invocation_index,
                 rendered_relative_path=rendered_relative_path,
                 skip_languages=skip_languages,
@@ -202,9 +209,9 @@ def materialize_assets_phase_a(
         phase_a.content_sources.extend(asset_result.content_sources)
         phase_a.probed_by_asset[asset.id] = asset_result.probed
         phase_a.sidecar_hashes_by_asset[asset.id] = asset_result.sidecar_hashes
-        if stamp_manifest:
+        if inputs.stamp_manifest:
             augment_manifest(
-                artifacts.current_manifest,
+                inputs.artifacts.current_manifest,
                 asset,
                 asset_result.materialized_asset,
                 asset_result.probed,

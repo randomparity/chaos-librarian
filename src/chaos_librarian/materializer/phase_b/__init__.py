@@ -45,6 +45,7 @@ from chaos_librarian.materializer.phase_b.filesystem import (
 )
 from chaos_librarian.materializer.phase_b.media import (
     MediaPhaseBContext,
+    MediaPhaseBInputs,
     apply_media_action,
     make_media_phase_b_context,
     supports_media_action,
@@ -76,17 +77,21 @@ class PhaseBState:
     chaos: NetworkFsChaosState | None = None
 
 
-def make_phase_b_state(
-    *,
-    library_root: Path,
-    scenario: Scenario,
-    resolved_seed: int,
-    ffmpeg_version: str,
-    ffprobe_version: str,
-    invocations: list[ToolInvocation],
-    manifest: Manifest,
-    initial_manifest: Manifest,
-) -> PhaseBState:
+@dataclass(slots=True)
+class PhaseBStateInputs:
+    """Run facts required to build shared phase-B dispatch state."""
+
+    library_root: Path
+    scenario: Scenario
+    resolved_seed: int
+    ffmpeg_version: str
+    ffprobe_version: str
+    invocations: list[ToolInvocation]
+    manifest: Manifest
+    initial_manifest: Manifest
+
+
+def make_phase_b_state(inputs: PhaseBStateInputs) -> PhaseBState:
     """Build shared phase-B dispatch state for materialize, run, and replay.
 
     ``manifest`` is the manifest at the end of the journal window (used for
@@ -95,25 +100,27 @@ def make_phase_b_state(
     ``update_sidecar`` can resolve a sidecar that the journal later removes
     (issue #112).
     """
-    scenario_assets = _index_assets(scenario)
+    scenario_assets = _index_assets(inputs.scenario)
     media_ctx = make_media_phase_b_context(
-        library_root=library_root,
-        scenario_assets=scenario_assets,
-        resolved_seed=resolved_seed,
-        ffmpeg_version=ffmpeg_version,
-        ffprobe_version=ffprobe_version,
-        invocations=invocations,
-        initial_sidecars=initial_manifest.sidecars,
+        MediaPhaseBInputs(
+            library_root=inputs.library_root,
+            scenario_assets=scenario_assets,
+            resolved_seed=inputs.resolved_seed,
+            ffmpeg_version=inputs.ffmpeg_version,
+            ffprobe_version=inputs.ffprobe_version,
+            invocations=inputs.invocations,
+            initial_sidecars=inputs.initial_manifest.sidecars,
+        )
     )
     corruption_ctx = make_corruption_phase_b_context(
-        library_root=library_root,
-        resolved_seed=resolved_seed,
-        ffmpeg_version=ffmpeg_version,
-        ffprobe_version=ffprobe_version,
-        invocations=invocations,
+        library_root=inputs.library_root,
+        resolved_seed=inputs.resolved_seed,
+        ffmpeg_version=inputs.ffmpeg_version,
+        ffprobe_version=inputs.ffprobe_version,
+        invocations=inputs.invocations,
     )
     oracle_hashes: dict[str, tuple[str, ProbedMedia | None]] = {}
-    manifest_probes = {version.id: version.probed for version in manifest.versions}
+    manifest_probes = {version.id: version.probed for version in inputs.manifest.versions}
 
     def version_probe_lookup(version_id: str) -> ProbedMedia | None:
         entry = oracle_hashes.get(version_id)
@@ -129,18 +136,18 @@ def make_phase_b_state(
 
     return PhaseBState(
         fs_ctx=make_filesystem_phase_b_context(
-            library_root=library_root,
+            library_root=inputs.library_root,
             scenario_assets=scenario_assets,
-            resolved_seed=resolved_seed,
+            resolved_seed=inputs.resolved_seed,
         ),
         media_ctx=media_ctx,
         corruption_ctx=corruption_ctx,
         oracle_hash_ctx=make_oracle_hash_phase_b_context(
-            library_root=library_root,
+            library_root=inputs.library_root,
             post_phase_b_oracle_hashes=oracle_hashes,
             version_probe_lookup=version_probe_lookup,
         ),
-        chaos=NetworkFsChaosState(library_root=library_root),
+        chaos=NetworkFsChaosState(library_root=inputs.library_root),
     )
 
 

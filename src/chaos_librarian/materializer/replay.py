@@ -24,7 +24,12 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
-from chaos_librarian.engine import PlanArtifacts, ReplayIntegrityError, run_materializer_plan
+from chaos_librarian.engine import (
+    PlanArtifacts,
+    PlanExecutionRequest,
+    ReplayIntegrityError,
+    run_materializer_plan,
+)
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.capability_gates import (
@@ -66,6 +71,7 @@ from chaos_librarian.materializer.persistence.writer import (
 )
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
+    PhaseBStateInputs,
     augment_phase_b_outputs,
     dispatch_phase_b_entry,
     make_phase_b_state,
@@ -74,6 +80,7 @@ from chaos_librarian.materializer.phase_b import (
 )
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.materializer.synthesis import (
+    PhaseAInputs,
     PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
@@ -123,11 +130,13 @@ def _verified_run_prefix(
         raise ReplayIntegrityError(f"applied_events {bundle.applied_events} is not replayable")
 
     artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        resolved_seed_override=bundle.resolved_seed,
-        run_id_override=bundle.run_id,
-        applied_events_override=bundle.applied_events,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            resolved_seed_override=bundle.resolved_seed,
+            run_id_override=bundle.run_id,
+            applied_events_override=bundle.applied_events,
+        )
     )
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
@@ -171,12 +180,14 @@ def _materialize_verified_run_prefix(
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
     phase_a = materialize_assets_phase_a(
-        scenario=scenario,
-        out_dir=out_dir,
-        artifacts=prefix_artifacts,
-        caps=caps,
-        stamp_manifest=True,
-        materialize_asset=materialize_one_asset,
+        PhaseAInputs(
+            scenario=scenario,
+            out_dir=out_dir,
+            artifacts=prefix_artifacts,
+            caps=caps,
+            stamp_manifest=True,
+            materialize_asset=materialize_one_asset,
+        )
     )
     state = _make_run_replay_phase_b_state(
         scenario=scenario,
@@ -349,14 +360,16 @@ def _make_run_replay_phase_b_state(
     invocations: list[ToolInvocation],
 ) -> PhaseBState:
     return make_phase_b_state(
-        library_root=out_dir / "library",
-        scenario=scenario,
-        resolved_seed=artifacts.replay_bundle.resolved_seed,
-        ffmpeg_version="unknown",
-        ffprobe_version="unknown",
-        invocations=invocations,
-        manifest=artifacts.current_manifest,
-        initial_manifest=artifacts.initial_manifest,
+        PhaseBStateInputs(
+            library_root=out_dir / "library",
+            scenario=scenario,
+            resolved_seed=artifacts.replay_bundle.resolved_seed,
+            ffmpeg_version="unknown",
+            ffprobe_version="unknown",
+            invocations=invocations,
+            manifest=artifacts.current_manifest,
+            initial_manifest=artifacts.initial_manifest,
+        )
     )
 
 

@@ -272,14 +272,16 @@ def test_make_phase_b_state_oracle_lookup_uses_current_phase_b_probe_order(
         ],
     )
     state = phase_b.make_phase_b_state(
-        library_root=tmp_path,
-        scenario=_scenario(),
-        resolved_seed=7,
-        ffmpeg_version="ffmpeg-test",
-        ffprobe_version="ffprobe-test",
-        invocations=[],
-        manifest=manifest,
-        initial_manifest=manifest,
+        phase_b.PhaseBStateInputs(
+            library_root=tmp_path,
+            scenario=_scenario(),
+            resolved_seed=7,
+            ffmpeg_version="ffmpeg-test",
+            ffprobe_version="ffprobe-test",
+            invocations=[],
+            manifest=manifest,
+            initial_manifest=manifest,
+        )
     )
     state.media_ctx.post_phase_b_versions["version_media"] = (HASH_A, media_probe)
     state.corruption_ctx.post_phase_b_versions["version_media"] = (HASH_B, corruption_probe)

@@ -33,7 +33,11 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import ReplayIntegrityError, run_materializer_plan
+from chaos_librarian.engine import (
+    PlanExecutionRequest,
+    ReplayIntegrityError,
+    run_materializer_plan,
+)
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
@@ -758,10 +762,12 @@ def _run_bundle_for(scenario: bytes, *, applied_events: int = 1) -> MaterializeR
     )
     report = run_validation(run_input)
     artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        run_id_override=_RUN_ID,
-        applied_events_override=applied_events,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=_RUN_ID,
+            applied_events_override=applied_events,
+        )
     )
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal

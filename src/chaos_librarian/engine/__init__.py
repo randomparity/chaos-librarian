@@ -14,6 +14,7 @@ from chaos_librarian.engine.diff import (
 )
 from chaos_librarian.engine.plan import (
     PlanArtifacts,
+    PlanExecutionRequest,
     ReplayIntegrityError,
     replay_plan_bundle,
     run_materializer_plan,
@@ -36,6 +37,7 @@ __all__ = [
     "FixtureFileDiff",
     "JournalCorruptError",
     "PlanArtifacts",
+    "PlanExecutionRequest",
     "ReplayIntegrityError",
     "ReportSet",
     "ScenarioTamperedError",

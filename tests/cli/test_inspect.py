@@ -13,7 +13,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.contract.materialization import ToolchainInfo
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
-from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
@@ -156,10 +156,12 @@ class TestInspect:
         run_input = prepare_run_input(FIXTURE_DIR / "identity-move-rename.yaml")
         report = run_validation(run_input)
         live_artifacts = run_materializer_plan(
-            run_input=run_input,
-            validation_report=report,
-            run_id_override=bundle.run_id,
-            applied_events_override=2,
+            PlanExecutionRequest(
+                run_input=run_input,
+                validation_report=report,
+                run_id_override=bundle.run_id,
+                applied_events_override=2,
+            )
         )
         run_bundle = MaterializeReplayBundle(
             schema_version=bundle.schema_version,

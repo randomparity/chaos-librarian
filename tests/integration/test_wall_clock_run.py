@@ -22,7 +22,7 @@ from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamK
 from chaos_librarian.contract.materialization import MaterializedAsset, MediaAction
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import phase_b, wall_clock
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input, run_validation
@@ -170,10 +170,12 @@ def _logical_journal(run_id, applied_events: int):
     run_input = prepare_run_input(FIXTURE)
     report = run_validation(run_input)
     return run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        run_id_override=run_id,
-        applied_events_override=applied_events,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=run_id,
+            applied_events_override=applied_events,
+        )
     ).journal
 
 

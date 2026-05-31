@@ -66,6 +66,7 @@ __all__ = [
     "SUPPORTED_S7_ACTIONS",
     "LiveSidecar",
     "MediaPhaseBContext",
+    "MediaPhaseBInputs",
     "_subtitle_codec_for_container",
     "apply_media_action",
     "make_media_phase_b_context",
@@ -177,30 +178,34 @@ class MediaPhaseBContext:
     live_sidecars: dict[str, LiveSidecar] = field(default_factory=dict)
 
 
-def make_media_phase_b_context(
-    *,
-    library_root: Path,
-    scenario_assets: Mapping[str, Asset],
-    resolved_seed: int,
-    ffmpeg_version: str,
-    ffprobe_version: str,
-    invocations: list[ToolInvocation],
-    initial_sidecars: Iterable[ManifestSidecar],
-) -> MediaPhaseBContext:
+@dataclass(slots=True)
+class MediaPhaseBInputs:
+    """Run facts required to build the media phase-B context."""
+
+    library_root: Path
+    scenario_assets: Mapping[str, Asset]
+    resolved_seed: int
+    ffmpeg_version: str
+    ffprobe_version: str
+    invocations: list[ToolInvocation]
+    initial_sidecars: Iterable[ManifestSidecar]
+
+
+def make_media_phase_b_context(inputs: MediaPhaseBInputs) -> MediaPhaseBContext:
     live_sidecars: dict[str, LiveSidecar] = {}
-    for sidecar in initial_sidecars:
+    for sidecar in inputs.initial_sidecars:
         live_sidecars[sidecar.id] = LiveSidecar(
             kind=SidecarKind(sidecar.kind),
             language=sidecar.language,
             asset_id=sidecar.asset_id,
         )
     return MediaPhaseBContext(
-        library_root=library_root,
-        scenario_assets=scenario_assets,
-        resolved_seed=resolved_seed,
-        ffmpeg_version=ffmpeg_version,
-        ffprobe_version=ffprobe_version,
-        invocations=invocations,
+        library_root=inputs.library_root,
+        scenario_assets=inputs.scenario_assets,
+        resolved_seed=inputs.resolved_seed,
+        ffmpeg_version=inputs.ffmpeg_version,
+        ffprobe_version=inputs.ffprobe_version,
+        invocations=inputs.invocations,
         live_sidecars=live_sidecars,
     )
 

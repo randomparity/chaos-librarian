@@ -18,7 +18,7 @@ from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer.capability_gates import (
     assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
@@ -45,6 +45,7 @@ from chaos_librarian.materializer.persistence.finalize import (
 from chaos_librarian.materializer.persistence.writer import begin_materialize_run
 from chaos_librarian.materializer.phase_b import (
     PhaseBState,
+    PhaseBStateInputs,
     augment_phase_b_outputs,
     dispatch_phase_b_entry,
     make_phase_b_state,
@@ -55,7 +56,11 @@ from chaos_librarian.materializer.preflight import (
     preflight_asset,
     preflight_timeline,
 )
-from chaos_librarian.materializer.synthesis import PhaseAResult, materialize_assets_phase_a
+from chaos_librarian.materializer.synthesis import (
+    PhaseAInputs,
+    PhaseAResult,
+    materialize_assets_phase_a,
+)
 from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,
@@ -126,10 +131,11 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     # because phase B did not yet exist and the materializer reused the
     # plan-only manifest as-is.
     plan_artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=validation_report,
-        run_id_override=run_id,
-        steps_limit=None,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=validation_report,
+            run_id_override=run_id,
+        )
     )
     for context in iter_asset_contexts(scenario):
         asset = context.asset
@@ -177,22 +183,26 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     phase_b_state: PhaseBState | None = None
     try:
         materialize_assets_phase_a(
-            scenario=scenario,
-            out_dir=ctx.out_dir,
-            artifacts=ctx.plan_artifacts,
-            caps=ctx.caps,
-            phase_a_accumulator=phase_a,
-            stamp_manifest=True,
+            PhaseAInputs(
+                scenario=scenario,
+                out_dir=ctx.out_dir,
+                artifacts=ctx.plan_artifacts,
+                caps=ctx.caps,
+                phase_a_accumulator=phase_a,
+                stamp_manifest=True,
+            )
         )
         phase_b_state = make_phase_b_state(
-            library_root=ctx.out_dir / "library",
-            scenario=scenario,
-            resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
-            ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
-            ffprobe_version=ctx.caps.ffprobe.version or "unknown",
-            invocations=phase_a.invocations,
-            manifest=ctx.plan_artifacts.current_manifest,
-            initial_manifest=ctx.plan_artifacts.initial_manifest,
+            PhaseBStateInputs(
+                library_root=ctx.out_dir / "library",
+                scenario=scenario,
+                resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
+                ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
+                ffprobe_version=ctx.caps.ffprobe.version or "unknown",
+                invocations=phase_a.invocations,
+                manifest=ctx.plan_artifacts.current_manifest,
+                initial_manifest=ctx.plan_artifacts.initial_manifest,
+            )
         )
         for entry in ctx.plan_artifacts.journal:
             dispatch_phase_b_entry(phase_b_state, entry)
