@@ -27,10 +27,10 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.actions import (
+    BASE_FILESYSTEM_ACTIONS,
+    MATERIALIZE_SUPPORTED_ACTIONS,
     NETWORK_FS_CHAOS_ACTIONS,
     NETWORK_LAG_ACTIONS,
-    SUPPORTED_S6_ACTIONS,
-    SUPPORTED_S10_ACTIONS,
 )
 from chaos_librarian.materializer.content_sources import (
     AUDIO_RECIPES,
@@ -60,12 +60,12 @@ from chaos_librarian.topology import iter_asset_contexts
 
 __all__ = [
     "AUDIO_RECIPES",
+    "BASE_FILESYSTEM_ACTIONS",
     "FPS_DEFAULT",
+    "MATERIALIZE_SUPPORTED_ACTIONS",
     "NETWORK_FS_CHAOS_ACTIONS",
     "NETWORK_LAG_ACTIONS",
     "RESOLUTION_PIXELS",
-    "SUPPORTED_S6_ACTIONS",
-    "SUPPORTED_S10_ACTIONS",
     "VIDEO_RECIPES",
     "iter_assets",
     "preflight_asset",
@@ -339,7 +339,7 @@ def preflight_timeline(
     network-lag and network-fs-chaos families are wall-clock-only; static
     ``materialize`` passes neither flag and so rejects both.
     """
-    supported_actions = SUPPORTED_S10_ACTIONS
+    supported_actions = MATERIALIZE_SUPPORTED_ACTIONS
     if allow_network_lag:
         supported_actions = supported_actions | NETWORK_LAG_ACTIONS
     if allow_network_fs_chaos:

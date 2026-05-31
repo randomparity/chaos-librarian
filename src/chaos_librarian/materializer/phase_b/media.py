@@ -1,16 +1,15 @@
 """Phase-B media dispatcher — ffmpeg-backed handlers for byte-changing events.
 
-Parallel to Sprint 6's ``materializer/filesystem.py``: one handler per
-media action, each reads every path from the journal entry's
-``state_delta`` and writes through an atomic-rename temp-file.
+Parallel to the stdlib filesystem dispatcher: one handler per media action,
+each reads every path from the journal entry's ``state_delta`` and writes
+through an atomic-rename temp-file.
 
 The orchestrator in ``materializer/run.py`` walks the journal once and
 dispatches each entry to ``apply_media_action`` here OR to the stdlib
 dispatcher in ``filesystem.py``. See ``materializer.actions`` for the
 routing action sets.
 
-Per-action ffmpeg sketches are in the Sprint 7 spec
-§"Per-action behavior" table.
+Per-action ffmpeg sketches live in the media-mutation design notes.
 """
 
 from __future__ import annotations
@@ -33,7 +32,7 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
 )
 from chaos_librarian.materializer.actions import (
-    SUPPORTED_S7_ACTIONS,
+    MEDIA_PHASE_B_ACTIONS,
 )
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
@@ -63,7 +62,7 @@ def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
 
 
 __all__ = [
-    "SUPPORTED_S7_ACTIONS",
+    "MEDIA_PHASE_B_ACTIONS",
     "LiveSidecar",
     "MediaPhaseBContext",
     "MediaPhaseBInputs",

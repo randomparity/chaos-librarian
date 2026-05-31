@@ -28,8 +28,8 @@ from chaos_librarian.materializer.errors import (
     UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.preflight import (
-    SUPPORTED_S6_ACTIONS,
-    SUPPORTED_S10_ACTIONS,
+    BASE_FILESYSTEM_ACTIONS,
+    MATERIALIZE_SUPPORTED_ACTIONS,
     preflight_asset,
     preflight_timeline,
 )
@@ -97,7 +97,7 @@ def _scenario_with_timeline(events: list[tuple[str, str, dict]]) -> Scenario:
 
 
 def test_preflight_timeline_accepts_supported_actions() -> None:
-    """WHY: the Sprint 6 matrix permits these eight actions; preflight
+    """WHY: the current filesystem matrix permits these actions; preflight
     must let them through so phase B can execute them."""
     scenario = _scenario_with_timeline(
         [
@@ -127,21 +127,21 @@ def test_preflight_timeline_accepts_delete_then_add_file() -> None:
 
 
 def test_preflight_timeline_empty_timeline_accepted() -> None:
-    """WHY: static scenarios remain valid materialize targets in Sprint 6;
+    """WHY: static scenarios remain valid materialize targets;
     the action-set gate is a no-op when there are no events."""
     scenario = _scenario_with_timeline([])
     preflight_timeline(scenario)
 
 
-def test_supported_s6_actions_includes_add_file_and_excludes_reencodes() -> None:
+def test_base_filesystem_actions_include_add_file_and_exclude_reencodes() -> None:
     """WHY: current stdlib materialize support includes restoration via
     ``add_file``. Media mutations stay outside this set because media.py
     owns their dispatch."""
-    supported_values = {a.value for a in SUPPORTED_S6_ACTIONS}
+    supported_values = {a.value for a in BASE_FILESYSTEM_ACTIONS}
     assert "add_file" in supported_values
     assert "reencode_video" not in supported_values
     assert "reencode_audio" not in supported_values
-    assert len(SUPPORTED_S6_ACTIONS) == 9
+    assert len(BASE_FILESYSTEM_ACTIONS) == 9
 
 
 @pytest.mark.parametrize(
@@ -155,10 +155,10 @@ def test_supported_s6_actions_includes_add_file_and_excludes_reencodes() -> None
         ("update_sidecar", {"sidecar_path": "a0.eng.srt"}),
     ],
 )
-def test_preflight_timeline_accepts_sprint_7_actions(
+def test_preflight_timeline_accepts_media_phase_b_actions(
     action_name: str, extra_fields: dict[str, object]
 ) -> None:
-    """WHY: Sprint 7 widens the gate to allow the six new media/sidecar
+    """WHY: the media phase-B gate allows media and sidecar
     actions; preflight must let each one through so phase B's media and
     stdlib dispatchers can execute it."""
     scenario = _scenario_with_timeline([(action_name, "asset_hd_main", extra_fields)])
@@ -222,9 +222,9 @@ def test_preflight_timeline_accepts_hierarchy_actions(
     preflight_timeline(scenario)
 
 
-def test_supported_s10_actions_exported_from_preflight() -> None:
-    assert "corrupt_container_header" in {action.value for action in SUPPORTED_S10_ACTIONS}
-    assert "wrong_oracle_hash" in {action.value for action in SUPPORTED_S10_ACTIONS}
+def test_materialize_supported_actions_exported_from_preflight() -> None:
+    assert "corrupt_container_header" in {action.value for action in MATERIALIZE_SUPPORTED_ACTIONS}
+    assert "wrong_oracle_hash" in {action.value for action in MATERIALIZE_SUPPORTED_ACTIONS}
 
 
 def test_preflight_timeline_rejects_network_lag_for_materialize() -> None:

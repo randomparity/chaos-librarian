@@ -6,7 +6,7 @@ from typing import Final
 
 from chaos_librarian.contract.scenario import HIERARCHY_TIMELINE_ACTIONS, TimelineActionName
 
-SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+BASE_FILESYSTEM_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.MOVE_ASSET,
         TimelineActionName.RENAME_FILE,
@@ -20,7 +20,7 @@ SUPPORTED_S6_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
-_MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+MEDIA_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.REENCODE_VIDEO,
         TimelineActionName.REENCODE_AUDIO,
@@ -33,16 +33,14 @@ _MEDIA_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
-# create_sidecar moved to _MEDIA_ACTIONS in Sprint 7: the per-kind byte
-# generators (subtitle / NFO / poster) belong alongside the media handlers,
-# so Sprint 6's stdlib set is filtered here to keep routing single-dispatch.
-_STDLIB_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    SUPPORTED_S6_ACTIONS - {TimelineActionName.CREATE_SIDECAR}
+# create_sidecar is routed with media handlers because the per-kind byte
+# generators (subtitle / NFO / poster) live there; filter it out of the
+# stdlib set to keep phase-B routing single-dispatch.
+STDLIB_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    BASE_FILESYSTEM_ACTIONS - {TimelineActionName.CREATE_SIDECAR}
 ) | frozenset({TimelineActionName.REMOVE_SIDECAR})
 
-SUPPORTED_S7_ACTIONS: Final[frozenset[TimelineActionName]] = _STDLIB_ACTIONS | _MEDIA_ACTIONS
-
-_CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+CORRUPTION_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.CORRUPT_CONTAINER_HEADER,
         TimelineActionName.TRUNCATE_FILE,
@@ -52,19 +50,19 @@ _CORRUPTION_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
-_ORACLE_HASH_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+ORACLE_HASH_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.WRONG_ORACLE_HASH,
     }
 )
 
-_FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+FILESYSTEM_ARTIFACT_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     {
         TimelineActionName.TOUCH_MTIME,
     }
 )
 
-_HIERARCHY_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS
+HIERARCHY_PHASE_B_ACTIONS: Final[frozenset[TimelineActionName]] = HIERARCHY_TIMELINE_ACTIONS
 
 # Podcast staleness records a neutral oracle fact; the file lingers untouched on
 # disk, so this has no filesystem effect (like wrong_oracle_hash) — supported but
@@ -95,12 +93,12 @@ NETWORK_FS_CHAOS_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
     }
 )
 
-SUPPORTED_S10_ACTIONS: Final[frozenset[TimelineActionName]] = (
-    _STDLIB_ACTIONS
-    | _MEDIA_ACTIONS
-    | _CORRUPTION_ACTIONS
-    | _ORACLE_HASH_ACTIONS
-    | _FILESYSTEM_ARTIFACT_ACTIONS
-    | _HIERARCHY_ACTIONS
+MATERIALIZE_SUPPORTED_ACTIONS: Final[frozenset[TimelineActionName]] = (
+    STDLIB_PHASE_B_ACTIONS
+    | MEDIA_PHASE_B_ACTIONS
+    | CORRUPTION_PHASE_B_ACTIONS
+    | ORACLE_HASH_PHASE_B_ACTIONS
+    | FILESYSTEM_ARTIFACT_ACTIONS
+    | HIERARCHY_PHASE_B_ACTIONS
     | PODCAST_ACTIONS
 )
