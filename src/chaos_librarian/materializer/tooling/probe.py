@@ -261,6 +261,11 @@ def probe_file(path: Path) -> ProbedMedia:
             f"ffprobe timeout on {path}",
             payload={"path": str(path), "timeout_s": _PROBE_TIMEOUT_S},
         ) from exc
+    except OSError as exc:
+        raise ProbeParseError(
+            f"ffprobe launch failed on {path}",
+            payload={"path": str(path), "stderr": str(exc)[-STDERR_TAIL_BYTES:]},
+        ) from exc
     if completed.returncode != 0:
         raise ProbeParseError(
             f"ffprobe exit {completed.returncode} on {path}",

@@ -175,6 +175,22 @@ def test_probe_file_raises_on_non_zero_exit(
         probe_file(tmp_path / "broken.mkv")
 
 
+def test_probe_file_wraps_launch_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise OSError("ffprobe missing")
+
+    monkeypatch.setattr(probe_mod.subprocess, "run", fail_run)
+
+    with pytest.raises(ProbeParseError) as exc_info:
+        probe_file(tmp_path / "broken.mkv")
+
+    assert "ffprobe launch failed" in str(exc_info.value)
+    assert exc_info.value.payload["path"] == str(tmp_path / "broken.mkv")
+    stderr = exc_info.value.payload["stderr"]
+    assert isinstance(stderr, str)
+    assert "ffprobe missing" in stderr
+
+
 def test_probe_file_raises_on_unparseable_json(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

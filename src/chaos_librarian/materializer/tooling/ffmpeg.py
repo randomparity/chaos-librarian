@@ -552,15 +552,21 @@ def run_ffmpeg(
     ``stderr_tail`` is the last 2 KB of stderr decoded UTF-8 lossy.
     """
     start = time.monotonic_ns()
-    completed = subprocess.run(
-        argv,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        timeout=timeout_s,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    duration_ns = time.monotonic_ns() - start
+    try:
+        completed = subprocess.run(
+            argv,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=timeout_s,
+            check=False,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.TimeoutExpired as exc:
+        stderr_tail = _tool_timeout_tail("ffmpeg", timeout_s=timeout_s, exc=exc)
+        return _failed_invocation("ffmpeg", ffmpeg_version, argv, start), stderr_tail
+    except OSError as exc:
+        stderr_tail = f"ffmpeg launch failed: {exc}"
+        return _failed_invocation("ffmpeg", ffmpeg_version, argv, start), stderr_tail
     stderr_bytes = completed.stderr or b""
     stderr_tail = stderr_bytes[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
     invocation = ToolInvocation(
@@ -568,6 +574,31 @@ def run_ffmpeg(
         version=ffmpeg_version,
         command=list(argv),
         exit_code=completed.returncode,
-        duration_ns=duration_ns,
+        duration_ns=time.monotonic_ns() - start,
     )
     return invocation, stderr_tail
+
+
+def _failed_invocation(
+    tool: str,
+    version: str,
+    argv: list[str],
+    start_ns: int,
+) -> ToolInvocation:
+    return ToolInvocation(
+        tool=tool,
+        version=version,
+        command=list(argv),
+        exit_code=1,
+        duration_ns=time.monotonic_ns() - start_ns,
+    )
+
+
+def _tool_timeout_tail(tool: str, *, timeout_s: float, exc: subprocess.TimeoutExpired) -> str:
+    tail = f"{tool} timeout after {timeout_s}s"
+    stderr = exc.stderr
+    if stderr:
+        if isinstance(stderr, bytes):
+            stderr = stderr[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
+        tail = f"{tail}: {stderr}"
+    return tail
