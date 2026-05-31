@@ -14,7 +14,10 @@ from chaos_librarian.cli._envelope import (
     E_REPLAY_BUNDLE_INVALID,
     E_REPLAY_DIVERGENCE,
     emit_cli_error,
-    emit_materialize_error,
+)
+from chaos_librarian.cli._materialization_errors import (
+    exit_materialization_error,
+    replay_command_report_dir,
 )
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER, infer_original
@@ -29,16 +32,7 @@ from chaos_librarian.engine import (
     write_fixture,
 )
 from chaos_librarian.materializer.errors import (
-    CapabilityGateError,
-    ContainmentViolationError,
-    CorruptionActionError,
-    FilesystemActionError,
-    MediaActionError,
-    ProbeParseError,
-    ScenarioValidationError,
-    TimelineUnsupportedError,
-    ToolFailedError,
-    UnsupportedMaterializationError,
+    MaterializationError,
 )
 from chaos_librarian.materializer.replay import replay_run_bundle
 
@@ -137,26 +131,12 @@ def _replay_materialize_bundle(
             details={"kind": "integrity", "recorded_run_id": str(bundle.run_id)},
         )
         raise typer.Exit(code=6) from exc
-    except CapabilityGateError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=4) from exc
-    except ScenarioValidationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=3) from exc
-    except (
-        TimelineUnsupportedError,
-        UnsupportedMaterializationError,
-        ToolFailedError,
-        ProbeParseError,
-        FilesystemActionError,
-        MediaActionError,
-        CorruptionActionError,
-    ) as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except ContainmentViolationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=7) from exc
+    except MaterializationError as exc:
+        exit_materialization_error(
+            exc,
+            json_output=json_output,
+            run_dir=replay_command_report_dir(exc, out),
+        )
     if against is not None:
         diff = compare_run_replay(against, out)
         if not diff.is_clean():

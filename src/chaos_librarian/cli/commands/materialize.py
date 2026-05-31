@@ -7,20 +7,15 @@ from typing import Annotated
 
 import typer
 
-from chaos_librarian.cli._envelope import emit_cli_error, emit_materialize_error
+from chaos_librarian.cli._envelope import emit_cli_error
+from chaos_librarian.cli._materialization_errors import (
+    exit_materialization_error,
+    materialize_command_report_dir,
+)
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.materializer import (
-    CapabilityGateError,
-    ContainmentViolationError,
-    CorruptionActionError,
-    FilesystemActionError,
-    MediaActionError,
-    ProbeParseError,
-    ScenarioValidationError,
-    TimelineUnsupportedError,
-    ToolFailedError,
-    UnsupportedMaterializationError,
+    MaterializationError,
     materialize_scenario,
 )
 from chaos_librarian.scenario_io import ScenarioLoadError
@@ -47,31 +42,12 @@ def materialize(
             extra_top_level={"scenario_path": str(scenario)},
         )
         raise typer.Exit(code=3) from exc
-    except CapabilityGateError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=4) from exc
-    except ScenarioValidationError as exc:
-        # Mirror ``plan``'s exit code (3) for semantic-validation failures so
-        # downstream agents key off the same convention.
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=3) from exc
-    except (TimelineUnsupportedError, UnsupportedMaterializationError) as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=5) from exc
-    except (
-        ToolFailedError,
-        ProbeParseError,
-        FilesystemActionError,
-        MediaActionError,
-        CorruptionActionError,
-    ) as exc:
-        # These paths allocate a run directory and write materialization.json
-        # before raising, so the envelope advertises materialization_report_path.
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except ContainmentViolationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=7) from exc
+    except MaterializationError as exc:
+        exit_materialization_error(
+            exc,
+            json_output=json_output,
+            run_dir=materialize_command_report_dir(exc, out),
+        )
 
     if json_output:
         typer.echo(artifacts.materialization_report.model_dump_json(indent=2, exclude_none=True))

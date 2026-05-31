@@ -34,15 +34,17 @@ def clean(
             error_code=E_FIXTURE_INCONSISTENT,
             message=f"replay.json missing: {replay_path}",
             json_output=json_output,
+            extra_top_level={"bundle_path": str(replay_path)},
         )
         raise typer.Exit(code=7)
     try:
         bundle = REPLAY_BUNDLE_ADAPTER.validate_json(replay_path.read_bytes())
-    except ValidationError as exc:
+    except (OSError, ValidationError) as exc:
         emit_cli_error(
             error_code=E_FIXTURE_INCONSISTENT,
             message=f"replay.json unparseable: {exc}",
             json_output=json_output,
+            extra_top_level={"bundle_path": str(replay_path)},
         )
         raise typer.Exit(code=7) from exc
     if bundle.run_id != sentinel.run_id:

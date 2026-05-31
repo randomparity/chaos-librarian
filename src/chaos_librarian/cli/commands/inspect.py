@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, cast
 
 import typer
+from pydantic import ValidationError
 
-from chaos_librarian.cli._envelope import E_SENTINEL_INVALID, emit_cli_error
+from chaos_librarian.cli._envelope import (
+    E_FIXTURE_INCONSISTENT,
+    E_REPLAY_BUNDLE_INVALID,
+    E_SENTINEL_INVALID,
+    emit_cli_error,
+)
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.manifest import Manifest
-from chaos_librarian.contract.replay_bundle import ExecutionMode
+from chaos_librarian.contract.replay_bundle import ExecutionMode, ReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.engine import (
     SentinelInvalidError,
@@ -20,7 +27,17 @@ from chaos_librarian.engine import (
     step_boundaries,
     verify_sentinel,
 )
-from chaos_librarian.validation import prepare_run_input_from_bytes
+from chaos_librarian.scenario_io import ScenarioLoadError
+from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
+
+
+@dataclass(frozen=True)
+class _InspectArtifactError(Exception):
+    error_code: str
+    message: str
+    exit_code: int
+    path_key: str
+    path: Path
 
 
 @app.command()
@@ -34,6 +51,14 @@ def inspect(
     except SentinelInvalidError as exc:
         emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc
+    except _InspectArtifactError as exc:
+        emit_cli_error(
+            error_code=exc.error_code,
+            message=exc.message,
+            json_output=json_output,
+            extra_top_level={exc.path_key: str(exc.path)},
+        )
+        raise typer.Exit(code=exc.exit_code) from exc
 
     if json_output:
         typer.echo(json.dumps(summary, sort_keys=True))
@@ -61,20 +86,10 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
     """
     sentinel = verify_sentinel(run_dir)
 
-    bundle = REPLAY_BUNDLE_ADAPTER.validate_json((run_dir / "replay.json").read_bytes())
-    manifest_current = Manifest.model_validate_json((run_dir / "manifest.current.json").read_text())
-    try:
-        journal_text = (run_dir / "journal.jsonl").read_text()
-    except FileNotFoundError:
-        journal_entries = 0
-    else:
-        journal_entries = sum(1 for line in journal_text.splitlines() if line.strip())
-
-    scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
-    run_input = prepare_run_input_from_bytes(
-        raw_bytes=scenario_bytes,
-        source_label=f"inspect:{run_dir}",
-    )
+    bundle = _load_replay_bundle(run_dir / "replay.json")
+    manifest_current = _load_manifest(run_dir / "manifest.current.json")
+    journal_entries = _count_journal_entries(run_dir / "journal.jsonl")
+    run_input = _load_scenario_input(run_dir / "scenario.yaml")
     scenario = run_input.scenario
     resolved_timeline = resolve_timeline(scenario)
     boundaries = step_boundaries(resolved_timeline)
@@ -123,6 +138,67 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
             "run_id": str(sentinel.run_id),
         },
     }
+
+
+def _load_replay_bundle(path: Path) -> ReplayBundle:
+    try:
+        return REPLAY_BUNDLE_ADAPTER.validate_json(path.read_bytes())
+    except (OSError, ValidationError) as exc:
+        raise _InspectArtifactError(
+            error_code=E_REPLAY_BUNDLE_INVALID,
+            message=f"replay bundle is not parseable: {exc}",
+            exit_code=1,
+            path_key="bundle_path",
+            path=path,
+        ) from exc
+
+
+def _load_manifest(path: Path) -> Manifest:
+    try:
+        return Manifest.model_validate_json(path.read_text())
+    except (OSError, ValidationError) as exc:
+        raise _InspectArtifactError(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"manifest.current.json is not parseable: {exc}",
+            exit_code=7,
+            path_key="manifest_path",
+            path=path,
+        ) from exc
+
+
+def _count_journal_entries(path: Path) -> int:
+    try:
+        journal_text = path.read_text()
+    except FileNotFoundError:
+        return 0
+    except OSError as exc:
+        raise _InspectArtifactError(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"journal.jsonl is not readable: {exc}",
+            exit_code=7,
+            path_key="journal_path",
+            path=path,
+        ) from exc
+    return sum(1 for line in journal_text.splitlines() if line.strip())
+
+
+def _load_scenario_input(path: Path) -> RunInput:
+    try:
+        scenario_bytes = path.read_bytes()
+        run_input = prepare_run_input_from_bytes(
+            raw_bytes=scenario_bytes,
+            source_label=f"inspect:{path.parent}",
+        )
+        _ = run_input.scenario
+        return run_input
+    except (OSError, ScenarioLoadError, ValidationError) as exc:
+        raise _InspectArtifactError(
+            error_code=E_FIXTURE_INCONSISTENT,
+            message=f"scenario.yaml is not parseable: {exc}",
+            exit_code=7,
+            path_key="scenario_path",
+            path=path,
+        ) from exc
 
 
 def _render_inspect_human(summary: dict[str, object]) -> None:

@@ -115,6 +115,19 @@ class TestCleanFixtureInconsistent:
         assert result.exit_code == 7
         assert fixture.exists()
 
+    def test_unreadable_replay_json_refused_with_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path)
+        replay_path = fixture / "replay.json"
+        replay_path.unlink()
+        replay_path.mkdir()
+        result = runner.invoke(app, ["clean", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert fixture.exists()
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["bundle_path"].endswith("replay.json")
+
     def test_json_error_payload(self, tmp_path: Path) -> None:
         """--json failure payload distinguishes fixture_inconsistent from sentinel_invalid."""
         fixture = _make_fixture(tmp_path)

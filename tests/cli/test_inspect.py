@@ -62,6 +62,26 @@ class TestInspect:
         result = runner.invoke(app, ["inspect", str(fixture)])
         assert result.exit_code == 7
 
+    def test_malformed_replay_json_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "replay.json").write_text("{not json\n", encoding="utf-8")
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 1
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_REPLAY_BUNDLE_INVALID"
+        assert payload["bundle_path"].endswith("replay.json")
+
+    def test_malformed_manifest_current_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "manifest.current.json").write_text("{not json\n", encoding="utf-8")
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["manifest_path"].endswith("manifest.current.json")
+
     def test_inspect_reports_complete_state(self, tmp_path: Path) -> None:
         """WHY: every plan-only run-dir reports state=complete; agents read
         the field to distinguish completed runs from interrupted materialize."""
