@@ -1,4 +1,4 @@
-"""Smoke test: every rule module imports without pulling ``pipeline.IssueCollector``.
+"""Smoke test: every rule-package module imports without pulling ``IssueCollector``.
 
 WHY: ``validation/pipeline.py`` imports ``run_semantic_pass`` from
 ``validation/semantic.py`` BEFORE ``IssueCollector`` is defined
@@ -20,10 +20,10 @@ import importlib
 
 import pytest
 
-from tests.validation.rule_modules import RULE_MODULES
+from tests.validation.rule_modules import RULE_PACKAGE_MODULES
 
 
-@pytest.mark.parametrize("module_name", RULE_MODULES)
+@pytest.mark.parametrize("module_name", RULE_PACKAGE_MODULES)
 def test_rule_module_imports_without_pipeline(module_name: str) -> None:
     """Each rule module must import cleanly without triggering the cycle."""
     importlib.import_module(f"chaos_librarian.validation.rules.{module_name}")

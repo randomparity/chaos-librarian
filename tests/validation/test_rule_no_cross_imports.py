@@ -1,19 +1,17 @@
-"""Structural invariant: ``validation/rules/<rule>.py`` cannot import from
-a sibling rule module. Cross-cutting helpers must live in ``_common``.
+"""Structural invariant: semantic rule modules cannot import sibling rules.
 
-WHY: After #27 lifted the cross-rule helpers (``iter_asset_ids``,
-``iter_global_namespaces``, ``iter_assets_with_loc``, ``try_parse_duration``,
-and the ``NS_*`` namespace constants) into ``validation/rules/_common.py``,
-the rule modules depend on each other only through ``semantic.py``'s
-``_RULES`` registry — never through direct
-``from chaos_librarian.validation.rules.<other_rule> import …`` edges.
+WHY: Rule modules depend on each other only through ``semantic.py``'s
+``_RULES`` registry — never through direct ``from
+chaos_librarian.validation.rules.<other_rule> import …`` edges.
+Cross-cutting validation helpers live in the shared helper modules listed in
+``tests.validation.rule_modules.SHARED_HELPER_MODULES``.
 
 ``test_rule_import_isolation.py`` proves no rule module drags
 ``IssueCollector`` into the ``pipeline → semantic → rules`` chain. This
 test proves the orthogonal invariant: no rule module imports from a
-sibling rule module. Together they lock the structural goal of the #22
-split: rule files are siblings, and ``_common`` is the only intra-
-subpackage import target.
+sibling semantic rule module. Together they lock the structural goal of the
+#22 split: semantic rule files are siblings, and shared helpers are the only
+intra-subpackage import targets.
 """
 
 from __future__ import annotations
@@ -58,5 +56,5 @@ def test_rule_module_does_not_import_from_sibling(module_name: str) -> None:
 
     assert not offenders, (
         f"{module_name}.py imports from sibling rule module(s) "
-        f"(cross-cutting helpers must live in _common): {offenders!r}"
+        f"(cross-cutting helpers must live in shared helper modules): {offenders!r}"
     )

@@ -1,25 +1,24 @@
-"""Source of truth: which modules live under ``validation/rules/``.
+"""Source of truth: which modules under ``validation/rules/`` are rules.
 
-Two sibling structural-invariant tests parametrize over the same set of
-rule modules:
+The structural-invariant tests share this discovery logic:
 
-- ``test_rule_import_isolation.py`` — each module imports without dragging
-  ``IssueCollector`` into the ``pipeline → semantic → rules`` cycle.
-- ``test_rule_no_cross_imports.py`` — no rule module imports from a sibling
-  rule module (cross-cutting helpers must live in ``_common``).
+- ``test_rule_import_isolation.py`` — every rule-package module imports
+  without dragging ``IssueCollector`` into the
+  ``pipeline → semantic → rules`` cycle.
+- ``test_rule_no_cross_imports.py`` — semantic rule modules may import shared
+  helper modules, but may not import sibling semantic rule modules.
 
 Before #31 both tests hardcoded the same 10-element tuple. A new rule that
-updated one list but not the other would have been silently exempt from
-one of the two invariants — exactly the kind of mechanical guard those
-tests are meant to be. This module replaces both hardcoded tuples with a
-single dynamic discovery pass.
+updated one list but not the other would have been silently exempt from one
+of the two invariants — exactly the kind of mechanical guard those tests are
+meant to be. This module keeps the dynamic discovery pass, with an explicit
+shared-helper allowlist for modules that are not semantic rules.
 
-The invariant covered is intentionally a **predicate**, not an enumeration:
-"every non-underscore ``.py`` file under ``validation/rules/``." Adding a
-new rule needs zero edits here; the only way to be silently exempt is to
-underscore-prefix the filename (the project convention reserved for
-``_common.py`` and ``__init__.py``). A future engineer naming an
-experimental file ``draft_rule.py`` will see it picked up automatically.
+The rule invariant covered is intentionally a **predicate**, not an
+enumeration: "every non-underscore ``.py`` file under ``validation/rules/``
+unless it is one of the shared helper modules." Adding a new rule needs zero
+edits here; adding a new shared helper is an architectural change and must
+name the helper here.
 """
 
 from __future__ import annotations
@@ -28,7 +27,24 @@ from pathlib import Path
 
 RULES_DIR = Path(__file__).resolve().parents[2] / "src" / "chaos_librarian" / "validation" / "rules"
 
+SHARED_HELPER_MODULES: frozenset[str] = frozenset(
+    {
+        "hierarchy_projection",
+        "hierarchy_walkers",
+        "raw_helpers",
+        "sidecar_projection",
+    }
+)
+
 RULE_MODULES: tuple[str, ...] = tuple(
+    sorted(
+        p.stem
+        for p in RULES_DIR.glob("*.py")
+        if not p.stem.startswith("_") and p.stem not in SHARED_HELPER_MODULES
+    )
+)
+
+RULE_PACKAGE_MODULES: tuple[str, ...] = tuple(
     sorted(p.stem for p in RULES_DIR.glob("*.py") if not p.stem.startswith("_"))
 )
 

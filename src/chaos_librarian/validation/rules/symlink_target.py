@@ -23,10 +23,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from chaos_librarian.validation.codes import E_SYMLINK_TARGET_ESCAPE
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import iter_assets_with_loc
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
-    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:

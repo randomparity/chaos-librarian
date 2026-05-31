@@ -13,16 +13,18 @@ from chaos_librarian.path_rendering import (
     render_declared_sidecar_path,
 )
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import (
     RawAssetContext,
+    iter_asset_contexts,
+    primary_root_path,
+    renderable_context_for,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_list,
     _as_mapping,
     _iter_timeline_events,
     _Loc,
-    iter_asset_contexts,
-    primary_root_path,
-    renderable_context_for,
 )
 
 if TYPE_CHECKING:

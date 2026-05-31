@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _iter_timeline_events,
     _RawMapping,

@@ -6,13 +6,13 @@ from collections.abc import Iterator, Mapping
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.validation.codes import E_ID_DUPLICATE, format_jsonpath
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import iter_global_namespaces
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
     _list_at_path,
     _Loc,
     first_or_duplicate,
-    iter_global_namespaces,
 )
 
 if TYPE_CHECKING:
@@ -23,7 +23,7 @@ __all__ = ["rule_id_duplicate"]
 
 
 # Top-level namespace labels used by the raw top-level ID walker.
-# Hierarchy and tail namespaces live in ``_common`` because
+# Hierarchy and tail namespaces live in ``hierarchy_walkers`` because
 # ``iter_global_namespaces`` yields them and other rule modules consume them.
 NS_ROOT_ID: Final = "root_id"
 NS_TIMELINE_ID: Final = "timeline_id"

@@ -16,7 +16,7 @@ from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import E_ID_DUPLICATE, E_PATH_DUPLICATE
 from chaos_librarian.validation.pipeline import IssueCollector
-from chaos_librarian.validation.rules._common import Reporter
+from chaos_librarian.validation.rules.raw_helpers import Reporter
 
 
 def test_reporter_constructs_under_pep563_with_slots() -> None:

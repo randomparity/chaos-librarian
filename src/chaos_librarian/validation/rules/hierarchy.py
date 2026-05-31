@@ -18,21 +18,25 @@ from chaos_librarian.validation.codes import (
     E_PATH_COLLISION,
     format_jsonpath,
 )
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_projection import (
     HierarchyMutation,
     HierarchyProjection,
-    RawAssetContext,
-    Reporter,
     SwapValidity,
+    build_hierarchy_projection,
+    is_hierarchy_action,
+)
+from chaos_librarian.validation.rules.hierarchy_walkers import (
+    RawAssetContext,
+    iter_asset_contexts,
+    rendered_asset_paths,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
+    Reporter,
     _as_list,
     _as_mapping,
     _iter_timeline_events,
     _Loc,
-    build_hierarchy_projection,
     first_or_duplicate,
-    is_hierarchy_action,
-    iter_asset_contexts,
-    rendered_asset_paths,
 )
 
 if TYPE_CHECKING:

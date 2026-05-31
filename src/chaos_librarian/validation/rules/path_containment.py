@@ -11,23 +11,19 @@ from chaos_librarian.contract.paths import (
     resolve_under_library,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.path_rendering import replace_root_prefix
 from chaos_librarian.validation.codes import E_PATH_CONTAINMENT
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_projection import (
+    HierarchyProjection,
+    build_hierarchy_projection,
+    is_hierarchy_action,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
     _iter_timeline_events,
     _list_at_path,
     _Loc,
     _RawMapping,
-    archive_base_path,
-    current_root_for_path,
-    iter_declared_roots,
-    project_deleted_path,
-    project_slow_copy_commit,
-    project_slow_copy_start,
-    project_to_field_path,
-    rendered_asset_paths,
 )
 
 if TYPE_CHECKING:
@@ -106,11 +102,7 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
     must run the synthesized path through containment so an escape via
     library config is caught at validate-time, not at materialize-time.
     """
-    declared_roots = {
-        root_id: path for root_id, path in iter_declared_roots(raw) if path is not None
-    }
-    archive_base = archive_base_path(raw, declared_roots)
-    current_paths = {asset_id: path for asset_id, (path, _loc) in rendered_asset_paths(raw).items()}
+    projection = build_hierarchy_projection(raw)
     pending_slow_copies: dict[str, tuple[str, str]] = {}
 
     for idx, event in _iter_timeline_events(raw):
@@ -119,90 +111,52 @@ def _check_synthesized_timeline_paths(raw: _RawMapping, reporter: Reporter) -> N
             _check_archive_file(
                 event,
                 idx=idx,
-                archive_base=archive_base,
-                declared_roots=declared_roots,
-                current_paths=current_paths,
+                projection=projection,
                 reporter=reporter,
             )
+            projection.project_non_hierarchy_event(event, pending_slow_copies)
         elif action == TimelineActionName.MOVE_BETWEEN_ROOTS:
             _check_move_between_roots(
                 event,
                 idx=idx,
-                declared_roots=declared_roots,
-                current_paths=current_paths,
+                projection=projection,
                 reporter=reporter,
             )
-        elif action in {
-            TimelineActionName.MOVE_ASSET,
-            TimelineActionName.RENAME_FILE,
-            TimelineActionName.ADD_FILE,
-        }:
-            project_to_field_path(event, current_paths)
-        elif action == TimelineActionName.SLOW_COPY_START:
-            project_slow_copy_start(event, pending_slow_copies)
-        elif action == TimelineActionName.SLOW_COPY_COMMIT:
-            project_slow_copy_commit(event, pending_slow_copies, current_paths)
-        elif action == TimelineActionName.DELETE_FILE:
-            project_deleted_path(event, current_paths)
+            projection.project_non_hierarchy_event(event, pending_slow_copies)
+        elif is_hierarchy_action(action):
+            projection.apply(event)
+        else:
+            projection.project_non_hierarchy_event(event, pending_slow_copies)
 
 
 def _check_archive_file(
     event: _RawMapping,
     *,
     idx: int,
-    archive_base: str | None,
-    declared_roots: Mapping[str, str],
-    current_paths: dict[str, str],
+    projection: HierarchyProjection,
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the archive destination for one ``archive_file``."""
-    target = event.get("target")
-    if not isinstance(target, str) or archive_base is None:
-        return
-    current_path = current_paths.get(target)
-    if current_path is None:
-        return
     try:
-        current_root = current_root_for_path(current_path, declared_roots)
-        synthesized = replace_root_prefix(
-            current_path,
-            from_root=current_root,
-            to_root=archive_base,
-        )
+        synthesized = projection.archive_file_destination(event)
     except ValueError as error:
         reporter.error(code=E_PATH_CONTAINMENT, message=str(error), loc=("timeline", idx, "target"))
         return
+    if synthesized is None:
+        return
     _check_containment(synthesized, loc=("timeline", idx, "target"), reporter=reporter)
-    current_paths[target] = synthesized
 
 
 def _check_move_between_roots(
     event: _RawMapping,
     *,
     idx: int,
-    declared_roots: Mapping[str, str],
-    current_paths: dict[str, str],
+    projection: HierarchyProjection,
     reporter: Reporter,
 ) -> None:
     """Synthesize and check the destination for one ``move_between_roots``."""
-    target = event.get("target")
-    from_root_id = event.get("from_root_id")
-    to_root_id = event.get("to_root_id")
-    if not isinstance(target, str):
-        return
-    if not isinstance(from_root_id, str) or not isinstance(to_root_id, str):
-        return
-    from_root_path = declared_roots.get(from_root_id)
-    to_root_path = declared_roots.get(to_root_id)
-    current_path = current_paths.get(target)
-    if from_root_path is None or to_root_path is None or current_path is None:
-        return
     try:
-        synthesized = replace_root_prefix(
-            current_path,
-            from_root=from_root_path,
-            to_root=to_root_path,
-        )
+        synthesized = projection.move_between_roots_destination(event)
     except ValueError as error:
         reporter.error(
             code=E_PATH_CONTAINMENT,
@@ -210,8 +164,9 @@ def _check_move_between_roots(
             loc=("timeline", idx, "to_root_id"),
         )
         return
+    if synthesized is None:
+        return
     _check_containment(synthesized, loc=("timeline", idx, "to_root_id"), reporter=reporter)
-    current_paths[target] = synthesized
 
 
 def _check_containment(raw_path: str, *, loc: _Loc, reporter: Reporter) -> None:

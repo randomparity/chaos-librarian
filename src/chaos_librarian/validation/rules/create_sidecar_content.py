@@ -19,8 +19,11 @@ from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
-from chaos_librarian.validation.rules._common import Reporter, _iter_timeline_events
 from chaos_librarian.validation.rules._subtitle_recipe import CREATE_SIDECAR_SUBTITLE_MATRIX
+from chaos_librarian.validation.rules.raw_helpers import (
+    Reporter,
+    _iter_timeline_events,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex

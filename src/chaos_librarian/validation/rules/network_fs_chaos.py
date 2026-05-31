@@ -27,11 +27,11 @@ from typing import TYPE_CHECKING, Final
 from chaos_librarian.contract.paths import PathContainmentError, resolve_under_library
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID, E_PATH_CONTAINMENT
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import entity_ids_by_kind
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _iter_timeline_events,
     _RawMapping,
-    entity_ids_by_kind,
     index_start_commit_events,
     report_unpaired_start,
     try_parse_duration,

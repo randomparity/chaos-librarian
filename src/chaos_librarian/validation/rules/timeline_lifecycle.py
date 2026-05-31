@@ -15,17 +15,21 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
 from chaos_librarian.validation.codes import E_LIFECYCLE_INVALID
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_projection import (
     HierarchyProjection,
+    build_hierarchy_projection,
+    is_hierarchy_action,
+)
+from chaos_librarian.validation.rules.hierarchy_walkers import iter_asset_ids
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
-    SidecarProjection,
-    SidecarProjectionRow,
     _iter_timeline_events,
     _Loc,
-    build_hierarchy_projection,
+)
+from chaos_librarian.validation.rules.sidecar_projection import (
+    SidecarProjection,
+    SidecarProjectionRow,
     drop_subtitle_rows_for_language,
-    is_hierarchy_action,
-    iter_asset_ids,
     project_sidecars_for_hierarchy_mutation,
     seed_sidecar_projection,
 )

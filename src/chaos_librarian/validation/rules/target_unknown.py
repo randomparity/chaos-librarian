@@ -19,12 +19,14 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_ROOT_UNKNOWN, E_TARGET_UNKNOWN
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import (
+    entity_ids_by_kind,
+    iter_declared_roots,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
     _iter_timeline_events,
-    entity_ids_by_kind,
-    iter_declared_roots,
 )
 
 if TYPE_CHECKING:

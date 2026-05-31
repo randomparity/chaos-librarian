@@ -15,11 +15,11 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_EXTRACT_TRACK_UNKNOWN
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import iter_assets_with_loc
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_list,
     _iter_timeline_events,
-    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:

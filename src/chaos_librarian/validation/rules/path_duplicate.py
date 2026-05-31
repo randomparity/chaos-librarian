@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.validation.codes import E_PATH_DUPLICATE, format_jsonpath
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
     _list_at_path,

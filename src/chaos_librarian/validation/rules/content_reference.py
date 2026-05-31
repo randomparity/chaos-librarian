@@ -21,12 +21,14 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.validation.codes import E_TARGET_UNKNOWN
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import (
+    entity_ids_by_kind,
+    iter_assets_with_loc,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_mapping,
     _Loc,
-    entity_ids_by_kind,
-    iter_assets_with_loc,
 )
 
 if TYPE_CHECKING:

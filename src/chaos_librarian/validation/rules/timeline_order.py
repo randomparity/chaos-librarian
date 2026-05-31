@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.validation.codes import E_TIMELINE_ORDER
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _iter_timeline_events,
     try_parse_duration,

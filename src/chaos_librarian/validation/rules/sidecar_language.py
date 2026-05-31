@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_SIDECAR_LANGUAGE_INVALID
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _iter_timeline_events,
     first_or_duplicate,

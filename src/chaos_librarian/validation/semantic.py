@@ -12,7 +12,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.validation.rules._common import Rule
 from chaos_librarian.validation.rules.asset_path_safety import (
     rule_asset_id_container_safe,
     rule_remux_container_safe,
@@ -44,6 +43,7 @@ from chaos_librarian.validation.rules.path_containment import rule_path_containm
 from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
 from chaos_librarian.validation.rules.profile_budgets import rule_profile_budgets
 from chaos_librarian.validation.rules.profile_opt_in import rule_profile_opt_in
+from chaos_librarian.validation.rules.raw_helpers import Rule
 from chaos_librarian.validation.rules.sidecar_language import rule_sidecar_language_consistent
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 from chaos_librarian.validation.rules.slow_copy import (

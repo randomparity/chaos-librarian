@@ -25,16 +25,18 @@ from chaos_librarian.media_matrix import (
     SUPPORTED_VIDEO_SOURCES,
 )
 from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules._subtitle_recipe import (
+    SUBTITLE_RECIPE_MATRIX as _SUBTITLE_RECIPE_MATRIX,
+)
+from chaos_librarian.validation.rules.hierarchy_walkers import (
     RawAssetContext,
+    iter_asset_contexts,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
     _as_list,
     _as_mapping,
     _Loc,
-    iter_asset_contexts,
-)
-from chaos_librarian.validation.rules._subtitle_recipe import (
-    SUBTITLE_RECIPE_MATRIX as _SUBTITLE_RECIPE_MATRIX,
 )
 
 if TYPE_CHECKING:

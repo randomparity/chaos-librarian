@@ -1,8 +1,8 @@
 """Rule 3: E_DURATION_SYNTAX — reject unparseable duration strings.
 
 ``try_parse_duration`` (used by Rules 5b and 7 to skip pairs Rule 3 has
-already flagged) lives in ``rules/_common.py`` so rule modules depend on
-each other only through ``semantic.py``'s ``_RULES`` registry.
+already flagged) lives in ``rules/raw_helpers.py`` so rule modules depend on
+shared helpers instead of on each other.
 """
 
 from __future__ import annotations
@@ -13,7 +13,11 @@ from typing import TYPE_CHECKING
 from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_DURATION_SYNTAX
-from chaos_librarian.validation.rules._common import Reporter, _iter_timeline_events, _Loc
+from chaos_librarian.validation.rules.raw_helpers import (
+    Reporter,
+    _iter_timeline_events,
+    _Loc,
+)
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex

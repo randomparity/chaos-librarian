@@ -25,14 +25,18 @@ from chaos_librarian.validation.codes import (
     E_SIDECAR_PATH_COLLISION,
     E_SIDECAR_TARGET_UNKNOWN,
 )
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_projection import (
+    build_hierarchy_projection,
+    is_hierarchy_action,
+)
+from chaos_librarian.validation.rules.raw_helpers import (
     Reporter,
+    _iter_timeline_events,
+)
+from chaos_librarian.validation.rules.sidecar_projection import (
     SidecarProjection,
     SidecarProjectionRow,
-    _iter_timeline_events,
-    build_hierarchy_projection,
     drop_subtitle_rows_for_language,
-    is_hierarchy_action,
     project_sidecars_for_hierarchy_mutation,
     seed_sidecar_projection,
 )
