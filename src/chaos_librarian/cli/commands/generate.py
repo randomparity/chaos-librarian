@@ -8,7 +8,11 @@ from typing import Annotated
 
 import typer
 
-from chaos_librarian.cli._envelope import E_GENERATE_FAILED, emit_cli_error
+from chaos_librarian.cli._envelope import (
+    E_GENERATE_FAILED,
+    emit_cli_error,
+    emit_cli_operation_error,
+)
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.profiles import FUZZ_LANES_BY_PROFILE, FuzzLaneName, FuzzProfileName
@@ -63,8 +67,30 @@ def _resolve_lane_for_batch(
 
 def _write_single(profile: FuzzProfileName, item: BatchItem, out: Path, json_output: bool) -> None:
     validate_new_out_path(out)
-    generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
-    write_generated_scenario(out, generated.data)
+    try:
+        generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
+    except Exception as exc:
+        _emit_single_generate_failure(
+            profile=profile,
+            item=item,
+            out=out,
+            operation="generate_scenario",
+            exc=exc,
+            json_output=json_output,
+        )
+        raise typer.Exit(code=1) from exc
+    try:
+        write_generated_scenario(out, generated.data)
+    except OSError as exc:
+        _emit_single_generate_failure(
+            profile=profile,
+            item=item,
+            out=out,
+            operation="write_generated_scenario",
+            exc=exc,
+            json_output=json_output,
+        )
+        raise typer.Exit(code=1) from exc
     if json_output:
         typer.echo(generated_scenario_summary(out, generated.data, scenario=generated.scenario))
     else:
@@ -150,6 +176,41 @@ def _assert_scenario_id(profile: FuzzProfileName, item: BatchItem, generated_id:
         raise RuntimeError(
             f"generated scenario_id {generated_id!r} does not match planned {expected!r}"
         )
+
+
+def _emit_single_generate_failure(
+    *,
+    profile: FuzzProfileName,
+    item: BatchItem,
+    out: Path,
+    operation: str,
+    exc: Exception,
+    json_output: bool,
+) -> None:
+    emit_cli_operation_error(
+        error_code=E_GENERATE_FAILED,
+        message=_single_failure_message(profile=profile, item=item, exc=exc),
+        json_output=json_output,
+        operation=operation,
+        path=out,
+        exc=exc,
+        extra_details={
+            "profile": profile.value,
+            "lane": item.lane.value,
+            "seed": item.seed,
+        },
+    )
+
+
+def _single_failure_message(
+    *,
+    profile: FuzzProfileName,
+    item: BatchItem,
+    exc: Exception,
+) -> str:
+    return (
+        f"generate failed at profile={profile.value} lane={item.lane.value} seed={item.seed}: {exc}"
+    )
 
 
 def _rollback(written: list[Path]) -> tuple[list[Path], list[Path]]:

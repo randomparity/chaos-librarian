@@ -93,6 +93,41 @@ def test_generate_json_validates_generated_yaml_once(
     assert calls == 1
 
 
+def test_generate_single_write_failure_uses_error_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = tmp_path / "generated.yaml"
+
+    def fail_write(_path: Path, _data: bytes) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(generate_cmd, "write_generated_scenario", fail_write)
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--profile",
+            "fuzz-smoke",
+            "--seed",
+            "123",
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_GENERATE_FAILED"
+    assert payload["details"]["operation"] == "write_generated_scenario"
+    assert payload["details"]["path"] == str(out)
+    assert payload["details"]["exception_type"] == "OSError"
+    assert not out.exists()
+
+
 def test_generate_regression_requires_lane(tmp_path: Path) -> None:
     out = tmp_path / "generated.yaml"
 

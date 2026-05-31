@@ -319,6 +319,32 @@ class TestReplayHappyPath:
 
         assert result.exit_code == 0, result.stdout + result.stderr
 
+    def test_plan_fixture_write_failure_uses_error_envelope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fixture = _make_full_fixture(tmp_path)
+        out = tmp_path / "replay"
+
+        def fail_write(*_args: object, **_kwargs: object) -> None:
+            raise OSError("target read-only")
+
+        monkeypatch.setattr(replay_cmd, "write_fixture", fail_write)
+
+        result = runner.invoke(
+            app,
+            ["replay", str(fixture / "replay.json"), "--out", str(out), "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_REPLAY_WRITE_FAILED"
+        assert payload["details"]["operation"] == "write_fixture"
+        assert payload["details"]["path"] == str(out)
+        assert payload["details"]["exception_type"] == "OSError"
+
 
 class TestReplayIntegrityErrors:
     """Tampered bundles trip exit 6 with the integrity payload.

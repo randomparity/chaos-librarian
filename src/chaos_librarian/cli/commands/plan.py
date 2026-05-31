@@ -8,7 +8,12 @@ from typing import Annotated
 
 import typer
 
-from chaos_librarian.cli._envelope import emit_failure, synthesize_yaml_parse_report
+from chaos_librarian.cli._envelope import (
+    E_PLAN_WRITE_FAILED,
+    emit_cli_operation_error,
+    emit_failure,
+    synthesize_yaml_parse_report,
+)
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.engine import PlanArtifacts, run_plan, write_fixture
@@ -37,7 +42,18 @@ def plan(
         raise typer.Exit(code=3)
 
     artifacts = run_plan(run_input=run_input, validation_report=report, steps_limit=steps)
-    write_fixture(out, artifacts, run_input.raw_bytes)
+    try:
+        write_fixture(out, artifacts, run_input.raw_bytes)
+    except OSError as exc:
+        emit_cli_operation_error(
+            error_code=E_PLAN_WRITE_FAILED,
+            message=f"plan failed to write fixture {out}: {exc}",
+            json_output=json_output,
+            operation="write_fixture",
+            path=out,
+            exc=exc,
+        )
+        raise typer.Exit(code=1) from exc
 
     if json_output:
         typer.echo(_plan_summary_json(artifacts, out))

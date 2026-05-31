@@ -10,7 +10,13 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 
-from chaos_librarian.cli._envelope import E_FIXTURE_INCONSISTENT, E_SENTINEL_INVALID, emit_cli_error
+from chaos_librarian.cli._envelope import (
+    E_CLEAN_FAILED,
+    E_FIXTURE_INCONSISTENT,
+    E_SENTINEL_INVALID,
+    emit_cli_error,
+    emit_cli_operation_error,
+)
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER
 from chaos_librarian.cli.app import app
 from chaos_librarian.engine import SentinelInvalidError, verify_sentinel
@@ -56,7 +62,18 @@ def clean(
         raise typer.Exit(code=7)
 
     resolved = run_dir.resolve()
-    shutil.rmtree(run_dir)
+    try:
+        shutil.rmtree(run_dir)
+    except OSError as exc:
+        emit_cli_operation_error(
+            error_code=E_CLEAN_FAILED,
+            message=f"clean failed to remove {run_dir}: {exc}",
+            json_output=json_output,
+            operation="shutil.rmtree",
+            path=run_dir,
+            exc=exc,
+        )
+        raise typer.Exit(code=1) from exc
 
     if json_output:
         typer.echo(

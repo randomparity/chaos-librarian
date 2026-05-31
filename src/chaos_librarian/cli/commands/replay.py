@@ -13,7 +13,9 @@ from chaos_librarian.cli._envelope import (
     E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED,
     E_REPLAY_BUNDLE_INVALID,
     E_REPLAY_DIVERGENCE,
+    E_REPLAY_WRITE_FAILED,
     emit_cli_error,
+    emit_cli_operation_error,
 )
 from chaos_librarian.cli._materialization_errors import (
     exit_materialization_error,
@@ -82,7 +84,18 @@ def replay(
         )
         raise typer.Exit(code=6) from exc
 
-    write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
+    try:
+        write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
+    except OSError as exc:
+        emit_cli_operation_error(
+            error_code=E_REPLAY_WRITE_FAILED,
+            message=f"replay failed to write fixture {out}: {exc}",
+            json_output=json_output,
+            operation="write_fixture",
+            path=out,
+            exc=exc,
+        )
+        raise typer.Exit(code=1) from exc
 
     target = against or infer_original(bundle, parsed_bundle.run_id, parsed_bundle.applied_events)
     if target is not None:
