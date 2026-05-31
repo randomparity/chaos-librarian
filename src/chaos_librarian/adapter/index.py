@@ -12,9 +12,10 @@ from chaos_librarian.adapter.topology import (
     TopologyKey,
     format_topology_key,
     observed_topology,
+    observed_topology_key,
     oracle_topology,
+    oracle_topology_key,
     topology_key,
-    topology_key_for_view,
 )
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.observed_state import (
@@ -36,7 +37,6 @@ __all__ = [
     "TopologyKey",
     "format_topology_key",
     "topology_key",
-    "topology_key_for_view",
 ]
 
 
@@ -102,9 +102,7 @@ class OracleIndex:
             topology_key_to_asset_ids=_lookup_by(
                 topology,
                 id_of=lambda view: view.asset_id,
-                keys_of=lambda view: (
-                    topology_key_for_view(view, bundle_member_count=len(view.bundle_asset_ids)),
-                ),
+                keys_of=lambda view: (oracle_topology_key(view),),
             ),
         )
 
@@ -178,9 +176,7 @@ class ObservedIndex:
             topology_key_to_refs=_lookup_by(
                 topology,
                 id_of=lambda view: view.observed_ref,
-                keys_of=lambda view: (
-                    topology_key_for_view(view, bundle_member_count=len(view.bundle_asset_refs)),
-                ),
+                keys_of=lambda view: (observed_topology_key(view),),
             ),
         )
 

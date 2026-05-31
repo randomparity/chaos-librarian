@@ -13,7 +13,11 @@ from chaos_librarian.adapter.index import (
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
 from chaos_librarian.adapter.probe import compare_probed_media
-from chaos_librarian.adapter.topology import format_topology_key, topology_key_for_view
+from chaos_librarian.adapter.topology import (
+    format_topology_key,
+    observed_topology_key,
+    oracle_topology_key,
+)
 from chaos_librarian.contract.divergence import (
     CompareMode,
     DivergenceCode,
@@ -189,12 +193,8 @@ def _compare_topology(
     observed_topology = observed_index.topology.get(match.observed_ref)
     if oracle_topology is None or observed_topology is None:
         return []
-    oracle_key = topology_key_for_view(
-        oracle_topology, bundle_member_count=len(oracle_topology.bundle_asset_ids)
-    )
-    observed_key = topology_key_for_view(
-        observed_topology, bundle_member_count=len(observed_topology.bundle_asset_refs)
-    )
+    oracle_key = oracle_topology_key(oracle_topology)
+    observed_key = observed_topology_key(observed_topology)
     if oracle_key is None or observed_key is None or oracle_key == observed_key:
         return []
     oracle_domain_key = format_topology_key(oracle_key)

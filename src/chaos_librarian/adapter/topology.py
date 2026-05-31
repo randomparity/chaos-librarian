@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol
+from typing import NamedTuple
 
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.contract.domain import ParentKind
@@ -177,52 +177,29 @@ def topology_key(
     return key
 
 
-class _TopologyKeyView(Protocol):
-    """Shared topology fields exposed by oracle and observed topology views.
-
-    Members are read-only properties so the oracle view's non-optional
-    ``parent_kind`` satisfies the protocol's ``ParentKind | None`` covariantly.
-    """
-
-    @property
-    def parent_kind(self) -> ParentKind | None: ...
-    @property
-    def variant_label(self) -> str | None: ...
-    @property
-    def movie_title(self) -> str | None: ...
-    @property
-    def series_title(self) -> str | None: ...
-    @property
-    def season_number(self) -> int | None: ...
-    @property
-    def episode_number(self) -> int | None: ...
-    @property
-    def episode_title(self) -> str | None: ...
-    @property
-    def artist_name(self) -> str | None: ...
-    @property
-    def album_title(self) -> str | None: ...
-    @property
-    def disc_number(self) -> int | None: ...
-    @property
-    def track_number(self) -> int | None: ...
-    @property
-    def track_title(self) -> str | None: ...
-
-
-def topology_key_for_view(
-    view: _TopologyKeyView, *, bundle_member_count: int
-) -> TopologyKey | None:
-    """Build the topology key from a topology view's shared domain fields.
-
-    ``bundle_member_count`` is passed separately because the oracle and observed
-    views name the member collection differently (``bundle_asset_ids`` vs
-    ``bundle_asset_refs``).
-    """
+def oracle_topology_key(view: OracleTopologyView) -> TopologyKey | None:
     return topology_key(
         parent_kind=view.parent_kind,
         variant_label=view.variant_label,
-        bundle_member_count=bundle_member_count,
+        bundle_member_count=len(view.bundle_asset_ids),
+        movie_title=view.movie_title,
+        series_title=view.series_title,
+        season_number=view.season_number,
+        episode_number=view.episode_number,
+        episode_title=view.episode_title,
+        artist_name=view.artist_name,
+        album_title=view.album_title,
+        disc_number=view.disc_number,
+        track_number=view.track_number,
+        track_title=view.track_title,
+    )
+
+
+def observed_topology_key(view: ObservedTopologyView) -> TopologyKey | None:
+    return topology_key(
+        parent_kind=view.parent_kind,
+        variant_label=view.variant_label,
+        bundle_member_count=len(view.bundle_asset_refs),
         movie_title=view.movie_title,
         series_title=view.series_title,
         season_number=view.season_number,
