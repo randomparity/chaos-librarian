@@ -326,6 +326,31 @@ def _finalize_version_output(
     return _VersionOutput(version_id=output_version_id, content_hash=new_hash)
 
 
+def _version_media_action(
+    *,
+    entry: JournalEntry,
+    action: TimelineActionName,
+    version: _VersionOutput,
+    tool_invocation_index: int,
+    started_ns: int,
+) -> MediaAction:
+    delta = entry.state_delta
+    return MediaAction(
+        event_id=entry.event_id,
+        action=action,
+        target_asset_id=entry.target_ids[0],
+        input_path=str(delta["input_path"]),
+        output_path=str(delta["output_path"]),
+        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
+        output_version_id=version.version_id,
+        output_sidecar_id=None,
+        input_content_hash=None,
+        output_content_hash=version.content_hash,
+        tool_invocation_index=tool_invocation_index,
+        duration_ns=time.monotonic_ns() - started_ns,
+    )
+
+
 def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Re-encode video in place; produce a new ManifestVersion's content_hash.
 
@@ -383,19 +408,12 @@ def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         output_path=output_path,
         output_version_id=entry.output_version_ids[0],
     )
-    return MediaAction(
-        event_id=entry.event_id,
+    return _version_media_action(
+        entry=entry,
         action=TimelineActionName.REENCODE_VIDEO,
-        target_asset_id=entry.target_ids[0],
-        input_path=str(delta["input_path"]),
-        output_path=str(delta["output_path"]),
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=version.version_id,
-        output_sidecar_id=None,
-        input_content_hash=None,
-        output_content_hash=version.content_hash,
+        version=version,
         tool_invocation_index=invocation_index,
-        duration_ns=time.monotonic_ns() - started,
+        started_ns=started,
     )
 
 
@@ -449,19 +467,12 @@ def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         output_path=output_path,
         output_version_id=entry.output_version_ids[0],
     )
-    return MediaAction(
-        event_id=entry.event_id,
+    return _version_media_action(
+        entry=entry,
         action=TimelineActionName.REENCODE_AUDIO,
-        target_asset_id=entry.target_ids[0],
-        input_path=str(delta["input_path"]),
-        output_path=str(delta["output_path"]),
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=version.version_id,
-        output_sidecar_id=None,
-        input_content_hash=None,
-        output_content_hash=version.content_hash,
+        version=version,
         tool_invocation_index=invocation_index,
-        duration_ns=time.monotonic_ns() - started,
+        started_ns=started,
     )
 
 
@@ -516,19 +527,12 @@ def _apply_remux_container(ctx: MediaPhaseBContext, entry: JournalEntry) -> Medi
     )
     if input_path.resolve() != output_path.resolve():
         input_path.unlink(missing_ok=False)
-    return MediaAction(
-        event_id=entry.event_id,
+    return _version_media_action(
+        entry=entry,
         action=TimelineActionName.REMUX_CONTAINER,
-        target_asset_id=entry.target_ids[0],
-        input_path=str(delta["input_path"]),
-        output_path=str(delta["output_path"]),
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=version.version_id,
-        output_sidecar_id=None,
-        input_content_hash=None,
-        output_content_hash=version.content_hash,
+        version=version,
         tool_invocation_index=invocation_index,
-        duration_ns=time.monotonic_ns() - started,
+        started_ns=started,
     )
 
 
@@ -585,19 +589,12 @@ def _apply_edit_metadata(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaA
         output_path=output_path,
         output_version_id=entry.output_version_ids[0],
     )
-    return MediaAction(
-        event_id=entry.event_id,
+    return _version_media_action(
+        entry=entry,
         action=TimelineActionName.EDIT_METADATA,
-        target_asset_id=entry.target_ids[0],
-        input_path=str(delta["input_path"]),
-        output_path=str(delta["output_path"]),
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=version.version_id,
-        output_sidecar_id=None,
-        input_content_hash=None,
-        output_content_hash=version.content_hash,
+        version=version,
         tool_invocation_index=invocation_index,
-        duration_ns=time.monotonic_ns() - started,
+        started_ns=started,
     )
 
 
@@ -665,19 +662,12 @@ def _apply_embed_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         output_version_id=entry.output_version_ids[0],
     )
     sidecar_disk_path.unlink()
-    return MediaAction(
-        event_id=entry.event_id,
+    return _version_media_action(
+        entry=entry,
         action=TimelineActionName.EMBED_SUBTITLE,
-        target_asset_id=entry.target_ids[0],
-        input_path=str(delta["input_path"]),
-        output_path=str(delta["output_path"]),
-        input_version_id=entry.input_version_ids[0] if entry.input_version_ids else None,
-        output_version_id=version.version_id,
-        output_sidecar_id=None,
-        input_content_hash=None,
-        output_content_hash=version.content_hash,
+        version=version,
         tool_invocation_index=invocation_index,
-        duration_ns=time.monotonic_ns() - started,
+        started_ns=started,
     )
 
 

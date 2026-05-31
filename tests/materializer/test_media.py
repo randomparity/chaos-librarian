@@ -153,6 +153,48 @@ def _stub_ffmpeg_writes(monkeypatch, *, stub_bytes=b"x" * 100, exit_code=0):
     monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
 
 
+def test_version_media_action_assembles_common_version_fields(monkeypatch):
+    helper = getattr(media_module, "_version_media_action", None)
+    assert helper is not None, "version-producing media handlers should share action assembly"
+    monkeypatch.setattr(media_module.time, "monotonic_ns", lambda: 2_500)
+    entry = _atomic_entry(
+        event_id="ev_version",
+        action=TimelineActionName.REENCODE_VIDEO,
+        target="a0",
+        input_version_ids=["v0"],
+        output_version_ids=["v1"],
+        state_delta={
+            "resolution": "sd",
+            "codec": "h264",
+            "input_path": "x.mkv",
+            "output_path": "x.mkv",
+        },
+    )
+    version = media_module._VersionOutput(
+        version_id="v1",
+        content_hash="sha256:" + "a" * 64,
+    )
+
+    result = helper(
+        entry=entry,
+        action=TimelineActionName.REENCODE_VIDEO,
+        version=version,
+        tool_invocation_index=7,
+        started_ns=2_000,
+    )
+
+    assert result.event_id == "ev_version"
+    assert result.action == TimelineActionName.REENCODE_VIDEO
+    assert result.target_asset_id == "a0"
+    assert result.input_path == "x.mkv"
+    assert result.output_path == "x.mkv"
+    assert result.input_version_id == "v0"
+    assert result.output_version_id == "v1"
+    assert result.output_content_hash == "sha256:" + "a" * 64
+    assert result.tool_invocation_index == 7
+    assert result.duration_ns == 500
+
+
 class TestApplyReencodeVideo:
     def test_apply_reencode_video_writes_output_and_returns_media_action(
         self, media_ctx, monkeypatch, tmp_path
