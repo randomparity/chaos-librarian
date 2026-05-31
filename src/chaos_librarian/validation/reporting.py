@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from chaos_librarian.contract.validation import ValidationIssue, ValidationSeverity
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import format_jsonpath
+from chaos_librarian.validation.scenario_io import LineIndex
 
 
 @dataclass

@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import E_TARGET_UNKNOWN
 from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.content_reference import rule_content_reference
+from chaos_librarian.validation.scenario_io import LineIndex
 
 
 def _run(raw: dict[str, object]) -> list:

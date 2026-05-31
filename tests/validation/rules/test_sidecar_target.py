@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import cast
 
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import (
     E_MATERIALIZE_UNSUPPORTED,
     E_SIDECAR_KIND_MISMATCH,
@@ -13,6 +12,7 @@ from chaos_librarian.validation.codes import (
 )
 from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
+from chaos_librarian.validation.scenario_io import LineIndex
 
 DECLARED_SIDECAR_PATH = "library/r0/T - l.eng.srt"
 DECLARED_ASS_SIDECAR_PATH = "library/r0/T - l.jpn.ass"

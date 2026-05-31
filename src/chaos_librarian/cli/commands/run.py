@@ -23,9 +23,9 @@ from chaos_librarian.materializer import (
     run_wall_clock_scenario,
 )
 from chaos_librarian.materializer.scheduler import SpeedParseError
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation.codes import E_YAML_PARSE
 from chaos_librarian.validation.input import prepare_run_input_from_bytes
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 
 @app.command()

@@ -28,8 +28,8 @@ from chaos_librarian.validation.rules.raw_helpers import (
 )
 
 if TYPE_CHECKING:
-    from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.reporting import IssueCollector
+    from chaos_librarian.validation.scenario_io import LineIndex
 
 __all__ = ["rule_asset_id_container_safe", "rule_remux_container_safe"]
 

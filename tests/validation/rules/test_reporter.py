@@ -13,10 +13,10 @@ import dataclasses
 import pytest
 
 from chaos_librarian.contract.validation import ValidationSeverity
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import E_ID_DUPLICATE, E_PATH_DUPLICATE
 from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.raw_helpers import Reporter
+from chaos_librarian.validation.scenario_io import LineIndex
 
 
 def test_reporter_constructs_under_pep563_with_slots() -> None:

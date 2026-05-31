@@ -7,9 +7,9 @@ from typing import Any
 
 import pytest
 
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation import RunInput, codes
 from chaos_librarian.validation.reporting import IssueCollector
+from chaos_librarian.validation.scenario_io import LineIndex
 from chaos_librarian.validation.shape import run_shape_pass
 
 

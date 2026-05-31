@@ -12,8 +12,8 @@ from chaos_librarian.clock import DurationParseError, parse_duration
 from chaos_librarian.contract.validation import ValidationSeverity
 
 if TYPE_CHECKING:
-    from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.reporting import IssueCollector
+    from chaos_librarian.validation.scenario_io import LineIndex
 
 _Loc = tuple[str | int, ...]
 _RawMapping = Mapping[str, object]

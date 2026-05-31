@@ -27,8 +27,8 @@ from chaos_librarian.engine import (
     step_boundaries,
     verify_sentinel,
 )
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 
 @dataclass(frozen=True)

@@ -13,7 +13,7 @@ from typing import cast
 
 import pytest
 
-from chaos_librarian.scenario_io import LineIndex
+from chaos_librarian.validation.scenario_io import LineIndex
 
 ListNarrower = Callable[[object], list[dict[str, object]]]
 DictNarrower = Callable[[object], dict[str, object]]

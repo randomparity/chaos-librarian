@@ -10,7 +10,8 @@ materialization, and adapter comparison consume those models.
   manifest, journal, replay bundle, reports, capabilities, observed state, and
   divergence contracts.
 - `validation/`: YAML input preparation, shape validation, semantic rules, and
-  stable validation reports.
+  stable validation reports. `validation/scenario_io.py` owns YAML parsing and
+  line/column indexing for validation and CLI error reporting.
 - `determinism/`: seed resolution, RNG streams, clock helpers, ID allocation,
   and execution trace recording.
 - `generation/`: deterministic fuzz scenario generation, lane coverage
@@ -36,8 +37,6 @@ major workflow packages because they are consumed across several of them:
   capability gates, generation, and materializer tooling.
 - `path_rendering.py`: deterministic library-path rendering for typed topology
   contexts and validation projections.
-- `scenario_io.py`: YAML parsing plus line/column indexing for validation and
-  CLI error reporting.
 - `topology.py`: typed manifest/scenario traversal helpers used by engine,
   materializer, adapter, and tests.
 - `schema_export.py`: developer/CI schema export entrypoint; it reads contract

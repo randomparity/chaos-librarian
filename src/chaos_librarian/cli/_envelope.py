@@ -19,9 +19,9 @@ import typer
 from chaos_librarian.cli._render import render_human
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.materializer.errors import MaterializationError
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.validation.codes import E_YAML_PARSE
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 __all__ = [
     "E_FIXTURE_INCONSISTENT",

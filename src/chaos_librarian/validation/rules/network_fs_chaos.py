@@ -38,8 +38,8 @@ from chaos_librarian.validation.rules.raw_helpers import (
 )
 
 if TYPE_CHECKING:
-    from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.reporting import IssueCollector
+    from chaos_librarian.validation.scenario_io import LineIndex
 
 __all__ = ["rule_network_fs_chaos_pairing", "rule_network_fs_chaos_target"]
 

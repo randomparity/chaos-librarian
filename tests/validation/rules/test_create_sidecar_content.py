@@ -7,9 +7,9 @@ path raises.
 
 from __future__ import annotations
 
-from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation import codes
 from chaos_librarian.validation.reporting import IssueCollector
+from chaos_librarian.validation.scenario_io import LineIndex
 from chaos_librarian.validation.semantic import run_semantic_pass
 
 

@@ -60,8 +60,8 @@ from chaos_librarian.validation.rules.timeline_lifecycle import rule_timeline_li
 from chaos_librarian.validation.rules.timeline_order import rule_timeline_order
 
 if TYPE_CHECKING:
-    from chaos_librarian.scenario_io import LineIndex
     from chaos_librarian.validation.reporting import IssueCollector
+    from chaos_librarian.validation.scenario_io import LineIndex
 
 
 _RULES: list[Rule] = [

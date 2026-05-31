@@ -12,8 +12,8 @@ from chaos_librarian.cli._envelope import emit_failure, synthesize_yaml_parse_re
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.engine import PlanArtifacts, run_plan, write_fixture
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import prepare_run_input, run_validation
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 
 @app.command()

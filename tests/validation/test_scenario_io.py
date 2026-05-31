@@ -1,4 +1,4 @@
-"""Tests for chaos_librarian.scenario_io: YAML loader + LineIndex."""
+"""Tests for chaos_librarian.validation.scenario_io: YAML loader + LineIndex."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.scenario_io import ScenarioLoadError, load_scenario
+from chaos_librarian.validation.scenario_io import ScenarioLoadError, load_scenario
 
 
 def _write(tmp_path: Path, content: str) -> Path:

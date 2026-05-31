@@ -18,8 +18,8 @@ from chaos_librarian.materializer import (
     MaterializationError,
     materialize_scenario,
 )
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation.codes import E_YAML_PARSE
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 
 @app.command()

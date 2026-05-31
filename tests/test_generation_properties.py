@@ -13,7 +13,7 @@ from chaos_librarian.generation import generate_scenario_yaml
 from chaos_librarian.generation import planner as generation_planner
 from chaos_librarian.generation.lanes import coverage_for_payload
 from chaos_librarian.generation.planner import lane_config_for
-from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 LANE_CASES: tuple[tuple[FuzzProfileName, FuzzLaneName], ...] = tuple(
     sorted(

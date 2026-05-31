@@ -11,7 +11,6 @@ from pydantic import ValidationError
 
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.engine import run_plan
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import (
     RunInput,
     codes,
@@ -19,6 +18,7 @@ from chaos_librarian.validation import (
     prepare_run_input_from_bytes,
     run_validation,
 )
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 
 class TestPrepareRunInput:

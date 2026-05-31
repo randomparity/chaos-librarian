@@ -32,10 +32,10 @@ from chaos_librarian.generation import planner as generation_planner
 from chaos_librarian.generation.lanes import coverage_for_payload
 from chaos_librarian.generation.planner import lane_config_for
 from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
-from chaos_librarian.scenario_io import parse_scenario_bytes
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
+from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
 

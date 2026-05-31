@@ -16,7 +16,7 @@ from chaos_librarian.cli.commands import generate as generate_cmd
 from chaos_librarian.contract.profiles import CANONICAL_FUZZ_LANES, FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import api as generation_api
-from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 runner = CliRunner()
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
