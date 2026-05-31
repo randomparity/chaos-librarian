@@ -289,8 +289,8 @@ def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
     materializer = _read(DOCS / "developer" / "materializer.md")
     testing = _read(DOCS / "developer" / "testing.md")
 
-    assert "If `reports/` is present" in adapter_compare
-    assert "if `reports/` is absent, the loader derives reports" in adapter_compare
+    assert "`reports/` is required adapter input" in adapter_compare
+    assert "every report family directory" in adapter_compare
     assert "CLI startup gate for `materialize` and `run`" in materializer
     assert "not as an extra" in materializer
     assert "startup gate" in materializer

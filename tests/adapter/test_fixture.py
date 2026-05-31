@@ -10,7 +10,6 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, TypeAdapter
 
-from chaos_librarian.adapter import fixture as fixture_module
 from chaos_librarian.adapter.errors import E_ADAPTER_FIXTURE_INVALID, AdapterInputError
 from chaos_librarian.adapter.fixture import load_fixture
 from chaos_librarian.contract.journal import JournalEntry
@@ -72,17 +71,6 @@ def _assert_fixture_invalid(run_dir: Path) -> None:
     _fixture_invalid_error(run_dir)
 
 
-class _IncompleteReportSet:
-    assets = ()
-    variants = ()
-    bundles = ()
-
-
-def test_derived_report_set_requires_hierarchy_report_families() -> None:
-    with pytest.raises(ValueError, match="movies"):
-        fixture_module._reports_from_report_set(_IncompleteReportSet())
-
-
 def test_load_fixture_reads_required_artifacts(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
 
@@ -97,7 +85,7 @@ def test_load_fixture_reads_required_artifacts(tmp_path: Path) -> None:
     assert fixture.reports.assets
 
 
-def test_load_fixture_derives_reports_when_reports_directory_missing(tmp_path: Path) -> None:
+def test_load_fixture_rejects_missing_reports_directory(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
     reports_dir = run_dir / "reports"
     for path in sorted(reports_dir.rglob("*"), reverse=True):
@@ -107,9 +95,10 @@ def test_load_fixture_derives_reports_when_reports_directory_missing(tmp_path: P
             path.rmdir()
     reports_dir.rmdir()
 
-    fixture = load_fixture(run_dir)
+    error = _fixture_invalid_error(run_dir)
 
-    assert set(fixture.reports.assets) == {asset.id for asset in fixture.initial_manifest.assets}
+    assert error.message == "reports directory is required"
+    assert error.details["path"] == str(reports_dir)
 
 
 def test_load_fixture_rejects_missing_sentinel(tmp_path: Path) -> None:
