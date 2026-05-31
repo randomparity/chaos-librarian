@@ -83,6 +83,8 @@ def _build_inspect_summary(run_dir: Path) -> dict[str, object]:
 
     Raises:
         SentinelInvalidError: sentinel missing or unparseable.
+        _InspectArtifactError: persisted artifact read/parse failures after
+            sentinel verification.
     """
     sentinel = verify_sentinel(run_dir)
 
