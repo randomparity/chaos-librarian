@@ -143,7 +143,6 @@ class WorldState:
         return self._asset_to_location[asset_id]
 
     def version_id_for_asset(self, asset_id: str) -> str:
-        """Return the version id currently bound to ``asset_id``."""
         return self._asset_to_version[asset_id]
 
     def sidecar_id_for_path(self, asset_id: str, path: str) -> str:
@@ -163,27 +162,22 @@ class WorldState:
         raise KeyError(f"no sidecar for asset {asset_id!r} at path {path!r}")
 
     def has_location(self, asset_id: str) -> bool:
-        """Return True if ``asset_id`` is currently placed at some location."""
         return asset_id in self._asset_to_location
 
     def bind_location(self, asset_id: str, location: ManifestLocation) -> None:
-        """Register a new location for ``asset_id``."""
         self.locations[location.id] = location
         self._asset_to_location[asset_id] = location.id
 
     def unbind_location(self, asset_id: str) -> None:
-        """Remove the asset's current location (delete_file)."""
         loc_id = self._asset_to_location.pop(asset_id)
         self.locations.pop(loc_id)
         self._renderer_managed_asset_ids.discard(asset_id)
 
     def bind_version(self, asset_id: str, version: ManifestVersion) -> None:
-        """Register a new version for ``asset_id``."""
         self.versions[version.id] = version
         self._asset_to_version[asset_id] = version.id
 
     def renderer_manages_asset(self, asset_id: str) -> bool:
-        """Return True if hierarchy actions should rerender this asset."""
         return asset_id in self._renderer_managed_asset_ids
 
     def renderer_derived_sidecars_by_asset(
@@ -203,7 +197,6 @@ class WorldState:
         return grouped
 
     def discard_renderer_sidecar(self, sidecar_id: str) -> None:
-        """Mark a removed sidecar as no longer renderer-derived."""
         self._renderer_derived_sidecar_ids.discard(sidecar_id)
 
     def asset_ids_for_episode(self, episode_id: str) -> list[str]:
