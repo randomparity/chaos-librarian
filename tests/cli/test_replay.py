@@ -14,6 +14,7 @@ from typer.testing import CliRunner
 
 from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
+from chaos_librarian.cli._replay_io import load_replay_bundle, load_sentinel
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import (
@@ -55,6 +56,17 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 FAKE_PROVIDER = "fake-content-source"
 FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
+
+
+def test_soft_replay_loaders_return_none_for_unreadable_paths(tmp_path: Path) -> None:
+    """Auto-discovery treats unreadable optional artifacts as absent."""
+    sentinel_path = tmp_path / SENTINEL_FILENAME
+    replay_path = tmp_path / "replay.json"
+    sentinel_path.mkdir()
+    replay_path.mkdir()
+
+    assert load_sentinel(sentinel_path) is None
+    assert load_replay_bundle(replay_path) is None
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:

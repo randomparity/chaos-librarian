@@ -53,7 +53,7 @@ def load_sentinel(path: Path) -> RunSentinel | None:
         return None
     try:
         return RunSentinel.model_validate_json(path.read_text())
-    except ValidationError:
+    except (OSError, ValidationError):
         return None
 
 
@@ -63,5 +63,5 @@ def load_replay_bundle(path: Path) -> PlanOnlyReplayBundle | None:
         return None
     try:
         return PlanOnlyReplayBundle.model_validate_json(path.read_text())
-    except ValidationError:
+    except (OSError, ValidationError):
         return None
