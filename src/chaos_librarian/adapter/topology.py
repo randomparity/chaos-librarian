@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import NamedTuple, Protocol, TypedDict
+from typing import NamedTuple, Protocol
 
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.contract.domain import ParentKind
@@ -79,17 +79,18 @@ class TopologyKey(NamedTuple):
     components: tuple[str, ...]
 
 
-class _TopologyDomainFields(TypedDict, total=False):
-    movie_title: str | None
-    series_title: str | None
-    season_number: int | None
-    episode_number: int | None
-    episode_title: str | None
-    artist_name: str | None
-    album_title: str | None
-    disc_number: int | None
-    track_number: int | None
-    track_title: str | None
+@dataclass(frozen=True)
+class _TopologyDomainFields:
+    movie_title: str | None = None
+    series_title: str | None = None
+    season_number: int | None = None
+    episode_number: int | None = None
+    episode_title: str | None = None
+    artist_name: str | None = None
+    album_title: str | None = None
+    disc_number: int | None = None
+    track_number: int | None = None
+    track_title: str | None = None
 
 
 @dataclass(frozen=True)
@@ -278,9 +279,18 @@ def oracle_topology(fixture: OracleFixture) -> tuple[OracleTopologyView, ...]:
                 variant_id=variant.id,
                 parent_kind=variant.parent_kind,
                 parent_id=variant.parent_id,
+                movie_title=domain_fields.movie_title,
+                series_title=domain_fields.series_title,
+                season_number=domain_fields.season_number,
+                episode_number=domain_fields.episode_number,
+                episode_title=domain_fields.episode_title,
+                artist_name=domain_fields.artist_name,
+                album_title=domain_fields.album_title,
+                disc_number=domain_fields.disc_number,
+                track_number=domain_fields.track_number,
+                track_title=domain_fields.track_title,
                 variant_label=variant.label,
                 bundle_asset_ids=tuple(sorted(bundle_members[bundle.id])),
-                **domain_fields,
             )
         )
     return tuple(views)
@@ -315,9 +325,18 @@ def observed_topology(state: ObservedState) -> tuple[ObservedTopologyView, ...]:
                 variant_ref=variant_ref,
                 parent_kind=parent_kind,
                 parent_ref=parent_ref,
+                movie_title=domain_fields.movie_title,
+                series_title=domain_fields.series_title,
+                season_number=domain_fields.season_number,
+                episode_number=domain_fields.episode_number,
+                episode_title=domain_fields.episode_title,
+                artist_name=domain_fields.artist_name,
+                album_title=domain_fields.album_title,
+                disc_number=domain_fields.disc_number,
+                track_number=domain_fields.track_number,
+                track_title=domain_fields.track_title,
                 variant_label=variant.label if variant else None,
                 bundle_asset_refs=tuple(sorted(bundle.asset_refs)) if bundle else (),
-                **domain_fields,
             )
         )
     return tuple(views)
@@ -330,28 +349,28 @@ def _oracle_domain_fields(
 ) -> _TopologyDomainFields:
     if parent_kind is ParentKind.MOVIE:
         movie = lookups.movies[parent_id]
-        return {"movie_title": movie.title}
+        return _TopologyDomainFields(movie_title=movie.title)
     if parent_kind is ParentKind.EPISODE:
         episode = lookups.episodes[parent_id]
         season = lookups.seasons[episode.season_id]
         series = lookups.series[season.series_id]
-        return {
-            "series_title": series.title,
-            "season_number": season.season_number,
-            "episode_number": episode.episode_number,
-            "episode_title": episode.title,
-        }
+        return _TopologyDomainFields(
+            series_title=series.title,
+            season_number=season.season_number,
+            episode_number=episode.episode_number,
+            episode_title=episode.title,
+        )
     track = lookups.tracks[parent_id]
     disc = lookups.discs[track.disc_id]
     album = lookups.albums[disc.album_id]
     artist = lookups.artists[album.artist_id]
-    return {
-        "artist_name": artist.name,
-        "album_title": album.title,
-        "disc_number": disc.disc_number,
-        "track_number": track.track_number,
-        "track_title": track.title,
-    }
+    return _TopologyDomainFields(
+        artist_name=artist.name,
+        album_title=album.title,
+        disc_number=disc.disc_number,
+        track_number=track.track_number,
+        track_title=track.title,
+    )
 
 
 def _observed_domain_fields(
@@ -360,35 +379,35 @@ def _observed_domain_fields(
     parent_ref: str | None,
 ) -> _TopologyDomainFields:
     if parent_kind is None or parent_ref is None:
-        return {}
+        return _TopologyDomainFields()
     if parent_kind is ParentKind.MOVIE:
         movie = lookups.movies.get(parent_ref)
-        return {"movie_title": movie.title if movie else None}
+        return _TopologyDomainFields(movie_title=movie.title if movie else None)
     if parent_kind is ParentKind.EPISODE:
         episode = lookups.episodes.get(parent_ref)
         if episode is None:
-            return {}
+            return _TopologyDomainFields()
         season = lookups.seasons.get(episode.season_ref)
         series = lookups.series.get(season.series_ref) if season is not None else None
-        return {
-            "series_title": series.title if series else None,
-            "season_number": season.season_number if season else None,
-            "episode_number": episode.episode_number,
-            "episode_title": episode.title,
-        }
+        return _TopologyDomainFields(
+            series_title=series.title if series else None,
+            season_number=season.season_number if season else None,
+            episode_number=episode.episode_number,
+            episode_title=episode.title,
+        )
     track = lookups.tracks.get(parent_ref)
     if track is None:
-        return {}
+        return _TopologyDomainFields()
     disc = lookups.discs.get(track.disc_ref)
     album = lookups.albums.get(disc.album_ref) if disc is not None else None
     artist = lookups.artists.get(album.artist_ref) if album is not None else None
-    return {
-        "artist_name": artist.name if artist else None,
-        "album_title": album.title if album else None,
-        "disc_number": disc.disc_number if disc else None,
-        "track_number": track.track_number,
-        "track_title": track.title,
-    }
+    return _TopologyDomainFields(
+        artist_name=artist.name if artist else None,
+        album_title=album.title if album else None,
+        disc_number=disc.disc_number if disc else None,
+        track_number=track.track_number,
+        track_title=track.title,
+    )
 
 
 def _observed_containing_bundle(state: ObservedState) -> dict[str, ObservedBundle]:
