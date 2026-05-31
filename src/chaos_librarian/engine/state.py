@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.domain import ParentKind
@@ -63,6 +64,14 @@ from chaos_librarian.path_rendering import (
     replace_root_prefix,
 )
 from chaos_librarian.topology import AssetContext, iter_asset_contexts, renderable_asset_context
+
+
+class _RenderableContextBaseFields(TypedDict):
+    root_path: str
+    variant_label: str
+    asset_role: str
+    asset_container: str
+    bundle_asset_count: int
 
 
 @dataclass
@@ -251,6 +260,13 @@ class WorldState:
         bundle_asset_count = sum(
             1 for candidate in self.assets.values() if candidate.bundle_id == bundle.id
         )
+        base_fields: _RenderableContextBaseFields = {
+            "root_path": root_path,
+            "variant_label": variant.label,
+            "asset_role": asset.role,
+            "asset_container": asset.container,
+            "bundle_asset_count": bundle_asset_count,
+        }
         if variant.parent_kind is ParentKind.MOVIE:
             movie = self.movies[variant.parent_id]
             # No movie hierarchy/path action re-renders from manifest context, so
@@ -259,25 +275,9 @@ class WorldState:
             # topology.renderable_asset_context. See ADR 0010.
             return RenderableAssetContext(
                 parent_kind=ParentKind.MOVIE,
-                root_path=root_path,
                 layout=MovieLayout(movie.layout),
-                naming=None,
                 movie_title=movie.title,
-                series_title=None,
-                season_number=None,
-                episode_number=None,
-                episode_title=None,
-                aired_on=None,
-                absolute_number=None,
-                artist_name=None,
-                album_title=None,
-                disc_number=None,
-                track_number=None,
-                track_title=None,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.EPISODE:
             episode = self.episodes[variant.parent_id]
@@ -285,25 +285,15 @@ class WorldState:
             series = self.series[season.series_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.EPISODE,
-                root_path=root_path,
                 layout=SeriesLayout(series.layout),
                 naming=EpisodeNaming(series.episode_naming),
-                movie_title=None,
                 series_title=series.title,
                 season_number=season.season_number,
                 episode_number=episode.episode_number,
                 episode_title=episode.title,
                 aired_on=episode.aired_on,
                 absolute_number=episode.absolute_number,
-                artist_name=None,
-                album_title=None,
-                disc_number=None,
-                track_number=None,
-                track_title=None,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.TRACK:
             track = self.tracks[variant.parent_id]
@@ -312,42 +302,27 @@ class WorldState:
             artist = self.artists[album.artist_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.TRACK,
-                root_path=root_path,
                 layout=ArtistLayout(artist.layout),
                 naming=TrackNaming(artist.track_naming),
-                movie_title=None,
-                series_title=None,
-                season_number=None,
-                episode_number=None,
-                episode_title=None,
-                aired_on=None,
-                absolute_number=None,
                 artist_name=artist.name,
                 album_title=album.title,
                 disc_number=disc.disc_number,
                 track_number=track.track_number,
                 track_title=track.title,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.PODCAST_EPISODE:
             episode = self.podcast_episodes[variant.parent_id]
             podcast = self.podcasts[episode.podcast_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.PODCAST_EPISODE,
-                root_path=root_path,
                 layout=PodcastLayout(podcast.layout),
                 naming=PodcastEpisodeNaming(podcast.episode_naming),
                 podcast_title=podcast.title,
                 published_at=episode.published_at,
                 episode_slug=episode.slug,
                 episode_title=episode.title,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         raise ChaosLibrarianValueError(f"asset {asset_id!r} has unsupported parent kind")
 
