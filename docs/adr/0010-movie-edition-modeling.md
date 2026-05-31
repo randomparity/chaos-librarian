@@ -18,8 +18,9 @@ The established pattern models each work-type as a parallel top-level tuple
 (`movies` / `series` / `artists` / `podcasts`), each a nested hierarchy ending in
 `variants → bundle → assets`, with a per-asset `ParentKind` threaded through
 `scenario.py`, `path_rendering.py`, `topology.py`, the raw-dict validation walker
-in `validation/rules/_common.py`, engine state, and the manifest. A movie
-`Variant.label` today is a free-form resolution/encoding tag (`hd`, `uhd`,
+in `validation/rules/hierarchy_walkers.py`, the hierarchy projection in
+`validation/rules/hierarchy_projection.py`, engine state, and the manifest. A
+movie `Variant.label` today is a free-form resolution/encoding tag (`hd`, `uhd`,
 `1080p`); the renderer puts it into the filename
 (`<root>/<Title> - <label>.<ext>`). There is no edition concept and no
 `{edition-...}` rendering today. ADR 0008/0009 set the precedent of reusing
