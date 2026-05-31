@@ -9,13 +9,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
 from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
-from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
+from chaos_librarian.contract import (
+    MATERIALIZATION_SCHEMA_VERSION,
+    REPLAY_BUNDLE_SCHEMA_VERSION,
+    RUN_SENTINEL_SCHEMA_VERSION,
+)
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -650,7 +655,7 @@ def test_compare_run_replay_compares_materialization_content_sources(tmp_path: P
     assert [item.path for item in diff.files] == ["materialization.json"]
 
 
-def test_compare_run_replay_catches_missing_materialization_content_sources(
+def test_compare_run_replay_validates_materialization_report_contract(
     tmp_path: Path,
 ) -> None:
     left = _write_run_compare_fixture(tmp_path / "left")
@@ -659,9 +664,8 @@ def test_compare_run_replay_catches_missing_materialization_content_sources(
     _update_materialization(right, "content_sources", [])
     _delete_materialization_field(right, "content_sources")
 
-    diff = compare_run_replay(left, right)
-
-    assert [item.path for item in diff.files] == ["materialization.json"]
+    with pytest.raises(ValidationError, match="content_sources"):
+        compare_run_replay(left, right)
 
 
 def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
@@ -669,13 +673,29 @@ def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path
         tmp_path / "left",
         platform="darwin",
         toolchain={"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
-        invocations=[{"tool": "ffmpeg", "version": "7.1.1", "command": ["a"], "exit_code": 0}],
+        invocations=[
+            {
+                "tool": "ffmpeg",
+                "version": "7.1.1",
+                "command": ["a"],
+                "exit_code": 0,
+                "duration_ns": 1,
+            }
+        ],
     )
     right = _write_run_compare_fixture(
         tmp_path / "right",
         platform="linux",
         toolchain={"ffmpeg": "8.0.0", "ffprobe": "8.0.0"},
-        invocations=[{"tool": "ffmpeg", "version": "8.0.0", "command": ["b"], "exit_code": 0}],
+        invocations=[
+            {
+                "tool": "ffmpeg",
+                "version": "8.0.0",
+                "command": ["b"],
+                "exit_code": 0,
+                "duration_ns": 2,
+            }
+        ],
     )
 
     diff = compare_run_replay(left, right)
@@ -819,6 +839,21 @@ def test_compare_run_replay_ignores_network_lag_actual_duration(
     assert diff.is_clean()
 
 
+def test_compare_run_replay_compares_network_fs_chaos_actions(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(left, "network_fs_chaos_actions", [_network_fs_chaos_action()])
+    _update_materialization(
+        right,
+        "network_fs_chaos_actions",
+        [_network_fs_chaos_action(condition="unavailable")],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
 def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     """WHY: Sprint 5 ships the MaterializeReplayBundle variant for schema
     stability but does NOT implement materialize replay. The CLI must
@@ -882,6 +917,8 @@ def _write_run_compare_fixture(
     (root / "materialization.json").write_text(
         json.dumps(
             {
+                "schema_version": MATERIALIZATION_SCHEMA_VERSION,
+                "run_id": str(RUN_ID),
                 "outcome": "success",
                 "execution_mode": "run",
                 "platform": platform,
@@ -902,6 +939,8 @@ def _write_run_compare_fixture(
                         "input_content_hash": "sha256:" + "1" * 64,
                         "output_content_hash": "sha256:" + "2" * 64,
                         "corruptor": "container_header_v1",
+                        "input_size_bytes": 4096,
+                        "output_size_bytes": 4096,
                         "byte_start": 0,
                         "byte_count": 64,
                         "seed_material": "container_header_v1:7:corrupt_header_001:asset_main",
@@ -949,6 +988,19 @@ def _network_lag_action(
         "enforced": True,
     }
     return {key: value for key, value in action.items() if value is not None}
+
+
+def _network_fs_chaos_action(*, condition: str = "eagain") -> dict[str, object]:
+    return {
+        "event_id": "acquire_001",
+        "action": "release_lock",
+        "target_ref": "asset_main",
+        "condition": condition,
+        "enforced": False,
+        "lock_type": "exclusive",
+        "related_event_id": "release_001",
+        "related_target_ref": "asset_main",
+    }
 
 
 def _write_asset_report(root: Path, *, content_hash: str) -> None:

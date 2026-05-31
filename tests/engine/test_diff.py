@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.engine.diff import (
     FixtureDiff,
     FixtureFileDiff,
@@ -259,7 +260,13 @@ def _make_run_replay_fixture(
         encoding="utf-8",
     )
     materialization = {
+        "schema_version": MATERIALIZATION_SCHEMA_VERSION,
+        "run_id": "00000000-0000-0000-0000-000000000007",
         "outcome": "success",
+        "platform": "test-platform",
+        "started_at": "2026-05-18T00:00:00Z",
+        "finished_at": "2026-05-18T00:00:01Z",
+        "toolchain": {},
         "execution_mode": "run",
         "content_sources": [],
         "materialized": [],
