@@ -60,7 +60,6 @@ class Clock:
         return self.current_ns
 
     def now(self) -> int:
-        """Return the current logical timestamp in nanoseconds."""
         return self.current_ns
 
     def set_to(self, target_ns: int) -> None:

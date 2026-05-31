@@ -44,17 +44,13 @@ class IdAllocator:
         return allocated
 
     def next_version_id(self) -> str:
-        """Allocate the next version identifier."""
         return self._allocate("version")
 
     def next_location_id(self) -> str:
-        """Allocate the next location identifier."""
         return self._allocate("location")
 
     def next_sidecar_id(self) -> str:
-        """Allocate the next sidecar identifier."""
         return self._allocate("sidecar")
 
     def next_mutation_id(self) -> str:
-        """Allocate the next mutation identifier."""
         return self._allocate("mutation")
