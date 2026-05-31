@@ -10,11 +10,10 @@ from chaos_librarian.adapter.index import (
     ObservedIndex,
     OracleAssetView,
     OracleIndex,
-    format_topology_key,
-    topology_key_for_view,
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
 from chaos_librarian.adapter.probe import compare_probed_media
+from chaos_librarian.adapter.topology import format_topology_key, topology_key_for_view
 from chaos_librarian.contract.divergence import (
     CompareMode,
     DivergenceCode,

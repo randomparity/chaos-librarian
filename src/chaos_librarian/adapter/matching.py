@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable, Hashable, Mapping
 from dataclasses import dataclass, field
 
-from chaos_librarian.adapter.index import ObservedIndex, OracleIndex, format_topology_key
+from chaos_librarian.adapter.index import ObservedIndex, OracleIndex
+from chaos_librarian.adapter.topology import format_topology_key
 from chaos_librarian.contract.divergence import (
     DivergenceCode,
     DivergenceFinding,
