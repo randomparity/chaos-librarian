@@ -34,7 +34,7 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer import phase_b, wall_clock
+from chaos_librarian.materializer import wall_clock
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     CorruptionActionError,
@@ -42,6 +42,7 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
     TimelineUnsupportedError,
 )
+from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 
@@ -669,7 +670,7 @@ def test_handler_overrun_does_not_start_second_due_event(
             duration_ns=10,
         )
 
-    monkeypatch.setattr(phase_b, "apply_filesystem_action", slow_dispatch)
+    monkeypatch.setattr(dispatch_mod, "apply_filesystem_action", slow_dispatch)
     artifacts = wall_clock.run_wall_clock_scenario(
         scenario,
         tmp_path / "run",
@@ -1055,7 +1056,7 @@ def test_filesystem_failure_writes_run_failure_metadata(
             cause=OSError("disk full"),
         )
 
-    monkeypatch.setattr(phase_b, "apply_filesystem_action", fail_dispatch)
+    monkeypatch.setattr(dispatch_mod, "apply_filesystem_action", fail_dispatch)
     with pytest.raises(FilesystemActionError, match="move failed"):
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 
@@ -1096,7 +1097,7 @@ def test_media_failure_writes_run_failure_metadata(
             cause=RuntimeError("generator failed"),
         )
 
-    monkeypatch.setattr(phase_b, "apply_media_action", fail_media)
+    monkeypatch.setattr(dispatch_mod, "apply_media_action", fail_media)
     with pytest.raises(MediaActionError, match="sidecar failed"):
         wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="1ns", speed="1x")
 
@@ -1282,7 +1283,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return _corruption_action(output_version_id=output_version_id)
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1295,7 +1296,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1328,7 +1329,7 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_wrong_oracle_hash", fake_apply)
 
 
 def _corruption_action(*, output_version_id: str) -> CorruptionAction:

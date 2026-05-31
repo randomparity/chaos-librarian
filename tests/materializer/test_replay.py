@@ -39,9 +39,9 @@ from chaos_librarian.engine import (
     run_materializer_plan,
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
+from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.replay import replay_run_bundle
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -896,7 +896,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return _corruption_action(output_version_id=output_version_id)
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_successful_truncate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -926,7 +926,7 @@ def _patch_successful_truncate(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -939,7 +939,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -972,7 +972,7 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_wrong_oracle_hash", fake_apply)
 
 
 def _corruption_action(*, output_version_id: str) -> CorruptionAction:

@@ -32,6 +32,7 @@ from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     MediaActionError,
 )
+from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
 from chaos_librarian.materializer.phase_b.filesystem import (
     FilesystemPhaseBContext,
@@ -62,7 +63,7 @@ def test_dispatch_phase_b_entry_routes_filesystem_actions(
         duration_ns=7,
     )
 
-    monkeypatch.setattr(phase_b, "apply_filesystem_action", lambda _ctx, _entry: expected)
+    monkeypatch.setattr(dispatch_mod, "apply_filesystem_action", lambda _ctx, _entry: expected)
 
     phase_b.dispatch_phase_b_entry(state, entry)
 
@@ -88,7 +89,7 @@ def test_dispatch_phase_b_entry_routes_media_actions(
         duration_ns=7,
     )
 
-    monkeypatch.setattr(phase_b, "apply_media_action", lambda _ctx, _entry: expected)
+    monkeypatch.setattr(dispatch_mod, "apply_media_action", lambda _ctx, _entry: expected)
 
     phase_b.dispatch_phase_b_entry(state, entry)
 
@@ -122,7 +123,7 @@ def test_dispatch_phase_b_entry_routes_corruption_actions(
         duration_ns=7,
     )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", lambda _ctx, _entry: expected)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", lambda _ctx, _entry: expected)
 
     phase_b.dispatch_phase_b_entry(state, entry)
 
@@ -151,7 +152,7 @@ def test_dispatch_phase_b_entry_routes_oracle_hash_actions(
         duration_ns=7,
     )
 
-    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", lambda _ctx, _entry: expected)
+    monkeypatch.setattr(dispatch_mod, "apply_wrong_oracle_hash", lambda _ctx, _entry: expected)
 
     phase_b.dispatch_phase_b_entry(state, entry)
 
@@ -181,10 +182,10 @@ def test_dispatch_phase_b_entry_rejects_actions_outside_current_dispatch_sets(
 ) -> None:
     state = _state(tmp_path)
     entry = _entry(TimelineActionName.MOVE_ASSET)
-    monkeypatch.setattr(phase_b, "supports_filesystem_action", lambda _action: False)
-    monkeypatch.setattr(phase_b, "supports_media_action", lambda _action: False)
-    monkeypatch.setattr(phase_b, "supports_corruption_action", lambda _action: False)
-    monkeypatch.setattr(phase_b, "supports_oracle_hash_action", lambda _action: False)
+    monkeypatch.setattr(dispatch_mod, "supports_filesystem_action", lambda _action: False)
+    monkeypatch.setattr(dispatch_mod, "supports_media_action", lambda _action: False)
+    monkeypatch.setattr(dispatch_mod, "supports_corruption_action", lambda _action: False)
+    monkeypatch.setattr(dispatch_mod, "supports_oracle_hash_action", lambda _action: False)
 
     with pytest.raises(MediaActionError, match="unsupported phase-B action"):
         phase_b.dispatch_phase_b_entry(state, entry)
@@ -247,7 +248,7 @@ def test_augment_phase_b_outputs_merges_version_evidence_once(
     ) -> None:
         calls.append(dict(versions))
 
-    monkeypatch.setattr(phase_b, "augment_versions", capture_versions)
+    monkeypatch.setattr(dispatch_mod, "augment_versions", capture_versions)
 
     phase_b.augment_phase_b_outputs(_manifest_with_version("version_shared"), state)
 
