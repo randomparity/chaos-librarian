@@ -11,7 +11,7 @@ from chaos_librarian.validation.codes import (
     E_SIDECAR_PATH_COLLISION,
     E_SIDECAR_TARGET_UNKNOWN,
 )
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
 
 DECLARED_SIDECAR_PATH = "library/r0/T - l.eng.srt"

@@ -7,7 +7,7 @@ import pytest
 from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation import codes
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.validation.semantic import run_semantic_pass
 

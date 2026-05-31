@@ -3,8 +3,7 @@
 The structural-invariant tests share this discovery logic:
 
 - ``test_rule_import_isolation.py`` — every rule-package module imports
-  without dragging ``IssueCollector`` into the
-  ``pipeline → semantic → rules`` cycle.
+  cleanly from the pipeline entrypoint.
 - ``test_rule_no_cross_imports.py`` — semantic rule modules may import shared
   helper modules, but may not import sibling semantic rule modules.
 

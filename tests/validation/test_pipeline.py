@@ -1,4 +1,4 @@
-"""Tests for run_validation orchestration and IssueCollector behavior."""
+"""Tests for run_validation orchestration and validation reporting behavior."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import pytest
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import E_EXTRACT_TRACK_UNKNOWN
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.extract_track_unknown import (
     rule_extract_track_unknown,
 )

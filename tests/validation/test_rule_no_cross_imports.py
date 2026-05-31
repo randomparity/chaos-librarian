@@ -6,12 +6,12 @@ chaos_librarian.validation.rules.<other_rule> import …`` edges.
 Cross-cutting validation helpers live in the shared helper modules listed in
 ``tests.validation.rule_modules.SHARED_HELPER_MODULES``.
 
-``test_rule_import_isolation.py`` proves no rule module drags
-``IssueCollector`` into the ``pipeline → semantic → rules`` chain. This
-test proves the orthogonal invariant: no rule module imports from a
-sibling semantic rule module. Together they lock the structural goal of the
-#22 split: semantic rule files are siblings, and shared helpers are the only
-intra-subpackage import targets.
+``test_rule_import_isolation.py`` proves every rule package module imports
+cleanly from the pipeline entrypoint. This test proves the orthogonal
+invariant: no rule module imports from a sibling semantic rule module.
+Together they lock the structural goal of the #22 split: semantic rule
+files are siblings, and shared helpers are the only intra-subpackage import
+targets.
 """
 
 from __future__ import annotations

@@ -1,17 +1,9 @@
-"""Smoke test: every rule-package module imports without pulling ``IssueCollector``.
+"""Smoke test: every validation rule package module imports cleanly.
 
-WHY: ``validation/pipeline.py`` imports ``run_semantic_pass`` from
-``validation/semantic.py`` BEFORE ``IssueCollector`` is defined
-(``pipeline.py:38`` precedes the dataclass at ``pipeline.py:42``). The
-chain ``pipeline → semantic → rules/<rule>`` therefore cannot afford
-any rule module to import ``IssueCollector`` at runtime — doing so
-would cycle and raise ``ImportError`` during package initialization.
-
-This test forces each rule module to be loaded in isolation. If a future
-rule grows a runtime ``from chaos_librarian.validation.pipeline import
-IssueCollector`` at module scope, the import fails here with a clear
-``ImportError`` traceback pointing at the offending module — long before
-a confused developer hits the same failure from `pytest --collect-only`.
+WHY: validation rules are leaf modules. The pipeline imports semantic.py,
+which imports the rule registry, so rule modules must keep their runtime
+dependencies limited to shared helpers and neutral contracts. This catches
+new module-scope dependencies that would cycle during package initialization.
 """
 
 from __future__ import annotations

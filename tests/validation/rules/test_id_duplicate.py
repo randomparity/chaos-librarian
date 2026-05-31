@@ -8,7 +8,7 @@ semantic rule did not exist.
 from __future__ import annotations
 
 from chaos_librarian.validation import codes
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.semantic import run_semantic_pass
 
 

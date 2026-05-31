@@ -8,7 +8,7 @@ from typing import cast
 
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.hierarchy_walkers import (
     iter_asset_contexts,
     renderable_context_for,

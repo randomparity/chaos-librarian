@@ -13,7 +13,7 @@ from chaos_librarian.contract.validation import ValidationSeverity
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
-    from chaos_librarian.validation.pipeline import IssueCollector
+    from chaos_librarian.validation.reporting import IssueCollector
 
 _Loc = tuple[str | int, ...]
 _RawMapping = Mapping[str, object]

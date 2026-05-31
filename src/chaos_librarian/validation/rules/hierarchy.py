@@ -41,7 +41,7 @@ from chaos_librarian.validation.rules.raw_helpers import (
 
 if TYPE_CHECKING:
     from chaos_librarian.scenario_io import LineIndex
-    from chaos_librarian.validation.pipeline import IssueCollector
+    from chaos_librarian.validation.reporting import IssueCollector
 
 __all__ = [
     "rule_hierarchy_invariants",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from chaos_librarian.scenario_io import LineIndex
 from chaos_librarian.validation.codes import E_SYMLINK_TARGET_ESCAPE
-from chaos_librarian.validation.pipeline import IssueCollector
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.rules.symlink_target import rule_symlink_target_escape
 
 
