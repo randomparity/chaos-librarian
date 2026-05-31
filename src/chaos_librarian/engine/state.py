@@ -91,19 +91,6 @@ class WorldState:
     _asset_to_location: dict[str, str] = field(default_factory=dict)
     _asset_to_version: dict[str, str] = field(default_factory=dict)
 
-    # Maps slow_copy_start event_id → (location_id, final_path). Drained on commit.
-    pending_slow_copies: dict[str, tuple[str, str]] = field(default_factory=dict)
-
-    # Journal-derived evidence used by an immediately following multi-phase event.
-    # Not serialized into the manifest; only supports same-run handlers.
-    previous_event_delta: tuple[str, dict[str, object]] | None = None
-    pending_network_lags: dict[str, dict[str, object]] = field(default_factory=dict)
-    # Open network-fs-chaos windows keyed by the open event's id; the close
-    # event (release_lock / remount_path) pops the matching entry. Twins of
-    # pending_network_lags.
-    pending_locks: dict[str, dict[str, object]] = field(default_factory=dict)
-    pending_unmounts: dict[str, dict[str, object]] = field(default_factory=dict)
-
     # Populated once in ``build_initial_state`` from ``scenario.library`` so
     # archive_file / move_between_roots handlers can resolve root paths and
     # preserve rendered suffixes while moving assets across roots.

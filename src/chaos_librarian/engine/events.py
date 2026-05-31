@@ -272,7 +272,7 @@ def apply_event(
     handler = _HANDLERS[resolved.event.action]
     entries = handler(state, resolved, ids, ctx)
     for entry in entries:
-        state.previous_event_delta = (entry.event_id, dict(entry.state_delta))
+        ctx.previous_event_delta = (entry.event_id, dict(entry.state_delta))
     return entries
 
 
@@ -578,7 +578,7 @@ def _handle_slow_copy_start(
     loc_id = state.location_id_for_asset(event.target)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"temp_path": event.temp_path})
-    state.pending_slow_copies[event.id] = (loc_id, event.to)
+    ctx.pending_slow_copies[event.id] = (loc_id, event.to)
     entry = StartedJournalEntry(
         schema_version=1,
         event_id=event.id,
@@ -606,7 +606,7 @@ def _handle_slow_copy_commit(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = _checked_event(resolved, SlowCopyCommitEvent)
-    loc_id, final_path = state.pending_slow_copies.pop(event.for_)
+    loc_id, final_path = ctx.pending_slow_copies.pop(event.for_)
     previous = state.locations[loc_id]
     state.locations[loc_id] = previous.model_copy(update={"path": final_path, "temp_path": None})
     entry = CommittedJournalEntry(
@@ -1228,11 +1228,11 @@ def _handle_network_lag_start(
 ) -> tuple[JournalEntry, ...]:
     del ids
     event = _checked_event(resolved, NetworkLagStartEvent)
-    if state.previous_event_delta is None or state.previous_event_delta[0] != event.after:
+    if ctx.previous_event_delta is None or ctx.previous_event_delta[0] != event.after:
         raise ChaosLibrarianValueError(
             f"network_lag_start must immediately follow after event {event.after!r}"
         )
-    source_delta = state.previous_event_delta[1]
+    source_delta = ctx.previous_event_delta[1]
     duration_ns = parse_duration(event.duration)
     state_delta = _network_lag_delta(
         event=event,
@@ -1240,7 +1240,7 @@ def _handle_network_lag_start(
         logical_start_ns=resolved.at_ns,
         requested_duration_ns=duration_ns,
     )
-    state.pending_network_lags[event.id] = state_delta
+    ctx.pending_network_lags[event.id] = state_delta
     entry = StartedJournalEntry(
         schema_version=1,
         event_id=event.id,
@@ -1265,7 +1265,7 @@ def _handle_network_lag_commit(
 ) -> tuple[JournalEntry, ...]:
     del ids
     event = _checked_event(resolved, NetworkLagCommitEvent)
-    state_delta = state.pending_network_lags.pop(event.for_)
+    state_delta = ctx.pending_network_lags.pop(event.for_)
     target_ref = state_delta.get("target_ref")
     target_ids = [target_ref] if isinstance(target_ref, str) else []
     entry = CommittedJournalEntry(
@@ -1477,7 +1477,7 @@ def _handle_acquire_lock(
         "condition": _CHAOS_CONDITION_EAGAIN,
         "lock_type": event.lock_type.value,
     }
-    state.pending_locks[event.id] = state_delta
+    ctx.pending_locks[event.id] = state_delta
     return (
         StartedJournalEntry(
             schema_version=1,
@@ -1503,7 +1503,7 @@ def _handle_release_lock(
 ) -> tuple[JournalEntry, ...]:
     del ids
     event = _checked_event(resolved, ReleaseLockEvent)
-    state_delta = state.pending_locks.pop(event.for_)
+    state_delta = ctx.pending_locks.pop(event.for_)
     target_ref = state_delta.get("target_ref")
     return (
         CommittedJournalEntry(
@@ -1535,7 +1535,7 @@ def _handle_unmount_path(
         "path": _chaos_resolved_path(state, event.target),
         "condition": _CHAOS_CONDITION_UNAVAILABLE,
     }
-    state.pending_unmounts[event.id] = state_delta
+    ctx.pending_unmounts[event.id] = state_delta
     return (
         StartedJournalEntry(
             schema_version=1,
@@ -1561,7 +1561,7 @@ def _handle_remount_path(
 ) -> tuple[JournalEntry, ...]:
     del ids
     event = _checked_event(resolved, RemountPathEvent)
-    state_delta = state.pending_unmounts.pop(event.for_)
+    state_delta = ctx.pending_unmounts.pop(event.for_)
     target_ref = state_delta.get("target_ref")
     return (
         CommittedJournalEntry(
