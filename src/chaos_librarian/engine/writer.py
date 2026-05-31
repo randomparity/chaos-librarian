@@ -196,8 +196,8 @@ def append_step(
         new_entries: Journal entries to append to ``journal.jsonl``.
         new_current_manifest: Manifest after the step's events.
         new_report_set: Report set after the step's events.
-        new_replay_bundle: Replay bundle with updated applied_events and
-            recomputed run_id.
+        new_replay_bundle: Replay bundle with updated applied_events,
+            journal_digest, and execution_trace.
     """
     replace_atomic_text(run_dir / "manifest.current.json", canonical_json(new_current_manifest))
     replace_atomic_text(run_dir / "replay.json", canonical_json(new_replay_bundle))
