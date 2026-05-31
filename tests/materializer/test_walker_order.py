@@ -40,7 +40,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.topology import iter_asset_contexts as topology_iter_asset_contexts
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy_walkers import (
     iter_asset_contexts as validation_iter_asset_contexts,
 )
 

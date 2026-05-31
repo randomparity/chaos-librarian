@@ -33,7 +33,7 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.engine import ReplayIntegrityError, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer import replay as replay_mod
@@ -353,6 +353,23 @@ _NETWORK_LAG_SCENARIO = _scenario_bytes(
 """,
 )
 
+_NETWORK_FS_LOCK_SCENARIO = _scenario_bytes(
+    scenario_id="run-replay-network-fs-lock-test",
+    profiles=("network-fs-chaos",),
+    title="Network FS Lock Replay",
+    timeline="""\
+  - id: acquire_001
+    at: 0ns
+    action: acquire_lock
+    target: asset_main
+    lock_type: exclusive
+  - id: release_001
+    at: 10ns
+    action: release_lock
+    for: acquire_001
+""",
+)
+
 
 def test_run_replay_reproduces_corruption_action_evidence(
     monkeypatch: pytest.MonkeyPatch,
@@ -640,6 +657,28 @@ def test_run_replay_oracle_hash_failure_preserves_partial_actions(
     assert report["outcome"] == Outcome.CORRUPTION_FAILED.value
     assert report["oracle_hash_actions"][0]["event_id"] == "wrong_hash_001"
     assert report["oracle_hash_actions"][0]["reported_content_hash"] == "sha256:" + "9" * 64
+
+
+def test_run_replay_rejects_mid_network_lag_prefix_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="uncommitted network_lag_start"):
+        replay_run_bundle(_run_bundle_for(_NETWORK_LAG_SCENARIO, applied_events=2), out)
+
+    assert not out.exists()
+
+
+def test_run_replay_rejects_mid_network_fs_window_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="unclosed network-fs-chaos open windows"):
+        replay_run_bundle(_run_bundle_for(_NETWORK_FS_LOCK_SCENARIO, applied_events=1), out)
+
+    assert not out.exists()
 
 
 def test_run_replay_reproduces_network_lag_evidence(

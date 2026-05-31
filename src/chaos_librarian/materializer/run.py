@@ -181,7 +181,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             out_dir=ctx.out_dir,
             artifacts=ctx.plan_artifacts,
             caps=ctx.caps,
-            result=phase_a,
+            phase_a_accumulator=phase_a,
             stamp_manifest=True,
         )
         phase_b_state = make_phase_b_state(

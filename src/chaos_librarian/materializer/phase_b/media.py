@@ -96,6 +96,12 @@ class LiveSidecar:
     image_format: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class _CreateSidecarWriteResult:
+    tool_invocation_index: int | None
+    live_sidecar: LiveSidecar
+
+
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
     "mkv": "srt",
     "webm": "srt",
@@ -944,66 +950,25 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
-    invocation_index: int | None = None
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
-    if kind == SidecarKind.SUBTITLE:
-        if language is None:
-            raise MediaActionError(
-                f"create_sidecar (subtitle) missing language for event {entry.event_id}",
-                event_id=entry.event_id,
-                action=TimelineActionName.CREATE_SIDECAR,
-                cause=ValueError("language is None"),
-                asset_id=asset_id,
-            )
-        text = srt_payload(
-            language=language,
-            duration_s=asset.duration_seconds,
-            seed=ctx.resolved_seed,
-        )
-        temp_output.write_bytes(encode_subtitle_body(text, encoding))
-    elif kind == SidecarKind.NFO:
-        if body_text is not None:
-            temp_output.write_bytes(body_text.encode("utf-8"))
-        else:
-            temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
-    elif kind == SidecarKind.CUE:
-        temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
-    elif kind == SidecarKind.POSTER:
-        argv = poster_ffmpeg_argv(
-            output_path=temp_output,
-            resolved_seed=ctx.resolved_seed,
-            sidecar_id=sidecar_id,
-            media_type=media_type,
-            image_format=image_format,
-        )
-        invocation_index = _run_ffmpeg_checked(
-            ctx,
-            argv=argv,
-            entry=entry,
-            action=TimelineActionName.CREATE_SIDECAR,
-            failure_label="create_sidecar (poster)",
-            asset_id=asset_id,
-        )
-    else:  # pragma: no cover — SidecarKind is exhaustive
-        raise MediaActionError(
-            f"create_sidecar: unknown kind {kind!r} for event {entry.event_id}",
-            event_id=entry.event_id,
-            action=TimelineActionName.CREATE_SIDECAR,
-            cause=ValueError(f"unknown kind {kind!r}"),
-            asset_id=asset_id,
-        )
-    temp_output.replace(sidecar_path)
-    new_hash = hash_file(sidecar_path)
-    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
-    ctx.live_sidecars[sidecar_id] = LiveSidecar(
+    result = _write_create_sidecar_body(
+        ctx=ctx,
+        entry=entry,
+        temp_output=temp_output,
+        asset=asset,
+        sidecar_id=sidecar_id,
+        asset_id=asset_id,
         kind=kind,
         language=language,
-        asset_id=asset_id,
         encoding=encoding,
-        body=body_text,
+        body_text=body_text,
         media_type=media_type,
         image_format=image_format,
     )
+    temp_output.replace(sidecar_path)
+    new_hash = hash_file(sidecar_path)
+    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
+    ctx.live_sidecars[sidecar_id] = result.live_sidecar
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,
@@ -1015,8 +980,179 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         output_sidecar_id=sidecar_id,
         input_content_hash=None,
         output_content_hash=new_hash,
-        tool_invocation_index=invocation_index,
+        tool_invocation_index=result.tool_invocation_index,
         duration_ns=time.monotonic_ns() - started,
+    )
+
+
+def _write_create_sidecar_body(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    temp_output: Path,
+    asset: Asset,
+    sidecar_id: str,
+    asset_id: str,
+    kind: SidecarKind,
+    language: str | None,
+    encoding: str | None,
+    body_text: str | None,
+    media_type: str | None,
+    image_format: str | None,
+) -> _CreateSidecarWriteResult:
+    if kind == SidecarKind.SUBTITLE:
+        return _write_subtitle_sidecar(
+            ctx=ctx,
+            entry=entry,
+            temp_output=temp_output,
+            asset=asset,
+            asset_id=asset_id,
+            language=language,
+            encoding=encoding,
+        )
+    if kind == SidecarKind.NFO:
+        return _write_text_sidecar(
+            temp_output=temp_output,
+            sidecar_id=sidecar_id,
+            asset_id=asset_id,
+            body_text=body_text,
+        )
+    if kind == SidecarKind.CUE:
+        return _write_cue_sidecar(
+            temp_output=temp_output,
+            sidecar_id=sidecar_id,
+            asset_id=asset_id,
+            body_text=body_text,
+        )
+    if kind == SidecarKind.POSTER:
+        return _write_poster_sidecar(
+            ctx=ctx,
+            entry=entry,
+            temp_output=temp_output,
+            sidecar_id=sidecar_id,
+            asset_id=asset_id,
+            media_type=media_type,
+            image_format=image_format,
+        )
+    raise MediaActionError(
+        f"create_sidecar: unknown kind {kind!r} for event {entry.event_id}",
+        event_id=entry.event_id,
+        action=TimelineActionName.CREATE_SIDECAR,
+        cause=ValueError(f"unknown kind {kind!r}"),
+        asset_id=asset_id,
+    )
+
+
+def _write_subtitle_sidecar(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    temp_output: Path,
+    asset: Asset,
+    asset_id: str,
+    language: str | None,
+    encoding: str | None,
+) -> _CreateSidecarWriteResult:
+    if language is None:
+        raise MediaActionError(
+            f"create_sidecar (subtitle) missing language for event {entry.event_id}",
+            event_id=entry.event_id,
+            action=TimelineActionName.CREATE_SIDECAR,
+            cause=ValueError("language is None"),
+            asset_id=asset_id,
+        )
+    text = srt_payload(
+        language=language,
+        duration_s=asset.duration_seconds,
+        seed=ctx.resolved_seed,
+    )
+    temp_output.write_bytes(encode_subtitle_body(text, encoding))
+    return _CreateSidecarWriteResult(
+        tool_invocation_index=None,
+        live_sidecar=LiveSidecar(
+            kind=SidecarKind.SUBTITLE,
+            language=language,
+            asset_id=asset_id,
+            encoding=encoding,
+        ),
+    )
+
+
+def _write_text_sidecar(
+    *,
+    temp_output: Path,
+    sidecar_id: str,
+    asset_id: str,
+    body_text: str | None,
+) -> _CreateSidecarWriteResult:
+    if body_text is not None:
+        temp_output.write_bytes(body_text.encode("utf-8"))
+    else:
+        temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+    return _CreateSidecarWriteResult(
+        tool_invocation_index=None,
+        live_sidecar=LiveSidecar(
+            kind=SidecarKind.NFO,
+            language=None,
+            asset_id=asset_id,
+            body=body_text,
+        ),
+    )
+
+
+def _write_cue_sidecar(
+    *,
+    temp_output: Path,
+    sidecar_id: str,
+    asset_id: str,
+    body_text: str | None,
+) -> _CreateSidecarWriteResult:
+    temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
+    return _CreateSidecarWriteResult(
+        tool_invocation_index=None,
+        live_sidecar=LiveSidecar(
+            kind=SidecarKind.CUE,
+            language=None,
+            asset_id=asset_id,
+            body=body_text,
+        ),
+    )
+
+
+def _write_poster_sidecar(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    temp_output: Path,
+    sidecar_id: str,
+    asset_id: str,
+    media_type: str | None,
+    image_format: str | None,
+) -> _CreateSidecarWriteResult:
+    argv = poster_ffmpeg_argv(
+        output_path=temp_output,
+        resolved_seed=ctx.resolved_seed,
+        sidecar_id=sidecar_id,
+        media_type=media_type,
+        image_format=image_format,
+    )
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.CREATE_SIDECAR,
+        failure_label="create_sidecar (poster)",
+        asset_id=asset_id,
+    )
+    return _CreateSidecarWriteResult(
+        tool_invocation_index=invocation_index,
+        live_sidecar=LiveSidecar(
+            kind=SidecarKind.POSTER,
+            language=None,
+            asset_id=asset_id,
+            media_type=media_type,
+            image_format=image_format,
+        ),
     )
 
 

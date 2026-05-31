@@ -230,11 +230,13 @@ def run_wall_clock_scenario(
         run_id_override=run_id,
         applied_events_override=0,
     )
-    phase_a = _synthesize_phase_a(
+    phase_a = materialize_assets_phase_a(
         scenario=scenario,
         out_dir=staging_dir,
         artifacts=baseline_artifacts,
         caps=caps,
+        stamp_manifest=True,
+        materialize_asset=materialize_one_asset,
     )
     _publish_baseline(
         staging_dir=staging_dir,
@@ -299,23 +301,6 @@ def _raise_slow_copy_unsupported(start_event_id: str) -> None:
     raise TimelineUnsupportedError(
         "wall-clock slow_copy_start must be immediately followed by its commit",
         payload={"event_id": start_event_id},
-    )
-
-
-def _synthesize_phase_a(
-    *,
-    scenario: Scenario,
-    out_dir: Path,
-    artifacts: PlanArtifacts,
-    caps,
-) -> PhaseAResult:
-    return materialize_assets_phase_a(
-        scenario=scenario,
-        out_dir=out_dir,
-        artifacts=artifacts,
-        caps=caps,
-        stamp_manifest=True,
-        materialize_asset=materialize_one_asset,
     )
 
 

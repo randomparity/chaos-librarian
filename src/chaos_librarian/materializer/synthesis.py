@@ -136,12 +136,12 @@ def materialize_assets_phase_a(
     out_dir: Path,
     artifacts: PlanArtifacts,
     caps: Capabilities,
-    result: PhaseAResult | None = None,
+    phase_a_accumulator: PhaseAResult | None = None,
     stamp_manifest: bool,
     materialize_asset: MaterializeAsset | None = None,
 ) -> PhaseAResult:
     """Synthesize every declared asset and collect Phase-A metadata."""
-    phase_a = PhaseAResult() if result is None else result
+    phase_a = PhaseAResult() if phase_a_accumulator is None else phase_a_accumulator
     materialize = materialize_one_asset if materialize_asset is None else materialize_asset
     primary_root_path = scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(scenario)

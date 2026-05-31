@@ -2,7 +2,7 @@
 
 Constants:
     RESOLUTION_PIXELS, FPS_DEFAULT, VIDEO_RECIPES, AUDIO_RECIPES — recipe
-    lookup tables; synthesis re-uses them through the source registry so
+    lookup tables; synthesis re-uses them through content-source resolution so
     preflight rejection and real synthesis stay in lock-step.
 
 Public helpers:

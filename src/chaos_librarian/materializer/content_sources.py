@@ -1,4 +1,4 @@
-"""Content-source provider registry used by Phase-A synthesis."""
+"""Content-source resolution used by Phase-A synthesis."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Final, Protocol
+from typing import Final
 
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -186,212 +186,32 @@ class MuxingSourceResolution:
     evidence: ContentSourceEvidence
 
 
-class ContentSourceProvider(Protocol):
-    def resolve_video(
-        self,
-        *,
-        source: VideoSource,
-        request: VideoSourceRequest,
-    ) -> SourceResolution:
-        """Resolve a video source to an FFmpeg input plus replay evidence."""
-
-    def resolve_audio(
-        self,
-        *,
-        source: AudioSource,
-        request: AudioSourceRequest,
-    ) -> SourceResolution:
-        """Resolve an audio source to an FFmpeg input plus replay evidence."""
-
-    def resolve_video_input(
-        self,
-        *,
-        source: VideoSource,
-        request: VideoSourceRequest,
-    ) -> FFmpegInput:
-        """Resolve a video source to an FFmpeg input without replay evidence."""
-
-    def resolve_audio_input(
-        self,
-        *,
-        source: AudioSource,
-        request: AudioSourceRequest,
-    ) -> FFmpegInput:
-        """Resolve an audio source to an FFmpeg input without replay evidence."""
-
-    def capability(
-        self,
-        *,
-        ffmpeg_available: bool,
-        hdr_available: bool,
-        resolution_sequence_available: bool,
-        audio_recipes_available: bool,
-    ) -> ContentSourceProviderCapability:
-        """Report provider capability for the current host."""
-
-
-@dataclass(frozen=True, slots=True)
-class _BuiltinLavfiProvider:
-    video_source_keys: tuple[VideoSource, ...] = tuple(VIDEO_RECIPES)
-    audio_source_keys: tuple[AudioSource, ...] = tuple(AUDIO_RECIPES)
-
-    def resolve_video(
-        self,
-        *,
-        source: VideoSource,
-        request: VideoSourceRequest,
-    ) -> SourceResolution:
-        ffmpeg_input = self.resolve_video_input(source=source, request=request)
-        return SourceResolution(
-            ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(
-                source=source,
-                track_kind=ContentTrackKind.VIDEO,
-                request=request,
-                ffmpeg_input=ffmpeg_input,
-            ),
-        )
-
-    def resolve_audio(
-        self,
-        *,
-        source: AudioSource,
-        request: AudioSourceRequest,
-    ) -> SourceResolution:
-        ffmpeg_input = self.resolve_audio_input(source=source, request=request)
-        return SourceResolution(
-            ffmpeg_input=ffmpeg_input,
-            evidence=_builtin_evidence(
-                source=source,
-                track_kind=ContentTrackKind.AUDIO,
-                request=request,
-                ffmpeg_input=ffmpeg_input,
-            ),
-        )
-
-    def resolve_video_input(
-        self,
-        *,
-        source: VideoSource,
-        request: VideoSourceRequest,
-    ) -> FFmpegInput:
-        if source not in VIDEO_RECIPES:
-            raise _unsupported_source("video.source", VIDEO_RECIPES)
-        if request.vfr_cadence is not None and request.field_order is not None:
-            raise UnsupportedMaterializationError(
-                "field_order cannot be combined with vfr_cadence",
-                field="video.field_order",
-                payload={
-                    "vfr_cadence": request.vfr_cadence.value,
-                    "field_order": request.field_order.value,
-                },
-            )
-        recipe = VIDEO_RECIPES[source]
-        fps = _recipe_fps(request)
-        ffmpeg_input = recipe(
-            width=request.width,
-            height=request.height,
-            fps=fps,
-            duration_s=request.duration_s,
-            seed=request.seed,
-        )
-        if request.field_order is not None:
-            return apply_interlaced_field_order(
-                ffmpeg_input,
-                field_order=request.field_order,
-            )
-        if request.vfr_cadence is not None:
-            return apply_vfr_cadence(
-                ffmpeg_input,
-                cadence=request.vfr_cadence,
-                duration_s=request.duration_s,
-            )
-        return ffmpeg_input
-
-    def resolve_audio_input(
-        self,
-        *,
-        source: AudioSource,
-        request: AudioSourceRequest,
-    ) -> FFmpegInput:
-        if source not in AUDIO_RECIPES:
-            raise _unsupported_source("audio.source", AUDIO_RECIPES)
-        recipe = AUDIO_RECIPES[source]
-        return recipe(
-            channels=request.channels,
-            duration_s=request.duration_s,
-            seed=request.seed,
-            noise_color=request.noise_color,
-            sample_rate=request.sample_rate,
-            sample_format=request.sample_format,
-        )
-
-    def capability(
-        self,
-        *,
-        ffmpeg_available: bool,
-        hdr_available: bool,
-        resolution_sequence_available: bool,
-        audio_recipes_available: bool,
-    ) -> ContentSourceProviderCapability:
-        hdr_sources = HDR_CAPABILITY_SOURCES if hdr_available else ()
-        resolution_sequence_sources = (
-            RESOLUTION_SEQUENCE_CAPABILITY_SOURCES if resolution_sequence_available else ()
-        )
-        audio_sources = [
-            f"audio:{source.value}"
-            for source in self.audio_source_keys
-            if source is not AudioSource.NOISE
-        ]
-        audio_recipe_sources = (
-            (
-                f"audio:{AudioSource.NOISE.value}",
-                *AUDIO_NOISE_CAPABILITY_SOURCES,
-                *AUDIO_SAMPLE_RATE_CAPABILITY_SOURCES,
-                *AUDIO_SAMPLE_FORMAT_CAPABILITY_SOURCES,
-            )
-            if audio_recipes_available
-            else ()
-        )
-        return _builtin_capability(
-            ffmpeg_available=ffmpeg_available,
-            sources=[
-                *audio_sources,
-                *audio_recipe_sources,
-                *(f"video:{source.value}" for source in self.video_source_keys),
-                *VFR_CAPABILITY_SOURCES,
-                *INTERLACED_CAPABILITY_SOURCES,
-                *COLOR_SPACE_CAPABILITY_SOURCES,
-                *COLOR_RANGE_CAPABILITY_SOURCES,
-                *hdr_sources,
-                *resolution_sequence_sources,
-            ],
-        )
-
-
-_BUILTIN_PROVIDER: Final[ContentSourceProvider] = _BuiltinLavfiProvider()
-_VIDEO_PROVIDERS: Final[dict[VideoSource, ContentSourceProvider]] = {
-    source: _BUILTIN_PROVIDER for source in VIDEO_RECIPES
-}
-_AUDIO_PROVIDERS: Final[dict[AudioSource, ContentSourceProvider]] = {
-    source: _BUILTIN_PROVIDER for source in AUDIO_RECIPES
-}
-
-
 def resolve_video_source(source: VideoSource, request: VideoSourceRequest) -> SourceResolution:
-    """Resolve a video source through the registered provider."""
-    provider = _VIDEO_PROVIDERS.get(source)
-    if provider is None:
-        raise _unsupported_source("video.source", _VIDEO_PROVIDERS)
-    return provider.resolve_video(source=source, request=request)
+    """Resolve a video source to an FFmpeg input plus replay evidence."""
+    ffmpeg_input = resolve_video_input(source=source, request=request)
+    return SourceResolution(
+        ffmpeg_input=ffmpeg_input,
+        evidence=_builtin_evidence(
+            source=source,
+            track_kind=ContentTrackKind.VIDEO,
+            request=request,
+            ffmpeg_input=ffmpeg_input,
+        ),
+    )
 
 
 def resolve_audio_source(source: AudioSource, request: AudioSourceRequest) -> SourceResolution:
-    """Resolve an audio source through the registered provider."""
-    provider = _AUDIO_PROVIDERS.get(source)
-    if provider is None:
-        raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
-    return provider.resolve_audio(source=source, request=request)
+    """Resolve an audio source to an FFmpeg input plus replay evidence."""
+    ffmpeg_input = resolve_audio_input(source=source, request=request)
+    return SourceResolution(
+        ffmpeg_input=ffmpeg_input,
+        evidence=_builtin_evidence(
+            source=source,
+            track_kind=ContentTrackKind.AUDIO,
+            request=request,
+            ffmpeg_input=ffmpeg_input,
+        ),
+    )
 
 
 def resolve_chapter_source(request: ChapterSourceRequest) -> ChapterSourceResolution:
@@ -455,19 +275,53 @@ def _recipe_fps(request: VideoSourceRequest) -> int:
 
 
 def resolve_video_input(source: VideoSource, request: VideoSourceRequest) -> FFmpegInput:
-    """Resolve a video source through the registered provider without evidence."""
-    provider = _VIDEO_PROVIDERS.get(source)
-    if provider is None:
-        raise _unsupported_source("video.source", _VIDEO_PROVIDERS)
-    return provider.resolve_video_input(source=source, request=request)
+    """Resolve a video source to an FFmpeg input without replay evidence."""
+    if source not in VIDEO_RECIPES:
+        raise _unsupported_source("video.source", VIDEO_RECIPES)
+    if request.vfr_cadence is not None and request.field_order is not None:
+        raise UnsupportedMaterializationError(
+            "field_order cannot be combined with vfr_cadence",
+            field="video.field_order",
+            payload={
+                "vfr_cadence": request.vfr_cadence.value,
+                "field_order": request.field_order.value,
+            },
+        )
+    recipe = VIDEO_RECIPES[source]
+    ffmpeg_input = recipe(
+        width=request.width,
+        height=request.height,
+        fps=_recipe_fps(request),
+        duration_s=request.duration_s,
+        seed=request.seed,
+    )
+    if request.field_order is not None:
+        return apply_interlaced_field_order(
+            ffmpeg_input,
+            field_order=request.field_order,
+        )
+    if request.vfr_cadence is not None:
+        return apply_vfr_cadence(
+            ffmpeg_input,
+            cadence=request.vfr_cadence,
+            duration_s=request.duration_s,
+        )
+    return ffmpeg_input
 
 
 def resolve_audio_input(source: AudioSource, request: AudioSourceRequest) -> FFmpegInput:
-    """Resolve an audio source through the registered provider without evidence."""
-    provider = _AUDIO_PROVIDERS.get(source)
-    if provider is None:
-        raise _unsupported_source("audio.source", _AUDIO_PROVIDERS)
-    return provider.resolve_audio_input(source=source, request=request)
+    """Resolve an audio source to an FFmpeg input without replay evidence."""
+    if source not in AUDIO_RECIPES:
+        raise _unsupported_source("audio.source", AUDIO_RECIPES)
+    recipe = AUDIO_RECIPES[source]
+    return recipe(
+        channels=request.channels,
+        duration_s=request.duration_s,
+        seed=request.seed,
+        noise_color=request.noise_color,
+        sample_rate=request.sample_rate,
+        sample_format=request.sample_format,
+    )
 
 
 def collect_content_source_capabilities(
@@ -477,17 +331,52 @@ def collect_content_source_capabilities(
     resolution_sequence_available: bool = False,
     audio_recipes_available: bool = False,
 ) -> ContentSourceCapabilities:
-    """Collect content-source capabilities for all registered providers."""
+    """Collect built-in content-source capabilities for the current host."""
     return ContentSourceCapabilities(
         providers=[
-            _BUILTIN_PROVIDER.capability(
+            _builtin_capability(
                 ffmpeg_available=ffmpeg_available,
-                hdr_available=hdr_available,
-                resolution_sequence_available=resolution_sequence_available,
-                audio_recipes_available=audio_recipes_available,
+                sources=_builtin_capability_sources(
+                    hdr_available=hdr_available,
+                    resolution_sequence_available=resolution_sequence_available,
+                    audio_recipes_available=audio_recipes_available,
+                ),
             )
         ],
     )
+
+
+def _builtin_capability_sources(
+    *,
+    hdr_available: bool,
+    resolution_sequence_available: bool,
+    audio_recipes_available: bool,
+) -> list[str]:
+    hdr_sources = HDR_CAPABILITY_SOURCES if hdr_available else ()
+    resolution_sequence_sources = (
+        RESOLUTION_SEQUENCE_CAPABILITY_SOURCES if resolution_sequence_available else ()
+    )
+    audio_recipe_sources = (
+        (
+            f"audio:{AudioSource.NOISE.value}",
+            *AUDIO_NOISE_CAPABILITY_SOURCES,
+            *AUDIO_SAMPLE_RATE_CAPABILITY_SOURCES,
+            *AUDIO_SAMPLE_FORMAT_CAPABILITY_SOURCES,
+        )
+        if audio_recipes_available
+        else ()
+    )
+    return [
+        *(f"audio:{source.value}" for source in AUDIO_RECIPES if source is not AudioSource.NOISE),
+        *audio_recipe_sources,
+        *(f"video:{source.value}" for source in VIDEO_RECIPES),
+        *VFR_CAPABILITY_SOURCES,
+        *INTERLACED_CAPABILITY_SOURCES,
+        *COLOR_SPACE_CAPABILITY_SOURCES,
+        *COLOR_RANGE_CAPABILITY_SOURCES,
+        *hdr_sources,
+        *resolution_sequence_sources,
+    ]
 
 
 def _builtin_evidence(

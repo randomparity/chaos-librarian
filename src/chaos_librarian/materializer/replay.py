@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -136,6 +137,7 @@ def _verified_run_prefix(
         raise ReplayIntegrityError(
             f"journal_digest mismatch: recorded {bundle.journal_digest}, recomputed {digest}"
         )
+    _preflight_run_replay_pairing(artifacts.journal)
     return run_input, report, artifacts
 
 
@@ -168,11 +170,13 @@ def _materialize_verified_run_prefix(
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
-    phase_a = _synthesize_phase_a(
+    phase_a = materialize_assets_phase_a(
         scenario=scenario,
         out_dir=out_dir,
         artifacts=prefix_artifacts,
         caps=caps,
+        stamp_manifest=True,
+        materialize_asset=materialize_one_asset,
     )
     state = _make_run_replay_phase_b_state(
         scenario=scenario,
@@ -337,23 +341,6 @@ def _finalize_run_replay_phase_b_failure(
     )
 
 
-def _synthesize_phase_a(
-    *,
-    scenario: Scenario,
-    out_dir: Path,
-    artifacts: PlanArtifacts,
-    caps,
-) -> PhaseAResult:
-    return materialize_assets_phase_a(
-        scenario=scenario,
-        out_dir=out_dir,
-        artifacts=artifacts,
-        caps=caps,
-        stamp_manifest=True,
-        materialize_asset=materialize_one_asset,
-    )
-
-
 def _make_run_replay_phase_b_state(
     *,
     scenario: Scenario,
@@ -398,6 +385,58 @@ def _apply_prefix_phase_b(
     if state.chaos is not None and (state.chaos.open_locks or state.chaos.open_unmounts):
         pending = sorted({*state.chaos.open_locks, *state.chaos.open_unmounts})
         raise ReplayIntegrityError(f"unclosed network-fs-chaos open windows: {pending}")
+
+
+def _preflight_run_replay_pairing(journal: Iterable[JournalEntry]) -> None:
+    network_lag_starts: dict[str, JournalEntry] = {}
+    open_locks: dict[str, JournalEntry] = {}
+    open_unmounts: dict[str, JournalEntry] = {}
+    for entry in journal:
+        action = TimelineActionName(entry.action)
+        if action is TimelineActionName.NETWORK_LAG_START:
+            network_lag_starts[entry.event_id] = entry
+        elif action is TimelineActionName.NETWORK_LAG_COMMIT:
+            _run_replay_network_lag_action(network_lag_starts, entry)
+        elif action is TimelineActionName.ACQUIRE_LOCK:
+            open_locks[entry.event_id] = entry
+        elif action is TimelineActionName.RELEASE_LOCK:
+            _preflight_chaos_close(
+                entry,
+                open_entries=open_locks,
+                close_action="release_lock",
+                open_action="acquire_lock",
+            )
+        elif action is TimelineActionName.UNMOUNT_PATH:
+            open_unmounts[entry.event_id] = entry
+        elif action is TimelineActionName.REMOUNT_PATH:
+            _preflight_chaos_close(
+                entry,
+                open_entries=open_unmounts,
+                close_action="remount_path",
+                open_action="unmount_path",
+            )
+    if network_lag_starts:
+        pending = sorted(network_lag_starts)
+        raise ReplayIntegrityError(f"uncommitted network_lag_start entries: {pending}")
+    if open_locks or open_unmounts:
+        pending = sorted({*open_locks, *open_unmounts})
+        raise ReplayIntegrityError(f"unclosed network-fs-chaos open windows: {pending}")
+
+
+def _preflight_chaos_close(
+    entry: JournalEntry,
+    *,
+    open_entries: dict[str, JournalEntry],
+    close_action: str,
+    open_action: str,
+) -> None:
+    related_id = getattr(entry, "related_event_id", None)
+    if not isinstance(related_id, str):
+        raise ReplayIntegrityError(f"{entry.event_id}: {close_action} missing related_event_id")
+    if open_entries.pop(related_id, None) is None:
+        raise ReplayIntegrityError(
+            f"{entry.event_id}: {close_action} references missing {open_action} {related_id}"
+        )
 
 
 def _apply_replay_chaos_entry(
