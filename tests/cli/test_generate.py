@@ -420,6 +420,52 @@ def test_batch_rollback_removes_written_files_on_failure(
     assert list(out.glob("*.yaml")) == []
 
 
+def test_batch_failure_json_uses_cli_error_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "gen"
+    out.mkdir()
+
+    real_generate = generate_cmd.generate_scenario
+    calls = {"n": 0}
+
+    def failing_generate(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_generate(**kwargs)
+
+    monkeypatch.setattr(generate_cmd, "generate_scenario", failing_generate)
+
+    result = _run(
+        [
+            "generate",
+            "--profile",
+            "fuzz-smoke",
+            "--count",
+            "3",
+            "--seed",
+            "42",
+            "--out",
+            str(out),
+            "--json",
+        ]
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_GENERATE_FAILED"
+    assert "rolled back 1 partially written files" in payload["message"]
+    assert payload["details"]["profile"] == "fuzz-smoke"
+    assert payload["details"]["lane"] == "smoke"
+    assert payload["details"]["seed"] == 43
+    assert payload["details"]["exception_type"] == "RuntimeError"
+    assert len(payload["details"]["removed_paths"]) == 1
+    assert payload["details"]["unremoved_paths"] == []
+    assert list(out.glob("*.yaml")) == []
+
+
 def test_batch_rollback_warns_when_a_file_cannot_be_removed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

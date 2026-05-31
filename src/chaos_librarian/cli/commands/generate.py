@@ -8,6 +8,7 @@ from typing import Annotated
 
 import typer
 
+from chaos_librarian.cli._envelope import E_GENERATE_FAILED, emit_cli_error
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.profiles import FUZZ_LANES_BY_PROFILE, FuzzLaneName, FuzzProfileName
@@ -89,24 +90,25 @@ def _write_batch(
             write_generated_scenario(path, generated.data)
         except Exception as exc:  # rollback then re-report any generation/write failure
             removed, unremoved = _rollback(written)
-            typer.echo(
-                f"generate: failed at profile={profile.value} lane={item.lane.value} "
-                f"seed={item.seed}: {exc}",
-                err=True,
+            emit_cli_error(
+                error_code=E_GENERATE_FAILED,
+                message=_batch_failure_message(
+                    profile=profile,
+                    item=item,
+                    exc=exc,
+                    removed=removed,
+                    unremoved=unremoved,
+                ),
+                json_output=json_output,
+                details=_batch_failure_details(
+                    profile=profile,
+                    item=item,
+                    path=path,
+                    exc=exc,
+                    removed=removed,
+                    unremoved=unremoved,
+                ),
             )
-            if removed:
-                joined = ", ".join(str(p) for p in removed)
-                typer.echo(
-                    f"generate: rolled back {len(removed)} partially written files: {joined}",
-                    err=True,
-                )
-            if unremoved:
-                joined = ", ".join(str(p) for p in unremoved)
-                typer.echo(
-                    f"generate: WARNING: could not remove {len(unremoved)} files during "
-                    f"rollback (remove them before re-running): {joined}",
-                    err=True,
-                )
             raise typer.Exit(code=1) from exc
         written.append(path)
         records.append((path, generated.data, generated.scenario))
@@ -165,6 +167,47 @@ def _rollback(written: list[Path]) -> tuple[list[Path], list[Path]]:
         except OSError:
             unremoved.append(path)
     return removed, unremoved
+
+
+def _batch_failure_message(
+    *,
+    profile: FuzzProfileName,
+    item: BatchItem,
+    exc: Exception,
+    removed: list[Path],
+    unremoved: list[Path],
+) -> str:
+    message = (
+        f"generate failed at profile={profile.value} lane={item.lane.value} seed={item.seed}: {exc}"
+    )
+    if removed:
+        message += f"; rolled back {len(removed)} partially written files"
+    if unremoved:
+        message += (
+            f"; could not remove {len(unremoved)} files during rollback "
+            "(remove them before re-running)"
+        )
+    return message
+
+
+def _batch_failure_details(
+    *,
+    profile: FuzzProfileName,
+    item: BatchItem,
+    path: Path,
+    exc: Exception,
+    removed: list[Path],
+    unremoved: list[Path],
+) -> dict[str, object]:
+    return {
+        "profile": profile.value,
+        "lane": item.lane.value,
+        "seed": item.seed,
+        "target_path": str(path),
+        "exception_type": type(exc).__name__,
+        "removed_paths": [str(path) for path in removed],
+        "unremoved_paths": [str(path) for path in unremoved],
+    }
 
 
 def _batch_summary_json(out_dir: Path, records: list[tuple[Path, bytes, Scenario]]) -> str:
