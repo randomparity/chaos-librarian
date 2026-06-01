@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -15,6 +16,7 @@ from chaos_librarian.contract.materialization import (
     FailureStage,
     MaterializationExecutionMode,
     MaterializationFailure,
+    MaterializationReport,
     MaterializedAsset,
     Outcome,
     ToolInvocation,
@@ -40,6 +42,8 @@ from chaos_librarian.materializer.persistence.reports import (
     build_reports,
 )
 from chaos_librarian.materializer.persistence.writer import (
+    MaterializeMetadata,
+    MaterializeReports,
     cleanup_failed_phase_b_run,
     cleanup_failed_run,
     finalize_materialize_run,
@@ -63,6 +67,10 @@ __all__ = [
 
 
 CREATED_BY: Final = f"chaos-librarian/{_chaos_librarian_version}"
+type _FinalizeWriter = Callable[
+    [Path, MaterializeMetadata, MaterializeReports | None],
+    None,
+]
 
 
 def build_sentinel(ctx: RunContext, state: RunSentinelState) -> RunSentinel:
@@ -111,20 +119,15 @@ def finalize_success(
         created_at=finished_at,
         content_sources=content_sources,
     )
-    try:
-        finalize_materialize_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=ctx.plan_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=materialization_report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-            build_reports(ctx.plan_artifacts),
-        )
-    except OSError as write_exc:
-        raise _write_error("finalize_materialize_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=materialization_report,
+        replay_bundle=replay_bundle,
+        writer=_write_success_outputs,
+        writer_operation="finalize_materialize_run",
+        include_reports=True,
+    )
     return MaterializeArtifacts(
         current_manifest=ctx.plan_artifacts.current_manifest,
         materialization_report=materialization_report,
@@ -180,19 +183,15 @@ def finalize_failure(
         created_at=finished_at,
         content_sources=content_sources,
     )
-    try:
-        cleanup_failed_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=ctx.plan_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-        )
-    except OSError as write_exc:
-        raise _write_error("cleanup_failed_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_failure_outputs,
+        writer_operation="cleanup_failed_run",
+        include_reports=False,
+    )
 
 
 def finalize_failure_phase_b(
@@ -235,19 +234,15 @@ def finalize_failure_phase_b(
         created_at=finished_at,
         content_sources=content_sources,
     )
-    try:
-        cleanup_failed_phase_b_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=ctx.plan_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-        )
-    except OSError as write_exc:
-        raise _write_error("cleanup_failed_phase_b_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_phase_b_failure_outputs,
+        writer_operation="cleanup_failed_phase_b_run",
+        include_reports=False,
+    )
 
 
 def finalize_run_replay_success(
@@ -280,20 +275,15 @@ def finalize_run_replay_success(
         finished_at,
         content_sources,
     )
-    try:
-        finalize_materialize_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=ctx.plan_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-            build_reports(ctx.plan_artifacts),
-        )
-    except OSError as write_exc:
-        raise _write_error("finalize_materialize_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_success_outputs,
+        writer_operation="finalize_materialize_run",
+        include_reports=True,
+    )
     return MaterializeArtifacts(
         current_manifest=ctx.plan_artifacts.current_manifest,
         materialization_report=report,
@@ -332,19 +322,15 @@ def finalize_run_replay_phase_b_failure(
         finished_at,
         content_sources,
     )
-    try:
-        cleanup_failed_phase_b_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=ctx.plan_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-        )
-    except OSError as write_exc:
-        raise _write_error("cleanup_failed_phase_b_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_phase_b_failure_outputs,
+        writer_operation="cleanup_failed_phase_b_run",
+        include_reports=False,
+    )
 
 
 def finalize_wall_clock_success(
@@ -387,20 +373,15 @@ def finalize_wall_clock_success(
         finished_at,
         content_sources,
     )
-    try:
-        finalize_materialize_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=final_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-            build_reports(final_artifacts),
-        )
-    except OSError as write_exc:
-        raise _write_error("finalize_materialize_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=final_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_success_outputs,
+        writer_operation="finalize_materialize_run",
+        include_reports=True,
+    )
     return MaterializeArtifacts(
         current_manifest=final_artifacts.current_manifest,
         materialization_report=report,
@@ -449,19 +430,15 @@ def finalize_wall_clock_phase_b_failure(
         finished_at,
         content_sources,
     )
-    try:
-        cleanup_failed_phase_b_run(
-            ctx.out_dir,
-            build_metadata(
-                plan_artifacts=final_artifacts,
-                scenario_yaml_bytes=ctx.run_input.raw_bytes,
-                materialization_report=report,
-                replay_bundle=replay_bundle,
-                sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
-            ),
-        )
-    except OSError as write_exc:
-        raise _write_error("cleanup_failed_phase_b_run", ctx.out_dir, write_exc) from write_exc
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=final_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_phase_b_failure_outputs,
+        writer_operation="cleanup_failed_phase_b_run",
+        include_reports=False,
+    )
 
 
 def _build_run_replay_bundle(
@@ -513,6 +490,56 @@ def _build_wall_clock_replay_bundle(
             "journal_digest": journal_digest,
         }
     )
+
+
+def _finalize_outputs(
+    ctx: RunContext,
+    *,
+    plan_artifacts: PlanArtifacts,
+    materialization_report: MaterializationReport,
+    replay_bundle: MaterializeReplayBundle,
+    writer: _FinalizeWriter,
+    writer_operation: str,
+    include_reports: bool,
+) -> None:
+    metadata = build_metadata(
+        plan_artifacts=plan_artifacts,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        materialization_report=materialization_report,
+        replay_bundle=replay_bundle,
+        sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+    )
+    reports = build_reports(plan_artifacts) if include_reports else None
+    try:
+        writer(ctx.out_dir, metadata, reports)
+    except OSError as write_exc:
+        raise _write_error(writer_operation, ctx.out_dir, write_exc) from write_exc
+
+
+def _write_success_outputs(
+    out_dir: Path,
+    metadata: MaterializeMetadata,
+    reports: MaterializeReports | None,
+) -> None:
+    if reports is None:
+        raise ValueError("finalize_materialize_run requires reports")
+    finalize_materialize_run(out_dir, metadata, reports)
+
+
+def _write_failure_outputs(
+    out_dir: Path,
+    metadata: MaterializeMetadata,
+    _reports: MaterializeReports | None,
+) -> None:
+    cleanup_failed_run(out_dir, metadata)
+
+
+def _write_phase_b_failure_outputs(
+    out_dir: Path,
+    metadata: MaterializeMetadata,
+    _reports: MaterializeReports | None,
+) -> None:
+    cleanup_failed_phase_b_run(out_dir, metadata)
 
 
 def _write_error(operation: str, path: Path, cause: OSError) -> MaterializationWriteError:
