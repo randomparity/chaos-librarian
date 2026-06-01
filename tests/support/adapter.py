@@ -1031,4 +1031,6 @@ def _parent_ref_for_variant(
         return movie_refs[parent_id]
     if parent_kind is ParentKind.EPISODE:
         return episode_refs[parent_id]
-    return track_refs[parent_id]
+    if parent_kind is ParentKind.TRACK:
+        return track_refs[parent_id]
+    raise ValueError(f"Unsupported parent_kind: {parent_kind}")

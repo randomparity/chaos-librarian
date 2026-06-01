@@ -4,9 +4,37 @@ from __future__ import annotations
 
 from dataclasses import is_dataclass
 
+import pytest
+
 from chaos_librarian.adapter import topology
 from chaos_librarian.adapter.topology import ObservedTopologyView, OracleTopologyView, TopologyKey
 from chaos_librarian.contract.domain import ParentKind
+
+
+def _empty_oracle_domain_lookups() -> topology._OracleDomainLookups:
+    return topology._OracleDomainLookups(
+        movies={},
+        series={},
+        seasons={},
+        episodes={},
+        artists={},
+        albums={},
+        discs={},
+        tracks={},
+    )
+
+
+def _empty_observed_domain_lookups() -> topology._ObservedDomainLookups:
+    return topology._ObservedDomainLookups(
+        movies={},
+        series={},
+        seasons={},
+        episodes={},
+        artists={},
+        albums={},
+        discs={},
+        tracks={},
+    )
 
 
 def test_topology_domain_fields_are_attribute_based() -> None:
@@ -73,3 +101,33 @@ def test_topology_key_constructors_require_kind_specific_fields() -> None:
         "track",
         ("Synthetic Artist", "Synthetic Album", "1", "4", "Synthetic Track", "deluxe", "1"),
     )
+
+
+def test_oracle_domain_fields_reject_podcast_episode_before_track_lookup() -> None:
+    with pytest.raises(topology.UnsupportedTopologyParentKindError) as exc_info:
+        topology._oracle_domain_fields(
+            _empty_oracle_domain_lookups(),
+            ParentKind.PODCAST_EPISODE,
+            "podcast-episode-a",
+        )
+
+    assert exc_info.value.details == {
+        "side": "oracle",
+        "parent_kind": "podcast_episode",
+        "parent_ref": "podcast-episode-a",
+    }
+
+
+def test_observed_domain_fields_reject_podcast_episode_before_track_lookup() -> None:
+    with pytest.raises(topology.UnsupportedTopologyParentKindError) as exc_info:
+        topology._observed_domain_fields(
+            _empty_observed_domain_lookups(),
+            ParentKind.PODCAST_EPISODE,
+            "podcast-episode-a",
+        )
+
+    assert exc_info.value.details == {
+        "side": "observed",
+        "parent_kind": "podcast_episode",
+        "parent_ref": "podcast-episode-a",
+    }

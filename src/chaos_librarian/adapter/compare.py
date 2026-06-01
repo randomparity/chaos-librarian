@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
+from chaos_librarian.adapter.errors import (
+    E_ADAPTER_RUN_ID_MISMATCH,
+    E_ADAPTER_TOPOLOGY_UNSUPPORTED,
+    AdapterInputError,
+)
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.adapter.history import compare_identity_history
 from chaos_librarian.adapter.index import (
@@ -14,6 +18,7 @@ from chaos_librarian.adapter.index import (
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
 from chaos_librarian.adapter.probe import compare_probed_media
 from chaos_librarian.adapter.topology import (
+    UnsupportedTopologyParentKindError,
     format_topology_key,
     observed_topology_key,
     oracle_topology_key,
@@ -48,8 +53,15 @@ def compare_fixture_to_observed(
             },
         )
 
-    oracle_index = OracleIndex.from_fixture(fixture)
-    observed_index = ObservedIndex.from_state(observed)
+    try:
+        oracle_index = OracleIndex.from_fixture(fixture)
+        observed_index = ObservedIndex.from_state(observed)
+    except UnsupportedTopologyParentKindError as exc:
+        raise AdapterInputError(
+            error_code=E_ADAPTER_TOPOLOGY_UNSUPPORTED,
+            message=str(exc),
+            details=exc.details,
+        ) from exc
     match_result = match_assets(oracle_index, observed_index)
     findings = list(match_result.findings)
     for match in match_result.matches:

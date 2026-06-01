@@ -79,6 +79,30 @@ class TopologyKey(NamedTuple):
     components: tuple[str, ...]
 
 
+class UnsupportedTopologyParentKindError(ValueError):
+    """Raised when adapter topology receives a parent kind it cannot compare yet."""
+
+    def __init__(
+        self,
+        *,
+        side: str,
+        parent_kind: ParentKind,
+        parent_ref: str | None,
+    ) -> None:
+        super().__init__(f"{side} topology does not support parent_kind: {parent_kind.value}")
+        self.side = side
+        self.parent_kind = parent_kind
+        self.parent_ref = parent_ref
+
+    @property
+    def details(self) -> dict[str, object | None]:
+        return {
+            "side": self.side,
+            "parent_kind": self.parent_kind.value,
+            "parent_ref": self.parent_ref,
+        }
+
+
 @dataclass(frozen=True)
 class _TopologyDomainFields:
     movie_title: str | None = None
@@ -387,16 +411,22 @@ def _oracle_domain_fields(
             episode_number=episode.episode_number,
             episode_title=episode.title,
         )
-    track = lookups.tracks[parent_id]
-    disc = lookups.discs[track.disc_id]
-    album = lookups.albums[disc.album_id]
-    artist = lookups.artists[album.artist_id]
-    return _TopologyDomainFields(
-        artist_name=artist.name,
-        album_title=album.title,
-        disc_number=disc.disc_number,
-        track_number=track.track_number,
-        track_title=track.title,
+    if parent_kind is ParentKind.TRACK:
+        track = lookups.tracks[parent_id]
+        disc = lookups.discs[track.disc_id]
+        album = lookups.albums[disc.album_id]
+        artist = lookups.artists[album.artist_id]
+        return _TopologyDomainFields(
+            artist_name=artist.name,
+            album_title=album.title,
+            disc_number=disc.disc_number,
+            track_number=track.track_number,
+            track_title=track.title,
+        )
+    raise UnsupportedTopologyParentKindError(
+        side="oracle",
+        parent_kind=parent_kind,
+        parent_ref=parent_id,
     )
 
 
@@ -422,18 +452,24 @@ def _observed_domain_fields(
             episode_number=episode.episode_number,
             episode_title=episode.title,
         )
-    track = lookups.tracks.get(parent_ref)
-    if track is None:
-        return _TopologyDomainFields()
-    disc = lookups.discs.get(track.disc_ref)
-    album = lookups.albums.get(disc.album_ref) if disc is not None else None
-    artist = lookups.artists.get(album.artist_ref) if album is not None else None
-    return _TopologyDomainFields(
-        artist_name=artist.name if artist else None,
-        album_title=album.title if album else None,
-        disc_number=disc.disc_number if disc else None,
-        track_number=track.track_number,
-        track_title=track.title,
+    if parent_kind is ParentKind.TRACK:
+        track = lookups.tracks.get(parent_ref)
+        if track is None:
+            return _TopologyDomainFields()
+        disc = lookups.discs.get(track.disc_ref)
+        album = lookups.albums.get(disc.album_ref) if disc is not None else None
+        artist = lookups.artists.get(album.artist_ref) if album is not None else None
+        return _TopologyDomainFields(
+            artist_name=artist.name if artist else None,
+            album_title=album.title if album else None,
+            disc_number=disc.disc_number if disc else None,
+            track_number=track.track_number,
+            track_title=track.title,
+        )
+    raise UnsupportedTopologyParentKindError(
+        side="observed",
+        parent_kind=parent_kind,
+        parent_ref=parent_ref,
     )
 
 
