@@ -14,9 +14,9 @@ meant to be. This module keeps the dynamic discovery pass, with an explicit
 shared-helper allowlist for modules that are not semantic rules.
 
 The rule invariant covered is intentionally a **predicate**, not an
-enumeration: "every non-underscore ``.py`` file under ``validation/rules/``
-unless it is one of the shared helper modules." Adding a new rule needs zero
-edits here; adding a new shared helper is an architectural change and must
+enumeration: "every non-underscore ``.py`` file under a validation/rules family
+package unless it is one of the shared helper modules." Adding a new rule needs
+zero edits here; adding a new shared helper is an architectural change and must
 name the helper here.
 """
 
@@ -28,26 +28,39 @@ RULES_DIR = Path(__file__).resolve().parents[2] / "src" / "chaos_librarian" / "v
 
 SHARED_HELPER_MODULES: frozenset[str] = frozenset(
     {
-        "hierarchy_projection",
-        "hierarchy_walkers",
-        "raw_helpers",
-        "sidecar_projection",
+        "core.raw_helpers",
+        "hierarchy.projection",
+        "hierarchy.walkers",
+        "sidecar.projection",
     }
 )
 
-RULE_MODULES: tuple[str, ...] = tuple(
-    sorted(
-        p.stem
-        for p in RULES_DIR.glob("*.py")
-        if not p.stem.startswith("_") and p.stem not in SHARED_HELPER_MODULES
+
+def _module_name(path: Path) -> str:
+    return ".".join(path.relative_to(RULES_DIR).with_suffix("").parts)
+
+
+def _is_package_module(path: Path) -> bool:
+    return (
+        path.name != "__init__.py"
+        and not path.stem.startswith("_")
+        and not any(part.startswith("_") for part in path.relative_to(RULES_DIR).parts)
     )
-)
+
 
 RULE_PACKAGE_MODULES: tuple[str, ...] = tuple(
-    sorted(p.stem for p in RULES_DIR.glob("*.py") if not p.stem.startswith("_"))
+    sorted(_module_name(path) for path in RULES_DIR.rglob("*.py") if _is_package_module(path))
 )
+
+RULE_MODULES: tuple[str, ...] = tuple(
+    module for module in RULE_PACKAGE_MODULES if module not in SHARED_HELPER_MODULES
+)
+
+RULE_MODULE_PATHS: dict[str, Path] = {
+    module: RULES_DIR.joinpath(*module.split(".")).with_suffix(".py") for module in RULE_MODULES
+}
 
 assert RULE_MODULES, (
     f"No rule modules discovered under {RULES_DIR}; "
-    f"check tests/validation/rule_modules.py filter (expected non-underscore *.py files)"
+    "check tests/validation/rule_modules.py filter (expected non-underscore rule files)"
 )

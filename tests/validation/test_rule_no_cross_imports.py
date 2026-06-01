@@ -2,7 +2,7 @@
 
 WHY: Rule modules depend on each other only through ``semantic.py``'s
 ``_RULES`` registry — never through direct ``from
-chaos_librarian.validation.rules.<other_rule> import …`` edges.
+chaos_librarian.validation.rules.<family>.<other_rule> import …`` edges.
 Cross-cutting validation helpers live in the shared helper modules listed in
 ``tests.validation.rule_modules.SHARED_HELPER_MODULES``.
 
@@ -10,8 +10,8 @@ Cross-cutting validation helpers live in the shared helper modules listed in
 cleanly from the pipeline entrypoint. This test proves the orthogonal
 invariant: no rule module imports from a sibling semantic rule module.
 Together they lock the structural goal of the #22 split: semantic rule
-files are siblings, and shared helpers are the only intra-subpackage import
-targets.
+families are explicit, and shared helpers are the only intra-package import
+targets across leaf rule modules.
 """
 
 from __future__ import annotations
@@ -20,8 +20,8 @@ import ast
 
 import pytest
 
+from tests.validation.rule_modules import RULE_MODULE_PATHS as _RULE_MODULE_PATHS
 from tests.validation.rule_modules import RULE_MODULES as _RULE_MODULES
-from tests.validation.rule_modules import RULES_DIR as _RULES_DIR
 
 _RULES_PACKAGE_PREFIX = "chaos_librarian.validation.rules."
 _SIBLING_PREFIXES: frozenset[str] = frozenset(
@@ -31,17 +31,19 @@ _SIBLING_PREFIXES: frozenset[str] = frozenset(
 
 @pytest.mark.parametrize("module_name", _RULE_MODULES)
 def test_rule_module_does_not_import_from_sibling(module_name: str) -> None:
-    """No ``rules/<rule>.py`` may import from another ``rules/<sibling>.py``.
+    """No rule module may import from another rule module.
 
     Catches both Python import forms:
 
-    - ``from chaos_librarian.validation.rules.<sibling> import X`` (``ast.ImportFrom``)
-    - ``import chaos_librarian.validation.rules.<sibling>`` (``ast.Import``)
+    - ``from chaos_librarian.validation.rules.<family>.<sibling> import X``
+      (``ast.ImportFrom``)
+    - ``import chaos_librarian.validation.rules.<family>.<sibling>``
+      (``ast.Import``)
 
     Aliased forms (``... as foo``) are caught too because the AST's
     ``module``/``names[*].name`` fields carry the original module path.
     """
-    source = (_RULES_DIR / f"{module_name}.py").read_text(encoding="utf-8")
+    source = _RULE_MODULE_PATHS[module_name].read_text(encoding="utf-8")
     tree = ast.parse(source, filename=f"{module_name}.py")
 
     offenders: list[tuple[int, str]] = []

@@ -9,10 +9,10 @@ import pytest
 from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
 from chaos_librarian.validation.reporting import IssueCollector
-from chaos_librarian.validation.rules.extract_track_unknown import (
+from chaos_librarian.validation.rules.media.extract_track_unknown import (
     rule_extract_track_unknown,
 )
-from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
+from chaos_librarian.validation.rules.sidecar.sidecar_target import rule_sidecar_target
 from chaos_librarian.validation.scenario_io import LineIndex, ScenarioLoadError
 from chaos_librarian.validation.semantic import _RULES
 

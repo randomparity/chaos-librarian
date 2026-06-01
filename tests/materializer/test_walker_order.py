@@ -2,7 +2,7 @@
 
 ``same_content_as`` / ``hash_collision_with`` / ``hardlinked_to`` correctness
 depends on the validator's declaration-order check
-(``validation.rules.hierarchy_walkers.iter_asset_contexts``, a raw-dict walk)
+(``validation.rules.hierarchy.walkers.iter_asset_contexts``, a raw-dict walk)
 and the materializer's actual copy/link/stamp order
 (``topology.iter_asset_contexts``, a model walk) yielding assets in the *same*
 order. They are independent implementations; this test fails loudly if a future
@@ -40,7 +40,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.topology import iter_asset_contexts as topology_iter_asset_contexts
-from chaos_librarian.validation.rules.hierarchy_walkers import (
+from chaos_librarian.validation.rules.hierarchy.walkers import (
     iter_asset_contexts as validation_iter_asset_contexts,
 )
 
