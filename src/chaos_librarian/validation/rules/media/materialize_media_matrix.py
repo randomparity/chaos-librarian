@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.domain import ParentKind
@@ -69,6 +70,83 @@ _VIDEO_PARENT_KINDS: Final[frozenset[str]] = frozenset(
     {ParentKind.MOVIE.value, ParentKind.EPISODE.value}
 )
 _SUBTITLE_TIMING_PROFILES: Final[frozenset[str]] = frozenset({"normal", "overlap", "out_of_range"})
+
+
+@dataclass(frozen=True, slots=True)
+class _ExpectedStringField:
+    field_name: str
+    expected: str
+    message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _SupportedStringField:
+    field_name: str
+    supported: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _RejectedAssetList:
+    field_name: str
+    label: str
+
+
+@dataclass(frozen=True, slots=True)
+class _ConstrainedVideoModeRule:
+    mode_label: str
+    combination_label: str
+    required_asset_string_fields: tuple[str, ...] = ()
+    expected_asset_fields: tuple[_ExpectedStringField, ...] = ()
+    expected_video_fields: tuple[_ExpectedStringField, ...] = ()
+    supported_video_fields: tuple[_SupportedStringField, ...] = ()
+    rejected_asset_lists: tuple[_RejectedAssetList, ...] = ()
+    reject_matroska_muxing_profile: bool = False
+    reject_embedded_metadata: bool = False
+    rejected_video_fields: tuple[str, ...] = ()
+
+
+_AUDIO_ASSET_LIST: Final = _RejectedAssetList("audio", "audio streams")
+_SUBTITLE_ASSET_LIST: Final = _RejectedAssetList("subtitles", "subtitle tracks")
+_RESOLUTION_SWITCH_MODE_RULE: Final = _ConstrainedVideoModeRule(
+    mode_label="resolution-switch video materialization",
+    combination_label="resolution-switch video materialization",
+    reject_matroska_muxing_profile=True,
+    expected_asset_fields=(_ExpectedStringField("container", RESOLUTION_SWITCH_VIDEO_CONTAINER),),
+    expected_video_fields=(
+        _ExpectedStringField("source", RESOLUTION_SWITCH_VIDEO_SOURCE),
+        _ExpectedStringField("codec", RESOLUTION_SWITCH_VIDEO_CODEC),
+        _ExpectedStringField("resolution", RESOLUTION_SWITCH_VIDEO_RESOLUTION),
+        _ExpectedStringField("resolution_sequence", RESOLUTION_SWITCH_VIDEO_SEQUENCE),
+    ),
+    rejected_asset_lists=(_AUDIO_ASSET_LIST, _SUBTITLE_ASSET_LIST),
+    reject_embedded_metadata=True,
+    rejected_video_fields=(
+        "vfr_cadence",
+        "field_order",
+        "color_space",
+        "color_range",
+        "hdr_mode",
+    ),
+)
+_WEBM_MODE_RULE: Final = _ConstrainedVideoModeRule(
+    mode_label="webm video materialization",
+    combination_label="webm muxing profile materialization",
+    required_asset_string_fields=("matroska_muxing_profile",),
+    expected_video_fields=(
+        _ExpectedStringField(
+            "codec",
+            _WEBM_VIDEO_CODEC,
+            "webm video materialization only supports VP9 video",
+        ),
+    ),
+    supported_video_fields=(
+        _SupportedStringField("source", SUPPORTED_VIDEO_SOURCES),
+        _SupportedStringField("resolution", SUPPORTED_RESOLUTIONS),
+    ),
+    rejected_asset_lists=(_AUDIO_ASSET_LIST, _SUBTITLE_ASSET_LIST),
+    reject_embedded_metadata=True,
+    rejected_video_fields=_WEBM_REJECTED_VIDEO_FIELDS,
+)
 
 
 def rule_materialize_media_matrix(
@@ -195,64 +273,14 @@ def _check_resolution_switch_video(
     video_loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    _reject_matroska_muxing_profile_for_asset(
+    _apply_constrained_video_mode_rule(
+        rule=_RESOLUTION_SWITCH_MODE_RULE,
         asset=asset,
+        video=video,
         asset_loc=asset_loc,
-        reporter=reporter,
-        reason="cannot be combined with resolution-switch video materialization",
-    )
-    _check_expected_string_field(
-        asset,
-        field_name="container",
-        expected=RESOLUTION_SWITCH_VIDEO_CONTAINER,
-        loc=(*asset_loc, "container"),
+        video_loc=video_loc,
         reporter=reporter,
     )
-    for field_name, expected in (
-        ("source", RESOLUTION_SWITCH_VIDEO_SOURCE),
-        ("codec", RESOLUTION_SWITCH_VIDEO_CODEC),
-        ("resolution", RESOLUTION_SWITCH_VIDEO_RESOLUTION),
-        ("resolution_sequence", RESOLUTION_SWITCH_VIDEO_SEQUENCE),
-    ):
-        _check_expected_string_field(
-            video,
-            field_name=field_name,
-            expected=expected,
-            loc=(*video_loc, field_name),
-            reporter=reporter,
-        )
-    if _as_list(asset.get("audio")):
-        reporter.error(
-            code=E_MATERIALIZE_UNSUPPORTED,
-            message="resolution-switch video materialization does not support audio streams",
-            loc=(*asset_loc, "audio"),
-        )
-    if _as_list(asset.get("subtitles")):
-        reporter.error(
-            code=E_MATERIALIZE_UNSUPPORTED,
-            message="resolution-switch video materialization does not support subtitle tracks",
-            loc=(*asset_loc, "subtitles"),
-        )
-    _reject_embedded_metadata_for_asset(
-        asset=asset,
-        asset_loc=asset_loc,
-        reporter=reporter,
-        reason="cannot be combined with resolution-switch video materialization",
-    )
-    for field_name in (
-        "vfr_cadence",
-        "field_order",
-        "color_space",
-        "color_range",
-        "hdr_mode",
-    ):
-        if field_name not in video or video.get(field_name) is None:
-            continue
-        reporter.error(
-            code=E_MATERIALIZE_UNSUPPORTED,
-            message=f"resolution-switch video materialization cannot combine {field_name}",
-            loc=(*video_loc, field_name),
-        )
 
 
 def _check_audio_only_asset(context: RawAssetContext, reporter: Reporter) -> None:
@@ -360,54 +388,85 @@ def _check_webm_video_asset(
     video_loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    if not isinstance(asset.get("matroska_muxing_profile"), str):
+    _apply_constrained_video_mode_rule(
+        rule=_WEBM_MODE_RULE,
+        asset=asset,
+        video=video,
+        asset_loc=asset_loc,
+        video_loc=video_loc,
+        reporter=reporter,
+    )
+
+
+def _apply_constrained_video_mode_rule(
+    *,
+    rule: _ConstrainedVideoModeRule,
+    asset: Mapping[str, object],
+    video: Mapping[str, object],
+    asset_loc: _Loc,
+    video_loc: _Loc,
+    reporter: Reporter,
+) -> None:
+    for field_name in rule.required_asset_string_fields:
+        if isinstance(asset.get(field_name), str):
+            continue
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message="webm video materialization requires matroska_muxing_profile",
-            loc=(*asset_loc, "matroska_muxing_profile"),
+            message=f"{rule.mode_label} requires {field_name}",
+            loc=(*asset_loc, field_name),
         )
-    for field_name, supported in (
-        ("source", SUPPORTED_VIDEO_SOURCES),
-        ("resolution", SUPPORTED_RESOLUTIONS),
-    ):
-        _check_string_field(
-            video,
-            field_name=field_name,
-            supported=supported,
-            loc=(*video_loc, field_name),
+    if rule.reject_matroska_muxing_profile:
+        _reject_matroska_muxing_profile_for_asset(
+            asset=asset,
+            asset_loc=asset_loc,
+            reporter=reporter,
+            reason=f"cannot be combined with {rule.combination_label}",
+        )
+    for expected in rule.expected_asset_fields:
+        _check_mode_expected_string_field(
+            asset,
+            rule=rule,
+            expected=expected,
+            loc=(*asset_loc, expected.field_name),
             reporter=reporter,
         )
-    codec = video.get("codec")
-    if isinstance(codec, str) and codec != _WEBM_VIDEO_CODEC:
+    for supported in rule.supported_video_fields:
+        _check_string_field(
+            video,
+            field_name=supported.field_name,
+            supported=supported.supported,
+            loc=(*video_loc, supported.field_name),
+            reporter=reporter,
+        )
+    for expected in rule.expected_video_fields:
+        _check_mode_expected_string_field(
+            video,
+            rule=rule,
+            expected=expected,
+            loc=(*video_loc, expected.field_name),
+            reporter=reporter,
+        )
+    for rejected in rule.rejected_asset_lists:
+        if not _as_list(asset.get(rejected.field_name)):
+            continue
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message="webm video materialization only supports VP9 video",
-            loc=(*video_loc, "codec"),
+            message=f"{rule.combination_label} does not support {rejected.label}",
+            loc=(*asset_loc, rejected.field_name),
         )
-    if _as_list(asset.get("audio")):
-        reporter.error(
-            code=E_MATERIALIZE_UNSUPPORTED,
-            message="webm muxing profile materialization does not support audio streams",
-            loc=(*asset_loc, "audio"),
+    if rule.reject_embedded_metadata:
+        _reject_embedded_metadata_for_asset(
+            asset=asset,
+            asset_loc=asset_loc,
+            reporter=reporter,
+            reason=f"cannot be combined with {rule.combination_label}",
         )
-    if _as_list(asset.get("subtitles")):
-        reporter.error(
-            code=E_MATERIALIZE_UNSUPPORTED,
-            message="webm muxing profile materialization does not support subtitle tracks",
-            loc=(*asset_loc, "subtitles"),
-        )
-    _reject_embedded_metadata_for_asset(
-        asset=asset,
-        asset_loc=asset_loc,
-        reporter=reporter,
-        reason="cannot be combined with webm muxing profile materialization",
-    )
-    for field_name in _WEBM_REJECTED_VIDEO_FIELDS:
+    for field_name in rule.rejected_video_fields:
         if field_name not in video or video.get(field_name) is None:
             continue
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message=f"webm muxing profile materialization cannot combine {field_name}",
+            message=f"{rule.combination_label} cannot combine {field_name}",
             loc=(*video_loc, field_name),
         )
 
@@ -746,19 +805,22 @@ def _check_string_field(
     )
 
 
-def _check_expected_string_field(
+def _check_mode_expected_string_field(
     data: Mapping[str, object],
     *,
-    field_name: str,
-    expected: str,
+    rule: _ConstrainedVideoModeRule,
+    expected: _ExpectedStringField,
     loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    value = data.get(field_name)
-    if not isinstance(value, str) or value == expected:
+    value = data.get(expected.field_name)
+    if not isinstance(value, str) or value == expected.expected:
         return
+    message = expected.message
+    if message is None:
+        message = f"{rule.mode_label} requires {expected.field_name} {expected.expected!r}"
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
-        message=(f"resolution-switch video materialization requires {field_name} {expected!r}"),
+        message=message,
         loc=loc,
     )
