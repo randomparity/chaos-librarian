@@ -25,9 +25,9 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.generation import (
-    BatchItem,
     GeneratedScenarioCoverageError,
     GeneratedScenarioValidationError,
+    GenerationBatchItem,
     generate_scenario,
     generate_scenario_yaml,
     plan_generation_batch,
@@ -45,8 +45,8 @@ from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
 
 
-def _parse_generated(data: bytes) -> Scenario:
-    raw, _ = parse_scenario_bytes(data, source=Path("<generated>"))
+def _parse_generated(yaml_bytes: bytes) -> Scenario:
+    raw, _ = parse_scenario_bytes(yaml_bytes, source=Path("<generated>"))
     return Scenario.model_validate(raw)
 
 
@@ -56,8 +56,8 @@ def _generated_payload(
     seed: int,
 ) -> dict[str, object]:
     yaml = YAML(typ="safe")
-    data = generate_scenario_yaml(profile=profile, lane=lane, seed=seed)
-    payload = yaml.load(data.decode())
+    yaml_bytes = generate_scenario_yaml(profile=profile, lane=lane, seed=seed)
+    payload = yaml.load(yaml_bytes.decode())
     assert isinstance(payload, dict)
     return payload
 
@@ -319,12 +319,12 @@ def test_music_topology_reencode_targets_materializable_audio_asset() -> None:
 
 
 def test_tv_topology_move_episode_crosses_season_folders() -> None:
-    data = generate_scenario_yaml(
+    yaml_bytes = generate_scenario_yaml(
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.TV_TOPOLOGY,
         seed=463,
     )
-    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
     validation_report = run_validation(run_input)
     assert validation_report.ok
     artifacts = run_plan(run_input=run_input, validation_report=validation_report)
@@ -405,12 +405,12 @@ def test_sidecar_subtitle_lane_embeds_before_extracting() -> None:
 
 def test_sidecar_subtitle_lane_updates_final_manifest_sidecars() -> None:
     """WHY: materialize update_sidecar resolves sidecar metadata from final manifest rows."""
-    data = generate_scenario_yaml(
+    yaml_bytes = generate_scenario_yaml(
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.SIDECAR_SUBTITLE,
         seed=458,
     )
-    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
     validation_report = run_validation(run_input)
     assert validation_report.ok
     artifacts = run_plan(run_input=run_input, validation_report=validation_report)
@@ -594,9 +594,9 @@ def test_plan_batch_fixed_lane_increments_seed() -> None:
         count=3,
     )
     assert items == (
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=100),
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=101),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=100),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=101),
     )
 
 
@@ -626,7 +626,7 @@ def test_plan_batch_count_one_returns_single_item() -> None:
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=1
     )
-    assert items == (BatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
+    assert items == (GenerationBatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
 
 
 def test_plan_batch_rejects_non_positive_count() -> None:

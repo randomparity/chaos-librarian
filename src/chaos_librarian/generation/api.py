@@ -35,12 +35,12 @@ from chaos_librarian.validation import prepare_run_input_from_bytes, run_validat
 class GeneratedScenario:
     """Generated scenario bytes paired with the validated scenario model."""
 
-    data: bytes
+    yaml_bytes: bytes
     scenario: Scenario
 
 
 @dataclass(frozen=True, slots=True)
-class BatchItem:
+class GenerationBatchItem:
     """One unit of batch work: the lane and seed for a single scenario."""
 
     lane: FuzzLaneName
@@ -61,7 +61,7 @@ def plan_generation_batch(
     lane: FuzzLaneName | None,
     seed: int,
     count: int,
-) -> tuple[BatchItem, ...]:
+) -> tuple[GenerationBatchItem, ...]:
     """Return the deterministic ``(lane, seed)`` work-list for a batch.
 
     ``seed_i = seed + i``. When ``lane`` is ``None`` the lanes cycle the canonical
@@ -71,8 +71,10 @@ def plan_generation_batch(
         raise ValueError("count must be >= 1")
     if lane is None:
         order = CANONICAL_FUZZ_LANES[profile]
-        return tuple(BatchItem(lane=order[i % len(order)], seed=seed + i) for i in range(count))
-    return tuple(BatchItem(lane=lane, seed=seed + i) for i in range(count))
+        return tuple(
+            GenerationBatchItem(lane=order[i % len(order)], seed=seed + i) for i in range(count)
+        )
+    return tuple(GenerationBatchItem(lane=lane, seed=seed + i) for i in range(count))
 
 
 class GeneratedScenarioCoverageError(ValueError):
@@ -89,7 +91,7 @@ def generate_scenario_yaml(
     lane: FuzzLaneName | None = None,
 ) -> bytes:
     """Return deterministic scenario YAML bytes for one fuzz profile, lane, and seed."""
-    return generate_scenario(profile=profile, seed=seed, lane=lane).data
+    return generate_scenario(profile=profile, seed=seed, lane=lane).yaml_bytes
 
 
 def generate_scenario(
@@ -101,9 +103,9 @@ def generate_scenario(
     if seed < 0:
         raise ValueError("seed must be non-negative")
 
-    data = _generate_scenario_yaml_unvalidated(profile=profile, seed=seed, lane=lane)
-    scenario = _validate_generated_yaml(data)
-    return GeneratedScenario(data=data, scenario=scenario)
+    yaml_bytes = _generate_scenario_yaml_unvalidated(profile=profile, seed=seed, lane=lane)
+    scenario = _validate_generated_yaml(yaml_bytes)
+    return GeneratedScenario(yaml_bytes=yaml_bytes, scenario=scenario)
 
 
 def _generate_scenario_yaml_unvalidated(
@@ -147,11 +149,11 @@ def _generate_scenario_yaml_unvalidated(
             f"missing required coverage for {profile.value}/{resolved_lane.value} "
             f"seed {seed}: {missing_sorted}"
         )
-    data = _dump_yaml(payload)
-    return data
+    yaml_bytes = _dump_yaml(payload)
+    return yaml_bytes
 
 
-def write_generated_scenario(out: Path, data: bytes) -> None:
+def write_generated_scenario(out: Path, yaml_bytes: bytes) -> None:
     """Atomically write generated scenario bytes without overwriting ``out``."""
     if out.exists():
         raise FileExistsError(out)
@@ -164,7 +166,7 @@ def write_generated_scenario(out: Path, data: bytes) -> None:
     temp_path = Path(temp_name)
     try:
         with os.fdopen(fd, "wb") as handle:
-            handle.write(data)
+            handle.write(yaml_bytes)
             handle.flush()
             os.fsync(handle.fileno())
         os.link(temp_path, out)
@@ -174,13 +176,13 @@ def write_generated_scenario(out: Path, data: bytes) -> None:
 
 def generated_scenario_summary(
     out: Path,
-    data: bytes,
+    yaml_bytes: bytes,
     *,
     scenario: Scenario | None = None,
 ) -> str:
     """Return sorted JSON for the successful generate command."""
     if scenario is None:
-        scenario = _validate_generated_yaml(data)
+        scenario = _validate_generated_yaml(yaml_bytes)
     if scenario.generation is None:
         raise ValueError("generated scenario is missing generation metadata")
     summary = {
@@ -190,7 +192,7 @@ def generated_scenario_summary(
         "scenario_id": scenario.scenario_id,
         "scenario_path": str(out.resolve()),
         "seed": scenario.generation.seed,
-        "sha256": hashlib.sha256(data).hexdigest(),
+        "sha256": hashlib.sha256(yaml_bytes).hexdigest(),
     }
     return json.dumps(summary, sort_keys=True)
 
@@ -203,8 +205,8 @@ def _dump_yaml(payload: Mapping[str, object]) -> bytes:
     return stream.getvalue().encode()
 
 
-def _validate_generated_yaml(data: bytes) -> Scenario:
-    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+def _validate_generated_yaml(yaml_bytes: bytes) -> Scenario:
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
     report = run_validation(run_input)
     if not report.ok:
         issues = "; ".join(f"{issue.code}: {issue.message}" for issue in report.issues)

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from chaos_librarian.generation.api import (
-    BatchItem,
     GeneratedScenario,
     GeneratedScenarioCoverageError,
     GeneratedScenarioValidationError,
+    GenerationBatchItem,
     generate_scenario,
     generate_scenario_yaml,
     generated_scenario_summary,
@@ -16,10 +16,10 @@ from chaos_librarian.generation.api import (
 )
 
 __all__ = [
-    "BatchItem",
     "GeneratedScenario",
     "GeneratedScenarioCoverageError",
     "GeneratedScenarioValidationError",
+    "GenerationBatchItem",
     "generate_scenario",
     "generate_scenario_yaml",
     "generated_scenario_summary",

@@ -18,7 +18,7 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.contract.profiles import FUZZ_LANES_BY_PROFILE, FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import (
-    BatchItem,
+    GenerationBatchItem,
     generate_scenario,
     generated_scenario_summary,
     plan_generation_batch,
@@ -43,11 +43,21 @@ def generate(
     ``<scenario_id>.yaml``.
     """
     resolved_lane = _resolve_lane_for_batch(profile=profile, lane=lane, count=count)
-    items = plan_generation_batch(profile=profile, lane=resolved_lane, seed=seed, count=count)
+    planned_items = plan_generation_batch(
+        profile=profile,
+        lane=resolved_lane,
+        seed=seed,
+        count=count,
+    )
     if count == 1:
-        _write_single(profile=profile, item=items[0], out=out, json_output=json_output)
+        _write_single(profile=profile, planned=planned_items[0], out=out, json_output=json_output)
         return
-    _write_batch(profile=profile, items=items, out_dir=out, json_output=json_output)
+    _write_batch(
+        profile=profile,
+        planned_items=planned_items,
+        out_dir=out,
+        json_output=json_output,
+    )
 
 
 def _resolve_lane_for_batch(
@@ -65,14 +75,19 @@ def _resolve_lane_for_batch(
     return None
 
 
-def _write_single(profile: FuzzProfileName, item: BatchItem, out: Path, json_output: bool) -> None:
+def _write_single(
+    profile: FuzzProfileName,
+    planned: GenerationBatchItem,
+    out: Path,
+    json_output: bool,
+) -> None:
     validate_new_out_path(out)
     try:
-        generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
+        generated = generate_scenario(profile=profile, lane=planned.lane, seed=planned.seed)
     except Exception as exc:
         _emit_single_generate_failure(
             profile=profile,
-            item=item,
+            planned=planned,
             out=out,
             operation="generate_scenario",
             exc=exc,
@@ -80,11 +95,11 @@ def _write_single(profile: FuzzProfileName, item: BatchItem, out: Path, json_out
         )
         raise typer.Exit(code=1) from exc
     try:
-        write_generated_scenario(out, generated.data)
+        write_generated_scenario(out, generated.yaml_bytes)
     except OSError as exc:
         _emit_single_generate_failure(
             profile=profile,
-            item=item,
+            planned=planned,
             out=out,
             operation="write_generated_scenario",
             exc=exc,
@@ -92,35 +107,43 @@ def _write_single(profile: FuzzProfileName, item: BatchItem, out: Path, json_out
         )
         raise typer.Exit(code=1) from exc
     if json_output:
-        typer.echo(generated_scenario_summary(out, generated.data, scenario=generated.scenario))
+        typer.echo(
+            generated_scenario_summary(
+                out,
+                generated.yaml_bytes,
+                scenario=generated.scenario,
+            )
+        )
     else:
         typer.echo(f"generate: wrote {out}")
 
 
 def _write_batch(
     profile: FuzzProfileName,
-    items: tuple[BatchItem, ...],
+    planned_items: tuple[GenerationBatchItem, ...],
     out_dir: Path,
     json_output: bool,
 ) -> None:
     _validate_out_dir(out_dir)
-    targets = _batch_targets(profile=profile, items=items, out_dir=out_dir)
+    targets = _batch_targets(profile=profile, planned_items=planned_items, out_dir=out_dir)
     written: list[Path] = []
     records: list[tuple[Path, bytes, Scenario]] = []
-    for item, path in targets:
+    for planned, path in targets:
         try:
-            generated = generate_scenario(profile=profile, lane=item.lane, seed=item.seed)
+            generated = generate_scenario(profile=profile, lane=planned.lane, seed=planned.seed)
             _assert_scenario_id(
-                profile=profile, item=item, generated_id=generated.scenario.scenario_id
+                profile=profile,
+                planned=planned,
+                generated_id=generated.scenario.scenario_id,
             )
-            write_generated_scenario(path, generated.data)
+            write_generated_scenario(path, generated.yaml_bytes)
         except Exception as exc:  # rollback then re-report any generation/write failure
             removed, unremoved = _rollback(written)
             emit_cli_error(
                 error_code=E_GENERATE_FAILED,
                 message=_batch_failure_message(
                     profile=profile,
-                    item=item,
+                    planned=planned,
                     exc=exc,
                     removed=removed,
                     unremoved=unremoved,
@@ -128,7 +151,7 @@ def _write_batch(
                 json_output=json_output,
                 details=_batch_failure_details(
                     profile=profile,
-                    item=item,
+                    planned=planned,
                     path=path,
                     exc=exc,
                     removed=removed,
@@ -137,7 +160,7 @@ def _write_batch(
             )
             raise typer.Exit(code=1) from exc
         written.append(path)
-        records.append((path, generated.data, generated.scenario))
+        records.append((path, generated.yaml_bytes, generated.scenario))
         if not json_output:
             typer.echo(f"generate: wrote {path}")
     if json_output:
@@ -154,24 +177,30 @@ def _validate_out_dir(out_dir: Path) -> None:
 
 
 def _batch_targets(
-    profile: FuzzProfileName, items: tuple[BatchItem, ...], out_dir: Path
-) -> list[tuple[BatchItem, Path]]:
-    targets: list[tuple[BatchItem, Path]] = []
+    profile: FuzzProfileName,
+    planned_items: tuple[GenerationBatchItem, ...],
+    out_dir: Path,
+) -> list[tuple[GenerationBatchItem, Path]]:
+    targets: list[tuple[GenerationBatchItem, Path]] = []
     names: set[str] = set()
-    for item in items:
-        name = f"{scenario_id_for(profile, item.lane, item.seed)}.yaml"
+    for planned in planned_items:
+        name = f"{scenario_id_for(profile, planned.lane, planned.seed)}.yaml"
         if name in names:
             raise RuntimeError(f"batch produced a duplicate file name: {name}")
         names.add(name)
         path = out_dir / name
         if path.exists():
             raise typer.BadParameter(f"--out already contains target file: {path}")
-        targets.append((item, path))
+        targets.append((planned, path))
     return targets
 
 
-def _assert_scenario_id(profile: FuzzProfileName, item: BatchItem, generated_id: str) -> None:
-    expected = scenario_id_for(profile, item.lane, item.seed)
+def _assert_scenario_id(
+    profile: FuzzProfileName,
+    planned: GenerationBatchItem,
+    generated_id: str,
+) -> None:
+    expected = scenario_id_for(profile, planned.lane, planned.seed)
     if generated_id != expected:
         raise RuntimeError(
             f"generated scenario_id {generated_id!r} does not match planned {expected!r}"
@@ -181,7 +210,7 @@ def _assert_scenario_id(profile: FuzzProfileName, item: BatchItem, generated_id:
 def _emit_single_generate_failure(
     *,
     profile: FuzzProfileName,
-    item: BatchItem,
+    planned: GenerationBatchItem,
     out: Path,
     operation: str,
     exc: Exception,
@@ -189,15 +218,15 @@ def _emit_single_generate_failure(
 ) -> None:
     emit_cli_operation_error(
         error_code=E_GENERATE_FAILED,
-        message=_single_failure_message(profile=profile, item=item, exc=exc),
+        message=_single_failure_message(profile=profile, planned=planned, exc=exc),
         json_output=json_output,
         operation=operation,
         path=out,
         exc=exc,
         extra_details={
             "profile": profile.value,
-            "lane": item.lane.value,
-            "seed": item.seed,
+            "lane": planned.lane.value,
+            "seed": planned.seed,
         },
     )
 
@@ -205,11 +234,12 @@ def _emit_single_generate_failure(
 def _single_failure_message(
     *,
     profile: FuzzProfileName,
-    item: BatchItem,
+    planned: GenerationBatchItem,
     exc: Exception,
 ) -> str:
     return (
-        f"generate failed at profile={profile.value} lane={item.lane.value} seed={item.seed}: {exc}"
+        f"generate failed at profile={profile.value} lane={planned.lane.value} "
+        f"seed={planned.seed}: {exc}"
     )
 
 
@@ -233,13 +263,14 @@ def _rollback(written: list[Path]) -> tuple[list[Path], list[Path]]:
 def _batch_failure_message(
     *,
     profile: FuzzProfileName,
-    item: BatchItem,
+    planned: GenerationBatchItem,
     exc: Exception,
     removed: list[Path],
     unremoved: list[Path],
 ) -> str:
     message = (
-        f"generate failed at profile={profile.value} lane={item.lane.value} seed={item.seed}: {exc}"
+        f"generate failed at profile={profile.value} lane={planned.lane.value} "
+        f"seed={planned.seed}: {exc}"
     )
     if removed:
         message += f"; rolled back {len(removed)} partially written files"
@@ -254,7 +285,7 @@ def _batch_failure_message(
 def _batch_failure_details(
     *,
     profile: FuzzProfileName,
-    item: BatchItem,
+    planned: GenerationBatchItem,
     path: Path,
     exc: Exception,
     removed: list[Path],
@@ -262,8 +293,8 @@ def _batch_failure_details(
 ) -> dict[str, object]:
     return {
         "profile": profile.value,
-        "lane": item.lane.value,
-        "seed": item.seed,
+        "lane": planned.lane.value,
+        "seed": planned.seed,
         "target_path": str(path),
         "exception_type": type(exc).__name__,
         "removed_paths": [str(path) for path in removed],
@@ -273,8 +304,8 @@ def _batch_failure_details(
 
 def _batch_summary_json(out_dir: Path, records: list[tuple[Path, bytes, Scenario]]) -> str:
     scenarios = [
-        json.loads(generated_scenario_summary(path, data, scenario=scenario))
-        for path, data, scenario in records
+        json.loads(generated_scenario_summary(path, yaml_bytes, scenario=scenario))
+        for path, yaml_bytes, scenario in records
     ]
     scenarios.sort(key=lambda summary: summary["scenario_path"])
     payload: dict[str, object] = {
