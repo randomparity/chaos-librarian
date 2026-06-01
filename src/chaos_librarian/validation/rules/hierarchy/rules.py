@@ -33,10 +33,12 @@ from chaos_librarian.validation.rules.hierarchy.projection import (
     build_hierarchy_projection,
     is_hierarchy_action,
 )
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import (
+    rendered_asset_paths,
+)
 from chaos_librarian.validation.rules.hierarchy.walkers import (
     RawAssetContext,
     iter_asset_contexts,
-    rendered_asset_paths,
 )
 
 if TYPE_CHECKING:

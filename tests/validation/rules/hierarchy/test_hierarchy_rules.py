@@ -9,10 +9,8 @@ from typing import cast
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.validation import codes, prepare_run_input, run_validation
 from chaos_librarian.validation.reporting import IssueCollector
-from chaos_librarian.validation.rules.hierarchy.walkers import (
-    iter_asset_contexts,
-    renderable_context_for,
-)
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import renderable_context_for
+from chaos_librarian.validation.rules.hierarchy.walkers import iter_asset_contexts
 from chaos_librarian.validation.semantic import run_semantic_pass
 
 

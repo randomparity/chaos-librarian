@@ -8,7 +8,7 @@ from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.path_rendering import render_declared_sidecar_path
 from chaos_librarian.validation.rules.core.raw_helpers import _RawMapping
 from chaos_librarian.validation.rules.hierarchy.projection import HierarchyMutation
-from chaos_librarian.validation.rules.hierarchy.walkers import iter_declared_sidecars
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import iter_declared_sidecars
 
 
 @dataclass(frozen=True, slots=True)

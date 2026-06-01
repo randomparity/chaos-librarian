@@ -21,11 +21,13 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     _iter_timeline_events,
     _Loc,
 )
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import (
+    renderable_context_for,
+)
 from chaos_librarian.validation.rules.hierarchy.walkers import (
     RawAssetContext,
     iter_asset_contexts,
     primary_root_path,
-    renderable_context_for,
 )
 
 if TYPE_CHECKING:

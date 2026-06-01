@@ -35,11 +35,13 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     _parse_datetime,
     _str,
 )
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import (
+    rendered_asset_paths,
+)
 from chaos_librarian.validation.rules.hierarchy.walkers import (
     iter_asset_contexts,
     iter_declared_roots,
     primary_root_path,
-    rendered_asset_paths,
 )
 
 

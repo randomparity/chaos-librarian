@@ -30,6 +30,7 @@ SHARED_HELPER_MODULES: frozenset[str] = frozenset(
     {
         "core.raw_helpers",
         "hierarchy.projection",
+        "hierarchy.rendering_projection",
         "hierarchy.walkers",
         "sidecar.projection",
     }
