@@ -45,9 +45,9 @@ def generate(
     resolved_lane = _resolve_lane_for_batch(profile=profile, lane=lane, count=count)
     planned_items = plan_generation_batch(
         profile=profile,
-        lane=resolved_lane,
         seed=seed,
         count=count,
+        lane=resolved_lane,
     )
     if count == 1:
         _write_single(profile=profile, planned=planned_items[0], out=out, json_output=json_output)
@@ -184,7 +184,7 @@ def _batch_targets(
     targets: list[tuple[GenerationBatchItem, Path]] = []
     names: set[str] = set()
     for planned in planned_items:
-        name = f"{scenario_id_for(profile, planned.lane, planned.seed)}.yaml"
+        name = f"{scenario_id_for(profile, planned.seed, planned.lane)}.yaml"
         if name in names:
             raise RuntimeError(f"batch produced a duplicate file name: {name}")
         names.add(name)
@@ -200,7 +200,7 @@ def _assert_scenario_id(
     planned: GenerationBatchItem,
     generated_id: str,
 ) -> None:
-    expected = scenario_id_for(profile, planned.lane, planned.seed)
+    expected = scenario_id_for(profile, planned.seed, planned.lane)
     if generated_id != expected:
         raise RuntimeError(
             f"generated scenario_id {generated_id!r} does not match planned {expected!r}"

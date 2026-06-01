@@ -47,7 +47,7 @@ class GenerationBatchItem:
     seed: int
 
 
-def scenario_id_for(profile: FuzzProfileName, lane: FuzzLaneName, seed: int) -> str:
+def scenario_id_for(profile: FuzzProfileName, seed: int, lane: FuzzLaneName) -> str:
     """Return the canonical ``scenario_id`` for a generated fuzz scenario.
 
     Single source of truth shared by the generator and the batch path planner so
@@ -58,9 +58,10 @@ def scenario_id_for(profile: FuzzProfileName, lane: FuzzLaneName, seed: int) -> 
 
 def plan_generation_batch(
     profile: FuzzProfileName,
-    lane: FuzzLaneName | None,
     seed: int,
     count: int,
+    *,
+    lane: FuzzLaneName | None = None,
 ) -> tuple[GenerationBatchItem, ...]:
     """Return the deterministic ``(lane, seed)`` work-list for a batch.
 
@@ -88,6 +89,7 @@ class GeneratedScenarioValidationError(ValueError):
 def generate_scenario_yaml(
     profile: FuzzProfileName,
     seed: int,
+    *,
     lane: FuzzLaneName | None = None,
 ) -> bytes:
     """Return deterministic scenario YAML bytes for one fuzz profile, lane, and seed."""
@@ -97,6 +99,7 @@ def generate_scenario_yaml(
 def generate_scenario(
     profile: FuzzProfileName,
     seed: int,
+    *,
     lane: FuzzLaneName | None = None,
 ) -> GeneratedScenario:
     """Return deterministic scenario YAML and its validated model."""
@@ -123,7 +126,7 @@ def _generate_scenario_yaml_unvalidated(
     )
     payload: dict[str, object] = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
-        "scenario_id": scenario_id_for(profile, resolved_lane, seed),
+        "scenario_id": scenario_id_for(profile, seed, resolved_lane),
         "seed": seed,
         "duration_scale": "short",
         "profiles": [label.value for label in config.profiles],

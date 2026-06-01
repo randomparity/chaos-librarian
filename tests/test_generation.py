@@ -579,9 +579,9 @@ def test_scenario_id_for_matches_generated_scenario_id() -> None:
         seed=456,
     )
     assert generated.scenario.scenario_id == scenario_id_for(
-        FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS, 456
+        FuzzProfileName.FUZZ_REGRESSION, 456, FuzzLaneName.CORE_FS
     )
-    assert scenario_id_for(FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE, 7) == (
+    assert scenario_id_for(FuzzProfileName.FUZZ_SMOKE, 7, FuzzLaneName.SMOKE) == (
         "fuzz-smoke-smoke-seed-7"
     )
 
@@ -589,9 +589,9 @@ def test_scenario_id_for_matches_generated_scenario_id() -> None:
 def test_plan_batch_fixed_lane_increments_seed() -> None:
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.CORE_FS,
         seed=99,
         count=3,
+        lane=FuzzLaneName.CORE_FS,
     )
     assert items == (
         GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
@@ -605,9 +605,9 @@ def test_plan_batch_cycles_lanes_when_lane_is_none() -> None:
     n = len(order)
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=None,
         seed=42,
         count=n + 2,
+        lane=None,
     )
     assert len(items) == n + 2
     assert [it.lane for it in items[:n]] == list(order)
@@ -617,14 +617,17 @@ def test_plan_batch_cycles_lanes_when_lane_is_none() -> None:
 
 
 def test_plan_batch_smoke_uses_smoke_lane() -> None:
-    items = plan_generation_batch(profile=FuzzProfileName.FUZZ_SMOKE, lane=None, seed=5, count=4)
+    items = plan_generation_batch(profile=FuzzProfileName.FUZZ_SMOKE, seed=5, count=4)
     assert all(it.lane == FuzzLaneName.SMOKE for it in items)
     assert [it.seed for it in items] == [5, 6, 7, 8]
 
 
 def test_plan_batch_count_one_returns_single_item() -> None:
     items = plan_generation_batch(
-        profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=1
+        profile=FuzzProfileName.FUZZ_SMOKE,
+        seed=1,
+        count=1,
+        lane=FuzzLaneName.SMOKE,
     )
     assert items == (GenerationBatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
 
@@ -632,5 +635,8 @@ def test_plan_batch_count_one_returns_single_item() -> None:
 def test_plan_batch_rejects_non_positive_count() -> None:
     with pytest.raises(ValueError, match="count must be >= 1"):
         plan_generation_batch(
-            profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=0
+            profile=FuzzProfileName.FUZZ_SMOKE,
+            seed=1,
+            count=0,
+            lane=FuzzLaneName.SMOKE,
         )
