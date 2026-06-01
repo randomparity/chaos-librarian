@@ -55,7 +55,6 @@ from chaos_librarian.engine.event_handlers.media import (
     _handle_remove_sidecar,
     _handle_remux_container,
     _handle_update_sidecar,
-    _swap_extension,
 )
 from chaos_librarian.engine.event_handlers.network_fs_chaos import (
     _handle_acquire_lock,
@@ -74,7 +73,7 @@ from chaos_librarian.engine.event_handlers.network_lag import (
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.engine.state import WorldState
 
-__all__ = ["_STATE_DELTA_KEYS", "_swap_extension", "apply_event"]
+__all__ = ["_STATE_DELTA_KEYS", "apply_event"]
 
 _STATE_DELTA_KEYS: Final[dict[TimelineActionName, frozenset[str]]] = {
     TimelineActionName.MOVE_ASSET: frozenset({"from_path", "to_path"}),
