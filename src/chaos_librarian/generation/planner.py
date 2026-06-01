@@ -8,12 +8,13 @@ two cannot drift apart when a lane is added or changed.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Final, cast
 
-from pydantic import BaseModel, TypeAdapter
+from pydantic import BaseModel
 
+from chaos_librarian.contract import scenario as scenario_contract
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import (
     NetworkLagEffect,
@@ -35,7 +36,6 @@ from chaos_librarian.generation.lanes import (
 CORRUPT_HEADER_BYTES: Final = 64
 # Bytes retained when truncating a file for a truncate-file event.
 TRUNCATE_KEEP_BYTES: Final = 4096
-_TIMELINE_EVENT_ADAPTER: TypeAdapter[TimelineEvent] = TypeAdapter(TimelineEvent)
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,9 +76,9 @@ class TimelinePlanner:
     def at(self) -> str:
         return f"{self.next_index()}ns"
 
-    def append_event(self, payload: Mapping[str, object]) -> None:
-        """Validate and append one concrete TimelineEvent model."""
-        self.events.append(_TIMELINE_EVENT_ADAPTER.validate_python(dict(payload)))
+    def append_event(self, event: TimelineEvent) -> None:
+        """Append one concrete TimelineEvent model."""
+        self.events.append(event)
 
 
 def plan_payload_parts(
@@ -554,83 +554,77 @@ def _fill_remaining_events(
 
 def _move_asset(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("move"),
-            "at": planner.at(),
-            "action": "move_asset",
-            "target": asset.asset_id,
-            "to": (
+        scenario_contract.MoveAssetEvent(
+            id=planner.event_id("move"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to=(
                 f"{planner.root_path}/fuzz/"
                 f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
             ),
-        }
+        )
     )
 
 
 def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> EventReference:
     event_id = planner.event_id("rename")
     at = planner.at()
-    event: dict[str, object] = {
-        "id": event_id,
-        "at": at,
-        "action": "rename_file",
-        "target": asset.asset_id,
-        "to": (
+    event = scenario_contract.RenameFileEvent(
+        id=event_id,
+        at=at,
+        target=asset.asset_id,
+        to=(
             f"{planner.root_path}/renamed/"
             f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
         ),
-    }
+    )
     planner.append_event(event)
     return EventReference(event_id=event_id, at=at)
 
 
 def _delete_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("delete"),
-            "at": planner.at(),
-            "action": "delete_file",
-            "target": asset.asset_id,
-        }
+        scenario_contract.DeleteFileEvent(
+            id=planner.event_id("delete"),
+            at=planner.at(),
+            target=asset.asset_id,
+        )
     )
 
 
 def _add_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("add"),
-            "at": planner.at(),
-            "action": "add_file",
-            "target": asset.asset_id,
-            "to": (
+        scenario_contract.AddFileEvent(
+            id=planner.event_id("add"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to=(
                 f"{planner.root_path}/restored/"
                 f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
             ),
-        }
+        )
     )
 
 
 def _archive_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("archive"),
-            "at": planner.at(),
-            "action": "archive_file",
-            "target": asset.asset_id,
-        }
+        scenario_contract.ArchiveFileEvent(
+            id=planner.event_id("archive"),
+            at=planner.at(),
+            target=asset.asset_id,
+        )
     )
 
 
 def _move_between_roots(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("move_between_roots"),
-            "at": planner.at(),
-            "action": "move_between_roots",
-            "target": asset.asset_id,
-            "from_root_id": planner.root_id,
-            "to_root_id": planner.secondary_root_id,
-        }
+        scenario_contract.MoveBetweenRootsEvent(
+            id=planner.event_id("move_between_roots"),
+            at=planner.at(),
+            target=asset.asset_id,
+            from_root_id=planner.root_id,
+            to_root_id=planner.secondary_root_id,
+        )
     )
 
 
@@ -638,23 +632,21 @@ def _slow_copy_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     start_index = planner.next_index()
     start_id = planner.event_id("slow_copy_start")
     planner.append_event(
-        {
-            "id": start_id,
-            "at": f"{start_index}ns",
-            "action": "slow_copy_start",
-            "target": asset.asset_id,
-            "to": f"{planner.root_path}/fuzz/{asset.asset_id}-slow.{asset.container}",
-            "temp_path": f"{planner.root_path}/fuzz/.{asset.asset_id}-slow.tmp",
-            "duration": "1ns",
-        }
+        scenario_contract.SlowCopyStartEvent(
+            id=start_id,
+            at=f"{start_index}ns",
+            target=asset.asset_id,
+            to=f"{planner.root_path}/fuzz/{asset.asset_id}-slow.{asset.container}",
+            temp_path=f"{planner.root_path}/fuzz/.{asset.asset_id}-slow.tmp",
+            duration="1ns",
+        )
     )
     planner.append_event(
-        {
-            "id": planner.event_id("slow_copy_commit"),
-            "at": f"{start_index + 1}ns",
-            "action": "slow_copy_commit",
-            "for": start_id,
-        }
+        scenario_contract.SlowCopyCommitEvent(
+            id=planner.event_id("slow_copy_commit"),
+            at=f"{start_index + 1}ns",
+            for_=start_id,
+        )
     )
 
 
@@ -665,13 +657,12 @@ def _renumber_episode(
     episode_number: int,
 ) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("renumber_episode"),
-            "at": planner.at(),
-            "action": "renumber_episode",
-            "target": target,
-            "episode_number": episode_number,
-        }
+        scenario_contract.RenumberEpisodeEvent(
+            id=planner.event_id("renumber_episode"),
+            at=planner.at(),
+            target=target,
+            episode_number=episode_number,
+        )
     )
 
 
@@ -683,14 +674,13 @@ def _move_episode_to_season(
     episode_number: int,
 ) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("move_episode_to_season"),
-            "at": planner.at(),
-            "action": "move_episode_to_season",
-            "target": target,
-            "to_season": to_season,
-            "episode_number": episode_number,
-        }
+        scenario_contract.MoveEpisodeToSeasonEvent(
+            id=planner.event_id("move_episode_to_season"),
+            at=planner.at(),
+            target=target,
+            to_season=to_season,
+            episode_number=episode_number,
+        )
     )
 
 
@@ -701,13 +691,12 @@ def _renumber_disc(
     disc_number: int,
 ) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("renumber_disc"),
-            "at": planner.at(),
-            "action": "renumber_disc",
-            "target": target,
-            "disc_number": disc_number,
-        }
+        scenario_contract.RenumberDiscEvent(
+            id=planner.event_id("renumber_disc"),
+            at=planner.at(),
+            target=target,
+            disc_number=disc_number,
+        )
     )
 
 
@@ -719,14 +708,13 @@ def _move_track_to_disc(
     track_number: int,
 ) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("move_track_to_disc"),
-            "at": planner.at(),
-            "action": "move_track_to_disc",
-            "target": target,
-            "to_disc": to_disc,
-            "track_number": track_number,
-        }
+        scenario_contract.MoveTrackToDiscEvent(
+            id=planner.event_id("move_track_to_disc"),
+            at=planner.at(),
+            target=target,
+            to_disc=to_disc,
+            track_number=track_number,
+        )
     )
 
 
@@ -735,118 +723,109 @@ def _reencode_video(planner: TimelinePlanner, asset: PlannedAsset) -> None:
         raise ValueError(f"reencode_video requires a video asset, got {asset.asset_id}")
     resolution = "1080p" if asset.resolution != "1080p" else "hd"
     planner.append_event(
-        {
-            "id": planner.event_id("reencode_video"),
-            "at": planner.at(),
-            "action": "reencode_video",
-            "target": asset.asset_id,
-            "resolution": resolution,
-            "codec": "h264",
-        }
+        scenario_contract.ReencodeVideoEvent(
+            id=planner.event_id("reencode_video"),
+            at=planner.at(),
+            target=asset.asset_id,
+            resolution=resolution,
+            codec="h264",
+        )
     )
 
 
 def _reencode_audio(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     to_channels = "stereo" if asset.audio_channels != "stereo" else "mono"
     planner.append_event(
-        {
-            "id": planner.event_id("reencode_audio"),
-            "at": planner.at(),
-            "action": "reencode_audio",
-            "target": asset.asset_id,
-            "from_channels": asset.audio_channels,
-            "to_channels": to_channels,
-        }
+        scenario_contract.ReencodeAudioEvent(
+            id=planner.event_id("reencode_audio"),
+            at=planner.at(),
+            target=asset.asset_id,
+            from_channels=scenario_contract.AudioChannelLayout(asset.audio_channels),
+            to_channels=scenario_contract.AudioChannelLayout(to_channels),
+        )
     )
 
 
 def _remux_container(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     to_container = "mp4" if asset.container != "mp4" else "mkv"
     planner.append_event(
-        {
-            "id": planner.event_id("remux"),
-            "at": planner.at(),
-            "action": "remux_container",
-            "target": asset.asset_id,
-            "to_container": to_container,
-        }
+        scenario_contract.RemuxContainerEvent(
+            id=planner.event_id("remux"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to_container=to_container,
+        )
     )
 
 
 def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("corrupt_header"),
-            "at": planner.at(),
-            "action": "corrupt_container_header",
-            "target": asset.asset_id,
-            "bytes": CORRUPT_HEADER_BYTES,
-        }
+        scenario_contract.CorruptContainerHeaderEvent(
+            id=planner.event_id("corrupt_header"),
+            at=planner.at(),
+            target=asset.asset_id,
+            bytes=CORRUPT_HEADER_BYTES,
+        )
     )
     planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _truncate_file(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("truncate"),
-            "at": planner.at(),
-            "action": "truncate_file",
-            "target": asset.asset_id,
-            "keep_bytes": TRUNCATE_KEEP_BYTES,
-        }
+        scenario_contract.TruncateFileEvent(
+            id=planner.event_id("truncate"),
+            at=planner.at(),
+            target=asset.asset_id,
+            keep_bytes=TRUNCATE_KEEP_BYTES,
+        )
     )
     planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _corrupt_packet_range(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("packet_corrupt"),
-            "at": planner.at(),
-            "action": "corrupt_packet_range",
-            "target": asset.asset_id,
-            "stream": "video",
-            "packet_start": 0,
-            "packet_count": 1,
-        }
+        scenario_contract.CorruptPacketRangeEvent(
+            id=planner.event_id("packet_corrupt"),
+            at=planner.at(),
+            target=asset.asset_id,
+            stream=scenario_contract.PacketStreamKind.VIDEO,
+            packet_start=0,
+            packet_count=1,
+        )
     )
     planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("invalid_duration"),
-            "at": planner.at(),
-            "action": "write_invalid_duration_metadata",
-            "target": asset.asset_id,
-            "value": "not-a-duration",
-        }
+        scenario_contract.WriteInvalidDurationMetadataEvent(
+            id=planner.event_id("invalid_duration"),
+            at=planner.at(),
+            target=asset.asset_id,
+            value="not-a-duration",
+        )
     )
     planner.media_unstable_assets.add(asset.asset_id)
 
 
 def _wrong_oracle_hash(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("wrong_hash"),
-            "at": planner.at(),
-            "action": "wrong_oracle_hash",
-            "target": asset.asset_id,
-        }
+        scenario_contract.WrongOracleHashEvent(
+            id=planner.event_id("wrong_hash"),
+            at=planner.at(),
+            target=asset.asset_id,
+        )
     )
 
 
 def _touch_mtime(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     planner.append_event(
-        {
-            "id": planner.event_id("touch_mtime"),
-            "at": planner.at(),
-            "action": "touch_mtime",
-            "target": asset.asset_id,
-            "offset": "2s",
-        }
+        scenario_contract.TouchMtimeEvent(
+            id=planner.event_id("touch_mtime"),
+            at=planner.at(),
+            target=asset.asset_id,
+            offset="2s",
+        )
     )
 
 
@@ -862,23 +841,21 @@ def _network_lag_pair(
 
     start_id = planner.event_id("network_lag_start")
     planner.append_event(
-        {
-            "id": start_id,
-            "at": trigger.at,
-            "action": "network_lag_start",
-            "effect": effect.value,
-            "target": asset.asset_id,
-            "after": trigger.event_id,
-            "duration": "1ns",
-        }
+        scenario_contract.NetworkLagStartEvent(
+            id=start_id,
+            at=trigger.at,
+            effect=effect,
+            target=asset.asset_id,
+            after=trigger.event_id,
+            duration="1ns",
+        )
     )
     planner.append_event(
-        {
-            "id": planner.event_id("network_lag_commit"),
-            "at": _one_ns_after(trigger.at),
-            "action": "network_lag_commit",
-            "for": start_id,
-        }
+        scenario_contract.NetworkLagCommitEvent(
+            id=planner.event_id("network_lag_commit"),
+            at=_one_ns_after(trigger.at),
+            for_=start_id,
+        )
     )
 
 
@@ -891,13 +868,12 @@ def _one_ns_after(at: str) -> str:
 def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> EventReference:
     event_id = planner.event_id("metadata")
     at = planner.at()
-    event: dict[str, object] = {
-        "id": event_id,
-        "at": at,
-        "action": "edit_metadata",
-        "target": asset.asset_id,
-        "fields": {"title": f"Generated Title {planner.next_index():04d}"},
-    }
+    event = scenario_contract.EditMetadataEvent(
+        id=event_id,
+        at=at,
+        target=asset.asset_id,
+        fields={"title": f"Generated Title {planner.next_index():04d}"},
+    )
     planner.append_event(event)
     return EventReference(event_id=event_id, at=at)
 
@@ -905,14 +881,13 @@ def _edit_metadata(planner: TimelinePlanner, asset: PlannedAsset) -> EventRefere
 def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.nfo"
     planner.append_event(
-        {
-            "id": planner.event_id("create_nfo"),
-            "at": planner.at(),
-            "action": "create_sidecar",
-            "target": asset.asset_id,
-            "to": path,
-            "kind": SidecarKind.NFO.value,
-        }
+        scenario_contract.CreateSidecarEvent(
+            id=planner.event_id("create_nfo"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to=path,
+            kind=SidecarKind.NFO,
+        )
     )
     planner.sidecars_by_asset.setdefault(asset.asset_id, []).append((SidecarKind.NFO.value, path))
 
@@ -920,15 +895,14 @@ def _create_nfo_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
 def _create_subtitle_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
     planner.append_event(
-        {
-            "id": planner.event_id("create_subtitle"),
-            "at": planner.at(),
-            "action": "create_sidecar",
-            "target": asset.asset_id,
-            "to": path,
-            "kind": SidecarKind.SUBTITLE.value,
-            "language": "eng",
-        }
+        scenario_contract.CreateSidecarEvent(
+            id=planner.event_id("create_subtitle"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to=path,
+            kind=SidecarKind.SUBTITLE,
+            language="eng",
+        )
     )
     planner.sidecars_by_asset.setdefault(asset.asset_id, []).append(
         (SidecarKind.SUBTITLE.value, path)
@@ -938,14 +912,13 @@ def _create_subtitle_sidecar(planner: TimelinePlanner, asset: PlannedAsset) -> N
 def _extract_subtitle(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     path = f"{planner.root_path}/sidecars/{asset.asset_id}-{planner.next_index():04d}.srt"
     planner.append_event(
-        {
-            "id": planner.event_id("extract_subtitle"),
-            "at": planner.at(),
-            "action": "extract_subtitle",
-            "target": asset.asset_id,
-            "to": path,
-            "language": "eng",
-        }
+        scenario_contract.ExtractSubtitleEvent(
+            id=planner.event_id("extract_subtitle"),
+            at=planner.at(),
+            target=asset.asset_id,
+            to=path,
+            language="eng",
+        )
     )
     planner.sidecars_by_asset.setdefault(asset.asset_id, []).append(
         (SidecarKind.SUBTITLE.value, path)
@@ -965,13 +938,12 @@ def _update_first_sidecar(planner: TimelinePlanner) -> None:
             continue
         _, path = sidecars[0]
         planner.append_event(
-            {
-                "id": planner.event_id("update_sidecar"),
-                "at": planner.at(),
-                "action": "update_sidecar",
-                "target": asset_id,
-                "sidecar_path": path,
-            }
+            scenario_contract.UpdateSidecarEvent(
+                id=planner.event_id("update_sidecar"),
+                at=planner.at(),
+                target=asset_id,
+                sidecar_path=path,
+            )
         )
         return
     raise ValueError("update_sidecar requires a live sidecar")
@@ -985,13 +957,12 @@ def _remove_first_sidecar(planner: TimelinePlanner) -> None:
         if not sidecars:
             del planner.sidecars_by_asset[asset_id]
         planner.append_event(
-            {
-                "id": planner.event_id("remove_sidecar"),
-                "at": planner.at(),
-                "action": "remove_sidecar",
-                "target": asset_id,
-                "sidecar_path": path,
-            }
+            scenario_contract.RemoveSidecarEvent(
+                id=planner.event_id("remove_sidecar"),
+                at=planner.at(),
+                target=asset_id,
+                sidecar_path=path,
+            )
         )
         return
     raise ValueError("remove_sidecar requires a live sidecar")
@@ -1007,13 +978,12 @@ def _embed_latest_subtitle_sidecar(planner: TimelinePlanner) -> None:
             if not sidecars:
                 del planner.sidecars_by_asset[asset_id]
             planner.append_event(
-                {
-                    "id": planner.event_id("embed_subtitle"),
-                    "at": planner.at(),
-                    "action": "embed_subtitle",
-                    "target": asset_id,
-                    "sidecar_path": path,
-                }
+                scenario_contract.EmbedSubtitleEvent(
+                    id=planner.event_id("embed_subtitle"),
+                    at=planner.at(),
+                    target=asset_id,
+                    sidecar_path=path,
+                )
             )
             return
     raise ValueError("lane requires a live subtitle sidecar")
