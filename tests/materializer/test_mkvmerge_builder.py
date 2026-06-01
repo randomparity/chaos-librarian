@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.scenario import MatroskaMuxingProfile
-from chaos_librarian.materializer.tooling import mkvmerge as mkvmerge_mod
+from chaos_librarian.materializer.tooling import _subprocess as tool_subprocess
 from chaos_librarian.materializer.tooling.mkvmerge import build_mkvmerge_command, run_mkvmerge
 
 
@@ -18,7 +18,7 @@ def test_run_mkvmerge_returns_failed_invocation_for_launch_oserror(
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise OSError("mkvmerge missing")
 
-    monkeypatch.setattr(mkvmerge_mod.subprocess, "run", fail_run)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
 
     invocation, stderr_tail = run_mkvmerge(["mkvmerge", "--version"], mkvmerge_version="unknown")
 
@@ -34,7 +34,7 @@ def test_run_mkvmerge_returns_failed_invocation_for_timeout(
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise subprocess.TimeoutExpired(cmd=["mkvmerge"], timeout=1.0, stderr=b"partial")
 
-    monkeypatch.setattr(mkvmerge_mod.subprocess, "run", fail_run)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
 
     invocation, stderr_tail = run_mkvmerge(["mkvmerge", "--version"], mkvmerge_version="unknown")
 

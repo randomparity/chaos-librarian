@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.materializer.errors import ProbeParseError
-from chaos_librarian.materializer.tooling import probe as probe_mod
+from chaos_librarian.materializer.tooling import _subprocess as tool_subprocess
 from chaos_librarian.materializer.tooling.probe import probe_file
 
 _GOOD_PROBE = json.dumps(
@@ -52,7 +52,7 @@ def _patch_run(
             args=["ffprobe"], returncode=returncode, stdout=stdout, stderr=""
         )
 
-    monkeypatch.setattr(probe_mod.subprocess, "run", stub)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", stub)
 
 
 def test_probe_file_parses_video_and_audio_streams(
@@ -179,7 +179,7 @@ def test_probe_file_wraps_launch_oserror(monkeypatch: pytest.MonkeyPatch, tmp_pa
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
         raise OSError("ffprobe missing")
 
-    monkeypatch.setattr(probe_mod.subprocess, "run", fail_run)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
 
     with pytest.raises(ProbeParseError) as exc_info:
         probe_file(tmp_path / "broken.mkv")

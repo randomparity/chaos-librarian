@@ -9,7 +9,6 @@ reported in ``ProbedMedia.streams``.
 from __future__ import annotations
 
 import json
-import subprocess
 from pathlib import Path
 from typing import Final
 
@@ -20,7 +19,7 @@ from chaos_librarian.contract.manifest import (
     StreamKind,
 )
 from chaos_librarian.materializer.errors import ProbeParseError
-from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
+from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
 
@@ -261,36 +260,35 @@ def probe_file(path: Path) -> ProbedMedia:
         "json",
         str(path),
     ]
-    try:
-        completed = subprocess.run(
-            argv,
-            capture_output=True,
-            text=True,
-            timeout=_PROBE_TIMEOUT_S,
-            check=False,
-            stdin=subprocess.DEVNULL,
-        )
-    except subprocess.TimeoutExpired as exc:
+    result = run_recorded_tool(
+        argv,
+        tool="ffprobe",
+        version="",
+        timeout_s=_PROBE_TIMEOUT_S,
+        stdout_mode="pipe",
+        text=True,
+    )
+    if result.failure_kind == "timeout":
         raise ProbeParseError(
             f"ffprobe timeout on {path}",
             payload={"path": str(path), "timeout_s": _PROBE_TIMEOUT_S},
-        ) from exc
-    except OSError as exc:
+        )
+    if result.failure_kind == "launch":
         raise ProbeParseError(
             f"ffprobe launch failed on {path}",
-            payload={"path": str(path), "stderr": str(exc)[-STDERR_TAIL_BYTES:]},
-        ) from exc
-    if completed.returncode != 0:
+            payload={"path": str(path), "stderr": result.stderr_tail},
+        )
+    if result.invocation.exit_code != 0:
         raise ProbeParseError(
-            f"ffprobe exit {completed.returncode} on {path}",
-            payload={"path": str(path), "stderr": (completed.stderr or "")[-STDERR_TAIL_BYTES:]},
+            f"ffprobe exit {result.invocation.exit_code} on {path}",
+            payload={"path": str(path), "stderr": result.stderr_tail},
         )
     try:
-        raw = json.loads(completed.stdout or "")
+        raw = json.loads(result.stdout_text())
     except json.JSONDecodeError as exc:
         raise ProbeParseError(
             f"ffprobe stdout was not valid JSON for {path}",
-            payload={"path": str(path), "stdout_head": (completed.stdout or "")[:512]},
+            payload={"path": str(path), "stdout_head": result.stdout_text()[:512]},
         ) from exc
     blob = _coerce_blob(raw)
     if blob is None:

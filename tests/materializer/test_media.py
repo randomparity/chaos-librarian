@@ -32,6 +32,7 @@ from chaos_librarian.materializer.phase_b.media.handler import (
     _subtitle_codec_for_container,
     apply_media_action,
 )
+from chaos_librarian.materializer.tooling._subprocess import RecordedToolResult
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 
@@ -1527,11 +1528,25 @@ class TestApplyCreateSidecar:
         assert exc_info.value.action == TimelineActionName.CREATE_SIDECAR
 
 
-class _FakeCompleted:
-    def __init__(self, *, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode = returncode
+def _recorded_probe_result(
+    *,
+    stdout: str = "",
+    stderr_tail: str = "",
+    returncode: int = 0,
+    argv: list[str] | None = None,
+    version: str = "7.1",
+) -> RecordedToolResult:
+    return RecordedToolResult(
+        invocation=ToolInvocation(
+            tool="ffprobe",
+            version=version,
+            command=list(argv or ["ffprobe"]),
+            exit_code=returncode,
+            duration_ns=1,
+        ),
+        stderr_tail=stderr_tail,
+        stdout=stdout,
+    )
 
 
 class TestProbeSubtitleIndexForLanguage:
@@ -1555,10 +1570,14 @@ class TestProbeSubtitleIndexForLanguage:
             ]
         }
 
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout=json.dumps(payload))
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout=json.dumps(payload),
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "fra")
         assert idx == 1
@@ -1575,30 +1594,40 @@ class TestProbeSubtitleIndexForLanguage:
             ]
         }
 
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout=json.dumps(payload))
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout=json.dumps(payload),
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "deu")
         assert idx == 0
         assert len(ctx.invocations) == 1
 
     def test_probe_falls_back_to_zero_when_no_streams_key(self, monkeypatch, tmp_path):
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout="{}")
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(stdout="{}", argv=argv, version=kwargs["version"])
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")
         assert idx == 0
         assert len(ctx.invocations) == 1
 
     def test_probe_nonzero_exit_raises_runtime_error(self, monkeypatch, tmp_path):
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout="", stderr="boom", returncode=1)
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout="",
+                stderr_tail="boom",
+                returncode=1,
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         with pytest.raises(RuntimeError, match="ffprobe"):
             media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")

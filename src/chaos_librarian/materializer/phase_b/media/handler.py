@@ -15,7 +15,6 @@ Per-action ffmpeg sketches live in the media-mutation design notes.
 from __future__ import annotations
 
 import json
-import subprocess
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
@@ -48,6 +47,7 @@ from chaos_librarian.materializer.phase_b.media.sidecar_bytes import (
 from chaos_librarian.materializer.preparation.actions import (
     MEDIA_PHASE_B_ACTIONS,
 )
+from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import srt_payload
@@ -749,32 +749,22 @@ def _probe_subtitle_index_for_language(
         "json",
         str(input_path),
     ]
-    started = time.monotonic_ns()
-    completed = subprocess.run(
+    result = run_recorded_tool(
         argv,
-        capture_output=True,
+        tool="ffprobe",
+        version=ctx.ffprobe_version,
+        timeout_s=15.0,
+        stdout_mode="pipe",
         text=True,
-        timeout=15.0,
-        check=False,
-        stdin=subprocess.DEVNULL,
     )
-    duration_ns = time.monotonic_ns() - started
-    ctx.invocations.append(
-        ToolInvocation(
-            tool="ffprobe",
-            version=ctx.ffprobe_version,
-            command=list(argv),
-            exit_code=completed.returncode,
-            duration_ns=duration_ns,
-        )
-    )
-    if completed.returncode != 0:
+    ctx.invocations.append(result.invocation)
+    if result.invocation.exit_code != 0:
         raise RuntimeError(
-            f"ffprobe (subtitle index) exit {completed.returncode} on {input_path}: "
-            f"{(completed.stderr or '')[-512:]}"
+            f"ffprobe (subtitle index) exit {result.invocation.exit_code} on {input_path}: "
+            f"{result.stderr_tail[-512:]}"
         )
     try:
-        raw: object = json.loads(completed.stdout or "")
+        raw: object = json.loads(result.stdout_text())
     except json.JSONDecodeError as exc:
         raise RuntimeError(
             f"ffprobe (subtitle index) stdout was not valid JSON for {input_path}"
@@ -819,7 +809,7 @@ def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Med
     language = str(delta["language"])
     try:
         subtitle_index = _probe_subtitle_index_for_language(ctx, input_path, language)
-    except (RuntimeError, subprocess.TimeoutExpired) as exc:
+    except RuntimeError as exc:
         raise MediaActionError(
             f"extract_subtitle: ffprobe failed selecting subtitle index for event {entry.event_id}",
             event_id=entry.event_id,

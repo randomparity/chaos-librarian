@@ -23,7 +23,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.tooling import ffmpeg as ffmpeg_mod
+from chaos_librarian.materializer.tooling import _subprocess as tool_subprocess
 from chaos_librarian.materializer.tooling.ffmpeg import (
     BITEXACT_FLAGS,
     build_command,
@@ -88,7 +88,7 @@ def test_run_ffmpeg_returns_failed_invocation_for_launch_oserror(
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise OSError("ffmpeg missing")
 
-    monkeypatch.setattr(ffmpeg_mod.subprocess, "run", fail_run)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
 
     invocation, stderr_tail = run_ffmpeg(["ffmpeg", "-version"], ffmpeg_version="unknown")
 
@@ -104,7 +104,7 @@ def test_run_ffmpeg_returns_failed_invocation_for_timeout(
     def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
         raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=1.0, stderr=b"partial")
 
-    monkeypatch.setattr(ffmpeg_mod.subprocess, "run", fail_run)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
 
     invocation, stderr_tail = run_ffmpeg(["ffmpeg", "-version"], ffmpeg_version="unknown")
 

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import time
 from pathlib import Path
 from typing import Final
 
 from chaos_librarian.contract.materialization import ToolInvocation
-from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
+from chaos_librarian.materializer.tooling._subprocess import RecordedToolResult, run_recorded_tool
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
 _STREAM_SELECTORS: Final[dict[str, str]] = {
@@ -27,15 +25,15 @@ class PacketProbeError(ValueError):
         self.tool_invocation_index = tool_invocation_index
 
 
-def _run_ffprobe_packets(argv: list[str]) -> subprocess.CompletedProcess[str]:
+def _run_ffprobe_packets(argv: list[str], *, ffprobe_version: str) -> RecordedToolResult:
     """Run ffprobe packet query; split out for unit-test monkeypatching."""
-    return subprocess.run(
+    return run_recorded_tool(
         argv,
-        capture_output=True,
+        tool="ffprobe",
+        version=ffprobe_version,
+        timeout_s=_PROBE_TIMEOUT_S,
+        stdout_mode="pipe",
         text=True,
-        timeout=_PROBE_TIMEOUT_S,
-        check=False,
-        stdin=subprocess.DEVNULL,
     )
 
 
@@ -63,24 +61,12 @@ def resolve_packet_byte_range(
         "json",
         str(path),
     ]
-    started = time.monotonic_ns()
+    result = _run_ffprobe_packets(argv, ffprobe_version=ffprobe_version)
+    invocation_index = _append_invocation(invocations, invocation=result.invocation)
     try:
-        completed = _run_ffprobe_packets(argv)
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise PacketProbeError(f"ffprobe packet probe failed for {path}: {exc}") from exc
-    duration_ns = time.monotonic_ns() - started
-    invocation_index = _append_invocation(
-        invocations,
-        argv=argv,
-        ffprobe_version=ffprobe_version,
-        exit_code=completed.returncode,
-        duration_ns=duration_ns,
-    )
-    try:
-        if completed.returncode != 0:
-            stderr_tail = (completed.stderr or "")[-STDERR_TAIL_BYTES:]
-            raise ValueError(f"ffprobe packet probe failed for {path}: {stderr_tail}")
-        packets = _packet_entries(completed.stdout)
+        if result.invocation.exit_code != 0:
+            raise ValueError(f"ffprobe packet probe failed for {path}: {result.stderr_tail}")
+        packets = _packet_entries(result.stdout_text())
         packet_end = packet_start + packet_count
         if packet_end > len(packets):
             raise ValueError(
@@ -98,23 +84,12 @@ def resolve_packet_byte_range(
 def _append_invocation(
     invocations: list[ToolInvocation] | None,
     *,
-    argv: list[str],
-    ffprobe_version: str,
-    exit_code: int,
-    duration_ns: int,
+    invocation: ToolInvocation,
 ) -> int | None:
     if invocations is None:
         return None
     invocation_index = len(invocations)
-    invocations.append(
-        ToolInvocation(
-            tool="ffprobe",
-            version=ffprobe_version,
-            command=list(argv),
-            exit_code=exit_code,
-            duration_ns=duration_ns,
-        )
-    )
+    invocations.append(invocation)
     return invocation_index
 
 
