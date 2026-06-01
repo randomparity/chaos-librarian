@@ -155,6 +155,20 @@ class _WallClockExecutionResult:
     overran_duration: bool
 
 
+@dataclass(slots=True)
+class _WallClockExecutionContext:
+    journal: tuple[JournalEntry, ...]
+    logical_times_ns: tuple[int, ...]
+    out_dir: Path
+    start_wall_ns: int
+    requested_duration_ns: int
+    deadline_ns: int
+    speed: SpeedMultiplier
+    state: _DispatchState
+    executed_journal: list[JournalEntry]
+    commit_times: Mapping[str, int]
+
+
 def _monotonic_ns() -> int:
     return time.monotonic_ns()
 
@@ -377,7 +391,7 @@ def _run_timed_phase(
     executed_journal: list[JournalEntry] = []
 
     try:
-        execution = _execute_wall_clock_journal(
+        execution_context = _wall_clock_execution_context(
             run_context=run_context,
             start_wall_ns=start_wall_ns,
             requested_duration_ns=requested_duration_ns,
@@ -385,6 +399,7 @@ def _run_timed_phase(
             state=state,
             executed_journal=executed_journal,
         )
+        execution = _execute_wall_clock_journal(execution_context)
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
         _finalize_wall_clock_phase_b_failure(
@@ -430,7 +445,7 @@ def _run_timed_phase(
         raise
 
 
-def _execute_wall_clock_journal(
+def _wall_clock_execution_context(
     *,
     run_context: RunContext,
     start_wall_ns: int,
@@ -438,71 +453,75 @@ def _execute_wall_clock_journal(
     speed: SpeedMultiplier,
     state: _DispatchState,
     executed_journal: list[JournalEntry],
-) -> _WallClockExecutionResult:
-    deadline_ns = start_wall_ns + requested_duration_ns
-    cursor = 0
+) -> _WallClockExecutionContext:
     journal = run_context.plan_artifacts.journal
     _configure_network_lag_schedule(state, journal)
-    logical_times_ns = [entry.logical_time_ns for entry in journal]
-    commit_times = _slow_copy_commit_times(journal)
+    return _WallClockExecutionContext(
+        journal=journal,
+        logical_times_ns=tuple(entry.logical_time_ns for entry in journal),
+        out_dir=run_context.out_dir,
+        start_wall_ns=start_wall_ns,
+        requested_duration_ns=requested_duration_ns,
+        deadline_ns=start_wall_ns + requested_duration_ns,
+        speed=speed,
+        state=state,
+        executed_journal=executed_journal,
+        commit_times=_slow_copy_commit_times(journal),
+    )
+
+
+def _execute_wall_clock_journal(
+    context: _WallClockExecutionContext,
+) -> _WallClockExecutionResult:
+    cursor = 0
     overran_duration = False
 
-    while cursor < len(journal):
+    while cursor < len(context.journal):
         now_ns = _monotonic_ns()
-        logical_ns = logical_now_ns(now_ns - start_wall_ns, speed)
+        logical_ns = logical_now_ns(now_ns - context.start_wall_ns, context.speed)
         _grow_active_slow_copies(
-            run_context.out_dir / "library",
-            state.slow_copies,
+            context.out_dir / "library",
+            context.state.slow_copies,
             logical_ns=logical_ns,
         )
-        if now_ns >= deadline_ns:
+        if now_ns >= context.deadline_ns:
             break
-        due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
+        due_count = due_event_count(
+            context.logical_times_ns,
+            logical_ns=logical_ns,
+            cursor=cursor,
+        )
         if due_count == 0:
-            wake_ns = _next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed)
-            if state.slow_copies:
+            wake_ns = _next_wake_ns(context, context.journal[cursor])
+            if context.state.slow_copies:
                 wake_ns = min(wake_ns, now_ns + _SLOW_COPY_POLL_INTERVAL_NS)
             _sleep_until(wake_ns)
             continue
         for _ in range(due_count):
-            if _monotonic_ns() >= deadline_ns:
+            if _monotonic_ns() >= context.deadline_ns:
                 break
             cursor = _execute_and_record(
+                context=context,
                 cursor=cursor,
-                journal=journal,
-                state=state,
-                commit_times=commit_times,
-                executed_journal=executed_journal,
-                out_dir=run_context.out_dir,
             )
-    if state.slow_copies:
+    if context.state.slow_copies:
         cursor = _finish_active_slow_copies(
+            context=context,
             cursor=cursor,
-            journal=journal,
-            state=state,
-            start_wall_ns=start_wall_ns,
-            speed=speed,
-            executed_journal=executed_journal,
-            out_dir=run_context.out_dir,
         )
         overran_duration = True
-    if state.network_lags:
+    if context.state.network_lags:
         cursor = _finish_active_network_lags(
+            context=context,
             cursor=cursor,
-            journal=journal,
-            state=state,
-            start_wall_ns=start_wall_ns,
-            speed=speed,
-            executed_journal=executed_journal,
-            out_dir=run_context.out_dir,
         )
         overran_duration = True
-    if cursor >= len(journal):
-        _sleep_until(deadline_ns)
+    if cursor >= len(context.journal):
+        _sleep_until(context.deadline_ns)
     return _WallClockExecutionResult(
         cursor=cursor,
-        state=state,
-        executed_journal=executed_journal,
+        state=context.state,
+        executed_journal=context.executed_journal,
         overran_duration=overran_duration,
     )
 
@@ -530,41 +549,31 @@ def _make_dispatch_state(
     )
 
 
-def _next_wake_ns(
-    start_wall_ns: int,
-    deadline_ns: int,
-    next_entry: JournalEntry,
-    speed: SpeedMultiplier,
-) -> int:
-    return min(deadline_ns, _entry_due_wall_ns(start_wall_ns, next_entry, speed))
+def _next_wake_ns(context: _WallClockExecutionContext, next_entry: JournalEntry) -> int:
+    return min(context.deadline_ns, _entry_due_wall_ns(context, next_entry))
 
 
 def _entry_due_wall_ns(
-    start_wall_ns: int,
+    context: _WallClockExecutionContext,
     next_entry: JournalEntry,
-    speed: SpeedMultiplier,
 ) -> int:
     logical_delta = max(0, next_entry.logical_time_ns)
-    wall_offset = logical_delta * speed.denominator // speed.numerator
-    if logical_delta * speed.denominator % speed.numerator:
+    wall_offset = logical_delta * context.speed.denominator // context.speed.numerator
+    if logical_delta * context.speed.denominator % context.speed.numerator:
         wall_offset += 1
-    return start_wall_ns + wall_offset
+    return context.start_wall_ns + wall_offset
 
 
 def _execute_and_record(
     *,
+    context: _WallClockExecutionContext,
     cursor: int,
-    journal: tuple[JournalEntry, ...],
-    state: _DispatchState,
-    commit_times: Mapping[str, int],
-    executed_journal: list[JournalEntry],
-    out_dir: Path,
 ) -> int:
-    entry = journal[cursor]
-    _execute_entry(state, entry, commit_times)
+    entry = context.journal[cursor]
+    _execute_entry(context.state, entry, context.commit_times)
     executed = entry.model_copy(update={"wall_clock_time": _utc_now()})
-    _append_journal_entry(out_dir / "journal.jsonl", executed)
-    executed_journal.append(executed)
+    _append_journal_entry(context.out_dir / "journal.jsonl", executed)
+    context.executed_journal.append(executed)
     return cursor + 1
 
 
@@ -847,57 +856,46 @@ def _required_entry_asset_id(entry: JournalEntry) -> str:
 
 def _finish_active_slow_copies(
     *,
+    context: _WallClockExecutionContext,
     cursor: int,
-    journal: tuple[JournalEntry, ...],
-    state: _DispatchState,
-    start_wall_ns: int,
-    speed: SpeedMultiplier,
-    executed_journal: list[JournalEntry],
-    out_dir: Path,
 ) -> int:
-    while cursor < len(journal):
-        entry = journal[cursor]
+    while cursor < len(context.journal):
+        entry = context.journal[cursor]
         action = TimelineActionName(entry.action)
         if action is not TimelineActionName.SLOW_COPY_COMMIT:
             break
         if not isinstance(entry, CommittedJournalEntry):
             raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
-        if entry.related_event_id not in state.slow_copies:
+        if entry.related_event_id not in context.state.slow_copies:
             break
-        _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
-        logical_ns = logical_now_ns(_monotonic_ns() - start_wall_ns, speed)
-        _grow_active_slow_copies(out_dir / "library", state.slow_copies, logical_ns=logical_ns)
+        _sleep_until(_entry_due_wall_ns(context, entry))
+        logical_ns = logical_now_ns(
+            _monotonic_ns() - context.start_wall_ns,
+            context.speed,
+        )
+        _grow_active_slow_copies(
+            context.out_dir / "library",
+            context.state.slow_copies,
+            logical_ns=logical_ns,
+        )
         cursor = _execute_and_record(
+            context=context,
             cursor=cursor,
-            journal=journal,
-            state=state,
-            commit_times={},
-            executed_journal=executed_journal,
-            out_dir=out_dir,
         )
     return cursor
 
 
 def _finish_active_network_lags(
     *,
+    context: _WallClockExecutionContext,
     cursor: int,
-    journal: tuple[JournalEntry, ...],
-    state: _DispatchState,
-    start_wall_ns: int,
-    speed: SpeedMultiplier,
-    executed_journal: list[JournalEntry],
-    out_dir: Path,
 ) -> int:
-    while cursor < len(journal) and state.network_lags:
-        entry = journal[cursor]
-        _sleep_until(_entry_due_wall_ns(start_wall_ns, entry, speed))
+    while cursor < len(context.journal) and context.state.network_lags:
+        entry = context.journal[cursor]
+        _sleep_until(_entry_due_wall_ns(context, entry))
         cursor = _execute_and_record(
+            context=context,
             cursor=cursor,
-            journal=journal,
-            state=state,
-            commit_times={},
-            executed_journal=executed_journal,
-            out_dir=out_dir,
         )
     return cursor
 
