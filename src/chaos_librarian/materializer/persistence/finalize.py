@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from datetime import UTC, datetime
 from typing import Final
 
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
+from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
@@ -24,6 +26,8 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.materializer.errors import (
     MaterializationError,
     ProbeParseError,
@@ -53,6 +57,8 @@ __all__ = [
     "finalize_run_replay_phase_b_failure",
     "finalize_run_replay_success",
     "finalize_success",
+    "finalize_wall_clock_phase_b_failure",
+    "finalize_wall_clock_success",
 ]
 
 
@@ -364,6 +370,137 @@ def finalize_run_replay_phase_b_failure(
     )
 
 
+def finalize_wall_clock_success(
+    ctx: RunContext,
+    final_artifacts: PlanArtifacts,
+    *,
+    executed_journal: list[JournalEntry],
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
+    corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
+    network_lag_actions: list[NetworkLagAction],
+    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    requested_duration_ns: int,
+    actual_duration_ns: int,
+    speed_multiplier: str,
+    overran_duration: bool,
+    content_sources: list[ContentSourceEvidence],
+) -> MaterializeArtifacts:
+    """Wall-clock success path: write run-mode metadata via the shared seam."""
+    finished_at = datetime.now(UTC)
+    report = build_report(
+        outcome=Outcome.SUCCESS,
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
+        finished_at=finished_at,
+        invocations=invocations,
+        materialized=materialized,
+        failures=[],
+        filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
+        corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
+        network_lag_actions=network_lag_actions,
+        network_fs_chaos_actions=network_fs_chaos_actions,
+        requested_duration_ns=requested_duration_ns,
+        actual_duration_ns=actual_duration_ns,
+        speed_multiplier=speed_multiplier,
+        overran_duration=overran_duration,
+        content_sources=content_sources,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_wall_clock_replay_bundle(
+        ctx,
+        final_artifacts,
+        executed_journal,
+        finished_at,
+        content_sources,
+    )
+    finalize_materialize_run(
+        ctx.out_dir,
+        build_metadata(
+            plan_artifacts=final_artifacts,
+            scenario_yaml_bytes=ctx.run_input.raw_bytes,
+            materialization_report=report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+        ),
+        build_reports(final_artifacts),
+    )
+    return MaterializeArtifacts(
+        current_manifest=final_artifacts.current_manifest,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+    )
+
+
+def finalize_wall_clock_phase_b_failure(
+    ctx: RunContext,
+    final_artifacts: PlanArtifacts,
+    exc: PhaseBError,
+    *,
+    executed_journal: list[JournalEntry],
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    filesystem_actions: list[FilesystemAction],
+    media_actions: list[MediaAction],
+    corruption_actions: list[CorruptionAction],
+    oracle_hash_actions: list[OracleHashAction],
+    network_lag_actions: list[NetworkLagAction],
+    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    requested_duration_ns: int,
+    actual_duration_ns: int,
+    speed_multiplier: str,
+    overran_duration: bool,
+    content_sources: list[ContentSourceEvidence],
+) -> None:
+    """Wall-clock phase-B failure path: preserve run-mode metadata before cleanup."""
+    finished_at = datetime.now(UTC)
+    report = build_report(
+        outcome=phase_b_failure_outcome(exc),
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
+        finished_at=finished_at,
+        invocations=invocations,
+        materialized=materialized,
+        failures=[phase_b_failure_record(exc)],
+        filesystem_actions=filesystem_actions,
+        media_actions=media_actions,
+        corruption_actions=corruption_actions,
+        oracle_hash_actions=oracle_hash_actions,
+        network_lag_actions=network_lag_actions,
+        network_fs_chaos_actions=network_fs_chaos_actions,
+        requested_duration_ns=requested_duration_ns,
+        actual_duration_ns=actual_duration_ns,
+        speed_multiplier=speed_multiplier,
+        overran_duration=overran_duration,
+        content_sources=content_sources,
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_wall_clock_replay_bundle(
+        ctx,
+        final_artifacts,
+        executed_journal,
+        finished_at,
+        content_sources,
+    )
+    cleanup_failed_phase_b_run(
+        ctx.out_dir,
+        build_metadata(
+            plan_artifacts=final_artifacts,
+            scenario_yaml_bytes=ctx.run_input.raw_bytes,
+            materialization_report=report,
+            replay_bundle=replay_bundle,
+            sentinel=build_sentinel(ctx, RunSentinelState.COMPLETE),
+        ),
+    )
+
+
 def _build_run_replay_bundle(
     ctx: RunContext,
     source_bundle: MaterializeReplayBundle,
@@ -383,5 +520,33 @@ def _build_run_replay_bundle(
         update={
             "applied_events": source_bundle.applied_events,
             "journal_digest": source_bundle.journal_digest,
+        }
+    )
+
+
+def _build_wall_clock_replay_bundle(
+    ctx: RunContext,
+    final_artifacts: PlanArtifacts,
+    executed_journal: list[JournalEntry],
+    created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
+) -> MaterializeReplayBundle:
+    digest_entries = [
+        entry.model_copy(update={"wall_clock_time": None}) for entry in executed_journal
+    ]
+    journal_digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
+    replay_bundle = build_replay_bundle(
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=final_artifacts,
+        caps=ctx.caps,
+        created_at=created_at,
+        content_sources=content_sources,
+        execution_mode=ExecutionMode.RUN,
+    )
+    return replay_bundle.model_copy(
+        update={
+            "applied_events": len(executed_journal),
+            "journal_digest": journal_digest,
         }
     )
