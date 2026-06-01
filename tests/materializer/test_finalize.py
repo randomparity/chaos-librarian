@@ -32,7 +32,7 @@ from chaos_librarian.engine import run_plan
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.persistence import finalize as finalize_mod
 from chaos_librarian.materializer.persistence import reports as reports_mod
-from chaos_librarian.materializer.persistence._context import RunContext
+from chaos_librarian.materializer.persistence._context import ReportActions, RunContext
 from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 from chaos_librarian.validation import prepare_run_input, run_validation
 
@@ -62,13 +62,7 @@ def test_report_and_finalize_builders_require_explicit_content_sources() -> None
         parameter = inspect.signature(func).parameters["content_sources"]
         assert parameter.default is inspect.Signature.empty
     for func in (finalize_mod.finalize_success, finalize_mod.finalize_failure_phase_b):
-        for name in (
-            "filesystem_actions",
-            "media_actions",
-            "corruption_actions",
-            "oracle_hash_actions",
-        ):
-            assert inspect.signature(func).parameters[name].kind is inspect.Parameter.KEYWORD_ONLY
+        assert inspect.signature(func).parameters["actions"].kind is inspect.Parameter.KEYWORD_ONLY
 
 
 def _caps() -> Capabilities:
@@ -145,10 +139,7 @@ def test_finalize_success_writes_complete_metadata(
         ctx,
         [invocation],
         materialized,
-        filesystem_actions=[],
-        media_actions=[],
-        corruption_actions=[],
-        oracle_hash_actions=[],
+        actions=ReportActions(),
         content_sources=content_sources,
     )
 
@@ -223,12 +214,10 @@ def test_finalize_run_replay_success_writes_run_mode_metadata(
         source_bundle,
         [],
         [],
-        filesystem_actions=[],
-        media_actions=[],
-        corruption_actions=[],
-        oracle_hash_actions=[],
-        network_lag_actions=[network_lag_action],
-        network_fs_chaos_actions=[chaos_action],
+        actions=ReportActions(
+            network_lag=[network_lag_action],
+            network_fs_chaos=[chaos_action],
+        ),
         content_sources=[],
     )
 
@@ -280,10 +269,7 @@ def test_finalize_failure_phase_b_records_failure_metadata(
         Outcome.FS_FAILED,
         [],
         [],
-        filesystem_actions=[action],
-        media_actions=[],
-        corruption_actions=[],
-        oracle_hash_actions=[],
+        actions=ReportActions(filesystem=[action]),
         content_sources=[],
     )
 

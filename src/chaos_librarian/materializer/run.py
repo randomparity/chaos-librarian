@@ -28,7 +28,11 @@ from chaos_librarian.materializer.errors import (
     ProbeParseError,
     ToolFailedError,
 )
-from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence._context import (
+    MaterializeArtifacts,
+    ReportActions,
+    RunContext,
+)
 from chaos_librarian.materializer.persistence.finalize import (
     build_sentinel,
     finalize_failure,
@@ -141,10 +145,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             phase_b_failure_outcome(exc),
             phase_a.invocations,
             phase_a.materialized_assets,
-            filesystem_actions=phase_b_state.filesystem_actions,
-            media_actions=phase_b_state.media_actions,
-            corruption_actions=phase_b_state.corruption_actions,
-            oracle_hash_actions=phase_b_state.oracle_hash_actions,
+            actions=_report_actions_from_state(phase_b_state),
             content_sources=phase_a.content_sources,
         )
         raise
@@ -153,9 +154,15 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         ctx,
         phase_a.invocations,
         phase_a.materialized_assets,
-        filesystem_actions=phase_b_state.filesystem_actions,
-        media_actions=phase_b_state.media_actions,
-        corruption_actions=phase_b_state.corruption_actions,
-        oracle_hash_actions=phase_b_state.oracle_hash_actions,
+        actions=_report_actions_from_state(phase_b_state),
         content_sources=phase_a.content_sources,
+    )
+
+
+def _report_actions_from_state(state: PhaseBState) -> ReportActions:
+    return ReportActions(
+        filesystem=state.filesystem_actions,
+        media=state.media_actions,
+        corruption=state.corruption_actions,
+        oracle_hash=state.oracle_hash_actions,
     )

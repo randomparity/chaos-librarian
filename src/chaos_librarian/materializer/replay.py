@@ -37,7 +37,11 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
     ScenarioValidationError,
 )
-from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence._context import (
+    MaterializeArtifacts,
+    ReportActions,
+    RunContext,
+)
 from chaos_librarian.materializer.persistence.finalize import (
     finalize_run_replay_phase_b_failure,
     finalize_run_replay_success,
@@ -177,12 +181,7 @@ def _materialize_verified_run_prefix(
             exc,
             phase_a.invocations,
             phase_a.materialized_assets,
-            filesystem_actions=state.filesystem_actions,
-            media_actions=state.media_actions,
-            corruption_actions=state.corruption_actions,
-            oracle_hash_actions=state.oracle_hash_actions,
-            network_lag_actions=state.network_lag_actions,
-            network_fs_chaos_actions=chaos_actions,
+            actions=_report_actions_from_state(state, network_fs_chaos_actions=chaos_actions),
             content_sources=phase_a.content_sources,
         )
         raise
@@ -193,13 +192,23 @@ def _materialize_verified_run_prefix(
         source_bundle,
         phase_a.invocations,
         phase_a.materialized_assets,
-        filesystem_actions=state.filesystem_actions,
-        media_actions=state.media_actions,
-        corruption_actions=state.corruption_actions,
-        oracle_hash_actions=state.oracle_hash_actions,
-        network_lag_actions=state.network_lag_actions,
-        network_fs_chaos_actions=chaos_actions,
+        actions=_report_actions_from_state(state, network_fs_chaos_actions=chaos_actions),
         content_sources=phase_a.content_sources,
+    )
+
+
+def _report_actions_from_state(
+    state: PhaseBState,
+    *,
+    network_fs_chaos_actions: list[NetworkFsChaosAction],
+) -> ReportActions:
+    return ReportActions(
+        filesystem=state.filesystem_actions,
+        media=state.media_actions,
+        corruption=state.corruption_actions,
+        oracle_hash=state.oracle_hash_actions,
+        network_lag=state.network_lag_actions,
+        network_fs_chaos=network_fs_chaos_actions,
     )
 
 

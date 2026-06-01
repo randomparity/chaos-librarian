@@ -11,16 +11,10 @@ from chaos_librarian.contract import RUN_SENTINEL_SCHEMA_VERSION
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import (
-    CorruptionAction,
     FailureStage,
-    FilesystemAction,
     MaterializationExecutionMode,
     MaterializationFailure,
     MaterializedAsset,
-    MediaAction,
-    NetworkFsChaosAction,
-    NetworkLagAction,
-    OracleHashAction,
     Outcome,
     ToolInvocation,
 )
@@ -32,7 +26,11 @@ from chaos_librarian.materializer.errors import (
     MaterializationError,
     ProbeParseError,
 )
-from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence._context import (
+    MaterializeArtifacts,
+    ReportActions,
+    RunContext,
+)
 from chaos_librarian.materializer.persistence.reports import (
     build_metadata,
     build_replay_bundle,
@@ -86,10 +84,7 @@ def finalize_success(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     *,
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
+    actions: ReportActions,
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
@@ -103,10 +98,7 @@ def finalize_success(
         invocations=invocations,
         materialized=materialized,
         failures=[],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
+        actions=actions,
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
@@ -143,10 +135,7 @@ def finalize_failure(
     materialized: list[MaterializedAsset],
     *,
     content_sources: list[ContentSourceEvidence],
-    filesystem_actions: list[FilesystemAction] | None = None,
-    media_actions: list[MediaAction] | None = None,
-    corruption_actions: list[CorruptionAction] | None = None,
-    oracle_hash_actions: list[OracleHashAction] | None = None,
+    actions: ReportActions | None = None,
 ) -> None:
     """Assemble every metadata file ``cleanup_failed_run`` requires.
 
@@ -175,10 +164,7 @@ def finalize_failure(
         invocations=invocations,
         materialized=materialized,
         failures=[failure],
-        filesystem_actions=filesystem_actions or [],
-        media_actions=media_actions or [],
-        corruption_actions=corruption_actions or [],
-        oracle_hash_actions=oracle_hash_actions or [],
+        actions=actions,
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
@@ -208,10 +194,7 @@ def finalize_failure_phase_b(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     *,
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
+    actions: ReportActions,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Caught phase-B failure path: phase-B outcome set by caller; library/ wiped.
@@ -233,10 +216,7 @@ def finalize_failure_phase_b(
         invocations=invocations,
         materialized=materialized,
         failures=[failure],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
+        actions=actions,
         content_sources=content_sources,
     )
     replay_bundle = build_replay_bundle(
@@ -265,12 +245,7 @@ def finalize_run_replay_success(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     *,
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
-    network_lag_actions: list[NetworkLagAction],
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    actions: ReportActions,
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Run-replay success path: write run-mode metadata via the shared seam."""
@@ -284,12 +259,7 @@ def finalize_run_replay_success(
         invocations=invocations,
         materialized=materialized,
         failures=[],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
-        network_lag_actions=network_lag_actions,
-        network_fs_chaos_actions=network_fs_chaos_actions,
+        actions=actions,
         content_sources=content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -324,12 +294,7 @@ def finalize_run_replay_phase_b_failure(
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
     *,
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
-    network_lag_actions: list[NetworkLagAction],
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    actions: ReportActions,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Run-replay phase-B failure path: preserve replay metadata before cleanup."""
@@ -343,12 +308,7 @@ def finalize_run_replay_phase_b_failure(
         invocations=invocations,
         materialized=materialized,
         failures=[phase_b_failure_record(exc)],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
-        network_lag_actions=network_lag_actions,
-        network_fs_chaos_actions=network_fs_chaos_actions,
+        actions=actions,
         content_sources=content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
@@ -377,12 +337,7 @@ def finalize_wall_clock_success(
     executed_journal: list[JournalEntry],
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
-    network_lag_actions: list[NetworkLagAction],
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    actions: ReportActions,
     requested_duration_ns: int,
     actual_duration_ns: int,
     speed_multiplier: str,
@@ -400,12 +355,7 @@ def finalize_wall_clock_success(
         invocations=invocations,
         materialized=materialized,
         failures=[],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
-        network_lag_actions=network_lag_actions,
-        network_fs_chaos_actions=network_fs_chaos_actions,
+        actions=actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,
@@ -446,12 +396,7 @@ def finalize_wall_clock_phase_b_failure(
     executed_journal: list[JournalEntry],
     invocations: list[ToolInvocation],
     materialized: list[MaterializedAsset],
-    filesystem_actions: list[FilesystemAction],
-    media_actions: list[MediaAction],
-    corruption_actions: list[CorruptionAction],
-    oracle_hash_actions: list[OracleHashAction],
-    network_lag_actions: list[NetworkLagAction],
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
+    actions: ReportActions,
     requested_duration_ns: int,
     actual_duration_ns: int,
     speed_multiplier: str,
@@ -469,12 +414,7 @@ def finalize_wall_clock_phase_b_failure(
         invocations=invocations,
         materialized=materialized,
         failures=[phase_b_failure_record(exc)],
-        filesystem_actions=filesystem_actions,
-        media_actions=media_actions,
-        corruption_actions=corruption_actions,
-        oracle_hash_actions=oracle_hash_actions,
-        network_lag_actions=network_lag_actions,
-        network_fs_chaos_actions=network_fs_chaos_actions,
+        actions=actions,
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,
