@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Final, cast
+from typing import Final, cast
 
 from pydantic import BaseModel
 
@@ -22,6 +22,7 @@ from chaos_librarian.contract.scenario import (
     TimelineActionName,
     TimelineEvent,
 )
+from chaos_librarian.determinism.rng import RngStream
 from chaos_librarian.generation.lanes import (
     CELL_LAG_EFFECT_PREFIX,
     CELL_SIDE_NFO_OR_POSTER,
@@ -85,7 +86,7 @@ def plan_payload_parts(
     *,
     seed: int,
     config: LaneConfig,
-    rng: Any,
+    rng: RngStream,
 ) -> tuple[
     dict[str, object],
     list[dict[str, object]],
@@ -238,7 +239,7 @@ def _movies_payload(
     lane: FuzzLaneName,
     seed: int,
     assets: list[PlannedAsset],
-    rng: Any,
+    rng: RngStream,
 ) -> list[dict[str, object]]:
     if lane in {FuzzLaneName.TV_TOPOLOGY, FuzzLaneName.MUSIC_TOPOLOGY}:
         return []
@@ -271,7 +272,7 @@ def _series_payload(
     lane: FuzzLaneName,
     seed: int,
     assets: list[PlannedAsset],
-    rng: Any,
+    rng: RngStream,
 ) -> list[dict[str, object]]:
     if lane is not FuzzLaneName.TV_TOPOLOGY:
         return []
@@ -338,7 +339,7 @@ def _artists_payload(
     lane: FuzzLaneName,
     seed: int,
     assets: list[PlannedAsset],
-    rng: Any,
+    rng: RngStream,
 ) -> list[dict[str, object]]:
     if lane is not FuzzLaneName.MUSIC_TOPOLOGY:
         return []
@@ -405,7 +406,7 @@ def _artists_payload(
     ]
 
 
-def _asset_payload(asset: PlannedAsset, rng: Any) -> dict[str, object]:
+def _asset_payload(asset: PlannedAsset, rng: RngStream) -> dict[str, object]:
     payload: dict[str, object] = {
         "id": asset.asset_id,
         "role": asset.role,
@@ -532,7 +533,7 @@ def _fill_remaining_events(
     *,
     planner: TimelinePlanner,
     config: LaneConfig,
-    rng: Any,
+    rng: RngStream,
 ) -> None:
     stable_assets = [
         asset for asset in planner.assets if asset.asset_id not in planner.media_unstable_assets
