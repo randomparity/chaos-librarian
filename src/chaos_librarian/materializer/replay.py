@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -61,6 +62,7 @@ from chaos_librarian.materializer.preparation.run_setup import (
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
     CHAOS_ENTRY_ACTIONS,
+    NetworkFsChaosState,
     realize_chaos_close,
     realize_chaos_entry,
     restore_chaos_modes,
@@ -74,6 +76,14 @@ from chaos_librarian.materializer.runtime.network_lag_fields import (
 from chaos_librarian.validation import RunInput, prepare_replay_input_from_bytes
 
 __all__ = ["replay_run_bundle"]
+
+
+@dataclass(slots=True)
+class _RunReplayDispatchState:
+    """Mutable run-replay state around the shared phase-B dispatcher."""
+
+    phase_b: PhaseBState
+    chaos: NetworkFsChaosState
 
 
 def replay_run_bundle(bundle: MaterializeReplayBundle, out_dir: Path) -> MaterializeArtifacts:
@@ -174,7 +184,7 @@ def _materialize_verified_run_prefix(
     try:
         _apply_prefix_phase_b(state, prefix_artifacts)
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
-        augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
+        augment_phase_b_outputs(prefix_artifacts.current_manifest, state.phase_b)
         chaos_actions = _replay_chaos_actions(state)
         _restore_replay_chaos(state)
         finalize_run_replay_phase_b_failure(
@@ -212,16 +222,16 @@ def _begin_run_replay(out_dir: Path) -> None:
 
 
 def _report_actions_from_state(
-    state: PhaseBState,
+    state: _RunReplayDispatchState,
     *,
     network_fs_chaos_actions: list[NetworkFsChaosAction],
 ) -> ReportActions:
     return ReportActions(
-        filesystem=state.filesystem_actions,
-        media=state.media_actions,
-        corruption=state.corruption_actions,
-        oracle_hash=state.oracle_hash_actions,
-        network_lag=state.network_lag_actions,
+        filesystem=state.phase_b.filesystem_actions,
+        media=state.phase_b.media_actions,
+        corruption=state.phase_b.corruption_actions,
+        oracle_hash=state.phase_b.oracle_hash_actions,
+        network_lag=state.phase_b.network_lag_actions,
         network_fs_chaos=network_fs_chaos_actions,
     )
 
@@ -232,23 +242,27 @@ def _make_run_replay_phase_b_state(
     out_dir: Path,
     artifacts: PlanArtifacts,
     invocations: list[ToolInvocation],
-) -> PhaseBState:
-    return make_phase_b_state(
-        PhaseBStateInputs(
-            library_root=out_dir / "library",
-            scenario=scenario,
-            resolved_seed=artifacts.replay_bundle.resolved_seed,
-            ffmpeg_version="unknown",
-            ffprobe_version="unknown",
-            invocations=invocations,
-            manifest=artifacts.current_manifest,
-            initial_manifest=artifacts.initial_manifest,
-        )
+) -> _RunReplayDispatchState:
+    library_root = out_dir / "library"
+    return _RunReplayDispatchState(
+        phase_b=make_phase_b_state(
+            PhaseBStateInputs(
+                library_root=library_root,
+                scenario=scenario,
+                resolved_seed=artifacts.replay_bundle.resolved_seed,
+                ffmpeg_version="unknown",
+                ffprobe_version="unknown",
+                invocations=invocations,
+                manifest=artifacts.current_manifest,
+                initial_manifest=artifacts.initial_manifest,
+            )
+        ),
+        chaos=NetworkFsChaosState(library_root=library_root),
     )
 
 
 def _apply_prefix_phase_b(
-    state: PhaseBState,
+    state: _RunReplayDispatchState,
     artifacts: PlanArtifacts,
 ) -> None:
     network_lag_starts: dict[str, JournalEntry] = {}
@@ -258,18 +272,18 @@ def _apply_prefix_phase_b(
             network_lag_starts[entry.event_id] = entry
             continue
         if action is TimelineActionName.NETWORK_LAG_COMMIT:
-            state.network_lag_actions.append(
+            state.phase_b.network_lag_actions.append(
                 _run_replay_network_lag_action(network_lag_starts, entry)
             )
             continue
         if _apply_replay_chaos_entry(state, entry, action):
             continue
-        dispatch_phase_b_entry(state, entry)
-    augment_phase_b_outputs(artifacts.current_manifest, state)
+        dispatch_phase_b_entry(state.phase_b, entry)
+    augment_phase_b_outputs(artifacts.current_manifest, state.phase_b)
     if network_lag_starts:
         pending = sorted(network_lag_starts)
         raise ReplayIntegrityError(f"uncommitted network_lag_start entries: {pending}")
-    if state.chaos is not None and (state.chaos.open_locks or state.chaos.open_unmounts):
+    if state.chaos.open_locks or state.chaos.open_unmounts:
         pending = sorted({*state.chaos.open_locks, *state.chaos.open_unmounts})
         raise ReplayIntegrityError(f"unclosed network-fs-chaos open windows: {pending}")
 
@@ -327,11 +341,9 @@ def _preflight_chaos_close(
 
 
 def _apply_replay_chaos_entry(
-    state: PhaseBState, entry: JournalEntry, action: TimelineActionName
+    state: _RunReplayDispatchState, entry: JournalEntry, action: TimelineActionName
 ) -> bool:
     """Route a network-fs-chaos entry during replay; return whether handled."""
-    if state.chaos is None:  # pragma: no cover - always set in make_phase_b_state
-        return False
     if action in CHAOS_CLOSE_ACTIONS:
         realize_chaos_close(state.chaos, entry)
         return True
@@ -341,13 +353,12 @@ def _apply_replay_chaos_entry(
     return False
 
 
-def _replay_chaos_actions(state: PhaseBState) -> list[NetworkFsChaosAction]:
-    return list(state.chaos.actions) if state.chaos is not None else []
+def _replay_chaos_actions(state: _RunReplayDispatchState) -> list[NetworkFsChaosAction]:
+    return list(state.chaos.actions)
 
 
-def _restore_replay_chaos(state: PhaseBState) -> None:
-    if state.chaos is not None:
-        restore_chaos_modes(state.chaos)
+def _restore_replay_chaos(state: _RunReplayDispatchState) -> None:
+    restore_chaos_modes(state.chaos)
 
 
 def _run_replay_network_lag_action(

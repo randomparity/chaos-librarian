@@ -139,6 +139,7 @@ class WallClockNetworkLagSession:
 @dataclass(slots=True)
 class _DispatchState:
     phase_b: PhaseBState
+    chaos: NetworkFsChaosState | None = None
     slow_copies: dict[str, WallClockSlowCopySession] = field(default_factory=dict)
     slow_copy_initial_paths: dict[str, str] = field(default_factory=dict)
     network_lag_starts_by_after: dict[str, JournalEntry] = field(default_factory=dict)
@@ -477,10 +478,11 @@ def _make_dispatch_state(
     scenario: Scenario,
     invocations: list[ToolInvocation],
 ) -> _DispatchState:
+    library_root = run_context.out_dir / "library"
     return _DispatchState(
         phase_b=make_phase_b_state(
             PhaseBStateInputs(
-                library_root=run_context.out_dir / "library",
+                library_root=library_root,
                 scenario=scenario,
                 resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
                 ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
@@ -489,7 +491,8 @@ def _make_dispatch_state(
                 manifest=run_context.plan_artifacts.current_manifest,
                 initial_manifest=run_context.plan_artifacts.initial_manifest,
             )
-        )
+        ),
+        chaos=NetworkFsChaosState(library_root=library_root),
     )
 
 
@@ -586,18 +589,18 @@ def _dispatch_chaos_entry(
 
 
 def _chaos_state(state: _DispatchState) -> NetworkFsChaosState:
-    if state.phase_b.chaos is None:  # pragma: no cover - always set in _make_dispatch_state
+    if state.chaos is None:  # pragma: no cover - always set in _make_dispatch_state
         raise ChaosLibrarianValueError("network-fs-chaos state not initialized")
-    return state.phase_b.chaos
+    return state.chaos
 
 
 def _chaos_actions(state: _DispatchState) -> list[NetworkFsChaosAction]:
-    return list(state.phase_b.chaos.actions) if state.phase_b.chaos is not None else []
+    return list(state.chaos.actions) if state.chaos is not None else []
 
 
 def _restore_chaos_action(state: _DispatchState) -> NetworkFsChaosAction:
-    if state.phase_b.chaos is not None:
-        for action in reversed(state.phase_b.chaos.actions):
+    if state.chaos is not None:
+        for action in reversed(state.chaos.actions):
             if action.enforced:
                 return action
     raise ChaosLibrarianValueError("network-fs-chaos restore has no enforced action")
@@ -608,7 +611,7 @@ def _chaos_target_asset_id(state: _DispatchState, target_ref: str) -> str | None
 
 
 def _restore_chaos(state: _DispatchState) -> None:
-    chaos = state.phase_b.chaos
+    chaos = state.chaos
     if chaos is None or not chaos.captured_modes:
         return
     action = _restore_chaos_action(state)

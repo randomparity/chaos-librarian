@@ -1458,9 +1458,9 @@ def _dispatch_state_with_library(library_root: Path) -> wall_clock._DispatchStat
                 corruption_actions=[],
                 oracle_hash_actions=[],
                 network_lag_actions=[],
-                chaos=wall_clock.NetworkFsChaosState(library_root=library_root),
             ),
-        )
+        ),
+        chaos=wall_clock.NetworkFsChaosState(library_root=library_root),
     )
 
 
@@ -1553,9 +1553,9 @@ def test_network_fs_chaos_restore_wraps_chmod_error(
     tmp_path: Path,
 ) -> None:
     state = _dispatch_state_with_library(tmp_path)
-    assert state.phase_b.chaos is not None
-    state.phase_b.chaos.captured_modes[tmp_path / "asset.mkv"] = 0o644
-    state.phase_b.chaos.actions.append(
+    assert state.chaos is not None
+    state.chaos.captured_modes[tmp_path / "asset.mkv"] = 0o644
+    state.chaos.actions.append(
         NetworkFsChaosAction(
             event_id="chmod_001",
             action=TimelineActionName.CHANGE_PERMISSIONS,

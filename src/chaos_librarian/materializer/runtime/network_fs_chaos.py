@@ -56,7 +56,7 @@ _WRITE_BITS = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
 
 @dataclass(slots=True)
 class NetworkFsChaosState:
-    """Wall-clock network-fs-chaos accumulator threaded on the dispatch state."""
+    """Wall-clock network-fs-chaos accumulator for run and run-replay."""
 
     library_root: Path
     actions: list[NetworkFsChaosAction] = field(default_factory=list)

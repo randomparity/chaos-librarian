@@ -12,6 +12,7 @@ from textwrap import dedent
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as preparation_mod
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -27,7 +28,6 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import preparation as preparation_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError

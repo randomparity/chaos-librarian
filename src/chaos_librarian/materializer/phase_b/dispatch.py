@@ -55,7 +55,6 @@ from chaos_librarian.materializer.phase_b.oracle_hash import (
     supports_oracle_hash_action,
 )
 from chaos_librarian.materializer.preparation.actions import PODCAST_ACTIONS
-from chaos_librarian.materializer.runtime.network_fs_chaos import NetworkFsChaosState
 from chaos_librarian.topology import iter_asset_contexts
 
 PhaseBError = FilesystemActionError | MediaActionError | CorruptionActionError
@@ -74,7 +73,6 @@ class PhaseBState:
     corruption_actions: list[CorruptionAction] = field(default_factory=list)
     oracle_hash_actions: list[OracleHashAction] = field(default_factory=list)
     network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
-    chaos: NetworkFsChaosState | None = None
 
 
 @dataclass(slots=True)
@@ -147,7 +145,6 @@ def make_phase_b_state(inputs: PhaseBStateInputs) -> PhaseBState:
             post_phase_b_oracle_hashes=oracle_hashes,
             version_probe_lookup=version_probe_lookup,
         ),
-        chaos=NetworkFsChaosState(library_root=inputs.library_root),
     )
 
 
