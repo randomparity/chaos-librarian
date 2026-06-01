@@ -6,7 +6,8 @@ import dataclasses
 import errno
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -419,17 +420,32 @@ def _run_timed_phase(
         _sleep_until(deadline_ns)
     actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
     overran_duration = overran_duration or actual_duration_ns > requested_duration_ns
-    return _finalize_wall_clock_run(
-        run_context=run_context,
-        scenario=scenario,
-        phase_a=phase_a,
-        state=state,
-        executed_journal=executed_journal,
-        requested_duration_ns=requested_duration_ns,
-        actual_duration_ns=actual_duration_ns,
-        speed=speed,
-        overran_duration=overran_duration,
-    )
+    try:
+        return _finalize_wall_clock_run(
+            run_context=run_context,
+            scenario=scenario,
+            phase_a=phase_a,
+            state=state,
+            executed_journal=executed_journal,
+            requested_duration_ns=requested_duration_ns,
+            actual_duration_ns=actual_duration_ns,
+            speed=speed,
+            overran_duration=overran_duration,
+        )
+    except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
+        _finalize_wall_clock_phase_b_failure(
+            run_context=run_context,
+            scenario=scenario,
+            phase_a=phase_a,
+            state=state,
+            executed_journal=executed_journal,
+            requested_duration_ns=requested_duration_ns,
+            actual_duration_ns=actual_duration_ns,
+            speed=speed,
+            overran_duration=overran_duration,
+            exc=exc,
+        )
+        raise
 
 
 def _make_dispatch_state(
@@ -528,10 +544,22 @@ def _dispatch_chaos_entry(
 ) -> bool:
     """Route a network-fs-chaos entry; return whether it was handled."""
     if action in CHAOS_CLOSE_ACTIONS:
-        realize_chaos_close(_chaos_state(state), entry)
+        with _wall_clock_filesystem_effect(
+            operation="network_fs_chaos",
+            event_id=entry.event_id,
+            action=action,
+            asset_id=_entry_asset_id(entry),
+        ):
+            realize_chaos_close(_chaos_state(state), entry)
         return True
     if action in CHAOS_ENTRY_ACTIONS:
-        realize_chaos_entry(_chaos_state(state), entry)
+        with _wall_clock_filesystem_effect(
+            operation="network_fs_chaos",
+            event_id=entry.event_id,
+            action=action,
+            asset_id=_entry_asset_id(entry),
+        ):
+            realize_chaos_entry(_chaos_state(state), entry)
         return True
     return False
 
@@ -546,9 +574,34 @@ def _chaos_actions(state: _DispatchState) -> list[NetworkFsChaosAction]:
     return list(state.chaos.actions) if state.chaos is not None else []
 
 
-def _restore_chaos(state: _DispatchState) -> None:
+def _restore_chaos_action(state: _DispatchState) -> NetworkFsChaosAction:
     if state.chaos is not None:
-        restore_chaos_modes(state.chaos)
+        for action in reversed(state.chaos.actions):
+            if action.enforced:
+                return action
+    raise ChaosLibrarianValueError("network-fs-chaos restore has no enforced action")
+
+
+def _chaos_target_asset_id(state: _DispatchState, target_ref: str) -> str | None:
+    return target_ref if target_ref in state.fs_ctx.scenario_assets else None
+
+
+def _restore_chaos(state: _DispatchState) -> None:
+    chaos = state.chaos
+    if chaos is None or not chaos.captured_modes:
+        return
+    action = _restore_chaos_action(state)
+    try:
+        with _wall_clock_filesystem_effect(
+            operation="network_fs_chaos_restore",
+            event_id=action.event_id,
+            action=action.action,
+            asset_id=_chaos_target_asset_id(state, action.target_ref),
+        ):
+            restore_chaos_modes(chaos)
+    except FilesystemActionError:
+        chaos.captured_modes.clear()
+        raise
 
 
 def _configure_network_lag_schedule(
@@ -570,35 +623,41 @@ def _wall_clock_slow_copy_start(
     entry: JournalEntry,
     commit_times: Mapping[str, int],
 ) -> FilesystemAction:
-    asset_id = entry.target_ids[0]
-    initial_path = str(entry.state_delta["initial_path_at_start"])
-    temp_path = str(entry.state_delta["temp_path"])
-    final_path = str(entry.state_delta["final_path"])
-    src = state.fs_ctx.library_root / initial_path
-    dst = state.fs_ctx.library_root / temp_path
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    source_bytes = src.read_bytes()
-    dst.write_bytes(b"")
-    state.slow_copies[entry.event_id] = WallClockSlowCopySession(
-        start_event_id=entry.event_id,
-        asset_id=asset_id,
-        source_bytes=source_bytes,
-        temp_path=temp_path,
-        final_path=final_path,
-        start_logical_ns=entry.logical_time_ns,
-        commit_logical_ns=commit_times[entry.event_id],
-        total_bytes=len(source_bytes),
-    )
-    state.slow_copy_initial_paths[entry.event_id] = initial_path
-    return FilesystemAction(
+    with _wall_clock_filesystem_effect(
+        operation="slow_copy_start",
         event_id=entry.event_id,
         action=TimelineActionName.SLOW_COPY_START,
-        target_asset_id=asset_id,
-        from_path=initial_path,
-        to_path=final_path,
-        temp_path=temp_path,
-        duration_ns=0,
-    )
+        asset_id=_entry_asset_id(entry),
+    ):
+        asset_id = _required_entry_asset_id(entry)
+        initial_path = str(entry.state_delta["initial_path_at_start"])
+        temp_path = str(entry.state_delta["temp_path"])
+        final_path = str(entry.state_delta["final_path"])
+        src = state.fs_ctx.library_root / initial_path
+        dst = state.fs_ctx.library_root / temp_path
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        source_bytes = src.read_bytes()
+        dst.write_bytes(b"")
+        state.slow_copies[entry.event_id] = WallClockSlowCopySession(
+            start_event_id=entry.event_id,
+            asset_id=asset_id,
+            source_bytes=source_bytes,
+            temp_path=temp_path,
+            final_path=final_path,
+            start_logical_ns=entry.logical_time_ns,
+            commit_logical_ns=commit_times[entry.event_id],
+            total_bytes=len(source_bytes),
+        )
+        state.slow_copy_initial_paths[entry.event_id] = initial_path
+        return FilesystemAction(
+            event_id=entry.event_id,
+            action=TimelineActionName.SLOW_COPY_START,
+            target_asset_id=asset_id,
+            from_path=initial_path,
+            to_path=final_path,
+            temp_path=temp_path,
+            duration_ns=0,
+        )
 
 
 def _wall_clock_slow_copy_commit(
@@ -607,26 +666,32 @@ def _wall_clock_slow_copy_commit(
 ) -> FilesystemAction:
     if not isinstance(entry, CommittedJournalEntry):
         raise ChaosLibrarianValueError(f"{entry.event_id} is not a committed slow_copy entry")
-    session = state.slow_copies.pop(entry.related_event_id)
-    initial_path = state.slow_copy_initial_paths.pop(entry.related_event_id)
-    temp = state.fs_ctx.library_root / session.temp_path
-    temp.parent.mkdir(parents=True, exist_ok=True)
-    temp.write_bytes(session.source_bytes)
-    promote_slow_copy(
-        library_root=state.fs_ctx.library_root,
-        initial_path=initial_path,
-        temp_path=session.temp_path,
-        final_path=session.final_path,
-    )
-    return FilesystemAction(
+    with _wall_clock_filesystem_effect(
+        operation="slow_copy_commit",
         event_id=entry.event_id,
         action=TimelineActionName.SLOW_COPY_COMMIT,
-        target_asset_id=session.asset_id,
-        from_path=session.temp_path,
-        to_path=session.final_path,
-        temp_path=None,
-        duration_ns=0,
-    )
+        asset_id=_entry_asset_id(entry),
+    ):
+        session = state.slow_copies.pop(entry.related_event_id)
+        initial_path = state.slow_copy_initial_paths.pop(entry.related_event_id)
+        temp = state.fs_ctx.library_root / session.temp_path
+        temp.parent.mkdir(parents=True, exist_ok=True)
+        temp.write_bytes(session.source_bytes)
+        promote_slow_copy(
+            library_root=state.fs_ctx.library_root,
+            initial_path=initial_path,
+            temp_path=session.temp_path,
+            final_path=session.final_path,
+        )
+        return FilesystemAction(
+            event_id=entry.event_id,
+            action=TimelineActionName.SLOW_COPY_COMMIT,
+            target_asset_id=session.asset_id,
+            from_path=session.temp_path,
+            to_path=session.final_path,
+            temp_path=None,
+            duration_ns=0,
+        )
 
 
 def _wall_clock_network_lag_start(state: _DispatchState, entry: JournalEntry) -> None:
@@ -686,6 +751,40 @@ def _network_lag_optional_str(entry: JournalEntry, key: str) -> str | None:
 
 def _network_lag_int(entry: JournalEntry, key: str) -> int:
     return network_lag_int(entry, key, error_type=ChaosLibrarianValueError)
+
+
+@contextmanager
+def _wall_clock_filesystem_effect(
+    *,
+    operation: str,
+    event_id: str,
+    action: TimelineActionName,
+    asset_id: str | None,
+) -> Iterator[None]:
+    try:
+        yield
+    except FilesystemActionError:
+        raise
+    except Exception as exc:
+        raise FilesystemActionError(
+            f"{operation} failed for event {event_id}: {exc}",
+            event_id=event_id,
+            action=action,
+            asset_id=asset_id,
+            cause=exc,
+            payload={"operation": operation},
+        ) from exc
+
+
+def _entry_asset_id(entry: JournalEntry) -> str | None:
+    return entry.target_ids[0] if entry.target_ids else None
+
+
+def _required_entry_asset_id(entry: JournalEntry) -> str:
+    asset_id = _entry_asset_id(entry)
+    if asset_id is None:
+        raise ChaosLibrarianValueError(f"{entry.event_id}: filesystem event has no target asset")
+    return asset_id
 
 
 def _finish_active_slow_copies(
@@ -778,10 +877,16 @@ def _grow_active_slow_copies(
     logical_ns: int,
 ) -> None:
     for session in sessions.values():
-        visible_size = _slow_copy_visible_size(session, logical_ns)
-        temp = library_root / session.temp_path
-        temp.parent.mkdir(parents=True, exist_ok=True)
-        temp.write_bytes(session.source_bytes[:visible_size])
+        with _wall_clock_filesystem_effect(
+            operation="slow_copy_growth",
+            event_id=session.start_event_id,
+            action=TimelineActionName.SLOW_COPY_START,
+            asset_id=session.asset_id,
+        ):
+            visible_size = _slow_copy_visible_size(session, logical_ns)
+            temp = library_root / session.temp_path
+            temp.parent.mkdir(parents=True, exist_ok=True)
+            temp.write_bytes(session.source_bytes[:visible_size])
 
 
 def _finalize_wall_clock_run(

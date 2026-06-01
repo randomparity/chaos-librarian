@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import stat
 from datetime import UTC, datetime, timedelta
@@ -441,5 +442,44 @@ def test_failure_path_restores_chmod(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     # The Phase-B failure path restores the captured mode before wiping library/,
     # so cleanup succeeds and the tree is removed rather than left at chmod 000.
+    assert not (out_dir / "library").exists()
+    shutil.rmtree(out_dir)
+
+
+def test_restore_failure_writes_run_failure_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeline = dedent(
+        """\
+        timeline:
+          - id: chmod_001
+            at: 1s
+            action: change_permissions
+            target: asset_main
+            mode: "000"
+        """
+    )
+
+    def fail_restore(_chaos) -> None:
+        raise PermissionError(13, "restore denied")
+
+    monkeypatch.setattr(wall_clock, "restore_chaos_modes", fail_restore)
+
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text(_scenario_yaml(timeline))
+    out_dir = tmp_path / "run"
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="10s", speed="1x")
+
+    err = exc_info.value
+    assert err.event_id == "chmod_001"
+    assert err.action is TimelineActionName.CHANGE_PERMISSIONS
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "network_fs_chaos_restore"
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == "fs_failed"
+    assert report["failures"][0]["stage"] == "filesystem"
     assert not (out_dir / "library").exists()
     shutil.rmtree(out_dir)

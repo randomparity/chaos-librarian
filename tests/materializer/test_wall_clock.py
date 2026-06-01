@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
@@ -21,13 +22,21 @@ from chaos_librarian.contract.content_sources import (
     ContentSourceEvidence,
     ContentTrackKind,
 )
-from chaos_librarian.contract.journal import AtomicJournalEntry, JournalEntry, JournalPhase
+from chaos_librarian.contract.journal import (
+    AtomicJournalEntry,
+    CommittedJournalEntry,
+    JournalEntry,
+    JournalPhase,
+    StartedJournalEntry,
+)
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
     FailureStage,
     FilesystemAction,
     MaterializedAsset,
+    NetworkFsChaosAction,
+    NetworkFsChaosCondition,
     OracleHashAction,
     Outcome,
 )
@@ -1253,6 +1262,31 @@ def test_slow_copy_partial_growth_writes_exact_prefix(tmp_path: Path) -> None:
     assert (library / "movies-hd" / "file.part").read_bytes() == b"01234"
 
 
+def test_slow_copy_growth_wraps_write_failure(tmp_path: Path) -> None:
+    library = tmp_path / "library"
+    library.write_text("not a directory")
+    session = wall_clock.WallClockSlowCopySession(
+        start_event_id="copy_start",
+        asset_id="asset_main",
+        source_bytes=b"0123456789",
+        temp_path="movies-hd/file.part",
+        final_path="movies-hd/file.mkv",
+        start_logical_ns=0,
+        commit_logical_ns=10,
+        total_bytes=10,
+    )
+
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock._grow_active_slow_copies(library, {"copy_start": session}, logical_ns=5)
+
+    err = exc_info.value
+    assert err.event_id == "copy_start"
+    assert err.action is TimelineActionName.SLOW_COPY_START
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "slow_copy_growth"
+    assert isinstance(err.cause, OSError)
+
+
 def test_final_journal_keeps_timestamps_and_digest_normalizes(
     fake_clock: FakeClock,
     tmp_path: Path,
@@ -1410,6 +1444,140 @@ def _empty_dispatch_state() -> wall_clock._DispatchState:
         corruption_ctx=cast(Any, None),
         oracle_hash_ctx=cast(Any, None),
     )
+
+
+def _dispatch_state_with_library(library_root: Path) -> wall_clock._DispatchState:
+    return wall_clock._DispatchState(
+        fs_ctx=cast(
+            Any,
+            SimpleNamespace(
+                library_root=library_root,
+                scenario_assets={"asset_main": object()},
+            ),
+        ),
+        media_ctx=cast(Any, None),
+        corruption_ctx=cast(Any, None),
+        oracle_hash_ctx=cast(Any, None),
+        chaos=wall_clock.NetworkFsChaosState(library_root=library_root),
+    )
+
+
+def test_wall_clock_slow_copy_start_wraps_missing_source(tmp_path: Path) -> None:
+    state = _dispatch_state_with_library(tmp_path)
+    entry = StartedJournalEntry(
+        schema_version=1,
+        event_id="copy_start",
+        scenario_id="sc",
+        run_id=uuid.UUID("12345678-1234-5678-1234-567812345678"),
+        logical_time_ns=0,
+        action=TimelineActionName.SLOW_COPY_START.value,
+        target_ids=["asset_main"],
+        state_delta={
+            "initial_path_at_start": "movies-hd/missing.mkv",
+            "temp_path": "movies-hd/file.part",
+            "final_path": "movies-hd/file.mkv",
+        },
+        phase=JournalPhase.STARTED,
+        temp_path="movies-hd/file.part",
+    )
+
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock._wall_clock_slow_copy_start(state, entry, {"copy_start": 10})
+
+    err = exc_info.value
+    assert err.event_id == "copy_start"
+    assert err.action is TimelineActionName.SLOW_COPY_START
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "slow_copy_start"
+    assert isinstance(err.cause, FileNotFoundError)
+
+
+def test_wall_clock_slow_copy_commit_wraps_missing_session(tmp_path: Path) -> None:
+    state = _dispatch_state_with_library(tmp_path)
+    entry = CommittedJournalEntry(
+        schema_version=1,
+        event_id="copy_commit",
+        scenario_id="sc",
+        run_id=uuid.UUID("12345678-1234-5678-1234-567812345678"),
+        logical_time_ns=10,
+        action=TimelineActionName.SLOW_COPY_COMMIT.value,
+        target_ids=["asset_main"],
+        phase=JournalPhase.COMMITTED,
+        related_event_id="copy_start",
+    )
+
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock._wall_clock_slow_copy_commit(state, entry)
+
+    err = exc_info.value
+    assert err.event_id == "copy_commit"
+    assert err.action is TimelineActionName.SLOW_COPY_COMMIT
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "slow_copy_commit"
+    assert isinstance(err.cause, KeyError)
+
+
+def test_network_fs_chaos_dispatch_wraps_handler_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state = _dispatch_state_with_library(tmp_path)
+    entry = _atomic_entry_with_action(TimelineActionName.CHANGE_PERMISSIONS).model_copy(
+        update={"target_ids": ["asset_main"], "state_delta": {"target_ref": "asset_main"}}
+    )
+
+    def fail_chaos(_state, _entry: JournalEntry) -> None:
+        raise PermissionError(13, "chmod denied")
+
+    monkeypatch.setattr(wall_clock, "realize_chaos_entry", fail_chaos)
+
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock._dispatch_chaos_entry(
+            state,
+            entry,
+            TimelineActionName.CHANGE_PERMISSIONS,
+        )
+
+    err = exc_info.value
+    assert err.event_id == "ev_corrupt_journal"
+    assert err.action is TimelineActionName.CHANGE_PERMISSIONS
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "network_fs_chaos"
+    assert isinstance(err.cause, PermissionError)
+
+
+def test_network_fs_chaos_restore_wraps_chmod_error(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state = _dispatch_state_with_library(tmp_path)
+    assert state.chaos is not None
+    state.chaos.captured_modes[tmp_path / "asset.mkv"] = 0o644
+    state.chaos.actions.append(
+        NetworkFsChaosAction(
+            event_id="chmod_001",
+            action=TimelineActionName.CHANGE_PERMISSIONS,
+            target_ref="asset_main",
+            condition=NetworkFsChaosCondition.EACCES,
+            enforced=True,
+            mode="000",
+        )
+    )
+
+    def fail_restore(_chaos) -> None:
+        raise PermissionError(13, "restore denied")
+
+    monkeypatch.setattr(wall_clock, "restore_chaos_modes", fail_restore)
+
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock._restore_chaos(state)
+
+    err = exc_info.value
+    assert err.event_id == "chmod_001"
+    assert err.action is TimelineActionName.CHANGE_PERMISSIONS
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "network_fs_chaos_restore"
+    assert isinstance(err.cause, PermissionError)
 
 
 def test_wall_clock_slow_copy_commit_rejects_non_committed_entry() -> None:
