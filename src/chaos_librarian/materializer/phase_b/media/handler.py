@@ -147,6 +147,7 @@ class _CreateSidecarRequest:
     asset: Asset
     sidecar_id: str
     sidecar_path_str: str
+    temp_output: Path
     kind: SidecarKind
     language: str | None
     encoding: str | None
@@ -1066,11 +1067,15 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     encoding = str(encoding) if isinstance(encoding, str) else None
     raw_body = delta.get("body")
     body_text = str(raw_body) if isinstance(raw_body, str) else None
+    sidecar_path_str = str(delta["sidecar_path"])
+    sidecar_path = ctx.library_root / sidecar_path_str
+    temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     request = _CreateSidecarRequest(
         asset_id=asset_id,
         asset=ctx.scenario_assets[asset_id],
         sidecar_id=str(delta["sidecar_id"]),
-        sidecar_path_str=str(delta["sidecar_path"]),
+        sidecar_path_str=sidecar_path_str,
+        temp_output=temp_output,
         kind=SidecarKind(str(delta["kind"])),
         language=language,
         encoding=encoding,
@@ -1078,17 +1083,14 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         media_type=_optional_sidecar_media_type(delta.get("media_type")),
         image_format=_optional_poster_image_format(delta.get("image_format")),
     )
-    sidecar_path = ctx.library_root / request.sidecar_path_str
-    temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     started = time.monotonic_ns()
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     result = _write_create_sidecar_body(
         ctx=ctx,
         entry=entry,
-        temp_output=temp_output,
         request=request,
     )
-    temp_output.replace(sidecar_path)
+    request.temp_output.replace(sidecar_path)
     new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[request.sidecar_id] = (new_hash, request.sidecar_path_str)
     ctx.live_sidecars[request.sidecar_id] = result.live_sidecar
@@ -1112,42 +1114,23 @@ def _write_create_sidecar_body(
     *,
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
-    temp_output: Path,
     request: _CreateSidecarRequest,
 ) -> _CreateSidecarWriteResult:
     if request.kind == SidecarKind.SUBTITLE:
         return _write_subtitle_sidecar(
             ctx=ctx,
             entry=entry,
-            temp_output=temp_output,
-            asset=request.asset,
-            asset_id=request.asset_id,
-            language=request.language,
-            encoding=request.encoding,
+            request=request,
         )
     if request.kind == SidecarKind.NFO:
-        return _write_text_sidecar(
-            temp_output=temp_output,
-            sidecar_id=request.sidecar_id,
-            asset_id=request.asset_id,
-            body_text=request.body_text,
-        )
+        return _write_text_sidecar(request=request)
     if request.kind == SidecarKind.CUE:
-        return _write_cue_sidecar(
-            temp_output=temp_output,
-            sidecar_id=request.sidecar_id,
-            asset_id=request.asset_id,
-            body_text=request.body_text,
-        )
+        return _write_cue_sidecar(request=request)
     if request.kind == SidecarKind.POSTER:
         return _write_poster_sidecar(
             ctx=ctx,
             entry=entry,
-            temp_output=temp_output,
-            sidecar_id=request.sidecar_id,
-            asset_id=request.asset_id,
-            media_type=request.media_type,
-            image_format=request.image_format,
+            request=request,
         )
     raise MediaActionError(
         f"create_sidecar: unknown kind {request.kind!r} for event {entry.event_id}",
@@ -1162,71 +1145,57 @@ def _write_subtitle_sidecar(
     *,
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
-    temp_output: Path,
-    asset: Asset,
-    asset_id: str,
-    language: str | None,
-    encoding: str | None,
+    request: _CreateSidecarRequest,
 ) -> _CreateSidecarWriteResult:
-    if language is None:
+    if request.language is None:
         raise MediaActionError(
             f"create_sidecar (subtitle) missing language for event {entry.event_id}",
             event_id=entry.event_id,
             action=TimelineActionName.CREATE_SIDECAR,
             cause=ValueError("language is None"),
-            asset_id=asset_id,
+            asset_id=request.asset_id,
         )
     text = srt_payload(
-        language=language,
-        duration_s=asset.duration_seconds,
+        language=request.language,
+        duration_s=request.asset.duration_seconds,
         seed=ctx.resolved_seed,
     )
-    temp_output.write_bytes(encode_subtitle_body(text, encoding))
+    request.temp_output.write_bytes(encode_subtitle_body(text, request.encoding))
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
         live_sidecar=LiveSubtitleSidecar(
-            asset_id=asset_id,
-            language=language,
-            encoding=encoding,
+            asset_id=request.asset_id,
+            language=request.language,
+            encoding=request.encoding,
         ),
     )
 
 
-def _write_text_sidecar(
-    *,
-    temp_output: Path,
-    sidecar_id: str,
-    asset_id: str,
-    body_text: str | None,
-) -> _CreateSidecarWriteResult:
-    if body_text is not None:
-        temp_output.write_bytes(body_text.encode("utf-8"))
+def _write_text_sidecar(*, request: _CreateSidecarRequest) -> _CreateSidecarWriteResult:
+    if request.body_text is not None:
+        request.temp_output.write_bytes(request.body_text.encode("utf-8"))
     else:
-        temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
+        request.temp_output.write_bytes(render_nfo(sidecar_id=request.sidecar_id))
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
         live_sidecar=LiveTextSidecar(
-            asset_id=asset_id,
+            asset_id=request.asset_id,
             kind=SidecarKind.NFO,
-            body=body_text,
+            body=request.body_text,
         ),
     )
 
 
-def _write_cue_sidecar(
-    *,
-    temp_output: Path,
-    sidecar_id: str,
-    asset_id: str,
-    body_text: str | None,
-) -> _CreateSidecarWriteResult:
-    temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
+def _write_cue_sidecar(*, request: _CreateSidecarRequest) -> _CreateSidecarWriteResult:
+    request.temp_output.write_bytes(
+        cue_payload(body=request.body_text, sidecar_id=request.sidecar_id)
+    )
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
         live_sidecar=LiveTextSidecar(
-            asset_id=asset_id,
+            asset_id=request.asset_id,
             kind=SidecarKind.CUE,
-            body=body_text,
+            body=request.body_text,
         ),
     )
 
@@ -1235,18 +1204,14 @@ def _write_poster_sidecar(
     *,
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
-    temp_output: Path,
-    sidecar_id: str,
-    asset_id: str,
-    media_type: SidecarMediaType | None,
-    image_format: PosterImageFormat | None,
+    request: _CreateSidecarRequest,
 ) -> _CreateSidecarWriteResult:
     argv = poster_ffmpeg_argv(
-        output_path=temp_output,
+        output_path=request.temp_output,
         resolved_seed=ctx.resolved_seed,
-        sidecar_id=sidecar_id,
-        media_type=media_type,
-        image_format=image_format,
+        sidecar_id=request.sidecar_id,
+        media_type=request.media_type,
+        image_format=request.image_format,
     )
     invocation_index = _run_ffmpeg_checked(
         ctx,
@@ -1254,14 +1219,14 @@ def _write_poster_sidecar(
         entry=entry,
         action=TimelineActionName.CREATE_SIDECAR,
         failure_label="create_sidecar (poster)",
-        asset_id=asset_id,
+        asset_id=request.asset_id,
     )
     return _CreateSidecarWriteResult(
         tool_invocation_index=invocation_index,
         live_sidecar=LivePosterSidecar(
-            asset_id=asset_id,
-            media_type=media_type,
-            image_format=image_format,
+            asset_id=request.asset_id,
+            media_type=request.media_type,
+            image_format=request.image_format,
         ),
     )
 
