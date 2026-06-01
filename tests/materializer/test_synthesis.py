@@ -39,17 +39,17 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.engine.plan import PlanArtifacts
-from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.errors import (
-    SymlinkTargetMissingError,
-    UnsupportedMaterializationError,
-)
-from chaos_librarian.materializer.synthesis import (
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
+from chaos_librarian.materializer.content.synthesis import (
     MaterializeAssetResult,
     PhaseAInputs,
     PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
+)
+from chaos_librarian.materializer.errors import (
+    SymlinkTargetMissingError,
+    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation

@@ -5,7 +5,7 @@ from __future__ import annotations
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.scenario import AudioSource, Scenario
 from chaos_librarian.materializer.errors import CapabilityGateError
-from chaos_librarian.materializer.preflight import iter_assets
+from chaos_librarian.materializer.preparation.preflight import iter_assets
 
 __all__ = [
     "assert_capable_for_audio_recipes",

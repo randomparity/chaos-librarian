@@ -16,7 +16,7 @@ from chaos_librarian.adapter.index import (
 )
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import Asset, Scenario
-from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preparation.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes
 from tests.support.adapter import (

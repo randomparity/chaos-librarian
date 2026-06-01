@@ -35,7 +35,7 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer import preparation as prep_mod
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     CorruptionActionError,
@@ -44,7 +44,7 @@ from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
 )
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.materializer.runtime import wall_clock
 from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 
 _JOURNAL_ADAPTER = TypeAdapter(JournalEntry)

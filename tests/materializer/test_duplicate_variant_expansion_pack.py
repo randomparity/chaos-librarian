@@ -13,8 +13,8 @@ from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamK
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import resolve_seed
-from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
+from chaos_librarian.materializer.content.synthesis import materialize_one_asset
 from chaos_librarian.path_rendering import RenderableAssetContext, render_asset_path
 from chaos_librarian.topology import AssetContext, iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes

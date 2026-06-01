@@ -28,10 +28,10 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import preparation as preparation_mod
 from chaos_librarian.materializer import replay as replay_mod
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.materializer.runtime import wall_clock
 
 _ASSET_REL_PATH = "movies-hd/Clip/Clip - hd.mkv"
 

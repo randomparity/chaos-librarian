@@ -30,25 +30,18 @@ from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanArtifacts, PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.materializer.content.synthesis import (
+    PhaseAInputs,
+    PhaseAResult,
+    materialize_assets_phase_a,
+    materialize_one_asset,
+    stamp_phase_a_manifest,
+)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     TimelineUnsupportedError,
-)
-from chaos_librarian.materializer.network_fs_chaos import (
-    CHAOS_CLOSE_ACTIONS,
-    CHAOS_ENTRY_ACTIONS,
-    NetworkFsChaosState,
-    realize_chaos_close,
-    realize_chaos_entry,
-    restore_chaos_modes,
-)
-from chaos_librarian.materializer.network_lag_fields import (
-    network_lag_effect,
-    network_lag_int,
-    network_lag_optional_str,
-    network_lag_str,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import (
@@ -70,18 +63,25 @@ from chaos_librarian.materializer.phase_b.dispatch import (
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
 from chaos_librarian.materializer.preparation import prepare_materializer_run
-from chaos_librarian.materializer.scheduler import (
+from chaos_librarian.materializer.runtime.network_fs_chaos import (
+    CHAOS_CLOSE_ACTIONS,
+    CHAOS_ENTRY_ACTIONS,
+    NetworkFsChaosState,
+    realize_chaos_close,
+    realize_chaos_entry,
+    restore_chaos_modes,
+)
+from chaos_librarian.materializer.runtime.network_lag_fields import (
+    network_lag_effect,
+    network_lag_int,
+    network_lag_optional_str,
+    network_lag_str,
+)
+from chaos_librarian.materializer.runtime.scheduler import (
     SpeedMultiplier,
     due_event_count,
     logical_now_ns,
     parse_speed,
-)
-from chaos_librarian.materializer.synthesis import (
-    PhaseAInputs,
-    PhaseAResult,
-    materialize_assets_phase_a,
-    materialize_one_asset,
-    stamp_phase_a_manifest,
 )
 
 __all__ = [

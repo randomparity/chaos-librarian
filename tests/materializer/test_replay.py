@@ -41,10 +41,10 @@ from chaos_librarian.engine import (
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.replay import replay_run_bundle
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO_BYTES
 

@@ -27,7 +27,7 @@ from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
 )
-from chaos_librarian.materializer.preflight import (
+from chaos_librarian.materializer.preparation.preflight import (
     BASE_FILESYSTEM_ACTIONS,
     MATERIALIZE_SUPPORTED_ACTIONS,
     preflight_asset,

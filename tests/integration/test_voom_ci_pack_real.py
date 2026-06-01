@@ -10,8 +10,8 @@ import pytest
 from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.materializer.run import materialize_scenario
+from chaos_librarian.materializer.runtime.wall_clock import run_wall_clock_scenario
 from chaos_librarian.materializer.tooling.capabilities import detect_capabilities
-from chaos_librarian.materializer.wall_clock import run_wall_clock_scenario
 from tests.integration.conftest import _load_materialization_report
 
 PACK_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios" / "voom-ci"

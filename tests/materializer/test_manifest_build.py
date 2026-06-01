@@ -24,7 +24,7 @@ from chaos_librarian.contract.manifest import (
 )
 from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset, SidecarKind
-from chaos_librarian.materializer.manifest_build import (
+from chaos_librarian.materializer.content.manifest_build import (
     augment_manifest,
     augment_timeline_sidecars,
     augment_updated_sidecars,

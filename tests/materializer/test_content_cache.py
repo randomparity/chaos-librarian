@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.materializer import content_cache
-from chaos_librarian.materializer.content_cache import (
+from chaos_librarian.materializer.content import content_cache
+from chaos_librarian.materializer.content.content_cache import (
     ContentCache,
     cache_key_for_bytes,
     cache_key_for_path,

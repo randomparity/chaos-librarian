@@ -10,8 +10,8 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer import replay as replay_module
 from chaos_librarian.materializer import run as run_module
-from chaos_librarian.materializer import wall_clock as wall_clock_module
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
+from chaos_librarian.materializer.runtime import wall_clock as wall_clock_module
 
 
 def _scenario_with_timeline(*events: CreateSidecarEvent) -> Scenario:

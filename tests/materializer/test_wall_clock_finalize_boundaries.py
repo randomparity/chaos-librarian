@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.runtime import wall_clock
 
 
 def test_wall_clock_uses_persistence_finalize_boundary() -> None:

@@ -25,7 +25,7 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import preparation as prep_mod
-from chaos_librarian.materializer import synthesis as synthesis_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     FilesystemActionError,

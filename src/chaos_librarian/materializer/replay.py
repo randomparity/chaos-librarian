@@ -26,24 +26,16 @@ from chaos_librarian.engine.plan import (
     ReplayIntegrityError,
 )
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
+from chaos_librarian.materializer.content.synthesis import (
+    PhaseAInputs,
+    materialize_assets_phase_a,
+    materialize_one_asset,
+)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
     ScenarioValidationError,
-)
-from chaos_librarian.materializer.network_fs_chaos import (
-    CHAOS_CLOSE_ACTIONS,
-    CHAOS_ENTRY_ACTIONS,
-    realize_chaos_close,
-    realize_chaos_entry,
-    restore_chaos_modes,
-)
-from chaos_librarian.materializer.network_lag_fields import (
-    network_lag_effect,
-    network_lag_int,
-    network_lag_optional_str,
-    network_lag_str,
 )
 from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
 from chaos_librarian.materializer.persistence.finalize import (
@@ -61,10 +53,18 @@ from chaos_librarian.materializer.preparation import (
     PreparedMaterializerRun,
     prepare_materializer_run_input,
 )
-from chaos_librarian.materializer.synthesis import (
-    PhaseAInputs,
-    materialize_assets_phase_a,
-    materialize_one_asset,
+from chaos_librarian.materializer.runtime.network_fs_chaos import (
+    CHAOS_CLOSE_ACTIONS,
+    CHAOS_ENTRY_ACTIONS,
+    realize_chaos_close,
+    realize_chaos_entry,
+    restore_chaos_modes,
+)
+from chaos_librarian.materializer.runtime.network_lag_fields import (
+    network_lag_effect,
+    network_lag_int,
+    network_lag_optional_str,
+    network_lag_str,
 )
 from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
 

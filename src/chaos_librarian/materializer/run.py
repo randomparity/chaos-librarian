@@ -16,6 +16,11 @@ from pathlib import Path
 from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.materializer.content.synthesis import (
+    PhaseAInputs,
+    PhaseAResult,
+    materialize_assets_phase_a,
+)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
@@ -40,11 +45,6 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     phase_b_failure_outcome,
 )
 from chaos_librarian.materializer.preparation import prepare_materializer_run
-from chaos_librarian.materializer.synthesis import (
-    PhaseAInputs,
-    PhaseAResult,
-    materialize_assets_phase_a,
-)
 
 __all__ = ["MaterializeArtifacts", "RunContext", "materialize_scenario"]
 

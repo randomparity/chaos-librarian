@@ -16,15 +16,19 @@ from chaos_librarian.engine.plan import (
     run_materializer_plan,
 )
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
-from chaos_librarian.materializer.capability_gates import (
+from chaos_librarian.materializer.errors import CapabilityGateError, ScenarioValidationError
+from chaos_librarian.materializer.preparation.capability_gates import (
     assert_capable_for_audio_recipes,
     assert_capable_for_hdr_video,
     assert_capable_for_matroska_muxing_profiles,
     assert_capable_for_resolution_switch_video,
     assert_capable_for_webm_video,
 )
-from chaos_librarian.materializer.errors import CapabilityGateError, ScenarioValidationError
-from chaos_librarian.materializer.preflight import iter_assets, preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preparation.preflight import (
+    iter_assets,
+    preflight_asset,
+    preflight_timeline,
+)
 from chaos_librarian.materializer.tooling.capabilities import (
     assert_capable_for_static_materialize,
     detect_capabilities,

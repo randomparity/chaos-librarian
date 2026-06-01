@@ -6,7 +6,7 @@ through an atomic-rename temp-file.
 
 The orchestrator in ``materializer/run.py`` walks the journal once and
 dispatches each entry to ``apply_media_action`` here OR to the stdlib
-dispatcher in ``filesystem.py``. See ``materializer.actions`` for the
+dispatcher in ``filesystem.py``. See ``materializer.preparation.actions`` for the
 routing action sets.
 
 Per-action ffmpeg sketches live in the media-mutation design notes.
@@ -31,9 +31,6 @@ from chaos_librarian.contract.scenario import (
     SidecarKind,
     TimelineActionName,
 )
-from chaos_librarian.materializer.actions import (
-    MEDIA_PHASE_B_ACTIONS,
-)
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
@@ -42,6 +39,9 @@ from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     poster_ffmpeg_argv,
     regenerate_sidecar,
     render_nfo,
+)
+from chaos_librarian.materializer.preparation.actions import (
+    MEDIA_PHASE_B_ACTIONS,
 )
 from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file

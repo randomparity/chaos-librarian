@@ -26,13 +26,7 @@ from chaos_librarian.contract.scenario import (
     SubtitleTrack,
     VideoTrack,
 )
-from chaos_librarian.materializer.actions import (
-    BASE_FILESYSTEM_ACTIONS,
-    MATERIALIZE_SUPPORTED_ACTIONS,
-    NETWORK_FS_CHAOS_ACTIONS,
-    NETWORK_LAG_ACTIONS,
-)
-from chaos_librarian.materializer.content_sources import (
+from chaos_librarian.materializer.content.content_sources import (
     AUDIO_RECIPES,
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
@@ -45,6 +39,12 @@ from chaos_librarian.materializer.content_sources import (
 from chaos_librarian.materializer.errors import (
     TimelineUnsupportedError,
     UnsupportedMaterializationError,
+)
+from chaos_librarian.materializer.preparation.actions import (
+    BASE_FILESYSTEM_ACTIONS,
+    MATERIALIZE_SUPPORTED_ACTIONS,
+    NETWORK_FS_CHAOS_ACTIONS,
+    NETWORK_LAG_ACTIONS,
 )
 from chaos_librarian.materializer.tooling.ffmpeg import build_command
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput

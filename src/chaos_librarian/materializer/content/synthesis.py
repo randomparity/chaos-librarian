@@ -25,7 +25,7 @@ from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvo
 from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer.content_sources import (
+from chaos_librarian.materializer.content.content_sources import (
     COVER_ART_SIZE,
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
@@ -41,15 +41,15 @@ from chaos_librarian.materializer.content_sources import (
     resolve_muxing_source,
     resolve_video_source,
 )
+from chaos_librarian.materializer.content.manifest_build import augment_manifest
 from chaos_librarian.materializer.errors import (
     ProbeParseError,
     SymlinkTargetMissingError,
     ToolFailedError,
     UnsupportedMaterializationError,
 )
-from chaos_librarian.materializer.manifest_build import augment_manifest
 from chaos_librarian.materializer.phase_b.sidecar_languages import timeline_sidecar_languages
-from chaos_librarian.materializer.preflight import iter_assets
+from chaos_librarian.materializer.preparation.preflight import iter_assets
 from chaos_librarian.materializer.tooling.ffmpeg import (
     build_command,
     build_resolution_switch_concat_command,

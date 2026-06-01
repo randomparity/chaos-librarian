@@ -28,8 +28,8 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
     VideoVfrCadence,
 )
-from chaos_librarian.materializer import content_sources
-from chaos_librarian.materializer.content_sources import (
+from chaos_librarian.materializer.content import content_sources
+from chaos_librarian.materializer.content.content_sources import (
     AudioSourceRequest,
     ChapterSourceRequest,
     CoverArtSourceRequest,
@@ -43,7 +43,7 @@ from chaos_librarian.materializer.content_sources import (
     resolve_video_source,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.preflight import preflight_asset
+from chaos_librarian.materializer.preparation.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 

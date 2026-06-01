@@ -24,6 +24,7 @@ from chaos_librarian.contract.capabilities import (
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import Outcome, ToolInvocation
+from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.run import materialize_scenario
 
@@ -128,12 +129,9 @@ def mocked_ffmpeg_and_probe(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
     monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
-    monkeypatch.setattr("chaos_librarian.materializer.synthesis.run_ffmpeg", fake_run)
-    monkeypatch.setattr("chaos_librarian.materializer.synthesis.probe_file", fake_probe)
-    monkeypatch.setattr(
-        "chaos_librarian.materializer.run.detect_capabilities",
-        _fake_capabilities,
-    )
+    monkeypatch.setattr("chaos_librarian.materializer.content.synthesis.run_ffmpeg", fake_run)
+    monkeypatch.setattr("chaos_librarian.materializer.content.synthesis.probe_file", fake_probe)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", _fake_capabilities)
 
 
 def test_materialize_reencode_video_timeline_runs_phase_b(
@@ -203,15 +201,15 @@ def test_materialize_media_failure_wipes_library_and_writes_report(
         )
 
     # Synthesis (phase A) must succeed so phase B is reached.
-    monkeypatch.setattr("chaos_librarian.materializer.synthesis.run_ffmpeg", fake_run_success)
-    monkeypatch.setattr("chaos_librarian.materializer.synthesis.probe_file", fake_probe)
+    monkeypatch.setattr(
+        "chaos_librarian.materializer.content.synthesis.run_ffmpeg",
+        fake_run_success,
+    )
+    monkeypatch.setattr("chaos_librarian.materializer.content.synthesis.probe_file", fake_probe)
     # Media handlers (phase B) fail with non-zero exit.
     monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", failing_run)
     monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
-    monkeypatch.setattr(
-        "chaos_librarian.materializer.run.detect_capabilities",
-        _fake_capabilities,
-    )
+    monkeypatch.setattr(prep_mod, "detect_capabilities", _fake_capabilities)
 
     scenario_yaml = _write_scenario(tmp_path, _REENCODE_SCENARIO_BODY)
     out_dir = tmp_path / "run-002"

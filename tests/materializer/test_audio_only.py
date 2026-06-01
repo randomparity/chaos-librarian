@@ -18,7 +18,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.preflight import preflight_asset
+from chaos_librarian.materializer.preparation.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, build_command
 from chaos_librarian.materializer.tooling.recipes import recipe_sine
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from chaos_librarian.contract.materialization import CORRUPTION_TIMELINE_ACTIONS
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer.actions import (
+from chaos_librarian.materializer.phase_b.filesystem import supports_filesystem_action
+from chaos_librarian.materializer.preparation.actions import (
     BASE_FILESYSTEM_ACTIONS,
     FILESYSTEM_ARTIFACT_ACTIONS,
     HIERARCHY_PHASE_B_ACTIONS,
@@ -14,7 +15,6 @@ from chaos_librarian.materializer.actions import (
     PODCAST_ACTIONS,
     STDLIB_PHASE_B_ACTIONS,
 )
-from chaos_librarian.materializer.phase_b.filesystem import supports_filesystem_action
 
 
 def test_base_filesystem_actions_match_materializer_file_surface() -> None:

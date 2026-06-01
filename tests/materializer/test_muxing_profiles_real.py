@@ -16,7 +16,7 @@ from chaos_librarian.contract.scenario import (
     VideoSource,
     VideoTrack,
 )
-from chaos_librarian.materializer.synthesis import materialize_one_asset
+from chaos_librarian.materializer.content.synthesis import materialize_one_asset
 
 pytestmark = pytest.mark.skipif(
     any(shutil.which(tool) is None for tool in ("ffmpeg", "ffprobe", "mkvmerge", "mkvinfo")),

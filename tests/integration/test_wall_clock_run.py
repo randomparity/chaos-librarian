@@ -24,9 +24,9 @@ from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import preparation as prep_mod
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.materializer.runtime import wall_clock
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE = (

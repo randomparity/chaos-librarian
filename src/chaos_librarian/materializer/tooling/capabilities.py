@@ -20,7 +20,7 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
-from chaos_librarian.materializer.content_sources import collect_content_source_capabilities
+from chaos_librarian.materializer.content.content_sources import collect_content_source_capabilities
 from chaos_librarian.materializer.errors import CapabilityGateError
 
 MIN_VERSIONS: Final[dict[str, Version]] = {
