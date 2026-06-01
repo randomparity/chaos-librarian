@@ -1,15 +1,17 @@
-"""Timeline sidecar-language helpers for materializer entry points."""
+"""Timeline sidecar planning helpers shared by materializer phases."""
 
 from __future__ import annotations
 
 from chaos_librarian.contract.scenario import CreateSidecarEvent, Scenario, SidecarKind
 from chaos_librarian.errors import ChaosLibrarianValueError
 
+__all__ = ["timeline_sidecar_languages"]
+
 
 def timeline_sidecar_languages(scenario: Scenario) -> dict[str, frozenset[str]]:
     """Map each asset id to subtitle languages created by the timeline.
 
-    Materializer phase A uses this to skip declared subtitles that a timeline
+    Phase A uses this to skip declared subtitles that a timeline
     ``create_sidecar`` will overwrite, avoiding orphaned declared-sidecar
     files when the manifest collapses duplicate ``(asset_id, language)`` rows.
     """

@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from chaos_librarian.contract.manifest import Manifest, ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset
 from chaos_librarian.contract.scenario import Asset, SidecarKind
-from chaos_librarian.materializer.phase_b.oracle_hash import collided_hash_for
+from chaos_librarian.materializer.hash_policy import collided_hash_for
 
 __all__ = [
     "augment_manifest",

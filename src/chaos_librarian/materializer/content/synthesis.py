@@ -47,8 +47,8 @@ from chaos_librarian.materializer.errors import (
     ToolFailedError,
     UnsupportedMaterializationError,
 )
-from chaos_librarian.materializer.phase_b.media.sidecar_languages import timeline_sidecar_languages
 from chaos_librarian.materializer.preparation.preflight import iter_assets
+from chaos_librarian.materializer.sidecar_planning import timeline_sidecar_languages
 from chaos_librarian.materializer.tooling.ffmpeg import (
     build_command,
     build_resolution_switch_concat_command,

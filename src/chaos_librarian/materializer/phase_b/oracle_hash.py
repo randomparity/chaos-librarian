@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -13,13 +12,12 @@ from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import OracleHashAction
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError
+from chaos_librarian.materializer.hash_policy import false_hash_for
 from chaos_librarian.materializer.phase_b.content import hash_file
 
 __all__ = [
     "OracleHashPhaseBContext",
     "apply_wrong_oracle_hash",
-    "collided_hash_for",
-    "false_hash_for",
     "make_oracle_hash_phase_b_context",
     "supports_oracle_hash_action",
 ]
@@ -50,62 +48,6 @@ def make_oracle_hash_phase_b_context(
 
 def supports_oracle_hash_action(action: TimelineActionName) -> bool:
     return action is TimelineActionName.WRONG_ORACLE_HASH
-
-
-def false_hash_for(seed_material: str, actual_hash: str) -> str:
-    suffix = hashlib.sha256(f"{seed_material}:{actual_hash}".encode()).hexdigest()
-    candidate = f"sha256:{suffix}"
-    if candidate != actual_hash:
-        return candidate
-    fallback = hashlib.sha256(f"{seed_material}:{actual_hash}:fallback".encode()).hexdigest()
-    return f"sha256:{fallback}"
-
-
-def collided_hash_for(referent_hash: str, real_hash: str, prefix_len: int) -> str:
-    """Return a recorded hash sharing exactly ``prefix_len`` leading hex chars.
-
-    Builds the oracle-recorded content hash for a ``hash_collision_with`` asset:
-    a valid ``sha256:`` URI whose first ``prefix_len`` hex chars equal the
-    referent's recorded digest, whose char at ``prefix_len`` differs from the
-    referent's (so the shared prefix is *exactly* ``prefix_len``, not longer),
-    and whose full value differs from both ``referent_hash`` and ``real_hash``.
-
-    Pure and deterministic — a function of the two hashes plus ``prefix_len`` —
-    so materialize, run, and replay recompute the identical value, mirroring
-    ``false_hash_for``.
-
-    Args:
-        referent_hash: the ``sha256:``-prefixed digest the prefix is taken from.
-        real_hash: this asset's own real on-disk ``sha256:`` digest.
-        prefix_len: number of leading hex chars to share (1..63).
-    """
-    referent_hex = referent_hash.removeprefix("sha256:")
-    prefix = referent_hex[:prefix_len]
-    suffix = hashlib.sha256(f"{real_hash}:{referent_hash}:{prefix_len}".encode()).hexdigest()[
-        prefix_len:
-    ]
-    suffix = _force_divergent_first_char(suffix, referent_hex, prefix_len)
-    candidate = f"sha256:{prefix}{suffix}"
-    if candidate in (referent_hash, real_hash):
-        suffix = hashlib.sha256(f"{candidate}:fallback".encode()).hexdigest()[prefix_len:]
-        suffix = _force_divergent_first_char(suffix, referent_hex, prefix_len)
-        candidate = f"sha256:{prefix}{suffix}"
-    return candidate
-
-
-def _force_divergent_first_char(suffix: str, referent_hex: str, prefix_len: int) -> str:
-    """Make ``suffix[0]`` differ from the referent digest at ``prefix_len``.
-
-    Guarantees the shared prefix is exactly ``prefix_len`` chars. A no-op when
-    ``prefix_len == 63`` (no char past the prefix exists to constrain) or when
-    the suffix is empty.
-    """
-    if prefix_len >= len(referent_hex) or not suffix:
-        return suffix
-    if suffix[0] != referent_hex[prefix_len]:
-        return suffix
-    replacement = "0" if referent_hex[prefix_len] != "0" else "1"
-    return replacement + suffix[1:]
 
 
 def apply_wrong_oracle_hash(

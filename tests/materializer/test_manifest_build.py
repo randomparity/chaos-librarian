@@ -31,7 +31,7 @@ from chaos_librarian.materializer.content.manifest_build import (
     augment_versions,
     find_sidecar_for,
 )
-from chaos_librarian.materializer.phase_b.oracle_hash import collided_hash_for
+from chaos_librarian.materializer.hash_policy import collided_hash_for
 
 
 def _build_manifest_with_sidecar(
