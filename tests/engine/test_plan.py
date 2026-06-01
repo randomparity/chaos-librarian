@@ -16,12 +16,11 @@ from chaos_librarian.contract.replay_bundle import (
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import (
     PlanArtifacts,
-    PlanExecutionRequest,
     ReplayIntegrityError,
     replay_plan_bundle,
-    run_materializer_plan,
     run_plan,
 )
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import (
     PreparedReplayInput,

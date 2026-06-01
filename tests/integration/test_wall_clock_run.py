@@ -22,7 +22,7 @@ from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamK
 from chaos_librarian.contract.materialization import MaterializedAsset, MediaAction
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod

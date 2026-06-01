@@ -39,11 +39,10 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeRep
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel, RunSentinelState
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import (
-    PlanExecutionRequest,
     compare_run_replay,
-    run_materializer_plan,
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import preparation as prep_mod

@@ -13,8 +13,8 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.contract.materialization import ToolchainInfo
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
-from chaos_librarian.engine import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
 

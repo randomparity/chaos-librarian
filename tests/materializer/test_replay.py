@@ -34,11 +34,10 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import (
-    PlanExecutionRequest,
     ReplayIntegrityError,
-    run_materializer_plan,
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
