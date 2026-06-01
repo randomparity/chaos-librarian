@@ -1,10 +1,9 @@
-"""Per-asset ffmpeg invocation, probe, and SRT sidecar emission.
+"""Phase-A content-source resolution, synthesis, probing, and sidecar writes.
 
-These are the only filesystem-touching helpers in the materialize
-pipeline (the writer flushes metadata, but ffmpeg and the sidecar writer
-emit media bytes). Both functions raise ``MaterializationError``
-subclasses on failure; the orchestrator in ``run.py`` converts them to
-``MaterializationFailure`` records and routes them through the writer.
+``materializer/content/*`` owns declared asset bytes before timeline effects:
+deterministic content-source resolution, ffmpeg/mkvmerge synthesis, sidecar
+emission, probe/hash evidence, and phase-A manifest stamping. Real timeline
+filesystem and media effects live in ``materializer/phase_b/*``.
 """
 
 from __future__ import annotations

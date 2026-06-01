@@ -301,6 +301,27 @@ def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
     assert "full\n`uv run pytest` suite" in testing
 
 
+def test_developer_docs_match_current_module_ownership() -> None:
+    architecture = _read(DOCS / "developer" / "architecture.md")
+    timeline_engine = _read(DOCS / "developer" / "timeline-engine.md")
+    materializer = _read(DOCS / "developer" / "materializer.md")
+    synthesis = _read(
+        ROOT / "src" / "chaos_librarian" / "materializer" / "content" / "synthesis.py"
+    )
+
+    required_snippets = [
+        "`engine/events.py` is dispatch and state-delta orchestration",
+        "`engine/event_handlers/*` owns the action-family handlers",
+        "`materializer/content/*` owns phase-A content-source resolution and synthesis",
+        "`materializer/phase_b/*` owns real timeline filesystem, media",
+    ]
+    combined_docs = " ".join(
+        "\n".join([architecture, timeline_engine, materializer, synthesis]).split()
+    )
+    for snippet in required_snippets:
+        assert snippet in combined_docs
+
+
 def test_user_docs_describe_current_replay_support() -> None:
     commands = _read(DOCS / "user" / "commands.md")
     run_artifacts = _read(DOCS / "user" / "run-artifacts.md")

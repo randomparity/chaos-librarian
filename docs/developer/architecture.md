@@ -16,10 +16,14 @@ materialization, and adapter comparison consume those models.
   and execution trace recording.
 - `generation/`: deterministic fuzz scenario generation, lane coverage
   vocabulary, and profile/lane-specific payload planning.
-- `engine/`: plan-only timeline resolution, event handling, journal generation,
-  reports, replay verification, step mode, and fixture writing.
-- `materializer/`: capability gate, content sources, ffmpeg synthesis, phase-B
-  filesystem/media/corruption effects, persistence, and wall-clock runner.
+- `engine/`: plan-only timeline resolution, journal generation, reports,
+  replay verification, step mode, and fixture writing. `engine/events.py` is
+  dispatch and state-delta orchestration; `engine/event_handlers/*` owns the
+  action-family handlers.
+- `materializer/`: capability gate, persistence, and wall-clock runner.
+  `materializer/content/*` owns phase-A content-source resolution and
+  synthesis; `materializer/phase_b/*` owns real timeline filesystem, media,
+  corruption, and oracle-hash effects.
 - `adapter/`: fixture loader, observed-state loader, matching, comparison, and
   divergence report construction.
 - `cli/`: Typer app and command modules.
