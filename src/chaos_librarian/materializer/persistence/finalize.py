@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -73,6 +74,15 @@ type _FinalizeWriter = Callable[
 ]
 
 
+@dataclass(frozen=True, slots=True)
+class _ReportInputs:
+    finished_at: datetime
+    invocations: list[ToolInvocation]
+    materialized: list[MaterializedAsset]
+    actions: ReportActions | None
+    content_sources: list[ContentSourceEvidence]
+
+
 def build_sentinel(ctx: RunContext, state: RunSentinelState) -> RunSentinel:
     """Construct a RunSentinel from the per-run invariants in ``ctx``.
 
@@ -98,26 +108,22 @@ def finalize_success(
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Step 8 (success path) — atomic metadata write, sentinel flips to complete."""
-    finished_at = datetime.now(UTC)
-    materialization_report = build_report(
-        outcome=Outcome.SUCCESS,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
         content_sources=content_sources,
     )
-    replay_bundle = build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=finished_at,
-        content_sources=content_sources,
+    materialization_report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=Outcome.SUCCESS,
+        failures=[],
+    )
+    replay_bundle = _build_materialize_replay_bundle(
+        ctx,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -153,7 +159,12 @@ def finalize_failure(
     plan-only manifest from ``ctx.plan_artifacts`` is correct here —
     synthesis aborted, so no version has ``content_hash``/``probed``.
     """
-    finished_at = datetime.now(UTC)
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
+        actions=actions,
+        content_sources=content_sources,
+    )
     invocation = getattr(exc, "invocation", None)
     exit_code = invocation.exit_code if invocation is not None else None
     failure = MaterializationFailure(
@@ -161,27 +172,20 @@ def finalize_failure(
         stage=FailureStage.FFPROBE if isinstance(exc, ProbeParseError) else FailureStage.FFMPEG,
         exit_code=exit_code,
         stderr_tail=str(exc.payload.get("stderr_tail", "")),
-        invocation_index=(len(invocations) - 1) if invocations else None,
+        invocation_index=(len(report_inputs.invocations) - 1)
+        if report_inputs.invocations
+        else None,
     )
-    report = build_report(
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
         outcome=outcome,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
         failures=[failure],
-        actions=actions,
-        content_sources=content_sources,
     )
-    replay_bundle = build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=finished_at,
-        content_sources=content_sources,
+    replay_bundle = _build_materialize_replay_bundle(
+        ctx,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -212,27 +216,23 @@ def finalize_failure_phase_b(
     the crash are recorded so the report shows the audit trail up to the
     failing event.
     """
-    finished_at = datetime.now(UTC)
-    failure = phase_b_failure_record(exc)
-    report = build_report(
-        outcome=outcome,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[failure],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
         content_sources=content_sources,
     )
-    replay_bundle = build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=finished_at,
-        content_sources=content_sources,
+    failure = phase_b_failure_record(exc)
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=outcome,
+        failures=[failure],
+    )
+    replay_bundle = _build_materialize_replay_bundle(
+        ctx,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -255,25 +255,24 @@ def finalize_run_replay_success(
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Run-replay success path: write run-mode metadata via the shared seam."""
-    finished_at = datetime.now(UTC)
-    report = build_report(
-        outcome=Outcome.SUCCESS,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
         content_sources=content_sources,
+    )
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=Outcome.SUCCESS,
+        failures=[],
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
         ctx,
         source_bundle,
-        finished_at,
-        content_sources,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -302,25 +301,24 @@ def finalize_run_replay_phase_b_failure(
     content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Run-replay phase-B failure path: preserve replay metadata before cleanup."""
-    finished_at = datetime.now(UTC)
-    report = build_report(
-        outcome=phase_b_failure_outcome(exc),
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[phase_b_failure_record(exc)],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
         content_sources=content_sources,
+    )
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=phase_b_failure_outcome(exc),
+        failures=[phase_b_failure_record(exc)],
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_run_replay_bundle(
         ctx,
         source_bundle,
-        finished_at,
-        content_sources,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -348,30 +346,29 @@ def finalize_wall_clock_success(
     content_sources: list[ContentSourceEvidence],
 ) -> MaterializeArtifacts:
     """Wall-clock success path: write run-mode metadata via the shared seam."""
-    finished_at = datetime.now(UTC)
-    report = build_report(
-        outcome=Outcome.SUCCESS,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
+        content_sources=content_sources,
+    )
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=Outcome.SUCCESS,
+        failures=[],
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,
         overran_duration=overran_duration,
-        content_sources=content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_wall_clock_replay_bundle(
         ctx,
         final_artifacts,
         executed_journal,
-        finished_at,
-        content_sources,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -405,30 +402,29 @@ def finalize_wall_clock_phase_b_failure(
     content_sources: list[ContentSourceEvidence],
 ) -> None:
     """Wall-clock phase-B failure path: preserve run-mode metadata before cleanup."""
-    finished_at = datetime.now(UTC)
-    report = build_report(
-        outcome=phase_b_failure_outcome(exc),
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=finished_at,
-        invocations=invocations,
-        materialized=materialized,
-        failures=[phase_b_failure_record(exc)],
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
         actions=actions,
+        content_sources=content_sources,
+    )
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=phase_b_failure_outcome(exc),
+        failures=[phase_b_failure_record(exc)],
         requested_duration_ns=requested_duration_ns,
         actual_duration_ns=actual_duration_ns,
         speed_multiplier=speed_multiplier,
         overran_duration=overran_duration,
-        content_sources=content_sources,
         execution_mode=MaterializationExecutionMode.RUN,
     )
     replay_bundle = _build_wall_clock_replay_bundle(
         ctx,
         final_artifacts,
         executed_journal,
-        finished_at,
-        content_sources,
+        report_inputs.finished_at,
+        report_inputs.content_sources,
     )
     _finalize_outputs(
         ctx,
@@ -438,6 +434,68 @@ def finalize_wall_clock_phase_b_failure(
         writer=_write_phase_b_failure_outputs,
         writer_operation="cleanup_failed_phase_b_run",
         include_reports=False,
+    )
+
+
+def _base_report_inputs(
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    *,
+    actions: ReportActions | None,
+    content_sources: list[ContentSourceEvidence],
+) -> _ReportInputs:
+    return _ReportInputs(
+        finished_at=datetime.now(UTC),
+        invocations=invocations,
+        materialized=materialized,
+        actions=actions,
+        content_sources=content_sources,
+    )
+
+
+def _build_materialization_report(
+    ctx: RunContext,
+    report_inputs: _ReportInputs,
+    *,
+    outcome: Outcome,
+    failures: list[MaterializationFailure],
+    requested_duration_ns: int | None = None,
+    actual_duration_ns: int | None = None,
+    speed_multiplier: str | None = None,
+    overran_duration: bool = False,
+    execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE,
+) -> MaterializationReport:
+    return build_report(
+        outcome=outcome,
+        run_id=ctx.run_id,
+        caps=ctx.caps,
+        started_at=ctx.started_at,
+        finished_at=report_inputs.finished_at,
+        invocations=report_inputs.invocations,
+        materialized=report_inputs.materialized,
+        failures=failures,
+        actions=report_inputs.actions,
+        requested_duration_ns=requested_duration_ns,
+        actual_duration_ns=actual_duration_ns,
+        speed_multiplier=speed_multiplier,
+        overran_duration=overran_duration,
+        content_sources=report_inputs.content_sources,
+        execution_mode=execution_mode,
+    )
+
+
+def _build_materialize_replay_bundle(
+    ctx: RunContext,
+    created_at: datetime,
+    content_sources: list[ContentSourceEvidence],
+) -> MaterializeReplayBundle:
+    return build_replay_bundle(
+        run_id=ctx.run_id,
+        scenario_yaml_bytes=ctx.run_input.raw_bytes,
+        plan_artifacts=ctx.plan_artifacts,
+        caps=ctx.caps,
+        created_at=created_at,
+        content_sources=content_sources,
     )
 
 
