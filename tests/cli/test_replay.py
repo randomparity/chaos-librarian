@@ -46,6 +46,7 @@ from chaos_librarian.engine import (
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
+from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.synthesis import MaterializeAssetResult
@@ -159,8 +160,7 @@ def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
 

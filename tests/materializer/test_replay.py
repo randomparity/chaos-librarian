@@ -39,6 +39,7 @@ from chaos_librarian.engine import (
     run_materializer_plan,
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
@@ -425,8 +426,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -464,8 +464,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -503,8 +502,7 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -567,8 +565,7 @@ def test_run_replay_refuses_muxing_profile_capability_regressions(
             materialize_webm_video=webm_ready,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -812,8 +809,7 @@ def _patch_replay_materializer(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
     if patch_corruption:
         _patch_successful_corruption(monkeypatch)

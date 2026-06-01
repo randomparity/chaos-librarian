@@ -344,8 +344,7 @@ def test_no_chaos_actions_leaves_empty_record_list(tmp_path: Path) -> None:
 
 def test_replay_reproduces_chaos_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
-    monkeypatch.setattr(replay_mod, "detect_capabilities", _capabilities)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(preparation_mod, "detect_capabilities", _capabilities)
 
     timeline = dedent(
         """\

@@ -19,26 +19,18 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     TimelineActionName,
 )
-from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
+from chaos_librarian.contract.validation import ValidationSeverity
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import (
     PlanArtifacts,
-    PlanExecutionRequest,
     ReplayIntegrityError,
-    run_materializer_plan,
 )
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
-from chaos_librarian.materializer.capability_gates import (
-    assert_capable_for_audio_recipes,
-    assert_capable_for_hdr_video,
-    assert_capable_for_matroska_muxing_profiles,
-    assert_capable_for_resolution_switch_video,
-    assert_capable_for_webm_video,
-)
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
+    ScenarioValidationError,
 )
 from chaos_librarian.materializer.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
@@ -65,18 +57,16 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     dispatch_phase_b_entry,
     make_phase_b_state,
 )
-from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preparation import (
+    PreparedMaterializerRun,
+    prepare_materializer_run_input,
+)
 from chaos_librarian.materializer.synthesis import (
     PhaseAInputs,
     materialize_assets_phase_a,
     materialize_one_asset,
 )
-from chaos_librarian.materializer.tooling.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
-from chaos_librarian.topology import iter_asset_contexts
-from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes, run_validation
+from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
 
 __all__ = ["replay_run_bundle"]
 
@@ -85,11 +75,9 @@ def replay_run_bundle(bundle: MaterializeReplayBundle, out_dir: Path) -> Materia
     """Replay a verified wall-clock run bundle as fast as possible."""
     if bundle.execution_mode is not ExecutionMode.RUN:
         raise ReplayIntegrityError("only execution_mode='run' bundles are supported")
-    run_input, validation_report, prefix_artifacts = _verified_run_prefix(bundle)
+    prepared = _verified_run_prefix(bundle)
     return _materialize_verified_run_prefix(
-        run_input=run_input,
-        validation_report=validation_report,
-        prefix_artifacts=prefix_artifacts,
+        prepared=prepared,
         source_bundle=bundle,
         out_dir=out_dir,
     )
@@ -97,33 +85,32 @@ def replay_run_bundle(bundle: MaterializeReplayBundle, out_dir: Path) -> Materia
 
 def _verified_run_prefix(
     bundle: MaterializeReplayBundle,
-) -> tuple[RunInput, ValidationReport, PlanArtifacts]:
+) -> PreparedMaterializerRun:
     yaml_bytes = bundle.scenario.encode("utf-8")
     run_input = prepare_run_input_from_bytes(
         raw_bytes=yaml_bytes,
         source_label=f"run-replay:{bundle.run_id}",
     )
-    report = run_validation(run_input)
-    if not report.ok:
-        errors = [
-            issue.code for issue in report.issues if issue.severity == ValidationSeverity.ERROR
-        ]
-        raise ReplayIntegrityError(f"run replay scenario re-validation failed: {errors}")
-
-    resolved_timeline = resolve_timeline(run_input.scenario)
-    valid_boundaries = {0, *step_boundaries(resolved_timeline)}
-    if bundle.applied_events not in valid_boundaries:
-        raise ReplayIntegrityError(f"applied_events {bundle.applied_events} is not replayable")
-
-    artifacts = run_materializer_plan(
-        PlanExecutionRequest(
+    _assert_replay_boundary(run_input, applied_events=bundle.applied_events)
+    try:
+        prepared = prepare_materializer_run_input(
             run_input=run_input,
-            validation_report=report,
+            validation_failure_message="run replay scenario re-validation failed",
+            validation_payload_exclude_none=True,
+            allow_network_lag=True,
+            allow_network_fs_chaos=True,
             resolved_seed_override=bundle.resolved_seed,
             run_id_override=bundle.run_id,
             applied_events_override=bundle.applied_events,
         )
-    )
+    except ScenarioValidationError as exc:
+        errors = [
+            issue.code
+            for issue in exc.validation_report.issues
+            if issue.severity is ValidationSeverity.ERROR
+        ]
+        raise ReplayIntegrityError(f"run replay scenario re-validation failed: {errors}") from exc
+    artifacts = prepared.plan_artifacts
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
     ]
@@ -133,44 +120,33 @@ def _verified_run_prefix(
             f"journal_digest mismatch: recorded {bundle.journal_digest}, recomputed {digest}"
         )
     _preflight_run_replay_pairing(artifacts.journal)
-    return run_input, report, artifacts
+    return prepared
+
+
+def _assert_replay_boundary(run_input: RunInput, *, applied_events: int) -> None:
+    resolved_timeline = resolve_timeline(run_input.scenario)
+    valid_boundaries = {0, *step_boundaries(resolved_timeline)}
+    if applied_events not in valid_boundaries:
+        raise ReplayIntegrityError(f"applied_events {applied_events} is not replayable")
 
 
 def _materialize_verified_run_prefix(
     *,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    prefix_artifacts: PlanArtifacts,
+    prepared: PreparedMaterializerRun,
     source_bundle: MaterializeReplayBundle,
     out_dir: Path,
 ) -> MaterializeArtifacts:
-    scenario = run_input.scenario
-    preflight_timeline(scenario, allow_network_lag=True, allow_network_fs_chaos=True)
-    caps = detect_capabilities()
-    assert_capable_for_static_materialize(caps)
-    assert_capable_for_matroska_muxing_profiles(scenario, caps)
-    assert_capable_for_webm_video(scenario, caps)
-    assert_capable_for_audio_recipes(scenario, caps)
-    assert_capable_for_resolution_switch_video(scenario, caps)
-    assert_capable_for_hdr_video(scenario, caps)
-    for context in iter_asset_contexts(scenario):
-        asset = context.asset
-        preflight_asset(
-            parent_kind=context.parent_kind,
-            video=asset.video,
-            audios=asset.audio,
-            subtitles=asset.subtitles,
-            container=asset.container,
-        )
+    scenario = prepared.scenario
+    prefix_artifacts = prepared.plan_artifacts
     out_dir.mkdir(parents=True)
     (out_dir / "library").mkdir()
     started_at = datetime.now(UTC)
     ctx = RunContext(
-        run_input=run_input,
+        run_input=prepared.run_input,
         out_dir=out_dir,
         run_id=source_bundle.run_id,
         started_at=started_at,
-        caps=caps,
+        caps=prepared.caps,
         plan_artifacts=prefix_artifacts,
     )
     phase_a = materialize_assets_phase_a(
@@ -178,7 +154,7 @@ def _materialize_verified_run_prefix(
             scenario=scenario,
             out_dir=out_dir,
             artifacts=prefix_artifacts,
-            caps=caps,
+            caps=prepared.caps,
             stamp_manifest=True,
             materialize_asset=materialize_one_asset,
         )
