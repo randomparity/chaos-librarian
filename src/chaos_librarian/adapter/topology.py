@@ -117,99 +117,149 @@ class _ObservedDomainLookups:
     tracks: Mapping[str, ObservedTrack]
 
 
-def topology_key(
+def movie_topology_key(
+    *,
+    movie_title: str,
+    variant_label: str | None,
+    bundle_member_count: int,
+) -> TopologyKey:
+    """Return the domain topology key for a movie asset."""
+    return TopologyKey("movie", (movie_title, variant_label or "", str(bundle_member_count)))
+
+
+def episode_topology_key(
+    *,
+    series_title: str,
+    season_number: int,
+    episode_number: int,
+    episode_title: str | None,
+    variant_label: str | None,
+    bundle_member_count: int,
+) -> TopologyKey:
+    """Return the domain topology key for an episode asset."""
+    return TopologyKey(
+        "episode",
+        (
+            series_title,
+            str(season_number),
+            str(episode_number),
+            episode_title or "",
+            variant_label or "",
+            str(bundle_member_count),
+        ),
+    )
+
+
+def track_topology_key(
+    *,
+    artist_name: str,
+    album_title: str,
+    disc_number: int,
+    track_number: int,
+    track_title: str | None,
+    variant_label: str | None,
+    bundle_member_count: int,
+) -> TopologyKey:
+    """Return the domain topology key for a track asset."""
+    return TopologyKey(
+        "track",
+        (
+            artist_name,
+            album_title,
+            str(disc_number),
+            str(track_number),
+            track_title or "",
+            variant_label or "",
+            str(bundle_member_count),
+        ),
+    )
+
+
+def _topology_key_for_domain_fields(
     *,
     parent_kind: ParentKind | None,
     variant_label: str | None,
     bundle_member_count: int,
-    movie_title: str | None = None,
-    series_title: str | None = None,
-    season_number: int | None = None,
-    episode_number: int | None = None,
-    episode_title: str | None = None,
-    artist_name: str | None = None,
-    album_title: str | None = None,
-    disc_number: int | None = None,
-    track_number: int | None = None,
-    track_title: str | None = None,
+    fields: _TopologyDomainFields,
 ) -> TopologyKey | None:
     """Return the consumer-neutral domain topology key when enough facts exist."""
-    label = variant_label or ""
     key: TopologyKey | None = None
-    if parent_kind is ParentKind.MOVIE and movie_title is not None:
-        key = TopologyKey("movie", (movie_title, label, str(bundle_member_count)))
+    if parent_kind is ParentKind.MOVIE and fields.movie_title is not None:
+        key = movie_topology_key(
+            movie_title=fields.movie_title,
+            variant_label=variant_label,
+            bundle_member_count=bundle_member_count,
+        )
     elif (
         parent_kind is ParentKind.EPISODE
-        and series_title is not None
-        and season_number is not None
-        and episode_number is not None
+        and fields.series_title is not None
+        and fields.season_number is not None
+        and fields.episode_number is not None
     ):
-        key = TopologyKey(
-            "episode",
-            (
-                series_title,
-                str(season_number),
-                str(episode_number),
-                episode_title or "",
-                label,
-                str(bundle_member_count),
-            ),
+        key = episode_topology_key(
+            series_title=fields.series_title,
+            season_number=fields.season_number,
+            episode_number=fields.episode_number,
+            episode_title=fields.episode_title,
+            variant_label=variant_label,
+            bundle_member_count=bundle_member_count,
         )
     elif (
         parent_kind is ParentKind.TRACK
-        and artist_name is not None
-        and album_title is not None
-        and disc_number is not None
-        and track_number is not None
+        and fields.artist_name is not None
+        and fields.album_title is not None
+        and fields.disc_number is not None
+        and fields.track_number is not None
     ):
-        key = TopologyKey(
-            "track",
-            (
-                artist_name,
-                album_title,
-                str(disc_number),
-                str(track_number),
-                track_title or "",
-                label,
-                str(bundle_member_count),
-            ),
+        key = track_topology_key(
+            artist_name=fields.artist_name,
+            album_title=fields.album_title,
+            disc_number=fields.disc_number,
+            track_number=fields.track_number,
+            track_title=fields.track_title,
+            variant_label=variant_label,
+            bundle_member_count=bundle_member_count,
         )
     return key
 
 
 def oracle_topology_key(view: OracleTopologyView) -> TopologyKey | None:
-    return topology_key(
+    return _topology_key_for_domain_fields(
         parent_kind=view.parent_kind,
         variant_label=view.variant_label,
         bundle_member_count=len(view.bundle_asset_ids),
-        movie_title=view.movie_title,
-        series_title=view.series_title,
-        season_number=view.season_number,
-        episode_number=view.episode_number,
-        episode_title=view.episode_title,
-        artist_name=view.artist_name,
-        album_title=view.album_title,
-        disc_number=view.disc_number,
-        track_number=view.track_number,
-        track_title=view.track_title,
+        fields=_TopologyDomainFields(
+            movie_title=view.movie_title,
+            series_title=view.series_title,
+            season_number=view.season_number,
+            episode_number=view.episode_number,
+            episode_title=view.episode_title,
+            artist_name=view.artist_name,
+            album_title=view.album_title,
+            disc_number=view.disc_number,
+            track_number=view.track_number,
+            track_title=view.track_title,
+        ),
     )
 
 
 def observed_topology_key(view: ObservedTopologyView) -> TopologyKey | None:
-    return topology_key(
+    return _topology_key_for_domain_fields(
         parent_kind=view.parent_kind,
         variant_label=view.variant_label,
         bundle_member_count=len(view.bundle_asset_refs),
-        movie_title=view.movie_title,
-        series_title=view.series_title,
-        season_number=view.season_number,
-        episode_number=view.episode_number,
-        episode_title=view.episode_title,
-        artist_name=view.artist_name,
-        album_title=view.album_title,
-        disc_number=view.disc_number,
-        track_number=view.track_number,
-        track_title=view.track_title,
+        fields=_TopologyDomainFields(
+            movie_title=view.movie_title,
+            series_title=view.series_title,
+            season_number=view.season_number,
+            episode_number=view.episode_number,
+            episode_title=view.episode_title,
+            artist_name=view.artist_name,
+            album_title=view.album_title,
+            disc_number=view.disc_number,
+            track_number=view.track_number,
+            track_title=view.track_title,
+        ),
     )
 
 

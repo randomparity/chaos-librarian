@@ -10,12 +10,14 @@ from chaos_librarian.adapter.topology import (
     ObservedTopologyView,
     OracleTopologyView,
     TopologyKey,
+    episode_topology_key,
     format_topology_key,
+    movie_topology_key,
     observed_topology,
     observed_topology_key,
     oracle_topology,
     oracle_topology_key,
-    topology_key,
+    track_topology_key,
 )
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
 from chaos_librarian.contract.observed_state import (
@@ -35,8 +37,10 @@ __all__ = [
     "OracleIndex",
     "OracleTopologyView",
     "TopologyKey",
+    "episode_topology_key",
     "format_topology_key",
-    "topology_key",
+    "movie_topology_key",
+    "track_topology_key",
 ]
 
 
