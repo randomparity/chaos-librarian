@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import (
@@ -15,6 +17,7 @@ from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MaterializationError,
+    MaterializationWriteError,
     MediaActionError,
     ProbeParseError,
     ScenarioValidationError,
@@ -38,6 +41,7 @@ def test_every_subclass_carries_an_error_code():
         ContainmentViolationError,
         CapabilityGateError,
         ScenarioValidationError,
+        MaterializationWriteError,
     ):
         assert issubclass(cls, MaterializationError)
         assert hasattr(cls, "error_code")
@@ -80,6 +84,24 @@ def test_tool_failed_carries_invocation():
         invocation=invocation,
     )
     assert err.invocation.exit_code == 1
+
+
+def test_materialization_write_error_carries_operation_path_errno() -> None:
+    cause = OSError(13, "permission denied")
+    err = MaterializationWriteError(
+        operation="finalize_materialize_run",
+        path=Path("/tmp/run"),
+        cause=cause,
+    )
+
+    assert err.error_code == "E_MATERIALIZE_WRITE_FAILED"
+    assert err.operation == "finalize_materialize_run"
+    assert err.path == Path("/tmp/run")
+    assert err.cause is cause
+    assert err.payload["operation"] == "finalize_materialize_run"
+    assert err.payload["path"] == "/tmp/run"
+    assert err.payload["errno"] == 13
+    assert err.payload["exception_type"] == "PermissionError"
 
 
 def test_scenario_validation_error_carries_report():

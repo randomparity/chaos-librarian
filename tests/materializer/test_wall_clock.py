@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import uuid
@@ -40,6 +41,7 @@ from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     CorruptionActionError,
     FilesystemActionError,
+    MaterializationWriteError,
     MediaActionError,
     TimelineUnsupportedError,
 )
@@ -86,6 +88,21 @@ series: []
 artists: []
 timeline: []
 """
+
+
+def test_existing_out_dir_raises_write_error(tmp_path: Path) -> None:
+    out_dir = tmp_path / "run"
+    out_dir.mkdir()
+
+    with pytest.raises(MaterializationWriteError) as exc_info:
+        wall_clock._create_staging_dir(out_dir)
+
+    err = exc_info.value
+    assert err.operation == "begin_wall_clock_run"
+    assert err.path == out_dir
+    assert err.payload["errno"] == errno.EEXIST
+    assert err.payload["exception_type"] == "FileExistsError"
+
 
 _MKV_MUXING_PROFILE_SCENARIO = """\
 schema_version: 32

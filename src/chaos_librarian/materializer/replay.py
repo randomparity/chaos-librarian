@@ -34,6 +34,7 @@ from chaos_librarian.materializer.content.synthesis import (
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
+    MaterializationWriteError,
     MediaActionError,
     ScenarioValidationError,
 )
@@ -144,8 +145,7 @@ def _materialize_verified_run_prefix(
 ) -> MaterializeArtifacts:
     scenario = prepared.scenario
     prefix_artifacts = prepared.plan_artifacts
-    out_dir.mkdir(parents=True)
-    (out_dir / "library").mkdir()
+    _begin_run_replay(out_dir)
     started_at = datetime.now(UTC)
     ctx = RunContext(
         run_input=prepared.run_input,
@@ -197,6 +197,18 @@ def _materialize_verified_run_prefix(
         actions=_report_actions_from_state(state, network_fs_chaos_actions=chaos_actions),
         content_sources=phase_a.content_sources,
     )
+
+
+def _begin_run_replay(out_dir: Path) -> None:
+    try:
+        out_dir.mkdir(parents=True)
+        (out_dir / "library").mkdir()
+    except OSError as exc:
+        raise MaterializationWriteError(
+            operation="begin_run_replay",
+            path=out_dir,
+            cause=exc,
+        ) from exc
 
 
 def _report_actions_from_state(

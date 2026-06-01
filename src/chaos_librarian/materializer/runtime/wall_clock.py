@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import errno
 import time
 import uuid
 from collections.abc import Mapping
@@ -40,6 +41,7 @@ from chaos_librarian.materializer.content.synthesis import (
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
+    MaterializationWriteError,
     MediaActionError,
     TimelineUnsupportedError,
 )
@@ -232,10 +234,26 @@ def _parse_positive_duration(raw: str) -> int:
 
 def _create_staging_dir(out_dir: Path) -> Path:
     if out_dir.exists():
-        raise FileExistsError(f"refusing to write into existing directory: {out_dir}")
+        cause = FileExistsError(
+            errno.EEXIST,
+            "refusing to write into existing directory",
+            str(out_dir),
+        )
+        raise MaterializationWriteError(
+            operation="begin_wall_clock_run",
+            path=out_dir,
+            cause=cause,
+        ) from cause
     staging_dir = out_dir.parent / f".{out_dir.name}.staging"
-    staging_dir.mkdir(parents=True)
-    (staging_dir / "library").mkdir()
+    try:
+        staging_dir.mkdir(parents=True)
+        (staging_dir / "library").mkdir()
+    except OSError as exc:
+        raise MaterializationWriteError(
+            operation="begin_wall_clock_run",
+            path=staging_dir,
+            cause=exc,
+        ) from exc
     return staging_dir
 
 
@@ -291,18 +309,25 @@ def _publish_baseline(
         caps=caps,
         plan_artifacts=artifacts,
     )
-    publish_wall_clock_baseline(
-        staging_dir,
-        out_dir,
-        WallClockBaselineMetadata(
-            initial_manifest=artifacts.initial_manifest,
-            current_manifest=artifacts.current_manifest,
-            validation_report=artifacts.validation_report,
-            replay_bundle=replay_bundle,
-            scenario_yaml_bytes=run_input.raw_bytes,
-            sentinel=build_sentinel(ctx, RunSentinelState.IN_PROGRESS),
-        ),
-    )
+    try:
+        publish_wall_clock_baseline(
+            staging_dir,
+            out_dir,
+            WallClockBaselineMetadata(
+                initial_manifest=artifacts.initial_manifest,
+                current_manifest=artifacts.current_manifest,
+                validation_report=artifacts.validation_report,
+                replay_bundle=replay_bundle,
+                scenario_yaml_bytes=run_input.raw_bytes,
+                sentinel=build_sentinel(ctx, RunSentinelState.IN_PROGRESS),
+            ),
+        )
+    except OSError as exc:
+        raise MaterializationWriteError(
+            operation="publish_wall_clock_baseline",
+            path=out_dir,
+            cause=exc,
+        ) from exc
 
 
 def _run_timed_phase(

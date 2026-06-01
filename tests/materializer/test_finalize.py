@@ -29,7 +29,7 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import NetworkLagEffect, TimelineActionName
 from chaos_librarian.engine import run_plan
-from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.errors import FilesystemActionError, MaterializationWriteError
 from chaos_librarian.materializer.persistence import finalize as finalize_mod
 from chaos_librarian.materializer.persistence import reports as reports_mod
 from chaos_librarian.materializer.persistence._context import ReportActions, RunContext
@@ -158,6 +158,35 @@ def test_finalize_success_writes_complete_metadata(
     assert reports.assets
 
 
+def test_finalize_success_wraps_writer_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_finalize(
+        out_dir: Path,
+        metadata: MaterializeMetadata,
+        reports: MaterializeReports,
+    ) -> None:
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(finalize_mod, "finalize_materialize_run", fake_finalize)
+    ctx = _run_context(tmp_path)
+
+    with pytest.raises(MaterializationWriteError) as exc_info:
+        finalize_mod.finalize_success(
+            ctx,
+            [],
+            [],
+            actions=ReportActions(),
+            content_sources=[],
+        )
+
+    err = exc_info.value
+    assert err.operation == "finalize_materialize_run"
+    assert err.path == ctx.out_dir
+    assert err.payload["errno"] == 28
+
+
 def test_finalize_run_replay_success_writes_run_mode_metadata(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -283,3 +312,37 @@ def test_finalize_failure_phase_b_records_failure_metadata(
     assert report.failures[0].stage is FailureStage.FILESYSTEM
     assert report.failures[0].asset_id == "asset_main"
     assert report.failures[0].stderr_tail == "[Errno 2] missing"
+
+
+def test_finalize_failure_phase_b_wraps_cleanup_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def fake_cleanup(out_dir: Path, metadata: MaterializeMetadata) -> None:
+        raise OSError(5, "Input/output error")
+
+    monkeypatch.setattr(finalize_mod, "cleanup_failed_phase_b_run", fake_cleanup)
+    ctx = _run_context(tmp_path)
+    exc = FilesystemActionError(
+        "move failed",
+        event_id="move-1",
+        action=TimelineActionName.MOVE_ASSET,
+        cause=OSError(2, "missing"),
+        asset_id="asset_main",
+    )
+
+    with pytest.raises(MaterializationWriteError) as exc_info:
+        finalize_mod.finalize_failure_phase_b(
+            ctx,
+            exc,
+            Outcome.FS_FAILED,
+            [],
+            [],
+            actions=ReportActions(),
+            content_sources=[],
+        )
+
+    err = exc_info.value
+    assert err.operation == "cleanup_failed_phase_b_run"
+    assert err.path == ctx.out_dir
+    assert err.payload["errno"] == 5

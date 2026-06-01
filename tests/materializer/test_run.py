@@ -29,6 +29,7 @@ from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     FilesystemActionError,
+    MaterializationWriteError,
     ScenarioValidationError,
     ToolFailedError,
 )
@@ -203,6 +204,19 @@ def test_materialize_refuses_audio_noise_when_capability_missing(
     assert exc.value.field == "ready_for.materialize_audio_recipes"
     assert exc.value.asset_id == "asset_noise"
     assert not out.exists()
+
+
+def test_materialize_existing_out_dir_raises_write_error(tmp_path: Path) -> None:
+    out = tmp_path / "run-001"
+    out.mkdir()
+
+    with pytest.raises(MaterializationWriteError) as exc_info:
+        materialize_scenario(FIXTURE_DIR / "static-library.yaml", out)
+
+    err = exc_info.value
+    assert err.operation == "begin_materialize_run"
+    assert err.path == out
+    assert err.payload["exception_type"] == "FileExistsError"
 
 
 @pytest.mark.parametrize(

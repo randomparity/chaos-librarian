@@ -24,6 +24,7 @@ from chaos_librarian.materializer.content.synthesis import (
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
+    MaterializationWriteError,
     MediaActionError,
     ProbeParseError,
     ToolFailedError,
@@ -70,6 +71,8 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
             synthesis.
         ProbeParseError: ffprobe output is malformed or missing required
             fields.
+        MaterializationWriteError: run directory lifecycle metadata,
+            report, or cleanup writes failed.
         FilesystemActionError: a phase-B stdlib helper raised.
         MediaActionError: a phase-B media handler (ffmpeg-backed or
             sidecar regeneration) raised.
@@ -90,8 +93,19 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         caps=prepared.caps,
         plan_artifacts=prepared.plan_artifacts,
     )
-    begin_materialize_run(ctx.out_dir, build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
+    _begin_materialize_run(ctx)
     return _run_synthesis(ctx, scenario)
+
+
+def _begin_materialize_run(ctx: RunContext) -> None:
+    try:
+        begin_materialize_run(ctx.out_dir, build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
+    except OSError as exc:
+        raise MaterializationWriteError(
+            operation="begin_materialize_run",
+            path=ctx.out_dir,
+            cause=exc,
+        ) from exc
 
 
 def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:

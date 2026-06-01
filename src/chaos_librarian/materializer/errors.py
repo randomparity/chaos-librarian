@@ -8,6 +8,8 @@ stdout JSON.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import TimelineActionName
@@ -61,6 +63,33 @@ class SymlinkTargetMissingError(MaterializationError):
     """
 
     error_code: str = "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
+
+
+class MaterializationWriteError(MaterializationError):
+    """A lifecycle mkdir, metadata write, publish, or cleanup operation failed."""
+
+    error_code: str = "E_MATERIALIZE_WRITE_FAILED"
+
+    def __init__(
+        self,
+        *,
+        operation: str,
+        path: Path,
+        cause: OSError,
+    ) -> None:
+        super().__init__(
+            f"{operation} failed for {path}: {cause}",
+            payload={
+                "operation": operation,
+                "path": str(path),
+                "errno": cause.errno,
+                "exception_type": type(cause).__name__,
+                "error": str(cause),
+            },
+        )
+        self.operation = operation
+        self.path = path
+        self.cause = cause
 
 
 class ToolFailedError(MaterializationError):
