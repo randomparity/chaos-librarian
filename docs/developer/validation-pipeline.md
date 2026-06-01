@@ -17,9 +17,12 @@ Stable issue ordering keeps reports deterministic.
 
 Semantic validation rules live under `validation/rules/`. New rules should be
 small modules with focused tests under `tests/validation/rules/`; keep shared
-helpers in focused sibling modules such as `raw_helpers.py`,
-`hierarchy_walkers.py`, `hierarchy_projection.py`, and
-`sidecar_projection.py` only when multiple rules use them.
+helpers in focused sibling modules such as
+`validation/rules/core/raw_helpers.py`,
+`validation/rules/hierarchy/walkers.py`,
+`validation/rules/hierarchy/projection.py`,
+`validation/rules/hierarchy/rendering_projection.py`, and
+`validation/rules/sidecar/projection.py` only when multiple rules use them.
 
 Invalid fixtures under `tests/fixtures/scenarios/invalid/` must start with:
 

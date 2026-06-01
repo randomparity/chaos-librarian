@@ -177,6 +177,29 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_validation_pipeline_docs_name_current_helper_modules() -> None:
+    validation_pipeline = _read(DOCS / "developer" / "validation-pipeline.md")
+
+    required_snippets = [
+        "`validation/rules/core/raw_helpers.py`",
+        "`validation/rules/hierarchy/walkers.py`",
+        "`validation/rules/hierarchy/projection.py`",
+        "`validation/rules/hierarchy/rendering_projection.py`",
+        "`validation/rules/sidecar/projection.py`",
+    ]
+    stale_snippets = [
+        "`raw_helpers.py`",
+        "`hierarchy_walkers.py`",
+        "`hierarchy_projection.py`",
+        "`sidecar_projection.py`",
+    ]
+
+    for snippet in required_snippets:
+        assert snippet in validation_pipeline
+    for snippet in stale_snippets:
+        assert snippet not in validation_pipeline
+
+
 def test_observed_state_docs_cover_language_and_sidecar_normalization() -> None:
     observed_state = _read(DOCS / "contract" / "observed-state.md")
 
