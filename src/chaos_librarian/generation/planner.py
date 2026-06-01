@@ -1,7 +1,7 @@
 """Content and timeline planning for deterministic fuzz generation.
 
 This module owns the canonical fuzz lane configuration (``LANE_CONFIGS``). Each
-:class:`~chaos_librarian.generation.lanes.LaneConfig` pairs a lane's required
+:class:`LaneConfig` pairs a lane's required
 coverage cells with the ``required_events`` builder that satisfies them, so the
 two cannot drift apart when a lane is added or changed.
 """
@@ -15,7 +15,7 @@ from typing import Final, cast
 from pydantic import BaseModel
 
 from chaos_librarian.contract import scenario as scenario_contract
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
+from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import (
     NetworkLagEffect,
     SidecarKind,
@@ -27,7 +27,6 @@ from chaos_librarian.generation.lanes import (
     CELL_LAG_EFFECT_PREFIX,
     CELL_SIDE_NFO_OR_POSTER,
     CELL_SIDE_SUBTITLE,
-    LaneConfig,
     action_cell,
     derive_required_profiles,
 )
@@ -80,6 +79,19 @@ class TimelinePlanner:
     def append_event(self, event: TimelineEvent) -> None:
         """Append one concrete TimelineEvent model."""
         self.events.append(event)
+
+
+@dataclass(frozen=True, slots=True)
+class LaneConfig:
+    profile: FuzzProfileName
+    lane: FuzzLaneName
+    profiles: tuple[ProfileName, ...]
+    movies: int
+    series: int
+    artists: int
+    timeline_events: int
+    required_cells: frozenset[str]
+    required_events: Callable[[TimelinePlanner], None]
 
 
 def plan_payload_parts(

@@ -10,29 +10,13 @@ profile labels from the contract's profile-gating policy.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Final, cast
+from typing import Final, cast
 
 from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
-from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
+from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
-
-if TYPE_CHECKING:
-    from chaos_librarian.generation.planner import TimelinePlanner
-
-
-@dataclass(frozen=True, slots=True)
-class LaneConfig:
-    profile: FuzzProfileName
-    lane: FuzzLaneName
-    profiles: tuple[ProfileName, ...]
-    movies: int
-    series: int
-    artists: int
-    timeline_events: int
-    required_cells: frozenset[str]
-    required_events: Callable[[TimelinePlanner], None]
 
 
 @dataclass(frozen=True, slots=True)
