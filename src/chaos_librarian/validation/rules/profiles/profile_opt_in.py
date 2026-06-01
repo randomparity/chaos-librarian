@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
+from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.validation.codes import E_PROFILE_REQUIRED
 from chaos_librarian.validation.rules.core.raw_helpers import (
@@ -24,8 +25,7 @@ def rule_profile_opt_in(
     collector: IssueCollector,
 ) -> None:
     reporter = Reporter(collector=collector, line_index=line_index)
-    profiles_raw = raw.get("profiles", [])
-    profiles = set(profiles_raw) if isinstance(profiles_raw, list) else set()
+    profiles = _declared_profiles(raw)
     for idx, event in _iter_timeline_events(raw):
         action = event.get("action")
         if not isinstance(action, str):
@@ -35,20 +35,35 @@ def rule_profile_opt_in(
         except ValueError:
             continue
         required_profile = REQUIRED_PROFILES_BY_ACTION.get(action_name)
-        if required_profile is not None and required_profile.value not in profiles:
+        if required_profile is not None and required_profile not in profiles:
             _emit_required_profile(
-                action=action,
-                profile=required_profile.value,
+                action=action_name,
+                profile=required_profile,
                 event=event,
                 idx=idx,
                 reporter=reporter,
             )
 
 
+def _declared_profiles(raw: Mapping[str, object]) -> set[ProfileName]:
+    profiles_raw = raw.get("profiles", [])
+    if not isinstance(profiles_raw, list):
+        return set()
+    profiles: set[ProfileName] = set()
+    for profile in profiles_raw:
+        if not isinstance(profile, str):
+            continue
+        try:
+            profiles.add(ProfileName(profile))
+        except ValueError:
+            continue
+    return profiles
+
+
 def _emit_required_profile(
     *,
-    action: str,
-    profile: str,
+    action: TimelineActionName,
+    profile: ProfileName,
     event: Mapping[str, object],
     idx: int,
     reporter: Reporter,
@@ -57,6 +72,6 @@ def _emit_required_profile(
     suffix = f" for event {event_id!r}" if isinstance(event_id, str) else ""
     reporter.error(
         code=E_PROFILE_REQUIRED,
-        message=f"{action} requires profile {profile!r}{suffix}",
+        message=f"{action.value} requires profile {profile.value!r}{suffix}",
         loc=("timeline", idx, "action"),
     )

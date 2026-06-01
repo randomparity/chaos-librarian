@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, Final, cast
 
 from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
-from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
 
 if TYPE_CHECKING:
     from chaos_librarian.generation.planner import TimelinePlanner
@@ -86,6 +86,33 @@ def derive_required_profiles(
     return tuple(profiles)
 
 
+def _timeline_action(value: object) -> TimelineActionName | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return TimelineActionName(value)
+    except ValueError:
+        return None
+
+
+def _sidecar_kind(value: object) -> SidecarKind | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return SidecarKind(value)
+    except ValueError:
+        return None
+
+
+def _network_lag_effect(value: object) -> NetworkLagEffect | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        return NetworkLagEffect(value)
+    except ValueError:
+        return None
+
+
 def coverage_for_payload(payload: Mapping[str, object]) -> CoverageReport:
     cells: set[str] = set()
     raw = payload.get("timeline", [])
@@ -95,16 +122,16 @@ def coverage_for_payload(payload: Mapping[str, object]) -> CoverageReport:
         if not isinstance(event, dict):
             continue
         event = cast(Mapping[str, object], event)
-        action = event.get("action")
-        if isinstance(action, str):
-            cells.add(f"{CELL_ACTION_PREFIX}{action}")
-        kind = event.get("kind")
-        if action == TimelineActionName.CREATE_SIDECAR.value and isinstance(kind, str):
-            if kind == SidecarKind.SUBTITLE.value:
+        action = _timeline_action(event.get("action"))
+        if action is not None:
+            cells.add(action_cell(action))
+        kind = _sidecar_kind(event.get("kind"))
+        if action is TimelineActionName.CREATE_SIDECAR and kind is not None:
+            if kind is SidecarKind.SUBTITLE:
                 cells.add(CELL_SIDE_SUBTITLE)
-            elif kind in {SidecarKind.NFO.value, SidecarKind.POSTER.value}:
+            elif kind in {SidecarKind.NFO, SidecarKind.POSTER}:
                 cells.add(CELL_SIDE_NFO_OR_POSTER)
-        effect = event.get("effect")
-        if action == TimelineActionName.NETWORK_LAG_START.value and isinstance(effect, str):
-            cells.add(f"{CELL_LAG_EFFECT_PREFIX}{effect}")
+        effect = _network_lag_effect(event.get("effect"))
+        if action is TimelineActionName.NETWORK_LAG_START and effect is not None:
+            cells.add(f"{CELL_LAG_EFFECT_PREFIX}{effect.value}")
     return CoverageReport(cells=frozenset(cells))

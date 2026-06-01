@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Final
 
 from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import TimelineActionName
 
-REQUIRED_PROFILES_BY_ACTION: Final[dict[TimelineActionName, ProfileName]] = {
+REQUIRED_PROFILES_BY_ACTION: Final[Mapping[TimelineActionName, ProfileName]] = {
     TimelineActionName.CORRUPT_CONTAINER_HEADER: ProfileName.MALFORMED_MEDIA,
     TimelineActionName.TRUNCATE_FILE: ProfileName.MALFORMED_MEDIA,
     TimelineActionName.CORRUPT_PACKET_RANGE: ProfileName.MALFORMED_MEDIA,
