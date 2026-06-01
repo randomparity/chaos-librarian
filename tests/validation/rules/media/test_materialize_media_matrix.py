@@ -122,6 +122,78 @@ timeline: []
     )
 
 
+def _write_podcast_scenario(
+    path: Path,
+    *,
+    container: str = "mp3",
+    codec: str = "mp3",
+    video: bool = False,
+    subtitles: bool = False,
+) -> None:
+    video_block = (
+        """                  video:
+                    source: color_bars
+                    codec: h264
+                    resolution: sd
+"""
+        if video
+        else ""
+    )
+    subtitles_block = (
+        """                  subtitles:
+                    - source: generated_srt
+                      codec: srt
+                      language: eng
+                      mode: sidecar
+"""
+        if subtitles
+        else ""
+    )
+    path.write_text(
+        f"""schema_version: 32
+scenario_id: podcast-validation-smoke
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: podcast_root
+      path: podcasts
+movies: []
+series: []
+artists: []
+podcasts:
+  - id: podcast_daily
+    title: Synthetic Daily
+    layout: podcast_folder
+    episode_naming: date_slug_title
+    episodes:
+      - id: podcast_episode_one
+        title: First Signal
+        published_at: 2026-05-01T09:00:00Z
+        slug: first-signal
+        variants:
+          - id: variant_podcast
+            label: standard
+            bundle:
+              id: bundle_podcast
+              assets:
+                - id: asset_podcast
+                  role: main
+                  container: {container}
+                  duration_seconds: 2.0
+{video_block.rstrip()}
+                  audio:
+                    - source: sine
+                      codec: {codec}
+                      channels: stereo
+                      language: eng
+{subtitles_block.rstrip()}
+timeline: []
+""",
+        encoding="utf-8",
+    )
+
+
 def _write_movie_scenario(
     path: Path,
     *,
@@ -1071,6 +1143,34 @@ def test_audio_only_m4a_track_validates_clean(tmp_path: Path) -> None:
 
     assert report.ok is True
     assert report.issues == []
+
+
+def test_audio_only_podcast_episode_validates_clean(tmp_path: Path) -> None:
+    scenario = tmp_path / "podcast-mp3.yaml"
+    _write_podcast_scenario(scenario)
+
+    report = run_validation(prepare_run_input(scenario))
+
+    assert report.ok is True
+    assert report.issues == []
+
+
+def test_podcast_episode_video_stream_is_rejected(tmp_path: Path) -> None:
+    scenario = tmp_path / "podcast-video.yaml"
+    _write_podcast_scenario(scenario, video=True)
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].video")
+
+
+def test_podcast_episode_unsupported_audio_only_cell_is_rejected(tmp_path: Path) -> None:
+    scenario = tmp_path / "podcast-unsupported-audio.yaml"
+    _write_podcast_scenario(scenario, container="mkv", codec="flac")
+
+    path = _first_materialize_issue_path(scenario)
+
+    assert path.endswith(".assets[0].container")
 
 
 def test_audio_only_noise_wav_pcm_float_validates_clean(tmp_path: Path) -> None:

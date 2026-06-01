@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Sequence
 from pathlib import Path
+from typing import Final
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
@@ -72,6 +73,13 @@ __all__ = [
     "preflight_timeline",
 ]
 
+_AUDIO_ONLY_PARENT_KINDS: Final[frozenset[ParentKind]] = frozenset(
+    {ParentKind.TRACK, ParentKind.PODCAST_EPISODE}
+)
+_VIDEO_PARENT_KINDS: Final[frozenset[ParentKind]] = frozenset(
+    {ParentKind.MOVIE, ParentKind.EPISODE}
+)
+
 
 def iter_assets(scenario: Scenario) -> Iterator[Asset]:
     """Iterate all assets in scenario order."""
@@ -90,16 +98,17 @@ def preflight_asset(
     """Reject unsupported media shapes before run-dir allocation.
 
     Movie and episode assets resolve video/audio sources, then dry-build the
-    video-backed FFmpeg command through ``build_command``. Track assets enforce
-    the audio-only policy and resolve audio inputs.
+    video-backed FFmpeg command through ``build_command``. Track and podcast
+    episode assets enforce the audio-only policy and resolve audio inputs.
 
     Subtitle checks are inline: only ``codec=srt, source=generated_srt,
     mode=sidecar`` is supported. Without these gates, ``mode=embedded`` or
     ``codec=ass`` would fall through and the materialize "success" would
     silently drop the requested subtitles.
     """
-    if parent_kind is ParentKind.TRACK:
-        _preflight_track_asset(
+    if parent_kind in _AUDIO_ONLY_PARENT_KINDS:
+        _preflight_audio_only_asset(
+            parent_kind=parent_kind,
             video=video,
             audios=audios,
             subtitles=subtitles,
@@ -107,6 +116,12 @@ def preflight_asset(
         )
         return
 
+    if parent_kind not in _VIDEO_PARENT_KINDS:
+        raise UnsupportedMaterializationError(
+            f"parent_kind {parent_kind.value!r} is not supported by materialize",
+            field="parent_kind",
+            payload={"parent_kind": parent_kind.value},
+        )
     if video is None:
         raise UnsupportedMaterializationError(
             "every asset must declare a video track.",
@@ -227,29 +242,31 @@ def _require_resolution_switch_value(*, value: str, expected: str, field: str) -
     )
 
 
-def _preflight_track_asset(
+def _preflight_audio_only_asset(
     *,
+    parent_kind: ParentKind,
     video: VideoTrack | None,
     audios: Sequence[AudioTrack],
     subtitles: Sequence[SubtitleTrack],
     container: str,
 ) -> None:
-    """Reject track assets outside the audio-only materializer matrix."""
+    """Reject assets outside the audio-only materializer matrix."""
+    asset_kind = parent_kind.value
     if video is not None:
         raise UnsupportedMaterializationError(
-            "track assets must not declare a video track.",
+            f"{asset_kind} assets must not declare a video track.",
             field="video",
             payload={},
         )
     if subtitles:
         raise UnsupportedMaterializationError(
-            "track assets must not declare subtitles.",
+            f"{asset_kind} assets must not declare subtitles.",
             field="subtitles",
             payload={},
         )
     if len(audios) != 1:
         raise UnsupportedMaterializationError(
-            "track assets must declare exactly one audio stream.",
+            f"{asset_kind} assets must declare exactly one audio stream.",
             field="audio",
             payload={"count": len(audios)},
         )

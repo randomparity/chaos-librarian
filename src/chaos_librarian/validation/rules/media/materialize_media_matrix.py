@@ -57,6 +57,12 @@ _WEBM_REJECTED_VIDEO_FIELDS: Final[tuple[str, ...]] = (
     "hdr_mode",
     "resolution_sequence",
 )
+_AUDIO_ONLY_PARENT_KINDS: Final[frozenset[str]] = frozenset(
+    {ParentKind.TRACK.value, ParentKind.PODCAST_EPISODE.value}
+)
+_VIDEO_PARENT_KINDS: Final[frozenset[str]] = frozenset(
+    {ParentKind.MOVIE.value, ParentKind.EPISODE.value}
+)
 _SUBTITLE_TIMING_PROFILES: Final[frozenset[str]] = frozenset({"normal", "overlap", "out_of_range"})
 
 
@@ -72,11 +78,17 @@ def rule_materialize_media_matrix(
 
 
 def _check_asset_context(context: RawAssetContext, reporter: Reporter) -> None:
-    if context.parent_kind == ParentKind.TRACK.value:
-        _check_track_asset(context, reporter)
+    if context.parent_kind in _AUDIO_ONLY_PARENT_KINDS:
+        _check_audio_only_asset(context, reporter)
         return
-    if context.parent_kind in {ParentKind.MOVIE.value, ParentKind.EPISODE.value}:
+    if context.parent_kind in _VIDEO_PARENT_KINDS:
         _check_video_asset(context, reporter)
+        return
+    reporter.error(
+        code=E_MATERIALIZE_UNSUPPORTED,
+        message=f"{context.parent_kind} assets are not supported by materialize",
+        loc=context.asset_loc,
+    )
 
 
 def _check_video_asset(context: RawAssetContext, reporter: Reporter) -> None:
@@ -238,9 +250,10 @@ def _check_resolution_switch_video(
         )
 
 
-def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
+def _check_audio_only_asset(context: RawAssetContext, reporter: Reporter) -> None:
     asset = context.asset
     asset_loc = context.asset_loc
+    asset_kind = context.parent_kind
     _check_mp4_moov_placement(asset=asset, asset_loc=asset_loc, reporter=reporter)
     _reject_embedded_metadata_for_asset(
         asset=asset,
@@ -257,28 +270,32 @@ def _check_track_asset(context: RawAssetContext, reporter: Reporter) -> None:
     if _as_mapping(asset.get("video")) is not None:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message="track assets must not declare a video stream",
+            message=f"{asset_kind} assets must not declare a video stream",
             loc=(*asset_loc, "video"),
         )
     if _as_list(asset.get("subtitles")):
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message="track assets must not declare subtitle tracks",
+            message=f"{asset_kind} assets must not declare subtitle tracks",
             loc=(*asset_loc, "subtitles"),
         )
     audio_streams = _as_list(asset.get("audio"))
     if audio_streams is None or len(audio_streams) != 1:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message="track assets must declare exactly one audio stream",
+            message=f"{asset_kind} assets must declare exactly one audio stream",
             loc=(*asset_loc, "audio"),
         )
         return
     audio = _as_mapping(audio_streams[0])
     if audio is None:
         return
-    _check_track_container_and_codec(
-        asset=asset, audio=audio, asset_loc=asset_loc, reporter=reporter
+    _check_audio_only_container_and_codec(
+        asset=asset,
+        audio=audio,
+        asset_kind=asset_kind,
+        asset_loc=asset_loc,
+        reporter=reporter,
     )
 
 
@@ -445,10 +462,11 @@ def _reject_matroska_muxing_profile_for_asset(
     )
 
 
-def _check_track_container_and_codec(
+def _check_audio_only_container_and_codec(
     *,
     asset: Mapping[str, object],
     audio: Mapping[str, object],
+    asset_kind: str,
     asset_loc: _Loc,
     reporter: Reporter,
 ) -> None:
@@ -456,7 +474,9 @@ def _check_track_container_and_codec(
     if isinstance(container, str) and container not in SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER:
         reporter.error(
             code=E_MATERIALIZE_UNSUPPORTED,
-            message=f"track container {container!r} is not supported by materialize synthesis",
+            message=(
+                f"{asset_kind} container {container!r} is not supported by materialize synthesis"
+            ),
             loc=(*asset_loc, "container"),
         )
     codec = audio.get("codec")
@@ -478,7 +498,8 @@ def _check_track_container_and_codec(
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
         message=(
-            f"track audio codec {codec!r} is not supported for audio-only container {container!r}"
+            f"{asset_kind} audio codec {codec!r} is not supported for "
+            f"audio-only container {container!r}"
         ),
         loc=(*asset_loc, "audio", 0, "codec"),
     )

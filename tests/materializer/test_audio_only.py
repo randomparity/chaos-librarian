@@ -51,6 +51,20 @@ def test_track_audio_only_cells_pass_preflight(container: str, codec: str) -> No
 
 
 @pytest.mark.parametrize(
+    ("container", "codec"),
+    [("flac", "flac"), ("mp3", "mp3"), ("m4a", "aac")],
+)
+def test_podcast_episode_audio_only_cells_pass_preflight(container: str, codec: str) -> None:
+    preflight_asset(
+        parent_kind=ParentKind.PODCAST_EPISODE,
+        video=None,
+        audios=[_audio(codec)],
+        subtitles=[],
+        container=container,
+    )
+
+
+@pytest.mark.parametrize(
     ("container", "codec", "encoder"),
     [("flac", "flac", "flac"), ("mp3", "mp3", "libmp3lame"), ("m4a", "aac", "aac")],
 )
@@ -88,6 +102,19 @@ def test_track_with_video_rejected_by_preflight() -> None:
             audios=[_audio("flac")],
             subtitles=[],
             container="flac",
+        )
+
+    assert exc_info.value.field == "video"
+
+
+def test_podcast_episode_with_video_rejected_by_preflight() -> None:
+    with pytest.raises(UnsupportedMaterializationError) as exc_info:
+        preflight_asset(
+            parent_kind=ParentKind.PODCAST_EPISODE,
+            video=_video(),
+            audios=[_audio("mp3")],
+            subtitles=[],
+            container="mp3",
         )
 
     assert exc_info.value.field == "video"
