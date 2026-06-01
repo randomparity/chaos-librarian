@@ -29,7 +29,7 @@ from chaos_librarian.materializer.errors import (
     FilesystemActionError,
     MediaActionError,
 )
-from chaos_librarian.materializer.phase_b.corruption import (
+from chaos_librarian.materializer.phase_b.corruption.handler import (
     CorruptionPhaseBContext,
     apply_corruption_action,
     make_corruption_phase_b_context,
@@ -41,7 +41,7 @@ from chaos_librarian.materializer.phase_b.filesystem import (
     make_filesystem_phase_b_context,
     supports_filesystem_action,
 )
-from chaos_librarian.materializer.phase_b.media import (
+from chaos_librarian.materializer.phase_b.media.handler import (
     MediaPhaseBContext,
     MediaPhaseBInputs,
     apply_media_action,

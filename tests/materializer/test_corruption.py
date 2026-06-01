@@ -15,19 +15,19 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
-from chaos_librarian.materializer.phase_b import corruption as corruption_module
-from chaos_librarian.materializer.phase_b import packet_probe
-from chaos_librarian.materializer.phase_b.corruption import (
-    CorruptionPhaseBContext,
-    apply_corruption_action,
-)
-from chaos_librarian.materializer.phase_b.corruption_bytes import (
+from chaos_librarian.materializer.phase_b.corruption import handler as corruption_module
+from chaos_librarian.materializer.phase_b.corruption.bytes import (
     malformed_id3_header,
     overwrite_range,
     replacement_bytes,
     truncate_bytes,
     zero_range,
 )
+from chaos_librarian.materializer.phase_b.corruption.handler import (
+    CorruptionPhaseBContext,
+    apply_corruption_action,
+)
+from chaos_librarian.materializer.phase_b.media import packet_probe
 
 
 def _entry(*, byte_count: int = 8) -> AtomicJournalEntry:

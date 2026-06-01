@@ -19,13 +19,13 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TagCorruptionFlavor, TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
 from chaos_librarian.materializer.phase_b.content import hash_bytes, hash_file, temp_sibling
-from chaos_librarian.materializer.phase_b.corruption_bytes import (
+from chaos_librarian.materializer.phase_b.corruption.bytes import (
     malformed_id3_header,
     overwrite_range,
     truncate_bytes,
     zero_range,
 )
-from chaos_librarian.materializer.phase_b.packet_probe import resolve_packet_byte_range
+from chaos_librarian.materializer.phase_b.media.packet_probe import resolve_packet_byte_range
 from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 from chaos_librarian.materializer.tooling.ffmpeg import run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file

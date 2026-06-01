@@ -32,12 +32,12 @@ from chaos_librarian.materializer.errors import (
     MediaActionError,
 )
 from chaos_librarian.materializer.phase_b import dispatch as phase_b
-from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b.corruption.handler import CorruptionPhaseBContext
 from chaos_librarian.materializer.phase_b.filesystem import (
     FilesystemPhaseBContext,
     _slow_copy_commit,
 )
-from chaos_librarian.materializer.phase_b.media import MediaPhaseBContext
+from chaos_librarian.materializer.phase_b.media.handler import MediaPhaseBContext
 from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")

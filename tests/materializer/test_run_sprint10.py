@@ -48,7 +48,7 @@ from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.persistence.reports import build_reports
 from chaos_librarian.materializer.phase_b import dispatch as phase_b_dispatch
-from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b.corruption.handler import CorruptionPhaseBContext
 from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 from chaos_librarian.materializer.run import materialize_scenario
 

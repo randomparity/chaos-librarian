@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from chaos_librarian.contract.scenario import PosterImageFormat, SidecarMediaType
-from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+from chaos_librarian.materializer.phase_b.media.sidecar_bytes import (
     cue_payload,
     encode_subtitle_body,
     perturbed_seed_for_update,

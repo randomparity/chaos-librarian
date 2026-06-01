@@ -35,7 +35,7 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
-from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+from chaos_librarian.materializer.phase_b.media.sidecar_bytes import (
     cue_payload,
     encode_subtitle_body,
     perturbed_seed_for_update,

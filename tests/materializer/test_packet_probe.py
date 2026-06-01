@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.contract.materialization import ToolInvocation
-from chaos_librarian.materializer.phase_b import packet_probe
-from chaos_librarian.materializer.phase_b.packet_probe import (
+from chaos_librarian.materializer.phase_b.media import packet_probe
+from chaos_librarian.materializer.phase_b.media.packet_probe import (
     PacketProbeError,
     resolve_packet_byte_range,
 )
