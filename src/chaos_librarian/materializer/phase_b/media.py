@@ -20,7 +20,7 @@ import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Final, cast
+from typing import Final, Literal, cast
 
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ManifestSidecar, ProbedMedia
@@ -84,7 +84,10 @@ def _optional_poster_image_format(value: object) -> PosterImageFormat | None:
 
 __all__ = [
     "MEDIA_PHASE_B_ACTIONS",
+    "LivePosterSidecar",
     "LiveSidecar",
+    "LiveSubtitleSidecar",
+    "LiveTextSidecar",
     "MediaPhaseBContext",
     "MediaPhaseBInputs",
     "_subtitle_codec_for_container",
@@ -95,7 +98,7 @@ __all__ = [
 
 
 @dataclass(frozen=True, slots=True)
-class LiveSidecar:
+class LiveSubtitleSidecar:
     """The metadata ``update_sidecar`` needs to regenerate a sidecar's bytes.
 
     Tracked live across the phase-B journal walk so ``update_sidecar`` can
@@ -104,17 +107,32 @@ class LiveSidecar:
     final manifest (issue #112).
     """
 
-    kind: SidecarKind
-    language: str | None
     asset_id: str
-    # Authored content knobs (scenario v24). Carried so update_sidecar
-    # regenerates with the same encoding / body / media_type rather than
-    # reverting to the kind's default. None for sidecars seeded from the
-    # initial manifest (which has no authoring inputs).
+    language: str | None
     encoding: str | None = None
+    kind: Literal[SidecarKind.SUBTITLE] = SidecarKind.SUBTITLE
+
+
+@dataclass(frozen=True, slots=True)
+class LiveTextSidecar:
+    """Live metadata for NFO and CUE sidecars regenerated in pure Python."""
+
+    asset_id: str
+    kind: Literal[SidecarKind.NFO, SidecarKind.CUE]
     body: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LivePosterSidecar:
+    """Live metadata for poster sidecars regenerated through ffmpeg."""
+
+    asset_id: str
     media_type: SidecarMediaType | None = None
     image_format: PosterImageFormat | None = None
+    kind: Literal[SidecarKind.POSTER] = SidecarKind.POSTER
+
+
+type LiveSidecar = LiveSubtitleSidecar | LiveTextSidecar | LivePosterSidecar
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,11 +232,7 @@ class MediaPhaseBInputs:
 def make_media_phase_b_context(inputs: MediaPhaseBInputs) -> MediaPhaseBContext:
     live_sidecars: dict[str, LiveSidecar] = {}
     for sidecar in inputs.initial_sidecars:
-        live_sidecars[sidecar.id] = LiveSidecar(
-            kind=SidecarKind(sidecar.kind),
-            language=sidecar.language,
-            asset_id=sidecar.asset_id,
-        )
+        live_sidecars[sidecar.id] = _live_sidecar_from_manifest(sidecar)
     return MediaPhaseBContext(
         library_root=inputs.library_root,
         scenario_assets=inputs.scenario_assets,
@@ -228,6 +242,17 @@ def make_media_phase_b_context(inputs: MediaPhaseBInputs) -> MediaPhaseBContext:
         invocations=inputs.invocations,
         live_sidecars=live_sidecars,
     )
+
+
+def _live_sidecar_from_manifest(sidecar: ManifestSidecar) -> LiveSidecar:
+    kind = SidecarKind(sidecar.kind)
+    if kind is SidecarKind.SUBTITLE:
+        return LiveSubtitleSidecar(asset_id=sidecar.asset_id, language=sidecar.language)
+    if kind is SidecarKind.NFO or kind is SidecarKind.CUE:
+        return LiveTextSidecar(asset_id=sidecar.asset_id, kind=kind)
+    if kind is SidecarKind.POSTER:
+        return LivePosterSidecar(asset_id=sidecar.asset_id)
+    raise ValueError(f"unsupported manifest sidecar kind {sidecar.kind!r}")
 
 
 def supports_media_action(action: TimelineActionName) -> bool:
@@ -829,8 +854,9 @@ def _apply_extract_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Med
     new_hash = hash_file(sidecar_path)
     sidecar_id = str(delta["sidecar_id"])
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
-    ctx.live_sidecars[sidecar_id] = LiveSidecar(
-        kind=SidecarKind.SUBTITLE, language=language, asset_id=entry.target_ids[0]
+    ctx.live_sidecars[sidecar_id] = LiveSubtitleSidecar(
+        asset_id=entry.target_ids[0],
+        language=language,
     )
     return MediaAction(
         event_id=entry.event_id,
@@ -915,32 +941,32 @@ def _write_updated_sidecar(
     duration_s: float,
 ) -> int | None:
     if sidecar.kind is SidecarKind.SUBTITLE:
+        subtitle = cast("LiveSubtitleSidecar", sidecar)
         _write_updated_subtitle_sidecar(
             ctx=ctx,
             entry=entry,
-            sidecar=sidecar,
+            sidecar=subtitle,
             sidecar_id=sidecar_id,
             temp_output=temp_output,
             duration_s=duration_s,
         )
         return None
     if sidecar.kind is SidecarKind.NFO:
+        text = cast("LiveTextSidecar", sidecar)
         temp_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output.write_bytes(
-            regenerate_nfo_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
-        )
+        temp_output.write_bytes(regenerate_nfo_sidecar_bytes(sidecar_id=sidecar_id, body=text.body))
         return None
     if sidecar.kind is SidecarKind.CUE:
+        text = cast("LiveTextSidecar", sidecar)
         temp_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output.write_bytes(
-            regenerate_cue_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
-        )
+        temp_output.write_bytes(regenerate_cue_sidecar_bytes(sidecar_id=sidecar_id, body=text.body))
         return None
     if sidecar.kind is SidecarKind.POSTER:
+        poster = cast("LivePosterSidecar", sidecar)
         return _write_updated_poster_sidecar(
             ctx=ctx,
             entry=entry,
-            sidecar=sidecar,
+            sidecar=poster,
             sidecar_id=sidecar_id,
             temp_output=temp_output,
         )
@@ -957,7 +983,7 @@ def _write_updated_subtitle_sidecar(
     *,
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
-    sidecar: LiveSidecar,
+    sidecar: LiveSubtitleSidecar,
     sidecar_id: str,
     temp_output: Path,
     duration_s: float,
@@ -987,7 +1013,7 @@ def _write_updated_poster_sidecar(
     *,
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
-    sidecar: LiveSidecar,
+    sidecar: LivePosterSidecar,
     sidecar_id: str,
     temp_output: Path,
 ) -> int:
@@ -1164,10 +1190,9 @@ def _write_subtitle_sidecar(
     temp_output.write_bytes(encode_subtitle_body(text, encoding))
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
-        live_sidecar=LiveSidecar(
-            kind=SidecarKind.SUBTITLE,
-            language=language,
+        live_sidecar=LiveSubtitleSidecar(
             asset_id=asset_id,
+            language=language,
             encoding=encoding,
         ),
     )
@@ -1186,10 +1211,9 @@ def _write_text_sidecar(
         temp_output.write_bytes(render_nfo(sidecar_id=sidecar_id))
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
-        live_sidecar=LiveSidecar(
-            kind=SidecarKind.NFO,
-            language=None,
+        live_sidecar=LiveTextSidecar(
             asset_id=asset_id,
+            kind=SidecarKind.NFO,
             body=body_text,
         ),
     )
@@ -1205,10 +1229,9 @@ def _write_cue_sidecar(
     temp_output.write_bytes(cue_payload(body=body_text, sidecar_id=sidecar_id))
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
-        live_sidecar=LiveSidecar(
-            kind=SidecarKind.CUE,
-            language=None,
+        live_sidecar=LiveTextSidecar(
             asset_id=asset_id,
+            kind=SidecarKind.CUE,
             body=body_text,
         ),
     )
@@ -1241,9 +1264,7 @@ def _write_poster_sidecar(
     )
     return _CreateSidecarWriteResult(
         tool_invocation_index=invocation_index,
-        live_sidecar=LiveSidecar(
-            kind=SidecarKind.POSTER,
-            language=None,
+        live_sidecar=LivePosterSidecar(
             asset_id=asset_id,
             media_type=media_type,
             image_format=image_format,

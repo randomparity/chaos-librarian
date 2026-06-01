@@ -18,7 +18,6 @@ from chaos_librarian.contract.scenario import (
     AudioSource,
     AudioTrack,
     PosterImageFormat,
-    SidecarKind,
     SidecarMediaType,
     TimelineActionName,
     VideoSource,
@@ -27,7 +26,8 @@ from chaos_librarian.contract.scenario import (
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.phase_b import media as media_module
 from chaos_librarian.materializer.phase_b.media import (
-    LiveSidecar,
+    LivePosterSidecar,
+    LiveSubtitleSidecar,
     MediaPhaseBContext,
     _subtitle_codec_for_container,
     apply_media_action,
@@ -964,11 +964,7 @@ class TestApplyUpdateSidecar:
             resolved_seed=42,
             ffmpeg_version="7.0",
             ffprobe_version="7.0",
-            live_sidecars={
-                "sidecar_0001": LiveSidecar(
-                    kind=SidecarKind.SUBTITLE, language="eng", asset_id="a0"
-                )
-            },
+            live_sidecars={"sidecar_0001": LiveSubtitleSidecar(asset_id="a0", language="eng")},
         )
         entry = _atomic_entry(
             event_id="ev_us_001",
@@ -1377,6 +1373,7 @@ class TestApplyCreateSidecar:
         apply_media_action(ctx, entry)
 
         sidecar = ctx.live_sidecars["sidecar_poster"]
+        assert isinstance(sidecar, LivePosterSidecar)
         assert sidecar.media_type is SidecarMediaType.IMAGE
         assert sidecar.image_format is PosterImageFormat.WEBP
         assert "libwebp" in captured_argv
@@ -1461,7 +1458,9 @@ class TestApplyCreateSidecar:
             },
         )
         apply_media_action(ctx, entry)
-        assert ctx.live_sidecars["sidecar_sub"].encoding == "utf16_le"
+        sidecar = ctx.live_sidecars["sidecar_sub"]
+        assert isinstance(sidecar, LiveSubtitleSidecar)
+        assert sidecar.encoding == "utf16_le"
 
     def test_poster_kind_ffmpeg_failure_raises_media_action_error(self, monkeypatch, tmp_path):
         def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
