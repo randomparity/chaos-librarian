@@ -24,23 +24,27 @@ from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvo
 from chaos_librarian.contract.scenario import Asset, Scenario
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer.content.content_sources import (
-    COVER_ART_SIZE,
+from chaos_librarian.materializer.content.manifest_build import augment_manifest
+from chaos_librarian.materializer.content.media_sources import (
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
     AudioSourceRequest,
+    VideoSourceRequest,
+    resolve_audio_source,
+    resolve_video_source,
+)
+from chaos_librarian.materializer.content.metadata_sources import (
+    COVER_ART_SIZE,
     ChapterSourceRequest,
     ChapterSpec,
     CoverArtSourceRequest,
-    MuxingSourceRequest,
-    VideoSourceRequest,
-    resolve_audio_source,
     resolve_chapter_source,
     resolve_cover_art_source,
-    resolve_muxing_source,
-    resolve_video_source,
 )
-from chaos_librarian.materializer.content.manifest_build import augment_manifest
+from chaos_librarian.materializer.content.muxing_sources import (
+    MuxingSourceRequest,
+    resolve_muxing_source,
+)
 from chaos_librarian.materializer.errors import (
     ProbeParseError,
     SymlinkTargetMissingError,

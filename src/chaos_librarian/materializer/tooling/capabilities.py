@@ -19,7 +19,9 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
-from chaos_librarian.materializer.content.content_sources import collect_content_source_capabilities
+from chaos_librarian.materializer.content.source_capabilities import (
+    collect_content_source_capabilities,
+)
 from chaos_librarian.materializer.errors import CapabilityGateError
 from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 

@@ -27,7 +27,7 @@ from chaos_librarian.contract.scenario import (
     SubtitleTrack,
     VideoTrack,
 )
-from chaos_librarian.materializer.content.content_sources import (
+from chaos_librarian.materializer.content.media_sources import (
     AUDIO_RECIPES,
     FPS_DEFAULT,
     RESOLUTION_PIXELS,
