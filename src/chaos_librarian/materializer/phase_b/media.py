@@ -36,8 +36,11 @@ from chaos_librarian.materializer.phase_b.content import hash_file, temp_sibling
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     cue_payload,
     encode_subtitle_body,
+    perturbed_seed_for_update,
     poster_ffmpeg_argv,
-    regenerate_sidecar,
+    regenerate_cue_sidecar_bytes,
+    regenerate_nfo_sidecar_bytes,
+    regenerate_subtitle_sidecar_bytes,
     render_nfo,
 )
 from chaos_librarian.materializer.preparation.actions import (
@@ -857,41 +860,14 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
             cause=KeyError(sidecar.asset_id),
         )
     started = time.monotonic_ns()
-    invocation_index: int | None = None
-    bytes_, argv = regenerate_sidecar(
-        kind=sidecar.kind,
-        language=sidecar.language,
+    invocation_index = _write_updated_sidecar(
+        ctx=ctx,
+        entry=entry,
+        sidecar=sidecar,
         sidecar_id=sidecar_id,
-        resolved_seed=ctx.resolved_seed,
-        event_id=entry.event_id,
+        temp_output=temp_output,
         duration_s=asset.duration_seconds,
-        output_path=temp_output,
-        encoding=sidecar.encoding,
-        body=sidecar.body,
-        media_type=sidecar.media_type,
-        image_format=sidecar.image_format,
     )
-    if bytes_ is not None:
-        temp_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output.write_bytes(bytes_)
-    else:
-        if argv is None:
-            raise MediaActionError(
-                f"update_sidecar: regenerate_sidecar returned no bytes and no argv "
-                f"for event {entry.event_id}",
-                event_id=entry.event_id,
-                action=TimelineActionName.UPDATE_SIDECAR,
-                cause=RuntimeError("missing argv"),
-                asset_id=sidecar.asset_id,
-            )
-        invocation_index = _run_ffmpeg_checked(
-            ctx,
-            argv=argv,
-            entry=entry,
-            action=TimelineActionName.UPDATE_SIDECAR,
-            failure_label="update_sidecar (poster)",
-            asset_id=sidecar.asset_id,
-        )
     temp_output.replace(sidecar_path)
     new_hash = hash_file(sidecar_path)
     ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, str(delta["sidecar_path"]))
@@ -908,6 +884,115 @@ def _apply_update_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         output_content_hash=new_hash,
         tool_invocation_index=invocation_index,
         duration_ns=time.monotonic_ns() - started,
+    )
+
+
+def _write_updated_sidecar(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    sidecar: LiveSidecar,
+    sidecar_id: str,
+    temp_output: Path,
+    duration_s: float,
+) -> int | None:
+    if sidecar.kind is SidecarKind.SUBTITLE:
+        _write_updated_subtitle_sidecar(
+            ctx=ctx,
+            entry=entry,
+            sidecar=sidecar,
+            sidecar_id=sidecar_id,
+            temp_output=temp_output,
+            duration_s=duration_s,
+        )
+        return None
+    if sidecar.kind is SidecarKind.NFO:
+        temp_output.parent.mkdir(parents=True, exist_ok=True)
+        temp_output.write_bytes(
+            regenerate_nfo_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
+        )
+        return None
+    if sidecar.kind is SidecarKind.CUE:
+        temp_output.parent.mkdir(parents=True, exist_ok=True)
+        temp_output.write_bytes(
+            regenerate_cue_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
+        )
+        return None
+    if sidecar.kind is SidecarKind.POSTER:
+        return _write_updated_poster_sidecar(
+            ctx=ctx,
+            entry=entry,
+            sidecar=sidecar,
+            sidecar_id=sidecar_id,
+            temp_output=temp_output,
+        )
+    raise MediaActionError(
+        f"update_sidecar: unsupported sidecar kind {sidecar.kind.value!r}",
+        event_id=entry.event_id,
+        action=TimelineActionName.UPDATE_SIDECAR,
+        cause=ValueError(sidecar.kind.value),
+        asset_id=sidecar.asset_id,
+    )
+
+
+def _write_updated_subtitle_sidecar(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    sidecar: LiveSidecar,
+    sidecar_id: str,
+    temp_output: Path,
+    duration_s: float,
+) -> None:
+    if sidecar.language is None:
+        raise MediaActionError(
+            f"update_sidecar: subtitle sidecar {sidecar_id!r} has no language",
+            event_id=entry.event_id,
+            action=TimelineActionName.UPDATE_SIDECAR,
+            cause=ValueError("subtitle sidecar requires language"),
+            asset_id=sidecar.asset_id,
+        )
+    temp_output.parent.mkdir(parents=True, exist_ok=True)
+    temp_output.write_bytes(
+        regenerate_subtitle_sidecar_bytes(
+            language=sidecar.language,
+            sidecar_id=sidecar_id,
+            resolved_seed=ctx.resolved_seed,
+            event_id=entry.event_id,
+            duration_s=duration_s,
+            encoding=sidecar.encoding,
+        )
+    )
+
+
+def _write_updated_poster_sidecar(
+    *,
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    sidecar: LiveSidecar,
+    sidecar_id: str,
+    temp_output: Path,
+) -> int:
+    perturbed_seed = perturbed_seed_for_update(
+        sidecar_id=sidecar_id,
+        event_id=entry.event_id,
+        resolved_seed=ctx.resolved_seed,
+    )
+    temp_output.parent.mkdir(parents=True, exist_ok=True)
+    argv = poster_ffmpeg_argv(
+        output_path=temp_output,
+        resolved_seed=perturbed_seed,
+        sidecar_id=sidecar_id,
+        media_type=sidecar.media_type,
+        image_format=sidecar.image_format,
+    )
+    return _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=TimelineActionName.UPDATE_SIDECAR,
+        failure_label="update_sidecar (poster)",
+        asset_id=sidecar.asset_id,
     )
 
 

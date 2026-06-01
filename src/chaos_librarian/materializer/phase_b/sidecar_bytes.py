@@ -4,8 +4,8 @@
 - ``poster_ffmpeg_argv``: returns the ffmpeg argv that will write a
   PNG via lavfi color source. The caller runs it.
 - ``cue_payload``: pure Python CUE-sheet bytes (authored body or default).
-- ``regenerate_sidecar``: dispatch by kind. Returns ``(bytes, None)``
-  for subtitle/NFO/CUE; ``(None, argv)`` for poster.
+- ``regenerate_subtitle_sidecar_bytes`` / ``regenerate_nfo_sidecar_bytes`` /
+  ``regenerate_cue_sidecar_bytes``: focused update_sidecar byte helpers.
 
 The update_sidecar perturbed sub-seed is derived as
 ``sha256(f"{resolved_seed}/sidecar_update/{sidecar_id}/{event_id}")``
@@ -19,7 +19,6 @@ import hashlib
 from pathlib import Path
 from typing import Final
 
-from chaos_librarian.contract.scenario import SidecarKind
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 __all__ = [
@@ -27,7 +26,9 @@ __all__ = [
     "encode_subtitle_body",
     "perturbed_seed_for_update",
     "poster_ffmpeg_argv",
-    "regenerate_sidecar",
+    "regenerate_cue_sidecar_bytes",
+    "regenerate_nfo_sidecar_bytes",
+    "regenerate_subtitle_sidecar_bytes",
     "render_nfo",
 ]
 
@@ -176,57 +177,36 @@ def perturbed_seed_for_update(*, sidecar_id: str, event_id: str, resolved_seed: 
     )
 
 
-def regenerate_sidecar(
+def regenerate_subtitle_sidecar_bytes(
     *,
-    kind: SidecarKind,
-    language: str | None,
+    language: str,
     sidecar_id: str,
     resolved_seed: int,
     event_id: str,
     duration_s: float,
-    output_path: Path | None = None,
     encoding: str | None = None,
-    body: str | None = None,
-    media_type: str | None = None,
-    image_format: str | None = None,
-) -> tuple[bytes | None, list[str] | None]:
-    """Dispatch by kind. Returns ``(bytes, None)`` or ``(None, argv)``.
+) -> bytes:
+    """Return regenerated SRT bytes for ``update_sidecar``.
 
-    Honors the authored content knobs so ``update_sidecar`` regenerates
-    faithfully: subtitle bytes are re-encoded with the stored ``encoding``
-    (cue text still varies by the perturbed seed); an authored NFO/CUE ``body``
-    is re-emitted verbatim; the poster ``media_type`` selects image vs. video and
-    ``image_format`` selects the still encoder. ``output_path`` is required only
-    for ``kind=POSTER`` (used in the ffmpeg argv).
+    Uses the perturbed update seed so consecutive updates on the same sidecar
+    produce distinct bytes, while preserving the sidecar's authored encoding.
     """
     perturbed_seed = perturbed_seed_for_update(
         sidecar_id=sidecar_id,
         event_id=event_id,
         resolved_seed=resolved_seed,
     )
-    if kind == SidecarKind.SUBTITLE:
-        if language is None:
-            raise ValueError("subtitle sidecar requires language")
-        text = srt_payload(language=language, duration_s=duration_s, seed=perturbed_seed)
-        return encode_subtitle_body(text, encoding), None
-    if kind == SidecarKind.NFO:
-        # An authored body is re-emitted verbatim (no seed to perturb); else the
-        # fixed template keyed on sidecar_id.
-        if body is not None:
-            return body.encode("utf-8"), None
-        return render_nfo(sidecar_id=sidecar_id), None
-    if kind == SidecarKind.CUE:
-        # Authored body verbatim, else the minimal default keyed on sidecar_id.
-        return cue_payload(body=body, sidecar_id=sidecar_id), None
-    if kind == SidecarKind.POSTER:
-        if output_path is None:
-            raise ValueError("poster regeneration requires output_path")
-        argv = poster_ffmpeg_argv(
-            output_path=output_path,
-            resolved_seed=perturbed_seed,
-            sidecar_id=sidecar_id,
-            media_type=media_type,
-            image_format=image_format,
-        )
-        return None, argv
-    raise ValueError(f"unknown sidecar kind {kind!r}")
+    text = srt_payload(language=language, duration_s=duration_s, seed=perturbed_seed)
+    return encode_subtitle_body(text, encoding)
+
+
+def regenerate_nfo_sidecar_bytes(*, sidecar_id: str, body: str | None = None) -> bytes:
+    """Return regenerated NFO bytes for ``update_sidecar``."""
+    if body is not None:
+        return body.encode("utf-8")
+    return render_nfo(sidecar_id=sidecar_id)
+
+
+def regenerate_cue_sidecar_bytes(*, sidecar_id: str, body: str | None = None) -> bytes:
+    """Return regenerated CUE bytes for ``update_sidecar``."""
+    return cue_payload(body=body, sidecar_id=sidecar_id)
