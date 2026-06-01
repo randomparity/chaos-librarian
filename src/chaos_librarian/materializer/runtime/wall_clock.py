@@ -261,13 +261,13 @@ def _create_staging_dir(out_dir: Path) -> Path:
 def _preflight_wall_clock_slow_copies(resolved_timeline: list[ResolvedEvent]) -> None:
     for index, resolved in enumerate(resolved_timeline):
         action = resolved.event.action
-        if action.value != "slow_copy_start":
+        if action is not TimelineActionName.SLOW_COPY_START:
             continue
         next_index = index + 1
         if next_index >= len(resolved_timeline):
             _raise_slow_copy_unsupported(resolved.event.id)
         next_event = resolved_timeline[next_index].event
-        if next_event.action.value != "slow_copy_commit":
+        if next_event.action is not TimelineActionName.SLOW_COPY_COMMIT:
             _raise_slow_copy_unsupported(resolved.event.id)
         if getattr(next_event, "for_", None) != resolved.event.id:
             _raise_slow_copy_unsupported(resolved.event.id)
