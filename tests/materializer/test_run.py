@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import (
     Capabilities,
@@ -24,7 +25,6 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,

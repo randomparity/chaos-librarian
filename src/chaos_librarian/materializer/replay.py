@@ -54,7 +54,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     dispatch_phase_b_entry,
     make_phase_b_state,
 )
-from chaos_librarian.materializer.preparation import (
+from chaos_librarian.materializer.preparation.run_setup import (
     PreparedMaterializerRun,
     prepare_validated_materializer_run_input,
 )

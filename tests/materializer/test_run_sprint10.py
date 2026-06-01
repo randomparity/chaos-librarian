@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
@@ -43,7 +44,6 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.persistence.reports import build_reports

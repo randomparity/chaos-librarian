@@ -49,7 +49,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     make_phase_b_state,
     phase_b_failure_outcome,
 )
-from chaos_librarian.materializer.preparation import prepare_materializer_run
+from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
 
 __all__ = ["MaterializeArtifacts", "RunContext", "materialize_scenario"]
 

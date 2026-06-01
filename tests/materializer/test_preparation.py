@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import (
     Capabilities,
@@ -14,7 +15,6 @@ from chaos_librarian.contract.capabilities import (
     ToolStatus,
 )
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.validation import prepare_run_input
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"

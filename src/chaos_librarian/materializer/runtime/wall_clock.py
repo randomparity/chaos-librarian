@@ -69,7 +69,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     make_phase_b_state,
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
-from chaos_librarian.materializer.preparation import prepare_materializer_run
+from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
     CHAOS_ENTRY_ACTIONS,

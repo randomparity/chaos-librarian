@@ -12,6 +12,7 @@ import pytest
 from pydantic import ValidationError
 from typer.testing import CliRunner
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
 from chaos_librarian.cli._replay_io import load_replay_bundle, load_sentinel
@@ -45,7 +46,6 @@ from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.writer import canonical_json
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract.capabilities import (
     Capabilities,
     ReadyFor,
@@ -24,7 +25,6 @@ from chaos_librarian.contract.capabilities import (
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import Outcome, ToolInvocation
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.errors import MediaActionError
 from chaos_librarian.materializer.run import materialize_scenario
 

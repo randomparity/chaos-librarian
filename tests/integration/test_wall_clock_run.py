@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -23,7 +24,6 @@ from chaos_librarian.contract.materialization import MaterializedAsset, MediaAct
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.runtime import wall_clock

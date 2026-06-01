@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
@@ -38,7 +39,6 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
-from chaos_librarian.materializer import preparation as prep_mod
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
