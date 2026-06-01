@@ -17,10 +17,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
-from chaos_librarian.contract.scenario import SidecarKind, TimelineActionName
+from chaos_librarian.contract.scenario import (
+    SidecarKind,
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleSource,
+    TimelineActionName,
+)
 from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
 from chaos_librarian.validation.rules.core.raw_helpers import (
     Reporter,
+    _enum,
     _iter_timeline_events,
 )
 from chaos_librarian.validation.rules.media._subtitle_recipe import CREATE_SIDECAR_SUBTITLE_MATRIX
@@ -54,26 +61,26 @@ def rule_create_sidecar_content(
             continue
         if kind != SidecarKind.SUBTITLE.value:
             continue
-        codec = event.get("codec") or "srt"
-        source = event.get("source") or "generated_srt"
-        encoding = event.get("encoding") or "utf8"
-        if not isinstance(codec, str) or not isinstance(source, str):
+        codec = _enum(SubtitleCodec, event.get("codec") or SubtitleCodec.SRT.value)
+        source = _enum(SubtitleSource, event.get("source") or SubtitleSource.GENERATED_SRT.value)
+        encoding = _enum(SubtitleEncoding, event.get("encoding") or SubtitleEncoding.UTF8.value)
+        if codec is None or source is None:
             continue  # Pydantic owns the type checks
         allowed = CREATE_SIDECAR_SUBTITLE_MATRIX.get((codec, source))
         if allowed is None:
             reporter.error(
                 code=E_MATERIALIZE_UNSUPPORTED,
                 message=(
-                    f"create_sidecar subtitle codec/source ({codec!r}, {source!r}) "
+                    f"create_sidecar subtitle codec/source ({codec.value!r}, {source.value!r}) "
                     "is not synthesizable by the timeline event (SRT only)"
                 ),
                 loc=("timeline", index, "codec"),
             )
             continue
-        if isinstance(encoding, str) and encoding not in allowed:
+        if encoding is not None and encoding not in allowed:
             reporter.error(
                 code=E_MATERIALIZE_UNSUPPORTED,
-                message=f"create_sidecar subtitle encoding {encoding!r} is not supported",
+                message=f"create_sidecar subtitle encoding {encoding.value!r} is not supported",
                 loc=("timeline", index, "encoding"),
             )
 

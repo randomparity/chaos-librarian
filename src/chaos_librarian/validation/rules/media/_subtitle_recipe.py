@@ -10,17 +10,34 @@ from __future__ import annotations
 
 from typing import Final
 
-SRT_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset(
-    {"utf8", "utf8_bom", "utf16_le", "iso_8859_1"}
+from chaos_librarian.contract.scenario import (
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleSource,
 )
-_ASS_SUBTITLE_ENCODINGS: Final[frozenset[str]] = frozenset({"utf8", "utf8_bom"})
 
-SUBTITLE_RECIPE_MATRIX: Final[dict[tuple[str, str], frozenset[str]]] = {
-    ("srt", "generated_srt"): SRT_SUBTITLE_ENCODINGS,
-    ("ass", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
-    ("ssa", "styled_ass"): _ASS_SUBTITLE_ENCODINGS,
+SRT_SUBTITLE_ENCODINGS: Final[frozenset[SubtitleEncoding]] = frozenset(
+    {
+        SubtitleEncoding.UTF8,
+        SubtitleEncoding.UTF8_BOM,
+        SubtitleEncoding.UTF16_LE,
+        SubtitleEncoding.ISO_8859_1,
+    }
+)
+_ASS_SUBTITLE_ENCODINGS: Final[frozenset[SubtitleEncoding]] = frozenset(
+    {SubtitleEncoding.UTF8, SubtitleEncoding.UTF8_BOM}
+)
+
+SUBTITLE_RECIPE_MATRIX: Final[
+    dict[tuple[SubtitleCodec, SubtitleSource], frozenset[SubtitleEncoding]]
+] = {
+    (SubtitleCodec.SRT, SubtitleSource.GENERATED_SRT): SRT_SUBTITLE_ENCODINGS,
+    (SubtitleCodec.ASS, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
+    (SubtitleCodec.SSA, SubtitleSource.STYLED_ASS): _ASS_SUBTITLE_ENCODINGS,
 }
 
-CREATE_SIDECAR_SUBTITLE_MATRIX: Final[dict[tuple[str, str], frozenset[str]]] = {
-    ("srt", "generated_srt"): SRT_SUBTITLE_ENCODINGS,
+CREATE_SIDECAR_SUBTITLE_MATRIX: Final[
+    dict[tuple[SubtitleCodec, SubtitleSource], frozenset[SubtitleEncoding]]
+] = {
+    (SubtitleCodec.SRT, SubtitleSource.GENERATED_SRT): SRT_SUBTITLE_ENCODINGS,
 }

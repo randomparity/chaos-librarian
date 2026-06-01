@@ -6,7 +6,12 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.domain import ParentKind
-from chaos_librarian.contract.scenario import SubtitleMode
+from chaos_librarian.contract.scenario import (
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleMode,
+    SubtitleSource,
+)
 from chaos_librarian.media_matrix import (
     AUDIO_SAMPLE_FORMATS_BY_CODEC,
     HEVC_VIDEO_CODECS,
@@ -638,10 +643,10 @@ def _check_subtitle_recipe(
     loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    codec = subtitle.get("codec")
-    source = subtitle.get("source", "generated_srt")
-    encoding = subtitle.get("encoding", "utf8")
-    if not isinstance(codec, str) or not isinstance(source, str):
+    codec = _enum(SubtitleCodec, subtitle.get("codec"))
+    source = _enum(SubtitleSource, subtitle.get("source", SubtitleSource.GENERATED_SRT.value))
+    encoding = _enum(SubtitleEncoding, subtitle.get("encoding", SubtitleEncoding.UTF8.value))
+    if codec is None or source is None:
         return
     supported_encodings = _SUBTITLE_RECIPE_MATRIX.get((codec, source))
     if supported_encodings is None:
@@ -651,7 +656,7 @@ def _check_subtitle_recipe(
             loc=(*loc, "source"),
         )
         return
-    if not isinstance(encoding, str) or encoding in supported_encodings:
+    if encoding is None or encoding in supported_encodings:
         return
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
