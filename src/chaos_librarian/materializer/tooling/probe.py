@@ -2,8 +2,8 @@
 
 Runs ``ffprobe -show_format -show_streams -show_chapters -of json`` and maps
 the result into ``ProbedMedia``. Unparseable output raises ``ProbeParseError``.
-Subtitle streams are dropped (sidecars are tracked separately; embedded
-subtitle support is not implemented).
+Sidecar subtitles are tracked separately, but embedded subtitle streams are
+reported in ``ProbedMedia.streams``.
 """
 
 from __future__ import annotations
@@ -117,11 +117,17 @@ def _attached_pic(blob: dict[str, object]) -> bool | None:
     return True if _opt_bool(disposition, "attached_pic") is True else None
 
 
+def _disposition_bool(blob: dict[str, object], key: str) -> bool | None:
+    disposition = _coerce_blob(blob.get("disposition"))
+    if disposition is None:
+        return None
+    return _opt_bool(disposition, key)
+
+
 def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
     """Map one ffprobe stream blob into a ``ProbedStream``.
 
-    Returns ``None`` for subtitle streams (dropped — see module
-    docstring) and for streams whose ``codec_type`` is unknown.
+    Returns ``None`` for streams whose ``codec_type`` is unknown.
     """
     codec_type = blob.get("codec_type")
     codec = str(blob.get("codec_name") or "")
@@ -147,7 +153,15 @@ def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
             title=_tag_value(blob, "title") or _tag_value(blob, "handler_name"),
             role=_tag_value(blob, "role"),
         )
-    # subtitle (and any unknown codec_type) streams are dropped — see module docstring.
+    if codec_type == "subtitle":
+        return ProbedStream(
+            kind=StreamKind.SUBTITLE,
+            codec=codec,
+            language=_language_tag(blob),
+            title=_tag_value(blob, "title"),
+            default=_disposition_bool(blob, "default"),
+            forced=_disposition_bool(blob, "forced"),
+        )
     return None
 
 

@@ -199,15 +199,27 @@ def test_probe_file_raises_on_unparseable_json(
         probe_file(tmp_path / "broken.mkv")
 
 
-def test_probe_file_ignores_subtitle_streams(
+def test_probe_file_parses_embedded_subtitle_streams(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Sprint 5 explicitly does NOT add subtitle streams to
-    asset.probed.streams[] — sidecar SRTs are separate files and
-    embedded subtitles arrive in Sprint 7. If a future ffprobe reports
-    one in a Sprint 5 fixture, we drop it silently here."""
+    """WHY: embedded subtitle streams must be visible in asset.probed so
+    observed-state comparisons can catch language/default/forced drift."""
     probe = json.loads(_GOOD_PROBE)
-    probe["streams"].append({"codec_type": "subtitle", "codec_name": "srt"})
+    probe["streams"].append(
+        {
+            "codec_type": "subtitle",
+            "codec_name": "subrip",
+            "tags": {"language": "eng", "title": "English SDH"},
+            "disposition": {"default": 1, "forced": 0},
+        }
+    )
     _patch_run(monkeypatch, json.dumps(probe))
+
     media = probe_file(tmp_path / "fake.mkv")
-    assert all(s.kind != "subtitle" for s in media.streams)
+
+    subtitle = next(s for s in media.streams if s.kind == "subtitle")
+    assert subtitle.codec == "subrip"
+    assert subtitle.language == "eng"
+    assert subtitle.title == "English SDH"
+    assert subtitle.default is True
+    assert subtitle.forced is False
