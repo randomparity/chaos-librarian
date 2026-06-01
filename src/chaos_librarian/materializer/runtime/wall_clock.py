@@ -48,7 +48,6 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.persistence._context import (
     MaterializeArtifacts,
-    ReportActions,
     RunContext,
 )
 from chaos_librarian.materializer.persistence.finalize import (
@@ -69,6 +68,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     make_phase_b_state,
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
+from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
 from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
@@ -940,8 +940,8 @@ def _finalize_wall_clock_run(
         executed_journal=executed_journal,
         invocations=state.phase_b.media_ctx.invocations,
         materialized=phase_a.materialized_assets,
-        actions=_report_actions_from_state(
-            state,
+        actions=report_actions_from_phase_b(
+            state.phase_b,
             network_fs_chaos_actions=network_fs_chaos_actions,
         ),
         requested_duration_ns=requested_duration_ns,
@@ -981,8 +981,8 @@ def _finalize_wall_clock_phase_b_failure(
         executed_journal=executed_journal,
         invocations=state.phase_b.media_ctx.invocations,
         materialized=phase_a.materialized_assets,
-        actions=_report_actions_from_state(
-            state,
+        actions=report_actions_from_phase_b(
+            state.phase_b,
             network_fs_chaos_actions=network_fs_chaos_actions,
         ),
         requested_duration_ns=requested_duration_ns,
@@ -990,21 +990,6 @@ def _finalize_wall_clock_phase_b_failure(
         speed_multiplier=speed.normalized,
         overran_duration=overran_duration,
         content_sources=phase_a.content_sources,
-    )
-
-
-def _report_actions_from_state(
-    state: _DispatchState,
-    *,
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
-) -> ReportActions:
-    return ReportActions(
-        filesystem=state.phase_b.filesystem_actions,
-        media=state.phase_b.media_actions,
-        corruption=state.phase_b.corruption_actions,
-        oracle_hash=state.phase_b.oracle_hash_actions,
-        network_lag=state.phase_b.network_lag_actions,
-        network_fs_chaos=network_fs_chaos_actions,
     )
 
 

@@ -31,7 +31,6 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.persistence._context import (
     MaterializeArtifacts,
-    ReportActions,
     RunContext,
 )
 from chaos_librarian.materializer.persistence.finalize import (
@@ -49,6 +48,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     make_phase_b_state,
     phase_b_failure_outcome,
 )
+from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
 from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
 
 __all__ = ["MaterializeArtifacts", "RunContext", "materialize_scenario"]
@@ -159,7 +159,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             phase_b_failure_outcome(exc),
             phase_a.invocations,
             phase_a.materialized_assets,
-            actions=_report_actions_from_state(phase_b_state),
+            actions=report_actions_from_phase_b(phase_b_state),
             content_sources=phase_a.content_sources,
         )
         raise
@@ -168,15 +168,6 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         ctx,
         phase_a.invocations,
         phase_a.materialized_assets,
-        actions=_report_actions_from_state(phase_b_state),
+        actions=report_actions_from_phase_b(phase_b_state),
         content_sources=phase_a.content_sources,
-    )
-
-
-def _report_actions_from_state(state: PhaseBState) -> ReportActions:
-    return ReportActions(
-        filesystem=state.filesystem_actions,
-        media=state.media_actions,
-        corruption=state.corruption_actions,
-        oracle_hash=state.oracle_hash_actions,
     )

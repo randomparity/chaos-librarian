@@ -41,7 +41,6 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.persistence._context import (
     MaterializeArtifacts,
-    ReportActions,
     RunContext,
 )
 from chaos_librarian.materializer.persistence.finalize import (
@@ -55,6 +54,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     dispatch_phase_b_entry,
     make_phase_b_state,
 )
+from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
 from chaos_librarian.materializer.preparation.run_setup import (
     PreparedMaterializerRun,
     prepare_validated_materializer_run_input,
@@ -193,7 +193,10 @@ def _materialize_verified_run_prefix(
             exc,
             phase_a.invocations,
             phase_a.materialized_assets,
-            actions=_report_actions_from_state(state, network_fs_chaos_actions=chaos_actions),
+            actions=report_actions_from_phase_b(
+                state.phase_b,
+                network_fs_chaos_actions=chaos_actions,
+            ),
             content_sources=phase_a.content_sources,
         )
         raise
@@ -204,7 +207,10 @@ def _materialize_verified_run_prefix(
         source_bundle,
         phase_a.invocations,
         phase_a.materialized_assets,
-        actions=_report_actions_from_state(state, network_fs_chaos_actions=chaos_actions),
+        actions=report_actions_from_phase_b(
+            state.phase_b,
+            network_fs_chaos_actions=chaos_actions,
+        ),
         content_sources=phase_a.content_sources,
     )
 
@@ -219,21 +225,6 @@ def _begin_run_replay(out_dir: Path) -> None:
             path=out_dir,
             cause=exc,
         ) from exc
-
-
-def _report_actions_from_state(
-    state: _RunReplayDispatchState,
-    *,
-    network_fs_chaos_actions: list[NetworkFsChaosAction],
-) -> ReportActions:
-    return ReportActions(
-        filesystem=state.phase_b.filesystem_actions,
-        media=state.phase_b.media_actions,
-        corruption=state.phase_b.corruption_actions,
-        oracle_hash=state.phase_b.oracle_hash_actions,
-        network_lag=state.phase_b.network_lag_actions,
-        network_fs_chaos=network_fs_chaos_actions,
-    )
 
 
 def _make_run_replay_phase_b_state(
