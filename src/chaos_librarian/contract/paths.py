@@ -1,11 +1,13 @@
-"""Path-containment helper for scenario filesystem safety.
+"""Path-containment helpers for scenario filesystem safety.
 
 Enforces the rules in docs/specs/chaos-librarian-design.md section
 "Filesystem Safety": every scenario path is resolved under
 <run-dir>/library/ and MUST stay inside it.
 
 This module is pure (the only side effect is reading the filesystem to
-resolve symlinks). It is wired into the materializer in later sprints.
+resolve symlinks). Semantic validation uses it to reject unsafe scenario
+paths before execution, and the materializer uses the same contract when
+constructing or mutating library paths.
 """
 
 from __future__ import annotations

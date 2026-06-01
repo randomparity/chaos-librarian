@@ -43,13 +43,13 @@ class MaterializationError(ChaosLibrarianError):
 
 
 class TimelineUnsupportedError(MaterializationError):
-    """Scenario has a non-empty timeline."""
+    """Timeline contains an action unsupported by the current materializer mode."""
 
     error_code: str = "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
 
 
 class UnsupportedMaterializationError(MaterializationError):
-    """Container/codec/resolution/channels combination outside the supported matrix."""
+    """Scenario selects media, sidecar, source, or muxing settings outside support."""
 
     error_code: str = "E_MATERIALIZE_UNSUPPORTED"
 
@@ -93,7 +93,12 @@ class MaterializationWriteError(MaterializationError):
 
 
 class ToolFailedError(MaterializationError):
-    """ffmpeg subprocess exited non-zero."""
+    """An audited synthesis/finalization tool invocation failed.
+
+    Static materialization raises this for ffmpeg or mkvmerge failures, including
+    non-zero exits, launch failures, and timeouts reported through the captured
+    ``ToolInvocation``.
+    """
 
     error_code: str = "E_MATERIALIZE_TOOL_FAILED"
 
@@ -226,13 +231,17 @@ class CorruptionActionError(MaterializationError):
 
 
 class ContainmentViolationError(MaterializationError):
-    """A scenario path resolved outside ``<run-dir>/library/``."""
+    """Validation or materialization resolved a path outside ``<run-dir>/library/``."""
 
     error_code: str = "E_PATH_CONTAINMENT"
 
 
 class CapabilityGateError(MaterializationError):
-    """ffmpeg or ffprobe missing or below minimum at materialize startup."""
+    """Required toolchain capability is missing for the selected materializer work.
+
+    The static and wall-clock gates always require ffmpeg and ffprobe; selected
+    media options can also require mkvmerge or codec/filter support.
+    """
 
     error_code: str = "E_MATERIALIZE_CAPABILITY_GATE"
 
