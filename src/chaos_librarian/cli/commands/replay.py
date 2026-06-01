@@ -37,6 +37,7 @@ from chaos_librarian.materializer.errors import (
     MaterializationError,
 )
 from chaos_librarian.materializer.replay import replay_run_bundle
+from chaos_librarian.validation import prepare_replay_input_from_bytes
 
 
 @app.command()
@@ -74,7 +75,11 @@ def replay(
         return
     parsed_bundle = parsed_any
     try:
-        artifacts = replay_plan_bundle(parsed_bundle)
+        prepared_input = prepare_replay_input_from_bytes(
+            scenario_bytes=parsed_bundle.scenario.encode("utf-8"),
+            source_label=f"replay:{parsed_bundle.run_id}",
+        )
+        artifacts = replay_plan_bundle(parsed_bundle, prepared_input)
     except ReplayIntegrityError as exc:
         emit_cli_error(
             error_code=E_REPLAY_DIVERGENCE,

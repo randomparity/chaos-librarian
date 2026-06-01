@@ -5,8 +5,8 @@ walks the timeline, and returns the complete set of in-memory artifacts.
 Persistence is delegated to ``chaos_librarian.engine.writer.write_fixture``.
 
 ``replay_plan_bundle`` re-runs ``plan`` from a recorded ``PlanOnlyReplayBundle``
-so a previously emitted fixture can be reproduced from its bundle alone.
-Sprint 4 wraps it in the public ``replay`` CLI command.
+plus validation-prepared embedded scenario bytes. Sprint 4 wraps it in
+the public ``replay`` CLI command.
 """
 
 from __future__ import annotations
@@ -38,11 +38,7 @@ from chaos_librarian.engine.reports import ReportSet, build_report_set
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline, step_boundaries
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.errors import ChaosLibrarianError, ChaosLibrarianValueError
-from chaos_librarian.validation import (
-    RunInput,
-    prepare_run_input_from_bytes,
-    run_validation,
-)
+from chaos_librarian.validation import PreparedReplayInput, RunInput
 
 
 @dataclass(frozen=True)
@@ -259,14 +255,17 @@ class ReplayIntegrityError(ChaosLibrarianError):
     """
 
 
-def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
+def replay_plan_bundle(
+    bundle: PlanOnlyReplayBundle,
+    prepared_input: PreparedReplayInput,
+) -> PlanArtifacts:
     """Re-run ``plan`` from a recorded plan-only bundle.
 
-    Takes the bundle's verbatim ``scenario`` field, treats it as the
-    canonical bytes for the replay run, and returns a ``PlanArtifacts``
-    record identical to the original run on success. Sprint 4 wraps this
-    helper in the public ``chaos-librarian replay`` CLI command and adds
-    divergence reporting (exit 6).
+    Takes the validation-prepared bytes from the bundle's verbatim
+    ``scenario`` field and returns a ``PlanArtifacts`` record identical
+    to the original run on success. Sprint 4 wraps this helper in the
+    public ``chaos-librarian replay`` CLI command and adds divergence
+    reporting (exit 6).
 
     Three integrity checks fire in order before returning artifacts:
 
@@ -280,10 +279,10 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
        (Codex round 3 finding 2 — without this, flipping ``applied_events``
        between two valid boundaries would silently produce a longer fixture).
 
-    After the boundary check passes, ``bundle.applied_events`` (translated
-    from a raw-event count to a step-unit count) is threaded through to
-    ``run_materializer_plan`` as ``steps_limit`` so a partial bundle replays
-    as the same partial fixture.
+    After the boundary check passes, ``bundle.applied_events`` is translated
+    from a raw-event count to a step-unit count and threaded through to
+    ``run_materializer_plan`` so a partial bundle replays as the same
+    partial fixture.
 
     Raises:
         ReplayIntegrityError: if any of the three integrity checks fails —
@@ -294,11 +293,13 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
             between two valid boundaries).
     """
     yaml_bytes = bundle.scenario.encode("utf-8")
-    run_input = prepare_run_input_from_bytes(
-        raw_bytes=yaml_bytes,
-        source_label=f"replay:{bundle.run_id}",
-    )
-    report = run_validation(run_input)
+    if prepared_input.run_input.raw_bytes != yaml_bytes:
+        raise ReplayIntegrityError(
+            "replay input integrity check failed: prepared scenario bytes "
+            "do not match bundle.scenario"
+        )
+    run_input = prepared_input.run_input
+    report = prepared_input.validation_report
     if not report.ok:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
         # Surface as ReplayIntegrityError so the CLI maps it to the

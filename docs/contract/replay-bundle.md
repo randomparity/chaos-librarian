@@ -31,10 +31,10 @@ plan-only `run_id` is deterministic (UUIDv5 of scenario hash + seed) and
 
 ## Replay Verifier
 
-`chaos_librarian.engine.replay_plan_bundle(bundle)` re-runs `plan` from a
-recorded `PlanOnlyReplayBundle` alone — it re-validates the embedded
-scenario, re-resolves the timeline, and returns a fresh `PlanArtifacts`
-that compares byte-for-byte with the original fixture when written
-through `write_fixture`. Sprint 4 wraps this helper in the public
-`chaos-librarian replay` CLI command and adds divergence reporting
-(exit 6).
+`chaos_librarian.validation.prepare_replay_input_from_bytes(...)` prepares the
+bundle's embedded scenario bytes as the single `RunInput` + `ValidationReport`
+pair for replay. `chaos_librarian.engine.replay_plan_bundle(bundle,
+prepared_input)` then re-runs `plan`, re-resolves the timeline, and returns a
+fresh `PlanArtifacts` that compares byte-for-byte with the original fixture
+when written through `write_fixture`. The public `chaos-librarian replay` CLI
+command owns that preparation step and adds divergence reporting (exit 6).

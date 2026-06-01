@@ -14,11 +14,15 @@ from chaos_librarian.contract.replay_bundle import ExecutionMode, PlanOnlyReplay
 from chaos_librarian.contract.reports import AssetReport
 from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
-from chaos_librarian.engine import PlanArtifacts, run_plan, step_fixture
+from chaos_librarian.engine import PlanArtifacts, StepResult, run_plan, step_fixture
 from chaos_librarian.engine import writer as writer_mod
 from chaos_librarian.engine.reports import ReportSet
 from chaos_librarian.engine.writer import append_step, write_fixture
-from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
+from chaos_librarian.validation import (
+    RunInput,
+    prepare_replay_input_from_bytes,
+    prepare_run_input_from_bytes,
+)
 
 _RUN_ID = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -179,6 +183,14 @@ def _prepare(raw_bytes: bytes) -> tuple[RunInput, ValidationReport]:
 
 def _validation_report(scenario_id: str) -> ValidationReport:
     return ValidationReport(schema_version=1, scenario_id=scenario_id, ok=True, issues=[])
+
+
+def _step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
+    prepared_input = prepare_replay_input_from_bytes(
+        scenario_bytes=(run_dir / "scenario.yaml").read_bytes(),
+        source_label=f"test-step:{run_dir}",
+    )
+    return step_fixture(run_dir, n_steps=n_steps, prepared_input=prepared_input)
 
 
 def _empty_report_set() -> ReportSet:
@@ -486,7 +498,7 @@ class TestAppendStep:
         out = tmp_path / "run"
         write_fixture(out, artifacts, run_input.raw_bytes)
 
-        step_result = step_fixture(out, n_steps=3)
+        step_result = _step_fixture(out, n_steps=3)
         append_step(
             out,
             new_entries=step_result.new_entries,

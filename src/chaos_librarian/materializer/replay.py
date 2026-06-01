@@ -55,7 +55,7 @@ from chaos_librarian.materializer.phase_b.dispatch import (
 )
 from chaos_librarian.materializer.preparation import (
     PreparedMaterializerRun,
-    prepare_materializer_run_input,
+    prepare_validated_materializer_run_input,
 )
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
@@ -70,7 +70,7 @@ from chaos_librarian.materializer.runtime.network_lag_fields import (
     network_lag_optional_str,
     network_lag_str,
 )
-from chaos_librarian.validation import RunInput, prepare_run_input_from_bytes
+from chaos_librarian.validation import RunInput, prepare_replay_input_from_bytes
 
 __all__ = ["replay_run_bundle"]
 
@@ -91,14 +91,16 @@ def _verified_run_prefix(
     bundle: MaterializeReplayBundle,
 ) -> PreparedMaterializerRun:
     yaml_bytes = bundle.scenario.encode("utf-8")
-    run_input = prepare_run_input_from_bytes(
-        raw_bytes=yaml_bytes,
+    prepared_input = prepare_replay_input_from_bytes(
+        scenario_bytes=yaml_bytes,
         source_label=f"run-replay:{bundle.run_id}",
     )
+    run_input = prepared_input.run_input
     _assert_replay_boundary(run_input, applied_events=bundle.applied_events)
     try:
-        prepared = prepare_materializer_run_input(
+        prepared = prepare_validated_materializer_run_input(
             run_input=run_input,
+            validation_report=prepared_input.validation_report,
             validation_failure_message="run replay scenario re-validation failed",
             validation_payload_exclude_none=True,
             allow_network_lag=True,

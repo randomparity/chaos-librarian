@@ -10,8 +10,9 @@ from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
 from chaos_librarian.contract.replay_bundle import PlanOnlyReplayBundle
-from chaos_librarian.engine import replay_plan_bundle
+from chaos_librarian.engine import PlanArtifacts, replay_plan_bundle
 from chaos_librarian.engine.writer import write_fixture
+from chaos_librarian.validation import prepare_replay_input_from_bytes
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -28,6 +29,14 @@ _PACK_SCENARIOS = [
 def _relative_files(root: Path) -> list[Path]:
     """All files under ``root`` as paths relative to ``root``, sorted."""
     return sorted(p.relative_to(root) for p in root.rglob("*") if p.is_file())
+
+
+def _replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
+    prepared_input = prepare_replay_input_from_bytes(
+        scenario_bytes=bundle.scenario.encode("utf-8"),
+        source_label=f"test-replay:{bundle.run_id}",
+    )
+    return replay_plan_bundle(bundle, prepared_input)
 
 
 @pytest.mark.parametrize("scenario_name", _PACK_SCENARIOS)
@@ -93,7 +102,7 @@ def test_replay_bundle_round_trip_matches_original(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout + result.stderr
 
     bundle = PlanOnlyReplayBundle.model_validate_json((out_original / "replay.json").read_text())
-    replayed = replay_plan_bundle(bundle)
+    replayed = _replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
     rel_original = _relative_files(out_original)
@@ -234,7 +243,7 @@ def test_seed_random_replay_round_trip_byte_identical(tmp_path: Path) -> None:
     assert result.exit_code == 0, result.stdout + result.stderr
 
     bundle = PlanOnlyReplayBundle.model_validate_json((out_original / "replay.json").read_text())
-    replayed = replay_plan_bundle(bundle)
+    replayed = _replay_plan_bundle(bundle)
     write_fixture(out_replay, replayed, bundle.scenario.encode("utf-8"))
 
     rel_original = _relative_files(out_original)

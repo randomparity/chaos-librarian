@@ -33,6 +33,7 @@ from chaos_librarian.engine import (
     step_fixture,
     verify_sentinel,
 )
+from chaos_librarian.validation import prepare_replay_input_from_bytes
 
 
 @app.command()
@@ -57,7 +58,11 @@ def step(
     _preflight_step_replay_bundle(run_dir, json_output=json_output)
 
     try:
-        result = step_fixture(run_dir, n_steps=next_count)
+        prepared_input = prepare_replay_input_from_bytes(
+            scenario_bytes=(run_dir / "scenario.yaml").read_bytes(),
+            source_label=f"step:{run_dir}",
+        )
+        result = step_fixture(run_dir, n_steps=next_count, prepared_input=prepared_input)
     except SentinelInvalidError as exc:
         emit_cli_error(error_code=E_SENTINEL_INVALID, message=str(exc), json_output=json_output)
         raise typer.Exit(code=7) from exc

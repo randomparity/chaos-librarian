@@ -42,6 +42,7 @@ __all__ = [
     "PreparedMaterializerRun",
     "prepare_materializer_run",
     "prepare_materializer_run_input",
+    "prepare_validated_materializer_run_input",
 ]
 
 
@@ -141,6 +142,61 @@ def prepare_materializer_run_input(
         CapabilityGateError: required materialization capabilities are missing.
     """
     validation_report = run_validation(run_input)
+    return prepare_validated_materializer_run_input(
+        run_input=run_input,
+        validation_report=validation_report,
+        validation_failure_message=validation_failure_message,
+        validation_payload_exclude_none=validation_payload_exclude_none,
+        allow_network_lag=allow_network_lag,
+        allow_network_fs_chaos=allow_network_fs_chaos,
+        check_hevc_video=check_hevc_video,
+        resolved_timeline_check=resolved_timeline_check,
+        resolved_seed_override=resolved_seed_override,
+        run_id_override=run_id_override,
+        applied_events_override=applied_events_override,
+    )
+
+
+def prepare_validated_materializer_run_input(
+    *,
+    run_input: RunInput,
+    validation_report: ValidationReport,
+    validation_failure_message: str,
+    validation_payload_exclude_none: bool,
+    allow_network_lag: bool = False,
+    allow_network_fs_chaos: bool = False,
+    check_hevc_video: bool = False,
+    resolved_timeline_check: Callable[[list[ResolvedEvent]], None] | None = None,
+    resolved_seed_override: int | None = None,
+    run_id_override: uuid.UUID | None = None,
+    applied_events_override: int | None = None,
+) -> PreparedMaterializerRun:
+    """Preflight, gate, and plan an already-validated materializer input.
+
+    Args:
+        run_input: Parsed scenario bytes and model from the caller's boundary.
+        validation_report: Validation report already produced for ``run_input``.
+        validation_failure_message: Mode-specific validation error message.
+        validation_payload_exclude_none: Whether the embedded validation
+            report payload should omit ``None`` values.
+        allow_network_lag: Allow wall-clock-only network lag timeline actions.
+        allow_network_fs_chaos: Allow wall-clock-only network filesystem chaos
+            timeline actions.
+        check_hevc_video: Require the legacy materialize HEVC encoder gate.
+        resolved_timeline_check: Optional mode-specific check that runs after
+            timeline preflight and before capability/tool detection.
+        resolved_seed_override: Optional plan seed override for replayed runs.
+        run_id_override: Optional run id override for replayed runs.
+        applied_events_override: Optional raw event prefix for replayed runs.
+
+    Returns:
+        Shared materializer inputs, including the planned artifact prefix.
+
+    Raises:
+        ScenarioValidationError: scenario fails semantic validation.
+        TimelineUnsupportedError: the timeline contains an unsupported action.
+        CapabilityGateError: required materialization capabilities are missing.
+    """
     if not validation_report.ok:
         raise ScenarioValidationError(
             validation_failure_message,

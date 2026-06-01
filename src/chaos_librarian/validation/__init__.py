@@ -18,11 +18,17 @@ from chaos_librarian.validation.input import (
     prepare_run_input_from_bytes,
 )
 from chaos_librarian.validation.pipeline import run_validation
+from chaos_librarian.validation.replay import (
+    PreparedReplayInput,
+    prepare_replay_input_from_bytes,
+)
 
 __all__ = [
+    "PreparedReplayInput",
     "RunInput",
     "ValidationReport",
     "ValidationSeverity",
+    "prepare_replay_input_from_bytes",
     "prepare_run_input",
     "prepare_run_input_from_bytes",
     "run_validation",

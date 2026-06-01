@@ -24,7 +24,9 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import (
+    PreparedReplayInput,
     RunInput,
+    prepare_replay_input_from_bytes,
     prepare_run_input,
     prepare_run_input_from_bytes,
     run_validation,
@@ -36,6 +38,17 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 def _input_and_report(name: str) -> tuple[RunInput, ValidationReport]:
     run_input = prepare_run_input(FIXTURE_DIR / name)
     return run_input, run_validation(run_input)
+
+
+def _prepared_replay_input(bundle: PlanOnlyReplayBundle) -> PreparedReplayInput:
+    return prepare_replay_input_from_bytes(
+        scenario_bytes=bundle.scenario.encode("utf-8"),
+        source_label=f"test-replay:{bundle.run_id}",
+    )
+
+
+def _replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
+    return replay_plan_bundle(bundle, _prepared_replay_input(bundle))
 
 
 def _corruption_input_and_report(seed: str = "42") -> tuple[RunInput, ValidationReport]:
@@ -235,7 +248,7 @@ class TestReplayPlanBundle:
     def test_replay_returns_equivalent_artifacts(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         original = run_plan(run_input=run_input, validation_report=report)
-        replayed = replay_plan_bundle(original.replay_bundle)
+        replayed = _replay_plan_bundle(original.replay_bundle)
         assert replayed.replay_bundle == original.replay_bundle
         assert replayed.initial_manifest == original.initial_manifest
         assert replayed.current_manifest == original.current_manifest
@@ -252,7 +265,7 @@ class TestReplayPlanBundle:
         run_input, report = _input_and_report("seed-random.yaml")
         assert report.ok, [i.code for i in report.issues]
         original = run_plan(run_input=run_input, validation_report=report)
-        replayed = replay_plan_bundle(original.replay_bundle)
+        replayed = _replay_plan_bundle(original.replay_bundle)
         assert replayed.replay_bundle.resolved_seed == original.replay_bundle.resolved_seed
         assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
         assert replayed.replay_bundle == original.replay_bundle
@@ -262,7 +275,7 @@ class TestReplayPlanBundle:
         run_input, report = _corruption_input_and_report(seed="random")
         assert report.ok, [i.code for i in report.issues]
         original = run_plan(run_input=run_input, validation_report=report)
-        replayed = replay_plan_bundle(original.replay_bundle)
+        replayed = _replay_plan_bundle(original.replay_bundle)
 
         original_entry = original.journal[0]
         replayed_entry = replayed.journal[0]
@@ -288,13 +301,26 @@ class TestReplayPlanBundle:
             update={"resolved_seed": original.replay_bundle.resolved_seed + 1}
         )
         with pytest.raises(ReplayIntegrityError) as exc_info:
-            replay_plan_bundle(tampered)
+            _replay_plan_bundle(tampered)
         message = str(exc_info.value)
         assert str(tampered.run_id) in message
         # The recomputed run_id must also be in the message so operators can
         # see which side of the mismatch came from the recorded bundle vs.
         # the recomputed value.
         assert "recomputed" in message.lower() or "computed" in message.lower()
+
+    def test_replay_rejects_prepared_input_for_different_scenario(self) -> None:
+        """The caller-owned replay preparation must match the bundle bytes."""
+        run_input, report = _input_and_report("identity-move-rename.yaml")
+        original = run_plan(run_input=run_input, validation_report=report)
+        other_run_input, _ = _input_and_report("version-evolution.yaml")
+        prepared_input = prepare_replay_input_from_bytes(
+            scenario_bytes=other_run_input.raw_bytes,
+            source_label=f"test-replay:{original.replay_bundle.run_id}:wrong-scenario",
+        )
+
+        with pytest.raises(ReplayIntegrityError, match="prepared scenario bytes"):
+            replay_plan_bundle(original.replay_bundle, prepared_input)
 
 
 class TestRunPlanStepsLimit:
@@ -378,7 +404,7 @@ class TestReplayPartialBundles:
     def test_replay_zero_step_bundle(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         original = run_plan(run_input=run_input, validation_report=report, steps_limit=0)
-        replayed = replay_plan_bundle(original.replay_bundle)
+        replayed = _replay_plan_bundle(original.replay_bundle)
         assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
         assert replayed.replay_bundle.applied_events == 0
         assert replayed.journal == ()
@@ -386,7 +412,7 @@ class TestReplayPartialBundles:
     def test_replay_partial_bundle_round_trip(self) -> None:
         run_input, report = _input_and_report("identity-move-rename.yaml")
         original = run_plan(run_input=run_input, validation_report=report, steps_limit=1)
-        replayed = replay_plan_bundle(original.replay_bundle)
+        replayed = _replay_plan_bundle(original.replay_bundle)
         assert replayed.journal == original.journal
         assert replayed.replay_bundle.run_id == original.replay_bundle.run_id
 
@@ -401,7 +427,7 @@ class TestReplayPartialBundles:
         # boundaries == [2]; flip applied_events from 2 to 1 (mid-pair)
         tampered = original.replay_bundle.model_copy(update={"applied_events": 1})
         with pytest.raises(ReplayIntegrityError, match="step boundary"):
-            replay_plan_bundle(tampered)
+            _replay_plan_bundle(tampered)
 
     def test_replay_journal_digest_mismatch_trips_integrity(self) -> None:
         """Tampering journal_digest directly trips integrity.
@@ -414,7 +440,7 @@ class TestReplayPartialBundles:
         bogus = "0" * 64
         tampered = original.replay_bundle.model_copy(update={"journal_digest": bogus})
         with pytest.raises(ReplayIntegrityError, match="journal_digest"):
-            replay_plan_bundle(tampered)
+            _replay_plan_bundle(tampered)
 
     def test_replay_applied_events_tampered_to_valid_boundary_trips_digest(self) -> None:
         """applied_events flipped between two valid boundaries is caught by digest.
@@ -429,4 +455,4 @@ class TestReplayPartialBundles:
         # boundaries == [1, 2]; both are valid. Flip applied_events but leave digest.
         tampered = original.replay_bundle.model_copy(update={"applied_events": 2})
         with pytest.raises(ReplayIntegrityError, match="journal_digest"):
-            replay_plan_bundle(tampered)
+            _replay_plan_bundle(tampered)

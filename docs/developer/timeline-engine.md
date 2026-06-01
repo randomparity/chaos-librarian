@@ -23,6 +23,6 @@ the `.chaos-librarian-run` sentinel.
 `append_step` is used by step mode. It rewrites mutable files atomically per
 file and appends new journal lines for the newly applied events.
 
-`replay_plan_bundle` validates the embedded scenario, checks deterministic run
-identity, verifies step boundaries, and compares the journal digest for replay
-evidence.
+`replay_plan_bundle` consumes validation-prepared embedded scenario bytes,
+checks deterministic run identity, verifies step boundaries, and compares the
+journal digest for replay evidence.

@@ -58,3 +58,7 @@ Plan mode stops after oracle artifacts are written. Materialize mode uses the
 same validation and plan semantics, then writes media files and applies effects.
 Run mode applies the same logical timeline over elapsed wall-clock time for
 watcher workflows.
+
+Replay mode starts from `replay.json`, prepares the embedded scenario with
+`prepare_replay_input_from_bytes`, and then passes the prepared input to the
+plan-only or materialize replay verifier.

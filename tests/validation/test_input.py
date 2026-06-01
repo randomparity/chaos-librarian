@@ -12,8 +12,10 @@ from pydantic import ValidationError
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.engine import run_plan
 from chaos_librarian.validation import (
+    PreparedReplayInput,
     RunInput,
     codes,
+    prepare_replay_input_from_bytes,
     prepare_run_input,
     prepare_run_input_from_bytes,
     run_validation,
@@ -46,6 +48,18 @@ class TestPrepareRunInput:
         b = prepare_run_input_from_bytes(raw_bytes=payload, source_label="memory:s")
         assert a.raw_data == b.raw_data
         assert a.content_hash == b.content_hash
+
+    def test_replay_input_prepares_validation_report(self) -> None:
+        """Replay preparation owns the embedded-bytes validation boundary."""
+        prepared = prepare_replay_input_from_bytes(
+            scenario_bytes=TestRunInputScenarioCache._VALID_BYTES,
+            source_label="replay:test-run",
+        )
+
+        assert isinstance(prepared, PreparedReplayInput)
+        assert prepared.run_input.raw_bytes == TestRunInputScenarioCache._VALID_BYTES
+        assert prepared.validation_report.ok is True
+        assert prepared.validation_report.scenario_id == "s1"
 
     def test_yaml_parse_error_raises_from_factory(self, tmp_path: Path) -> None:
         """``ScenarioLoadError`` must surface from the factory, never inside
