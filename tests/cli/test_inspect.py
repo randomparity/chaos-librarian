@@ -82,6 +82,16 @@ class TestInspect:
         assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
         assert payload["manifest_path"].endswith("manifest.current.json")
 
+    def test_missing_journal_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "journal.jsonl").unlink()
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["journal_path"].endswith("journal.jsonl")
+
     def test_inspect_reports_complete_state(self, tmp_path: Path) -> None:
         """WHY: every plan-only run-dir reports state=complete; agents read
         the field to distinguish completed runs from interrupted materialize."""

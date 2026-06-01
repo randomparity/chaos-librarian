@@ -171,9 +171,7 @@ def _load_manifest(path: Path) -> Manifest:
 def _count_journal_entries(path: Path) -> int:
     try:
         journal_text = path.read_text()
-    except FileNotFoundError:
-        return 0
-    except OSError as exc:
+    except (FileNotFoundError, OSError) as exc:
         raise _InspectArtifactError(
             error_code=E_FIXTURE_INCONSISTENT,
             message=f"journal.jsonl is not readable: {exc}",
