@@ -28,7 +28,9 @@ from chaos_librarian.contract.materialization import MediaAction, ToolInvocation
 from chaos_librarian.contract.scenario import (
     AUDIO_CHANNEL_COUNTS_BY_NAME,
     Asset,
+    PosterImageFormat,
     SidecarKind,
+    SidecarMediaType,
     TimelineActionName,
 )
 from chaos_librarian.materializer.errors import MediaActionError
@@ -64,6 +66,22 @@ def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
     return blob
 
 
+def _optional_sidecar_media_type(value: object) -> SidecarMediaType | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return SidecarMediaType(value)
+    raise ValueError(f"media_type must be a string or null, got {type(value).__name__}")
+
+
+def _optional_poster_image_format(value: object) -> PosterImageFormat | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return PosterImageFormat(value)
+    raise ValueError(f"image_format must be a string or null, got {type(value).__name__}")
+
+
 __all__ = [
     "MEDIA_PHASE_B_ACTIONS",
     "LiveSidecar",
@@ -95,8 +113,8 @@ class LiveSidecar:
     # initial manifest (which has no authoring inputs).
     encoding: str | None = None
     body: str | None = None
-    media_type: str | None = None
-    image_format: str | None = None
+    media_type: SidecarMediaType | None = None
+    image_format: PosterImageFormat | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -1022,10 +1040,8 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     encoding = str(encoding) if isinstance(encoding, str) else None
     raw_body = delta.get("body")
     body_text = str(raw_body) if isinstance(raw_body, str) else None
-    media_type = delta.get("media_type")
-    media_type = str(media_type) if isinstance(media_type, str) else None
-    image_format = delta.get("image_format")
-    image_format = str(image_format) if isinstance(image_format, str) else None
+    media_type = _optional_sidecar_media_type(delta.get("media_type"))
+    image_format = _optional_poster_image_format(delta.get("image_format"))
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
     asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
@@ -1076,8 +1092,8 @@ def _write_create_sidecar_body(
     language: str | None,
     encoding: str | None,
     body_text: str | None,
-    media_type: str | None,
-    image_format: str | None,
+    media_type: SidecarMediaType | None,
+    image_format: PosterImageFormat | None,
 ) -> _CreateSidecarWriteResult:
     if kind == SidecarKind.SUBTITLE:
         return _write_subtitle_sidecar(
@@ -1205,8 +1221,8 @@ def _write_poster_sidecar(
     temp_output: Path,
     sidecar_id: str,
     asset_id: str,
-    media_type: str | None,
-    image_format: str | None,
+    media_type: SidecarMediaType | None,
+    image_format: PosterImageFormat | None,
 ) -> _CreateSidecarWriteResult:
     argv = poster_ffmpeg_argv(
         output_path=temp_output,

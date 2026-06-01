@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from chaos_librarian.contract.scenario import PosterImageFormat, SidecarMediaType
 from chaos_librarian.materializer.phase_b.sidecar_bytes import (
     cue_payload,
     encode_subtitle_body,
@@ -67,13 +68,13 @@ def test_regenerate_poster_video_media_type_changes_argv():
         output_path=Path("/tmp/x.mkv"),
         resolved_seed=update_seed,
         sidecar_id="s0",
-        media_type="image",
+        media_type=SidecarMediaType.IMAGE,
     )
     video_argv = poster_ffmpeg_argv(
         output_path=Path("/tmp/x.mkv"),
         resolved_seed=update_seed,
         sidecar_id="s0",
-        media_type="video",
+        media_type=SidecarMediaType.VIDEO,
     )
     assert image_argv != video_argv
 
@@ -116,7 +117,7 @@ def test_poster_argv_selects_webp_encoder():
         output_path=Path("/tmp/cover.webp"),
         resolved_seed=1,
         sidecar_id="sc-1",
-        image_format="webp",
+        image_format=PosterImageFormat.WEBP,
     )
     assert "libwebp" in argv
 
@@ -126,7 +127,7 @@ def test_poster_argv_selects_mjpeg_encoder():
         output_path=Path("/tmp/cover.jpg"),
         resolved_seed=1,
         sidecar_id="sc-1",
-        image_format="jpeg",
+        image_format=PosterImageFormat.JPEG,
     )
     assert "mjpeg" in argv
 

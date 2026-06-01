@@ -17,7 +17,9 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
+    PosterImageFormat,
     SidecarKind,
+    SidecarMediaType,
     TimelineActionName,
     VideoSource,
     VideoTrack,
@@ -1340,6 +1342,44 @@ class TestApplyCreateSidecar:
         assert result.tool_invocation_index == 0
         assert ctx.invocations[0].tool == "ffmpeg"
         assert "sidecar_poster" in ctx.post_phase_b_sidecars
+
+    def test_poster_kind_preserves_authoring_knob_enums(self, monkeypatch, tmp_path):
+        captured_argv: list[str] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv[:] = argv
+            Path(argv[-1]).write_bytes(b"webp")
+            invocation = ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=list(argv),
+                exit_code=0,
+                duration_ns=1000,
+            )
+            return invocation, ""
+
+        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_poster_webp",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.poster.webp",
+                "sidecar_id": "sidecar_poster",
+                "language": None,
+                "kind": "poster",
+                "media_type": "image",
+                "image_format": "webp",
+            },
+        )
+
+        apply_media_action(ctx, entry)
+
+        sidecar = ctx.live_sidecars["sidecar_poster"]
+        assert sidecar.media_type is SidecarMediaType.IMAGE
+        assert sidecar.image_format is PosterImageFormat.WEBP
+        assert "libwebp" in captured_argv
 
     def _ctx(self, tmp_path):
         return MediaPhaseBContext(

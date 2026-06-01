@@ -19,6 +19,7 @@ import hashlib
 from pathlib import Path
 from typing import Final
 
+from chaos_librarian.contract.scenario import PosterImageFormat, SidecarMediaType
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 __all__ = [
@@ -104,9 +105,9 @@ def render_nfo(*, sidecar_id: str) -> bytes:
 # Explicit ffmpeg image encoder per poster image_format (#118). ``png`` keeps
 # the legacy implicit-extension behavior (no explicit ``-c:v``) so existing png
 # poster bytes stay byte-identical; jpeg/webp name their encoders explicitly.
-_POSTER_IMAGE_ENCODER: Final[dict[str, str]] = {
-    "jpeg": "mjpeg",
-    "webp": "libwebp",
+_POSTER_IMAGE_ENCODER: Final[dict[PosterImageFormat, str]] = {
+    PosterImageFormat.JPEG: "mjpeg",
+    PosterImageFormat.WEBP: "libwebp",
 }
 
 
@@ -115,13 +116,13 @@ def poster_ffmpeg_argv(
     output_path: Path,
     resolved_seed: int,
     sidecar_id: str,
-    media_type: str | None = None,
-    image_format: str | None = None,
+    media_type: SidecarMediaType | None = None,
+    image_format: PosterImageFormat | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for a poster sidecar.
 
-    ``media_type`` ``None``/``"image"`` ⇒ a single-color still; ``"video"``
-    ⇒ a tiny single-frame video muxed into the container the ``output_path``
+    ``media_type`` ``None``/``IMAGE`` ⇒ a single-color still; ``VIDEO`` ⇒ a
+    tiny single-frame video muxed into the container the ``output_path``
     extension implies (the ``poster-is-video`` chaos). For an image poster,
     ``image_format`` (#118) selects the encoder explicitly (``jpeg``⇒mjpeg,
     ``webp``⇒libwebp); ``None``/``png`` keeps the legacy PNG (no explicit
@@ -130,7 +131,7 @@ def poster_ffmpeg_argv(
     """
     seed_hash = _seed_hash(stream="poster_color", seed=resolved_seed, keys=(sidecar_id,))
     color = f"{seed_hash & 0xFFFFFF:06x}"
-    if media_type == "video":
+    if media_type is SidecarMediaType.VIDEO:
         return [
             "ffmpeg",
             "-hide_banner",
