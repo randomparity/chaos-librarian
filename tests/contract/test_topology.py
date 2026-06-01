@@ -11,12 +11,15 @@ from chaos_librarian.contract.scenario import (
     Asset,
     Bundle,
     EditionKind,
-    Movie,
     Scenario,
     Variant,
 )
 from chaos_librarian.topology import (
     AssetContext,
+    AssetContextBranch,
+    EpisodeAssetBranch,
+    PodcastEpisodeAssetBranch,
+    TrackAssetBranch,
     asset_contexts_by_id,
     asset_ids_under_target,
     iter_asset_contexts,
@@ -269,7 +272,7 @@ def _multi_asset_bundle_scenario() -> Scenario:
 def test_asset_context_public_type_hints_resolve_at_runtime() -> None:
     hints = get_type_hints(AssetContext)
 
-    assert hints["movie"] == Movie | None
+    assert hints["branch"] == AssetContextBranch
     assert hints["variant"] is Variant
     assert hints["bundle"] is Bundle
     assert hints["asset"] is Asset
@@ -291,14 +294,18 @@ def test_iter_asset_contexts_preserves_manifest_declaration_order() -> None:
     ]
     assert contexts[0].parent_id == "movie_orbit"
     assert contexts[1].parent_id == "episode_01"
-    assert contexts[1].series is not None
-    assert contexts[1].season is not None
-    assert contexts[1].episode is not None
+    episode_branch = contexts[1].branch
+    assert isinstance(episode_branch, EpisodeAssetBranch)
+    assert episode_branch.series.id == "series_starline"
+    assert episode_branch.season.id == "season_01"
+    assert episode_branch.episode.id == "episode_01"
     assert contexts[2].parent_id == "track_01"
-    assert contexts[2].artist is not None
-    assert contexts[2].album is not None
-    assert contexts[2].disc is not None
-    assert contexts[2].track is not None
+    track_branch = contexts[2].branch
+    assert isinstance(track_branch, TrackAssetBranch)
+    assert track_branch.artist.id == "artist_north"
+    assert track_branch.album.id == "album_winter"
+    assert track_branch.disc.id == "disc_01"
+    assert track_branch.track.id == "track_01"
 
 
 def test_iter_asset_contexts_preserves_multi_asset_bundle_order_and_count() -> None:
@@ -330,10 +337,10 @@ def test_iter_asset_contexts_includes_podcast_episodes() -> None:
     assert [context.parent_kind for context in contexts] == [ParentKind.PODCAST_EPISODE]
     context = contexts[0]
     assert context.parent_id == "podcast_episode_01"
-    assert context.podcast is not None
-    assert context.podcast.title == "The Daily"
-    assert context.podcast_episode is not None
-    assert context.podcast_episode.slug == "first-show"
+    branch = context.branch
+    assert isinstance(branch, PodcastEpisodeAssetBranch)
+    assert branch.podcast.title == "The Daily"
+    assert branch.podcast_episode.slug == "first-show"
 
 
 def test_asset_ids_under_podcast_episode_target() -> None:
