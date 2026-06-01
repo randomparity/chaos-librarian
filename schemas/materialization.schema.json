@@ -300,15 +300,14 @@
       "description": "One phase-B intentional corruption audit record.",
       "properties": {
         "action": {
+          "$ref": "#/$defs/TimelineActionName",
           "enum": [
             "corrupt_container_header",
-            "truncate_file",
             "corrupt_packet_range",
-            "write_invalid_duration_metadata",
-            "corrupt_tags"
-          ],
-          "title": "Action",
-          "type": "string"
+            "corrupt_tags",
+            "truncate_file",
+            "write_invalid_duration_metadata"
+          ]
         },
         "byte_count": {
           "anyOf": [

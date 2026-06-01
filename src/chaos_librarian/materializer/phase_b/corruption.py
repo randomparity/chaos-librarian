@@ -13,7 +13,6 @@ from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.materialization import (
     CorruptionAction,
-    CorruptionTimelineAction,
     ToolInvocation,
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
@@ -417,7 +416,7 @@ def _run_invalid_duration_copy(
 def _corruption_action(
     *,
     entry: JournalEntry,
-    action: CorruptionTimelineAction,
+    action: TimelineActionName,
     finalized: _FinalizedCorruption,
     started: int,
     corruptor: str,
