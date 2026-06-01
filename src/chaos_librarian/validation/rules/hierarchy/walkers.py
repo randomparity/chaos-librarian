@@ -17,6 +17,7 @@ from chaos_librarian.contract.scenario import (
     PodcastLayout,
     SeriesLayout,
     SidecarKind,
+    SubtitleMode,
     TrackNaming,
 )
 from chaos_librarian.path_rendering import (
@@ -193,7 +194,7 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
             continue
         for sub_obj in _as_list(asset.get("subtitles")) or []:
             sub = _as_mapping(sub_obj)
-            if sub is None or sub.get("mode") != "sidecar":
+            if sub is None or _enum(SubtitleMode, sub.get("mode")) is not SubtitleMode.SIDECAR:
                 continue
             language = sub.get("language")
             if not isinstance(language, str):

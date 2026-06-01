@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.domain import ParentKind
+from chaos_librarian.contract.scenario import SubtitleMode
 from chaos_librarian.media_matrix import (
     AUDIO_SAMPLE_FORMATS_BY_CODEC,
     HEVC_VIDEO_CODECS,
@@ -29,6 +30,7 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     Reporter,
     _as_list,
     _as_mapping,
+    _enum,
     _Loc,
 )
 from chaos_librarian.validation.rules.hierarchy.walkers import (
@@ -583,8 +585,8 @@ def _check_subtitle_mode(
     loc: _Loc,
     reporter: Reporter,
 ) -> None:
-    mode = subtitle.get("mode")
-    if not isinstance(mode, str) or mode == "sidecar":
+    mode = _enum(SubtitleMode, subtitle.get("mode"))
+    if mode is None or mode is SubtitleMode.SIDECAR:
         return
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,

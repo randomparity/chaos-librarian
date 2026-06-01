@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.contract.scenario import TimelineActionName
+from chaos_librarian.contract.scenario import SubtitleMode, TimelineActionName
 from chaos_librarian.path_rendering import (
     clean_asset_container,
     clean_display_component,
@@ -17,6 +17,7 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     Reporter,
     _as_list,
     _as_mapping,
+    _enum,
     _iter_timeline_events,
     _Loc,
 )
@@ -140,7 +141,10 @@ def _check_declared_sidecar_paths(
         return
     for sub_idx, sub_obj in enumerate(subtitles):
         subtitle = _as_mapping(sub_obj)
-        if subtitle is None or subtitle.get("mode") != "sidecar":
+        if (
+            subtitle is None
+            or _enum(SubtitleMode, subtitle.get("mode")) is not SubtitleMode.SIDECAR
+        ):
             continue
         language = subtitle.get("language")
         if not isinstance(language, str):

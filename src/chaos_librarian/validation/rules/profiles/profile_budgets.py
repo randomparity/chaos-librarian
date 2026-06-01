@@ -7,12 +7,17 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Final
 
 from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
-from chaos_librarian.contract.scenario import TimelineActionName, generation_budget_for
+from chaos_librarian.contract.scenario import (
+    SubtitleMode,
+    TimelineActionName,
+    generation_budget_for,
+)
 from chaos_librarian.validation.codes import E_PROFILE_BUDGET_EXCEEDED
 from chaos_librarian.validation.rules.core.raw_helpers import (
     Reporter,
     _as_list,
     _as_mapping,
+    _enum,
     _iter_timeline_events,
 )
 
@@ -218,7 +223,7 @@ def _count_declared_and_timeline_sidecars(raw: Mapping[str, object]) -> int:
 
 def _declared_sidecars(asset: Mapping[str, object]):
     for sub in _iter_mapping_items(asset.get("subtitles")):
-        if sub.get("mode") == "sidecar":
+        if _enum(SubtitleMode, sub.get("mode")) is SubtitleMode.SIDECAR:
             yield sub
 
 
