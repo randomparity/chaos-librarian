@@ -167,7 +167,31 @@ def run_wall_clock_scenario(
     duration: str,
     speed: str,
 ) -> MaterializeArtifacts:
-    """Run a scenario against wall-clock time and emit materialized artifacts."""
+    """Run a scenario against wall-clock time and emit materialized artifacts.
+
+    Raises:
+        DurationParseError: ``duration`` is not valid duration syntax.
+        SpeedParseError: ``speed`` is not valid speed multiplier syntax.
+        WallClockUsageError: ``duration`` parses but is not greater than zero.
+        ScenarioLoadError: ``scenario_path`` cannot be read or parsed.
+        ScenarioValidationError: scenario fails semantic validation.
+        TimelineUnsupportedError: a timeline event names an unsupported
+            action or wall-clock slow-copy shape.
+        UnsupportedMaterializationError: scenario declares media outside
+            the materialization support matrix.
+        CapabilityGateError: required materialization tooling or codec
+            support is missing.
+        ContainmentViolationError: a path escapes ``<out_dir>/library/``.
+        ToolFailedError: ffmpeg or mkvtoolnix exited non-zero during
+            synthesis.
+        ProbeParseError: ffprobe output is malformed or missing required
+            fields.
+        MaterializationWriteError: run directory lifecycle metadata,
+            report, publish, or cleanup writes failed.
+        FilesystemActionError: a phase-B filesystem helper raised.
+        MediaActionError: a phase-B media handler raised.
+        CorruptionActionError: a phase-B corruption handler raised.
+    """
     requested_duration_ns = _parse_positive_duration(duration)
     speed_multiplier = parse_speed(speed)
     started_at = _utc_now()
