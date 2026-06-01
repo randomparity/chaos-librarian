@@ -24,16 +24,16 @@ from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 _PROBE_TIMEOUT_S: Final[float] = 15.0
 
 
-def _coerce_blob(value: object) -> dict[str, object] | None:
+def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
     """Return ``value`` as ``dict[str, object]`` if it is a string-keyed dict."""
     if not isinstance(value, dict):
         return None
-    blob: dict[str, object] = {}
+    payload: dict[str, object] = {}
     for key, item in value.items():
         if not isinstance(key, str):
             return None
-        blob[key] = item
-    return blob
+        payload[key] = item
+    return payload
 
 
 def _fps_from_rate(rate: str | None) -> float | None:
@@ -56,9 +56,9 @@ def _fps_from_rate(rate: str | None) -> float | None:
         return None
 
 
-def _opt_int(blob: dict[str, object], key: str) -> int | None:
-    """Return ``int(blob[key])`` if present and coercible, else ``None``."""
-    value = blob.get(key)
+def _opt_int(payload: dict[str, object], key: str) -> int | None:
+    """Return ``int(payload[key])`` if present and coercible, else ``None``."""
+    value = payload.get(key)
     if value is None:
         return None
     if isinstance(value, bool):
@@ -73,15 +73,15 @@ def _opt_int(blob: dict[str, object], key: str) -> int | None:
     return None
 
 
-def _opt_str(blob: dict[str, object], key: str) -> str | None:
-    value = blob.get(key)
+def _opt_str(payload: dict[str, object], key: str) -> str | None:
+    value = payload.get(key)
     if value is None:
         return None
     return str(value)
 
 
-def _opt_bool(blob: dict[str, object], key: str) -> bool | None:
-    value = blob.get(key)
+def _opt_bool(payload: dict[str, object], key: str) -> bool | None:
+    value = payload.get(key)
     if isinstance(value, bool):
         return value
     if isinstance(value, int):
@@ -94,12 +94,12 @@ def _opt_bool(blob: dict[str, object], key: str) -> bool | None:
     return None
 
 
-def _language_tag(blob: dict[str, object]) -> str | None:
-    return _tag_value(blob, "language")
+def _language_tag(payload: dict[str, object]) -> str | None:
+    return _tag_value(payload, "language")
 
 
-def _tag_value(blob: dict[str, object], key: str) -> str | None:
-    tags = _coerce_blob(blob.get("tags"))
+def _tag_value(payload: dict[str, object], key: str) -> str | None:
+    tags = _coerce_str_keyed_dict(payload.get("tags"))
     if tags is None:
         return None
     key = key.casefold()
@@ -109,57 +109,57 @@ def _tag_value(blob: dict[str, object], key: str) -> str | None:
     return None
 
 
-def _attached_pic(blob: dict[str, object]) -> bool | None:
-    disposition = _coerce_blob(blob.get("disposition"))
+def _attached_pic(stream_json: dict[str, object]) -> bool | None:
+    disposition = _coerce_str_keyed_dict(stream_json.get("disposition"))
     if disposition is None:
         return None
     return True if _opt_bool(disposition, "attached_pic") is True else None
 
 
-def _disposition_bool(blob: dict[str, object], key: str) -> bool | None:
-    disposition = _coerce_blob(blob.get("disposition"))
+def _disposition_bool(stream_json: dict[str, object], key: str) -> bool | None:
+    disposition = _coerce_str_keyed_dict(stream_json.get("disposition"))
     if disposition is None:
         return None
     return _opt_bool(disposition, key)
 
 
-def _stream_from_json(blob: dict[str, object]) -> ProbedStream | None:
-    """Map one ffprobe stream blob into a ``ProbedStream``.
+def _stream_from_json(stream_json: dict[str, object]) -> ProbedStream | None:
+    """Map one ffprobe stream object into a ``ProbedStream``.
 
     Returns ``None`` for streams whose ``codec_type`` is unknown.
     """
-    codec_type = blob.get("codec_type")
-    codec = str(blob.get("codec_name") or "")
+    codec_type = stream_json.get("codec_type")
+    codec = str(stream_json.get("codec_name") or "")
     if codec_type == "video":
         return ProbedStream(
             kind=StreamKind.VIDEO,
             codec=codec,
-            width=_opt_int(blob, "width"),
-            height=_opt_int(blob, "height"),
-            fps=_fps_from_rate(_opt_str(blob, "r_frame_rate")),
-            language=_language_tag(blob),
-            title=_tag_value(blob, "title"),
-            attached_pic=_attached_pic(blob),
+            width=_opt_int(stream_json, "width"),
+            height=_opt_int(stream_json, "height"),
+            fps=_fps_from_rate(_opt_str(stream_json, "r_frame_rate")),
+            language=_language_tag(stream_json),
+            title=_tag_value(stream_json, "title"),
+            attached_pic=_attached_pic(stream_json),
         )
     if codec_type == "audio":
         return ProbedStream(
             kind=StreamKind.AUDIO,
             codec=codec,
-            channels=_opt_int(blob, "channels"),
-            channel_layout=_opt_str(blob, "channel_layout"),
-            sample_rate=_opt_int(blob, "sample_rate"),
-            language=_language_tag(blob),
-            title=_tag_value(blob, "title") or _tag_value(blob, "handler_name"),
-            role=_tag_value(blob, "role"),
+            channels=_opt_int(stream_json, "channels"),
+            channel_layout=_opt_str(stream_json, "channel_layout"),
+            sample_rate=_opt_int(stream_json, "sample_rate"),
+            language=_language_tag(stream_json),
+            title=_tag_value(stream_json, "title") or _tag_value(stream_json, "handler_name"),
+            role=_tag_value(stream_json, "role"),
         )
     if codec_type == "subtitle":
         return ProbedStream(
             kind=StreamKind.SUBTITLE,
             codec=codec,
-            language=_language_tag(blob),
-            title=_tag_value(blob, "title"),
-            default=_disposition_bool(blob, "default"),
-            forced=_disposition_bool(blob, "forced"),
+            language=_language_tag(stream_json),
+            title=_tag_value(stream_json, "title"),
+            default=_disposition_bool(stream_json, "default"),
+            forced=_disposition_bool(stream_json, "forced"),
         )
     return None
 
@@ -169,20 +169,20 @@ def _parse_streams(streams_raw: object) -> list[ProbedStream]:
         return []
     parsed: list[ProbedStream] = []
     for entry in streams_raw:
-        blob = _coerce_blob(entry)
-        if blob is None:
+        stream_json = _coerce_str_keyed_dict(entry)
+        if stream_json is None:
             continue
-        stream = _stream_from_json(blob)
+        stream = _stream_from_json(stream_json)
         if stream is not None:
             parsed.append(stream)
     return parsed
 
 
-def _milliseconds_from_chapter_time(blob: dict[str, object], prefix: str) -> int | None:
-    integer_value = _opt_int(blob, prefix)
-    if integer_value is not None and _opt_str(blob, "time_base") == "1/1000":
+def _milliseconds_from_chapter_time(chapter_json: dict[str, object], prefix: str) -> int | None:
+    integer_value = _opt_int(chapter_json, prefix)
+    if integer_value is not None and _opt_str(chapter_json, "time_base") == "1/1000":
         return integer_value
-    seconds = _opt_str(blob, f"{prefix}_time")
+    seconds = _opt_str(chapter_json, f"{prefix}_time")
     if seconds is None:
         return None
     try:
@@ -191,17 +191,17 @@ def _milliseconds_from_chapter_time(blob: dict[str, object], prefix: str) -> int
         return None
 
 
-def _chapter_from_json(index: int, blob: dict[str, object]) -> ProbedChapter | None:
-    start_ms = _milliseconds_from_chapter_time(blob, "start")
-    end_ms = _milliseconds_from_chapter_time(blob, "end")
+def _chapter_from_json(index: int, chapter_json: dict[str, object]) -> ProbedChapter | None:
+    start_ms = _milliseconds_from_chapter_time(chapter_json, "start")
+    end_ms = _milliseconds_from_chapter_time(chapter_json, "end")
     if start_ms is None or end_ms is None:
         return None
-    chapter_id = _opt_int(blob, "id")
+    chapter_id = _opt_int(chapter_json, "id")
     return ProbedChapter(
         index=index if chapter_id is None else chapter_id,
         start_ms=start_ms,
         end_ms=end_ms,
-        title=_tag_value(blob, "title"),
+        title=_tag_value(chapter_json, "title"),
     )
 
 
@@ -210,10 +210,10 @@ def _parse_chapters(chapters_raw: object) -> list[ProbedChapter]:
         return []
     parsed: list[ProbedChapter] = []
     for index, entry in enumerate(chapters_raw):
-        blob = _coerce_blob(entry)
-        if blob is None:
+        chapter_json = _coerce_str_keyed_dict(entry)
+        if chapter_json is None:
             continue
-        chapter = _chapter_from_json(index, blob)
+        chapter = _chapter_from_json(index, chapter_json)
         if chapter is not None:
             parsed.append(chapter)
     return parsed
@@ -290,13 +290,13 @@ def probe_file(path: Path) -> ProbedMedia:
             f"ffprobe stdout was not valid JSON for {path}",
             payload={"path": str(path), "stdout_head": result.stdout_text()[:512]},
         ) from exc
-    blob = _coerce_blob(raw)
-    if blob is None:
+    payload = _coerce_str_keyed_dict(raw)
+    if payload is None:
         raise ProbeParseError(
             f"ffprobe JSON root was not an object for {path}",
             payload={"path": str(path)},
         )
-    fmt = _coerce_blob(blob.get("format")) or {}
-    streams = _parse_streams(blob.get("streams"))
-    chapters = _parse_chapters(blob.get("chapters"))
+    fmt = _coerce_str_keyed_dict(payload.get("format")) or {}
+    streams = _parse_streams(payload.get("streams"))
+    chapters = _parse_chapters(payload.get("chapters"))
     return _build_probed_media(fmt, streams, chapters, path)
