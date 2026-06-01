@@ -147,6 +147,14 @@ class _DispatchState:
     deferred_network_lag_entries: dict[str, JournalEntry] = field(default_factory=dict)
 
 
+@dataclass(slots=True)
+class _WallClockExecutionResult:
+    cursor: int
+    state: _DispatchState
+    executed_journal: list[JournalEntry]
+    overran_duration: bool
+
+
 def _monotonic_ns() -> int:
     return time.monotonic_ns()
 
@@ -365,67 +373,18 @@ def _run_timed_phase(
     speed: SpeedMultiplier,
 ) -> MaterializeArtifacts:
     start_wall_ns = _monotonic_ns()
-    deadline_ns = start_wall_ns + requested_duration_ns
     state = _make_dispatch_state(run_context, scenario, phase_a.invocations)
     executed_journal: list[JournalEntry] = []
-    cursor = 0
-    journal = run_context.plan_artifacts.journal
-    _configure_network_lag_schedule(state, journal)
-    logical_times_ns = [entry.logical_time_ns for entry in journal]
-    commit_times = _slow_copy_commit_times(journal)
-    overran_duration = False
 
     try:
-        while cursor < len(journal):
-            now_ns = _monotonic_ns()
-            logical_ns = logical_now_ns(now_ns - start_wall_ns, speed)
-            _grow_active_slow_copies(
-                run_context.out_dir / "library",
-                state.slow_copies,
-                logical_ns=logical_ns,
-            )
-            if now_ns >= deadline_ns:
-                break
-            due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
-            if due_count == 0:
-                wake_ns = _next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed)
-                if state.slow_copies:
-                    wake_ns = min(wake_ns, now_ns + _SLOW_COPY_POLL_INTERVAL_NS)
-                _sleep_until(wake_ns)
-                continue
-            for _ in range(due_count):
-                if _monotonic_ns() >= deadline_ns:
-                    break
-                cursor = _execute_and_record(
-                    cursor=cursor,
-                    journal=journal,
-                    state=state,
-                    commit_times=commit_times,
-                    executed_journal=executed_journal,
-                    out_dir=run_context.out_dir,
-                )
-        if state.slow_copies:
-            cursor = _finish_active_slow_copies(
-                cursor=cursor,
-                journal=journal,
-                state=state,
-                start_wall_ns=start_wall_ns,
-                speed=speed,
-                executed_journal=executed_journal,
-                out_dir=run_context.out_dir,
-            )
-            overran_duration = True
-        if state.network_lags:
-            cursor = _finish_active_network_lags(
-                cursor=cursor,
-                journal=journal,
-                state=state,
-                start_wall_ns=start_wall_ns,
-                speed=speed,
-                executed_journal=executed_journal,
-                out_dir=run_context.out_dir,
-            )
-            overran_duration = True
+        execution = _execute_wall_clock_journal(
+            run_context=run_context,
+            start_wall_ns=start_wall_ns,
+            requested_duration_ns=requested_duration_ns,
+            speed=speed,
+            state=state,
+            executed_journal=executed_journal,
+        )
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
         _finalize_wall_clock_phase_b_failure(
@@ -441,17 +400,15 @@ def _run_timed_phase(
             exc=exc,
         )
         raise
-    if cursor >= len(journal):
-        _sleep_until(deadline_ns)
     actual_duration_ns = max(0, _monotonic_ns() - start_wall_ns)
-    overran_duration = overran_duration or actual_duration_ns > requested_duration_ns
+    overran_duration = execution.overran_duration or actual_duration_ns > requested_duration_ns
     try:
         return _finalize_wall_clock_run(
             run_context=run_context,
             scenario=scenario,
             phase_a=phase_a,
-            state=state,
-            executed_journal=executed_journal,
+            state=execution.state,
+            executed_journal=execution.executed_journal,
             requested_duration_ns=requested_duration_ns,
             actual_duration_ns=actual_duration_ns,
             speed=speed,
@@ -462,8 +419,8 @@ def _run_timed_phase(
             run_context=run_context,
             scenario=scenario,
             phase_a=phase_a,
-            state=state,
-            executed_journal=executed_journal,
+            state=execution.state,
+            executed_journal=execution.executed_journal,
             requested_duration_ns=requested_duration_ns,
             actual_duration_ns=actual_duration_ns,
             speed=speed,
@@ -471,6 +428,83 @@ def _run_timed_phase(
             exc=exc,
         )
         raise
+
+
+def _execute_wall_clock_journal(
+    *,
+    run_context: RunContext,
+    start_wall_ns: int,
+    requested_duration_ns: int,
+    speed: SpeedMultiplier,
+    state: _DispatchState,
+    executed_journal: list[JournalEntry],
+) -> _WallClockExecutionResult:
+    deadline_ns = start_wall_ns + requested_duration_ns
+    cursor = 0
+    journal = run_context.plan_artifacts.journal
+    _configure_network_lag_schedule(state, journal)
+    logical_times_ns = [entry.logical_time_ns for entry in journal]
+    commit_times = _slow_copy_commit_times(journal)
+    overran_duration = False
+
+    while cursor < len(journal):
+        now_ns = _monotonic_ns()
+        logical_ns = logical_now_ns(now_ns - start_wall_ns, speed)
+        _grow_active_slow_copies(
+            run_context.out_dir / "library",
+            state.slow_copies,
+            logical_ns=logical_ns,
+        )
+        if now_ns >= deadline_ns:
+            break
+        due_count = due_event_count(logical_times_ns, logical_ns=logical_ns, cursor=cursor)
+        if due_count == 0:
+            wake_ns = _next_wake_ns(start_wall_ns, deadline_ns, journal[cursor], speed)
+            if state.slow_copies:
+                wake_ns = min(wake_ns, now_ns + _SLOW_COPY_POLL_INTERVAL_NS)
+            _sleep_until(wake_ns)
+            continue
+        for _ in range(due_count):
+            if _monotonic_ns() >= deadline_ns:
+                break
+            cursor = _execute_and_record(
+                cursor=cursor,
+                journal=journal,
+                state=state,
+                commit_times=commit_times,
+                executed_journal=executed_journal,
+                out_dir=run_context.out_dir,
+            )
+    if state.slow_copies:
+        cursor = _finish_active_slow_copies(
+            cursor=cursor,
+            journal=journal,
+            state=state,
+            start_wall_ns=start_wall_ns,
+            speed=speed,
+            executed_journal=executed_journal,
+            out_dir=run_context.out_dir,
+        )
+        overran_duration = True
+    if state.network_lags:
+        cursor = _finish_active_network_lags(
+            cursor=cursor,
+            journal=journal,
+            state=state,
+            start_wall_ns=start_wall_ns,
+            speed=speed,
+            executed_journal=executed_journal,
+            out_dir=run_context.out_dir,
+        )
+        overran_duration = True
+    if cursor >= len(journal):
+        _sleep_until(deadline_ns)
+    return _WallClockExecutionResult(
+        cursor=cursor,
+        state=state,
+        executed_journal=executed_journal,
+        overran_duration=overran_duration,
+    )
 
 
 def _make_dispatch_state(
