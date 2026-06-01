@@ -141,6 +141,20 @@ class _CreateSidecarWriteResult:
     live_sidecar: LiveSidecar
 
 
+@dataclass(frozen=True, slots=True)
+class _CreateSidecarRequest:
+    asset_id: str
+    asset: Asset
+    sidecar_id: str
+    sidecar_path_str: str
+    kind: SidecarKind
+    language: str | None
+    encoding: str | None
+    body_text: str | None
+    media_type: SidecarMediaType | None
+    image_format: PosterImageFormat | None
+
+
 _SUBTITLE_CODEC_BY_CONTAINER: Final[dict[str, str]] = {
     "mkv": "srt",
     "webm": "srt",
@@ -1046,49 +1060,47 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     """
     delta = entry.state_delta
     asset_id = entry.target_ids[0]
-    sidecar_id = str(delta["sidecar_id"])
-    sidecar_path_str = str(delta["sidecar_path"])
-    sidecar_path = ctx.library_root / sidecar_path_str
-    kind = SidecarKind(str(delta["kind"]))
     raw_language = delta.get("language")
     language = str(raw_language) if isinstance(raw_language, str) else None
     encoding = delta.get("encoding")
     encoding = str(encoding) if isinstance(encoding, str) else None
     raw_body = delta.get("body")
     body_text = str(raw_body) if isinstance(raw_body, str) else None
-    media_type = _optional_sidecar_media_type(delta.get("media_type"))
-    image_format = _optional_poster_image_format(delta.get("image_format"))
+    request = _CreateSidecarRequest(
+        asset_id=asset_id,
+        asset=ctx.scenario_assets[asset_id],
+        sidecar_id=str(delta["sidecar_id"]),
+        sidecar_path_str=str(delta["sidecar_path"]),
+        kind=SidecarKind(str(delta["kind"])),
+        language=language,
+        encoding=encoding,
+        body_text=body_text,
+        media_type=_optional_sidecar_media_type(delta.get("media_type")),
+        image_format=_optional_poster_image_format(delta.get("image_format")),
+    )
+    sidecar_path = ctx.library_root / request.sidecar_path_str
     temp_output = temp_sibling(sidecar_path, ctx.resolved_seed)
-    asset = ctx.scenario_assets[asset_id]
     started = time.monotonic_ns()
     sidecar_path.parent.mkdir(parents=True, exist_ok=True)
     result = _write_create_sidecar_body(
         ctx=ctx,
         entry=entry,
         temp_output=temp_output,
-        asset=asset,
-        sidecar_id=sidecar_id,
-        asset_id=asset_id,
-        kind=kind,
-        language=language,
-        encoding=encoding,
-        body_text=body_text,
-        media_type=media_type,
-        image_format=image_format,
+        request=request,
     )
     temp_output.replace(sidecar_path)
     new_hash = hash_file(sidecar_path)
-    ctx.post_phase_b_sidecars[sidecar_id] = (new_hash, sidecar_path_str)
-    ctx.live_sidecars[sidecar_id] = result.live_sidecar
+    ctx.post_phase_b_sidecars[request.sidecar_id] = (new_hash, request.sidecar_path_str)
+    ctx.live_sidecars[request.sidecar_id] = result.live_sidecar
     return MediaAction(
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,
-        target_asset_id=asset_id,
-        input_path=sidecar_path_str,
-        output_path=sidecar_path_str,
+        target_asset_id=request.asset_id,
+        input_path=request.sidecar_path_str,
+        output_path=request.sidecar_path_str,
         input_version_id=None,
         output_version_id=None,
-        output_sidecar_id=sidecar_id,
+        output_sidecar_id=request.sidecar_id,
         input_content_hash=None,
         output_content_hash=new_hash,
         tool_invocation_index=result.tool_invocation_index,
@@ -1101,56 +1113,48 @@ def _write_create_sidecar_body(
     ctx: MediaPhaseBContext,
     entry: JournalEntry,
     temp_output: Path,
-    asset: Asset,
-    sidecar_id: str,
-    asset_id: str,
-    kind: SidecarKind,
-    language: str | None,
-    encoding: str | None,
-    body_text: str | None,
-    media_type: SidecarMediaType | None,
-    image_format: PosterImageFormat | None,
+    request: _CreateSidecarRequest,
 ) -> _CreateSidecarWriteResult:
-    if kind == SidecarKind.SUBTITLE:
+    if request.kind == SidecarKind.SUBTITLE:
         return _write_subtitle_sidecar(
             ctx=ctx,
             entry=entry,
             temp_output=temp_output,
-            asset=asset,
-            asset_id=asset_id,
-            language=language,
-            encoding=encoding,
+            asset=request.asset,
+            asset_id=request.asset_id,
+            language=request.language,
+            encoding=request.encoding,
         )
-    if kind == SidecarKind.NFO:
+    if request.kind == SidecarKind.NFO:
         return _write_text_sidecar(
             temp_output=temp_output,
-            sidecar_id=sidecar_id,
-            asset_id=asset_id,
-            body_text=body_text,
+            sidecar_id=request.sidecar_id,
+            asset_id=request.asset_id,
+            body_text=request.body_text,
         )
-    if kind == SidecarKind.CUE:
+    if request.kind == SidecarKind.CUE:
         return _write_cue_sidecar(
             temp_output=temp_output,
-            sidecar_id=sidecar_id,
-            asset_id=asset_id,
-            body_text=body_text,
+            sidecar_id=request.sidecar_id,
+            asset_id=request.asset_id,
+            body_text=request.body_text,
         )
-    if kind == SidecarKind.POSTER:
+    if request.kind == SidecarKind.POSTER:
         return _write_poster_sidecar(
             ctx=ctx,
             entry=entry,
             temp_output=temp_output,
-            sidecar_id=sidecar_id,
-            asset_id=asset_id,
-            media_type=media_type,
-            image_format=image_format,
+            sidecar_id=request.sidecar_id,
+            asset_id=request.asset_id,
+            media_type=request.media_type,
+            image_format=request.image_format,
         )
     raise MediaActionError(
-        f"create_sidecar: unknown kind {kind!r} for event {entry.event_id}",
+        f"create_sidecar: unknown kind {request.kind!r} for event {entry.event_id}",
         event_id=entry.event_id,
         action=TimelineActionName.CREATE_SIDECAR,
-        cause=ValueError(f"unknown kind {kind!r}"),
-        asset_id=asset_id,
+        cause=ValueError(f"unknown kind {request.kind!r}"),
+        asset_id=request.asset_id,
     )
 
 
