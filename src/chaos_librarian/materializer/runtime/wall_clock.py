@@ -137,13 +137,13 @@ class WallClockNetworkLagSession:
 
 
 @dataclass(slots=True)
-class _DispatchState(PhaseBState):
+class _DispatchState:
+    phase_b: PhaseBState
     slow_copies: dict[str, WallClockSlowCopySession] = field(default_factory=dict)
     slow_copy_initial_paths: dict[str, str] = field(default_factory=dict)
     network_lag_starts_by_after: dict[str, JournalEntry] = field(default_factory=dict)
     network_lags: dict[str, WallClockNetworkLagSession] = field(default_factory=dict)
     deferred_network_lag_entries: dict[str, JournalEntry] = field(default_factory=dict)
-    network_lag_actions: list[NetworkLagAction] = field(default_factory=list)
 
 
 def _monotonic_ns() -> int:
@@ -453,24 +453,19 @@ def _make_dispatch_state(
     scenario: Scenario,
     invocations: list[ToolInvocation],
 ) -> _DispatchState:
-    state = make_phase_b_state(
-        PhaseBStateInputs(
-            library_root=run_context.out_dir / "library",
-            scenario=scenario,
-            resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
-            ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
-            ffprobe_version=run_context.caps.ffprobe.version or "unknown",
-            invocations=invocations,
-            manifest=run_context.plan_artifacts.current_manifest,
-            initial_manifest=run_context.plan_artifacts.initial_manifest,
-        )
-    )
     return _DispatchState(
-        fs_ctx=state.fs_ctx,
-        media_ctx=state.media_ctx,
-        corruption_ctx=state.corruption_ctx,
-        oracle_hash_ctx=state.oracle_hash_ctx,
-        chaos=state.chaos,
+        phase_b=make_phase_b_state(
+            PhaseBStateInputs(
+                library_root=run_context.out_dir / "library",
+                scenario=scenario,
+                resolved_seed=run_context.plan_artifacts.replay_bundle.resolved_seed,
+                ffmpeg_version=run_context.caps.ffmpeg.version or "unknown",
+                ffprobe_version=run_context.caps.ffprobe.version or "unknown",
+                invocations=invocations,
+                manifest=run_context.plan_artifacts.current_manifest,
+                initial_manifest=run_context.plan_artifacts.initial_manifest,
+            )
+        )
     )
 
 
@@ -523,20 +518,22 @@ def _execute_entry(
         return
     action = TimelineActionName(entry.action)
     if action is TimelineActionName.SLOW_COPY_START:
-        state.filesystem_actions.append(_wall_clock_slow_copy_start(state, entry, commit_times))
+        state.phase_b.filesystem_actions.append(
+            _wall_clock_slow_copy_start(state, entry, commit_times)
+        )
         return
     if action is TimelineActionName.SLOW_COPY_COMMIT:
-        state.filesystem_actions.append(_wall_clock_slow_copy_commit(state, entry))
+        state.phase_b.filesystem_actions.append(_wall_clock_slow_copy_commit(state, entry))
         return
     if action is TimelineActionName.NETWORK_LAG_START:
         _wall_clock_network_lag_start(state, entry)
         return
     if action is TimelineActionName.NETWORK_LAG_COMMIT:
-        state.network_lag_actions.append(_wall_clock_network_lag_commit(state, entry))
+        state.phase_b.network_lag_actions.append(_wall_clock_network_lag_commit(state, entry))
         return
     if _dispatch_chaos_entry(state, entry, action):
         return
-    dispatch_phase_b_entry(state, entry)
+    dispatch_phase_b_entry(state.phase_b, entry)
 
 
 def _dispatch_chaos_entry(
@@ -565,29 +562,29 @@ def _dispatch_chaos_entry(
 
 
 def _chaos_state(state: _DispatchState) -> NetworkFsChaosState:
-    if state.chaos is None:  # pragma: no cover - always set in _make_dispatch_state
+    if state.phase_b.chaos is None:  # pragma: no cover - always set in _make_dispatch_state
         raise ChaosLibrarianValueError("network-fs-chaos state not initialized")
-    return state.chaos
+    return state.phase_b.chaos
 
 
 def _chaos_actions(state: _DispatchState) -> list[NetworkFsChaosAction]:
-    return list(state.chaos.actions) if state.chaos is not None else []
+    return list(state.phase_b.chaos.actions) if state.phase_b.chaos is not None else []
 
 
 def _restore_chaos_action(state: _DispatchState) -> NetworkFsChaosAction:
-    if state.chaos is not None:
-        for action in reversed(state.chaos.actions):
+    if state.phase_b.chaos is not None:
+        for action in reversed(state.phase_b.chaos.actions):
             if action.enforced:
                 return action
     raise ChaosLibrarianValueError("network-fs-chaos restore has no enforced action")
 
 
 def _chaos_target_asset_id(state: _DispatchState, target_ref: str) -> str | None:
-    return target_ref if target_ref in state.fs_ctx.scenario_assets else None
+    return target_ref if target_ref in state.phase_b.fs_ctx.scenario_assets else None
 
 
 def _restore_chaos(state: _DispatchState) -> None:
-    chaos = state.chaos
+    chaos = state.phase_b.chaos
     if chaos is None or not chaos.captured_modes:
         return
     action = _restore_chaos_action(state)
@@ -633,8 +630,8 @@ def _wall_clock_slow_copy_start(
         initial_path = str(entry.state_delta["initial_path_at_start"])
         temp_path = str(entry.state_delta["temp_path"])
         final_path = str(entry.state_delta["final_path"])
-        src = state.fs_ctx.library_root / initial_path
-        dst = state.fs_ctx.library_root / temp_path
+        src = state.phase_b.fs_ctx.library_root / initial_path
+        dst = state.phase_b.fs_ctx.library_root / temp_path
         dst.parent.mkdir(parents=True, exist_ok=True)
         source_bytes = src.read_bytes()
         dst.write_bytes(b"")
@@ -674,11 +671,11 @@ def _wall_clock_slow_copy_commit(
     ):
         session = state.slow_copies.pop(entry.related_event_id)
         initial_path = state.slow_copy_initial_paths.pop(entry.related_event_id)
-        temp = state.fs_ctx.library_root / session.temp_path
+        temp = state.phase_b.fs_ctx.library_root / session.temp_path
         temp.parent.mkdir(parents=True, exist_ok=True)
         temp.write_bytes(session.source_bytes)
         promote_slow_copy(
-            library_root=state.fs_ctx.library_root,
+            library_root=state.phase_b.fs_ctx.library_root,
             initial_path=initial_path,
             temp_path=session.temp_path,
             final_path=session.final_path,
@@ -719,7 +716,7 @@ def _wall_clock_network_lag_commit(
     session = state.network_lags.pop(entry.related_event_id)
     deferred = state.deferred_network_lag_entries.pop(entry.related_event_id, None)
     if deferred is not None:
-        dispatch_phase_b_entry(state, deferred)
+        dispatch_phase_b_entry(state.phase_b, deferred)
     return NetworkLagAction(
         event_id=session.start_event_id,
         commit_event_id=entry.event_id,
@@ -914,7 +911,7 @@ def _finalize_wall_clock_run(
         run_context,
         final_artifacts,
         executed_journal=executed_journal,
-        invocations=state.media_ctx.invocations,
+        invocations=state.phase_b.media_ctx.invocations,
         materialized=phase_a.materialized_assets,
         actions=_report_actions_from_state(
             state,
@@ -955,7 +952,7 @@ def _finalize_wall_clock_phase_b_failure(
         final_artifacts,
         exc,
         executed_journal=executed_journal,
-        invocations=state.media_ctx.invocations,
+        invocations=state.phase_b.media_ctx.invocations,
         materialized=phase_a.materialized_assets,
         actions=_report_actions_from_state(
             state,
@@ -975,11 +972,11 @@ def _report_actions_from_state(
     network_fs_chaos_actions: list[NetworkFsChaosAction],
 ) -> ReportActions:
     return ReportActions(
-        filesystem=state.filesystem_actions,
-        media=state.media_actions,
-        corruption=state.corruption_actions,
-        oracle_hash=state.oracle_hash_actions,
-        network_lag=state.network_lag_actions,
+        filesystem=state.phase_b.filesystem_actions,
+        media=state.phase_b.media_actions,
+        corruption=state.phase_b.corruption_actions,
+        oracle_hash=state.phase_b.oracle_hash_actions,
+        network_lag=state.phase_b.network_lag_actions,
         network_fs_chaos=network_fs_chaos_actions,
     )
 
@@ -1006,5 +1003,5 @@ def _final_artifacts_for_executed_prefix(
         scenario=scenario,
         phase_a=phase_a,
     )
-    augment_phase_b_outputs(prefix_artifacts.current_manifest, state)
+    augment_phase_b_outputs(prefix_artifacts.current_manifest, state.phase_b)
     return dataclasses.replace(prefix_artifacts, journal=tuple(executed_journal))

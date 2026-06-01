@@ -1438,27 +1438,29 @@ def test_slow_copy_commit_times_rejects_non_committed_entry() -> None:
 def _empty_dispatch_state() -> wall_clock._DispatchState:
     # The committed-entry guard is the first statement in each commit handler,
     # so the contexts are never dereferenced for these tests.
-    return wall_clock._DispatchState(
-        fs_ctx=cast(Any, None),
-        media_ctx=cast(Any, None),
-        corruption_ctx=cast(Any, None),
-        oracle_hash_ctx=cast(Any, None),
-    )
+    return wall_clock._DispatchState(phase_b=cast(Any, None))
 
 
 def _dispatch_state_with_library(library_root: Path) -> wall_clock._DispatchState:
     return wall_clock._DispatchState(
-        fs_ctx=cast(
+        phase_b=cast(
             Any,
             SimpleNamespace(
-                library_root=library_root,
-                scenario_assets={"asset_main": object()},
+                fs_ctx=SimpleNamespace(
+                    library_root=library_root,
+                    scenario_assets={"asset_main": object()},
+                ),
+                media_ctx=cast(Any, None),
+                corruption_ctx=cast(Any, None),
+                oracle_hash_ctx=cast(Any, None),
+                filesystem_actions=[],
+                media_actions=[],
+                corruption_actions=[],
+                oracle_hash_actions=[],
+                network_lag_actions=[],
+                chaos=wall_clock.NetworkFsChaosState(library_root=library_root),
             ),
-        ),
-        media_ctx=cast(Any, None),
-        corruption_ctx=cast(Any, None),
-        oracle_hash_ctx=cast(Any, None),
-        chaos=wall_clock.NetworkFsChaosState(library_root=library_root),
+        )
     )
 
 
@@ -1551,9 +1553,9 @@ def test_network_fs_chaos_restore_wraps_chmod_error(
     tmp_path: Path,
 ) -> None:
     state = _dispatch_state_with_library(tmp_path)
-    assert state.chaos is not None
-    state.chaos.captured_modes[tmp_path / "asset.mkv"] = 0o644
-    state.chaos.actions.append(
+    assert state.phase_b.chaos is not None
+    state.phase_b.chaos.captured_modes[tmp_path / "asset.mkv"] = 0o644
+    state.phase_b.chaos.actions.append(
         NetworkFsChaosAction(
             event_id="chmod_001",
             action=TimelineActionName.CHANGE_PERMISSIONS,
