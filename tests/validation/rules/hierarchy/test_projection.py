@@ -5,7 +5,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import cast
 
+from chaos_librarian.contract.scenario import (
+    SidecarKind,
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleSource,
+    SubtitleTimingProfile,
+)
 from chaos_librarian.validation.rules.hierarchy.projection import HierarchyProjection
+from chaos_librarian.validation.rules.hierarchy.rendering_projection import iter_declared_sidecars
 
 ScenarioBuilder = Callable[..., dict[str, object]]
 
@@ -89,6 +97,35 @@ def test_render_asset_path_falls_back_to_primary_root(
 
     projection.current_paths["asset_episode"] = "Detached/Pilot.mkv"
     assert projection.render_asset_path("asset_episode") == missing_path
+
+
+def test_iter_declared_sidecars_uses_subtitle_enum_fields(
+    minimal_scenario: ScenarioBuilder,
+) -> None:
+    """Declared sidecar rows should carry typed subtitle recipe fields."""
+    raw = minimal_scenario(
+        asset_subtitles=[
+            {
+                "codec": "ass",
+                "source": "styled_ass",
+                "encoding": "utf8_bom",
+                "timing_profile": "overlap",
+                "language": "jpn",
+                "mode": "sidecar",
+            },
+        ],
+    )
+
+    sidecars = list(iter_declared_sidecars(raw))
+
+    assert len(sidecars) == 1
+    sidecar = sidecars[0]
+    assert sidecar.kind is SidecarKind.SUBTITLE
+    assert sidecar.codec is SubtitleCodec.ASS
+    assert sidecar.source is SubtitleSource.STYLED_ASS
+    assert sidecar.encoding is SubtitleEncoding.UTF8_BOM
+    assert sidecar.timing_profile is SubtitleTimingProfile.OVERLAP
+    assert sidecar.path.endswith(".jpn.ass")
 
 
 def test_archive_and_root_move_projection_handle_valid_and_invalid_roots(

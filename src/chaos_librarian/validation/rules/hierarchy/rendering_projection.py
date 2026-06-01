@@ -16,7 +16,11 @@ from chaos_librarian.contract.scenario import (
     PodcastLayout,
     SeriesLayout,
     SidecarKind,
+    SubtitleCodec,
+    SubtitleEncoding,
     SubtitleMode,
+    SubtitleSource,
+    SubtitleTimingProfile,
     TrackNaming,
 )
 from chaos_librarian.path_rendering import (
@@ -30,7 +34,6 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     _enum,
     _Loc,
     _RawMapping,
-    _str_or_default,
 )
 from chaos_librarian.validation.rules.hierarchy.walkers import (
     RawAssetContext,
@@ -45,12 +48,12 @@ class DeclaredSidecar:
 
     asset_id: str
     path: str
-    kind: str
+    kind: SidecarKind
     language: str | None
-    codec: str = "srt"
-    source: str = "generated_srt"
-    encoding: str = "utf8"
-    timing_profile: str = "normal"
+    codec: SubtitleCodec = SubtitleCodec.SRT
+    source: SubtitleSource = SubtitleSource.GENERATED_SRT
+    encoding: SubtitleEncoding = SubtitleEncoding.UTF8
+    timing_profile: SubtitleTimingProfile = SubtitleTimingProfile.NORMAL
 
 
 def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
@@ -73,19 +76,30 @@ def iter_declared_sidecars(raw: _RawMapping) -> Iterator[DeclaredSidecar]:
             language = sub.get("language")
             if not isinstance(language, str):
                 continue
-            codec = _str_or_default(sub.get("codec"), "srt")
-            source = _str_or_default(sub.get("source"), "generated_srt")
-            encoding = _str_or_default(sub.get("encoding"), "utf8")
-            timing_profile = _str_or_default(sub.get("timing_profile"), "normal")
+            codec = _enum(SubtitleCodec, sub.get("codec"))
+            source = _enum(
+                SubtitleSource,
+                sub.get("source", SubtitleSource.GENERATED_SRT.value),
+            )
+            encoding = _enum(
+                SubtitleEncoding,
+                sub.get("encoding", SubtitleEncoding.UTF8.value),
+            )
+            timing_profile = _enum(
+                SubtitleTimingProfile,
+                sub.get("timing_profile", SubtitleTimingProfile.NORMAL.value),
+            )
+            if codec is None or source is None or encoding is None or timing_profile is None:
+                continue
             try:
                 media_path = render_asset_path(renderable)
-                path = render_declared_sidecar_path(media_path, language, codec=codec)
+                path = render_declared_sidecar_path(media_path, language, codec=codec.value)
             except ValueError:
                 continue
             yield DeclaredSidecar(
                 asset_id=asset_id,
                 path=path,
-                kind=SidecarKind.SUBTITLE.value,
+                kind=SidecarKind.SUBTITLE,
                 language=language,
                 codec=codec,
                 source=source,

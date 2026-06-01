@@ -28,8 +28,9 @@ from chaos_librarian.validation.rules.hierarchy.projection import (
 from chaos_librarian.validation.rules.hierarchy.walkers import iter_asset_ids
 from chaos_librarian.validation.rules.sidecar.projection import (
     SidecarProjection,
-    SidecarProjectionRow,
+    create_sidecar_projection_row,
     drop_subtitle_rows_for_language,
+    extracted_subtitle_projection_row,
     project_sidecars_for_hierarchy_mutation,
     seed_sidecar_projection,
 )
@@ -377,19 +378,16 @@ def _apply_create_sidecar(
 ) -> None:
     """Insert (target, to) -> kind into the sidecar projection."""
     to = event.get("to")
-    kind = event.get("kind", SidecarKind.SUBTITLE.value)
-    language = event.get("language")
-    if isinstance(to, str) and isinstance(kind, str):
-        row = SidecarProjectionRow(
-            kind=kind,
-            language=language if isinstance(language, str) else None,
-            renderer_derived=False,
+    if not isinstance(to, str):
+        return
+    row = create_sidecar_projection_row(event)
+    if row is None:
+        return
+    if row.kind is SidecarKind.SUBTITLE and row.language is not None:
+        drop_subtitle_rows_for_language(
+            state.sidecars_by_path, target=target, language=row.language
         )
-        if row.kind == SidecarKind.SUBTITLE.value and row.language is not None:
-            drop_subtitle_rows_for_language(
-                state.sidecars_by_path, target=target, language=row.language
-            )
-        state.sidecars_by_path[(target, to)] = row
+    state.sidecars_by_path[(target, to)] = row
 
 
 def _apply_extract_subtitle(
@@ -400,13 +398,8 @@ def _apply_extract_subtitle(
 ) -> None:
     """Insert (target, to) -> subtitle into the sidecar projection."""
     to = event.get("to")
-    language = event.get("language")
     if isinstance(to, str):
-        state.sidecars_by_path[(target, to)] = SidecarProjectionRow(
-            kind=SidecarKind.SUBTITLE.value,
-            language=language if isinstance(language, str) else None,
-            renderer_derived=False,
-        )
+        state.sidecars_by_path[(target, to)] = extracted_subtitle_projection_row(event)
 
 
 def _apply_embed_subtitle(

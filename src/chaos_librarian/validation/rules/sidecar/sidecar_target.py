@@ -36,7 +36,9 @@ from chaos_librarian.validation.rules.hierarchy.projection import (
 from chaos_librarian.validation.rules.sidecar.projection import (
     SidecarProjection,
     SidecarProjectionRow,
+    create_sidecar_projection_row,
     drop_subtitle_rows_for_language,
+    extracted_subtitle_projection_row,
     project_sidecars_for_hierarchy_mutation,
     seed_sidecar_projection,
 )
@@ -127,18 +129,14 @@ def _handle_create_sidecar(
     with a bare ``KeyError`` from the engine.
     """
     to = event.get("to")
-    kind = event.get("kind", SidecarKind.SUBTITLE.value)
-    if not isinstance(to, str) or not isinstance(kind, str):
+    if not isinstance(to, str):
         return
-    raw_language = event.get("language")
-    language = raw_language if isinstance(raw_language, str) else None
-    if kind == SidecarKind.SUBTITLE.value and language is not None:
-        drop_subtitle_rows_for_language(projection, target=target, language=language)
-    projection[(target, to)] = SidecarProjectionRow(
-        kind=kind,
-        language=language,
-        renderer_derived=False,
-    )
+    row = create_sidecar_projection_row(event)
+    if row is None:
+        return
+    if row.kind is SidecarKind.SUBTITLE and row.language is not None:
+        drop_subtitle_rows_for_language(projection, target=target, language=row.language)
+    projection[(target, to)] = row
 
 
 def _handle_extract_subtitle(
@@ -162,13 +160,7 @@ def _handle_extract_subtitle(
             loc=("timeline", idx, "to"),
         )
     else:
-        raw_language = event.get("language")
-        language = raw_language if isinstance(raw_language, str) else None
-        projection[(target, to)] = SidecarProjectionRow(
-            kind=SidecarKind.SUBTITLE.value,
-            language=language,
-            renderer_derived=False,
-        )
+        projection[(target, to)] = extracted_subtitle_projection_row(event)
 
 
 def _lookup_sidecar_or_error(
@@ -219,11 +211,11 @@ def _handle_embed_subtitle(
     if resolved is None:
         return
     sidecar_path, entry = resolved
-    if entry.kind != SidecarKind.SUBTITLE.value:
+    if entry.kind is not SidecarKind.SUBTITLE:
         reporter.error(
             code=E_SIDECAR_KIND_MISMATCH,
             message=(
-                f"embed_subtitle references {entry.kind!r} sidecar "
+                f"embed_subtitle references {entry.kind.value!r} sidecar "
                 f"{sidecar_path!r}; subtitle expected"
             ),
             loc=("timeline", idx, "sidecar_path"),
@@ -283,7 +275,7 @@ def _handle_update_sidecar(
     if resolved is None:
         return
     sidecar_path, entry = resolved
-    if entry.kind == SidecarKind.SUBTITLE.value and not entry.uses_default_subtitle_recipe:
+    if entry.kind is SidecarKind.SUBTITLE and not entry.uses_default_subtitle_recipe:
         _report_unsupported_subtitle_recipe(
             action="update_sidecar",
             sidecar_path=sidecar_path,
