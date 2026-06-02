@@ -45,10 +45,10 @@ from chaos_librarian.engine import (
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import resolve_timeline
-from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import replay as replay_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.persistence.atomic import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()

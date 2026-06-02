@@ -45,7 +45,7 @@ from chaos_librarian.contract.reports import (
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.engine.writer import (
+from chaos_librarian.persistence.atomic import (
     canonical_json,
     replace_atomic_bytes,
     replace_atomic_text,

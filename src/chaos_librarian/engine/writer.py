@@ -17,10 +17,9 @@ The single ``Path.replace`` makes publication atomic on POSIX and macOS:
 observers see either nothing or every file. Any failure during staging
 triggers ``shutil.rmtree`` so a partial fixture cannot persist.
 
-JSON canonicalization is centralized in ``_emit_json`` /  ``_emit_jsonl``
-so every Sprint 3 artifact serializes the same way: ``indent=2``,
-``by_alias=True``, optional ``None`` values omitted, required nullable
-fields preserved, trailing ``"\n"``. This is what makes plan-only output
+JSON canonicalization is delegated to ``chaos_librarian.persistence.atomic``
+and applied here through ``_emit_json`` / ``_emit_jsonl`` so every Sprint 3
+artifact serializes the same way. This is what makes plan-only output
 bit-identical.
 
 ``append_step`` (Sprint 4) updates an existing fixture in place when the
@@ -32,7 +31,6 @@ Not atomic across files — recovery is by re-running the step.
 
 from __future__ import annotations
 
-import json
 import shutil
 import tempfile
 from collections.abc import Iterable
@@ -47,6 +45,7 @@ from chaos_librarian.contract.run_sentinel import RunSentinel
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.engine.reports import ReportSet
+from chaos_librarian.persistence.atomic import canonical_json, replace_atomic_text
 
 REPORT_DIRS = (
     "assets",
@@ -98,60 +97,6 @@ def write_fixture(
     except BaseException:
         shutil.rmtree(staging, ignore_errors=True)
         raise
-
-
-def canonical_json(model: BaseModel) -> str:
-    """Canonical text form of a Pydantic model: indent=2, by_alias, trailing newline."""
-    payload = _dump_preserving_required_nulls(model)
-    return json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
-
-
-def _dump_preserving_required_nulls(model: BaseModel) -> dict[str, object]:
-    raw = model.model_dump(mode="json", by_alias=True, exclude_none=False)
-    if not isinstance(raw, dict):
-        raise TypeError(f"expected object dump for {type(model).__name__}")
-    return dict(_iter_serialized_fields(model, raw))
-
-
-def _iter_serialized_fields(
-    model: BaseModel,
-    raw: dict[str, object],
-) -> Iterable[tuple[str, object]]:
-    fields = type(model).model_fields.items()
-    for (field_name, field), (key, raw_value) in zip(fields, raw.items(), strict=True):
-        value = getattr(model, field_name)
-        if value is None:
-            if field.is_required():
-                yield key, None
-            continue
-        yield key, _dump_value_preserving_required_nulls(value, raw_value)
-
-
-def _dump_value_preserving_required_nulls(value: object, raw_value: object) -> object:
-    if isinstance(value, BaseModel):
-        return _dump_preserving_required_nulls(value)
-    if isinstance(value, list | tuple):
-        if not isinstance(raw_value, list):
-            return raw_value
-        return [
-            _dump_value_preserving_required_nulls(item, raw_item)
-            for item, raw_item in zip(value, raw_value, strict=True)
-        ]
-    return raw_value
-
-
-def replace_atomic_text(target: Path, content: str) -> None:
-    """Write ``content`` to a sibling tempfile and rename onto ``target`` (per-file atomic)."""
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_text(content)
-    tmp.replace(target)
-
-
-def replace_atomic_bytes(target: Path, content: bytes) -> None:
-    """Write ``content`` bytes to a sibling tempfile and rename onto ``target``."""
-    tmp = target.with_suffix(target.suffix + ".tmp")
-    tmp.write_bytes(content)
-    tmp.replace(target)
 
 
 def _emit_sentinel(out_dir: Path, sentinel: RunSentinel) -> None:
