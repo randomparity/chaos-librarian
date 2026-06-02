@@ -1,4 +1,4 @@
-"""Materialization report schema (v9).
+"""Materialization report schema.
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
