@@ -52,9 +52,13 @@ def _source_evidence() -> ContentSourceEvidence:
 
 
 def test_report_and_finalize_builders_require_explicit_content_sources() -> None:
+    for request_type in (
+        reports_mod.ReportInputs,
+        reports_mod.ReplayBundleAssemblyRequest,
+    ):
+        parameter = inspect.signature(request_type).parameters["content_sources"]
+        assert parameter.default is inspect.Signature.empty
     for func in (
-        reports_mod.build_report,
-        reports_mod.build_replay_bundle,
         finalize_mod.finalize_success,
         finalize_mod.finalize_failure,
         finalize_mod.finalize_failure_phase_b,
@@ -205,13 +209,13 @@ def test_finalize_run_replay_success_writes_run_mode_metadata(
     monkeypatch.setattr(finalize_mod, "finalize_materialize_run", fake_finalize)
     ctx = _run_context(tmp_path)
     source_bundle = reports_mod.build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=ctx.started_at,
-        content_sources=[],
-        execution_mode=ExecutionMode.RUN,
+        reports_mod.ReplayBundleAssemblyRequest(
+            run_context=ctx,
+            plan_artifacts=ctx.plan_artifacts,
+            created_at=ctx.started_at,
+            content_sources=[],
+            execution_mode=ExecutionMode.RUN,
+        )
     ).model_copy(
         update={
             "applied_events": 2,

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -37,6 +36,9 @@ from chaos_librarian.materializer.persistence._context import (
     RunContext,
 )
 from chaos_librarian.materializer.persistence.reports import (
+    MaterializationReportRequest,
+    ReplayBundleAssemblyRequest,
+    ReportInputs,
     build_metadata,
     build_replay_bundle,
     build_report,
@@ -72,15 +74,6 @@ type _FinalizeWriter = Callable[
     [Path, MaterializeMetadata, MaterializeReports | None],
     None,
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class _ReportInputs:
-    finished_at: datetime
-    invocations: list[ToolInvocation]
-    materialized: list[MaterializedAsset]
-    actions: ReportActions | None
-    content_sources: list[ContentSourceEvidence]
 
 
 def build_sentinel(ctx: RunContext, state: RunSentinelState) -> RunSentinel:
@@ -122,8 +115,7 @@ def finalize_success(
     )
     replay_bundle = _build_materialize_replay_bundle(
         ctx,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -184,8 +176,7 @@ def finalize_failure(
     )
     replay_bundle = _build_materialize_replay_bundle(
         ctx,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -231,8 +222,7 @@ def finalize_failure_phase_b(
     )
     replay_bundle = _build_materialize_replay_bundle(
         ctx,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -271,8 +261,7 @@ def finalize_run_replay_success(
     replay_bundle = _build_run_replay_bundle(
         ctx,
         source_bundle,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -317,8 +306,7 @@ def finalize_run_replay_phase_b_failure(
     replay_bundle = _build_run_replay_bundle(
         ctx,
         source_bundle,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -367,8 +355,7 @@ def finalize_wall_clock_success(
         ctx,
         final_artifacts,
         executed_journal,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -423,8 +410,7 @@ def finalize_wall_clock_phase_b_failure(
         ctx,
         final_artifacts,
         executed_journal,
-        report_inputs.finished_at,
-        report_inputs.content_sources,
+        report_inputs,
     )
     _finalize_outputs(
         ctx,
@@ -443,8 +429,8 @@ def _base_report_inputs(
     *,
     actions: ReportActions | None,
     content_sources: list[ContentSourceEvidence],
-) -> _ReportInputs:
-    return _ReportInputs(
+) -> ReportInputs:
+    return ReportInputs(
         finished_at=datetime.now(UTC),
         invocations=invocations,
         materialized=materialized,
@@ -455,7 +441,7 @@ def _base_report_inputs(
 
 def _build_materialization_report(
     ctx: RunContext,
-    report_inputs: _ReportInputs,
+    report_inputs: ReportInputs,
     *,
     outcome: Outcome,
     failures: list[MaterializationFailure],
@@ -466,53 +452,47 @@ def _build_materialization_report(
     execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE,
 ) -> MaterializationReport:
     return build_report(
-        outcome=outcome,
-        run_id=ctx.run_id,
-        caps=ctx.caps,
-        started_at=ctx.started_at,
-        finished_at=report_inputs.finished_at,
-        invocations=report_inputs.invocations,
-        materialized=report_inputs.materialized,
-        failures=failures,
-        actions=report_inputs.actions,
-        requested_duration_ns=requested_duration_ns,
-        actual_duration_ns=actual_duration_ns,
-        speed_multiplier=speed_multiplier,
-        overran_duration=overran_duration,
-        content_sources=report_inputs.content_sources,
-        execution_mode=execution_mode,
+        MaterializationReportRequest(
+            run_context=ctx,
+            report_inputs=report_inputs,
+            outcome=outcome,
+            failures=failures,
+            requested_duration_ns=requested_duration_ns,
+            actual_duration_ns=actual_duration_ns,
+            speed_multiplier=speed_multiplier,
+            overran_duration=overran_duration,
+            execution_mode=execution_mode,
+        )
     )
 
 
 def _build_materialize_replay_bundle(
     ctx: RunContext,
-    created_at: datetime,
-    content_sources: list[ContentSourceEvidence],
+    report_inputs: ReportInputs,
 ) -> MaterializeReplayBundle:
     return build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=created_at,
-        content_sources=content_sources,
+        ReplayBundleAssemblyRequest(
+            run_context=ctx,
+            plan_artifacts=ctx.plan_artifacts,
+            created_at=report_inputs.finished_at,
+            content_sources=report_inputs.content_sources,
+        )
     )
 
 
 def _build_run_replay_bundle(
     ctx: RunContext,
     source_bundle: MaterializeReplayBundle,
-    created_at: datetime,
-    content_sources: list[ContentSourceEvidence],
+    report_inputs: ReportInputs,
 ) -> MaterializeReplayBundle:
     replay_bundle = build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=ctx.plan_artifacts,
-        caps=ctx.caps,
-        created_at=created_at,
-        content_sources=content_sources,
-        execution_mode=ExecutionMode.RUN,
+        ReplayBundleAssemblyRequest(
+            run_context=ctx,
+            plan_artifacts=ctx.plan_artifacts,
+            created_at=report_inputs.finished_at,
+            content_sources=report_inputs.content_sources,
+            execution_mode=ExecutionMode.RUN,
+        )
     )
     return replay_bundle.model_copy(
         update={
@@ -526,21 +506,20 @@ def _build_wall_clock_replay_bundle(
     ctx: RunContext,
     final_artifacts: PlanArtifacts,
     executed_journal: list[JournalEntry],
-    created_at: datetime,
-    content_sources: list[ContentSourceEvidence],
+    report_inputs: ReportInputs,
 ) -> MaterializeReplayBundle:
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in executed_journal
     ]
     journal_digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
     replay_bundle = build_replay_bundle(
-        run_id=ctx.run_id,
-        scenario_yaml_bytes=ctx.run_input.raw_bytes,
-        plan_artifacts=final_artifacts,
-        caps=ctx.caps,
-        created_at=created_at,
-        content_sources=content_sources,
-        execution_mode=ExecutionMode.RUN,
+        ReplayBundleAssemblyRequest(
+            run_context=ctx,
+            plan_artifacts=final_artifacts,
+            created_at=report_inputs.finished_at,
+            content_sources=report_inputs.content_sources,
+            execution_mode=ExecutionMode.RUN,
+        )
     )
     return replay_bundle.model_copy(
         update={

@@ -55,7 +55,10 @@ from chaos_librarian.materializer.persistence.finalize import (
     finalize_wall_clock_phase_b_failure,
     finalize_wall_clock_success,
 )
-from chaos_librarian.materializer.persistence.reports import build_replay_bundle
+from chaos_librarian.materializer.persistence.reports import (
+    ReplayBundleAssemblyRequest,
+    build_replay_bundle,
+)
 from chaos_librarian.materializer.persistence.writer import (
     WallClockBaselineMetadata,
     publish_wall_clock_baseline,
@@ -340,15 +343,6 @@ def _publish_baseline(
     started_at: datetime,
     content_sources: list[ContentSourceEvidence],
 ) -> None:
-    replay_bundle = build_replay_bundle(
-        run_id=run_id,
-        scenario_yaml_bytes=run_input.raw_bytes,
-        plan_artifacts=artifacts,
-        caps=caps,
-        created_at=started_at,
-        content_sources=content_sources,
-        execution_mode=ExecutionMode.RUN,
-    )
     ctx = RunContext(
         run_input=run_input,
         out_dir=out_dir,
@@ -356,6 +350,15 @@ def _publish_baseline(
         started_at=started_at,
         caps=caps,
         plan_artifacts=artifacts,
+    )
+    replay_bundle = build_replay_bundle(
+        ReplayBundleAssemblyRequest(
+            run_context=ctx,
+            plan_artifacts=artifacts,
+            created_at=started_at,
+            content_sources=content_sources,
+            execution_mode=ExecutionMode.RUN,
+        )
     )
     try:
         publish_wall_clock_baseline(
