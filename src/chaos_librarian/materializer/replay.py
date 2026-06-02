@@ -20,11 +20,13 @@ from chaos_librarian.contract.scenario import (
     Scenario,
     TimelineActionName,
 )
-from chaos_librarian.contract.validation import ValidationSeverity
+from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import (
     PlanArtifacts,
+    PlanExecutionRequest,
     ReplayIntegrityError,
+    run_materializer_plan,
 )
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.content.synthesis import (
@@ -111,6 +113,12 @@ def _verified_run_prefix(
     )
     run_input = prepared_input.run_input
     _assert_replay_boundary(run_input, applied_events=bundle.applied_events)
+    prefix_artifacts = _verified_prefix_artifacts(
+        bundle,
+        run_input=run_input,
+        validation_report=prepared_input.validation_report,
+    )
+    _preflight_run_replay_pairing(prefix_artifacts.journal)
     try:
         prepared = prepare_materializer_run_input(
             MaterializerPreparationRequest(
@@ -131,7 +139,31 @@ def _verified_run_prefix(
             if issue.severity is ValidationSeverity.ERROR
         ]
         raise ReplayIntegrityError(f"run replay scenario re-validation failed: {errors}") from exc
-    artifacts = prepared.plan_artifacts
+    return prepared
+
+
+def _verified_prefix_artifacts(
+    bundle: MaterializeReplayBundle,
+    *,
+    run_input: RunInput,
+    validation_report: ValidationReport,
+) -> PlanArtifacts:
+    if not validation_report.ok:
+        errors = [
+            issue.code
+            for issue in validation_report.issues
+            if issue.severity is ValidationSeverity.ERROR
+        ]
+        raise ReplayIntegrityError(f"run replay scenario re-validation failed: {errors}")
+    artifacts = run_materializer_plan(
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=validation_report,
+            resolved_seed_override=bundle.resolved_seed,
+            run_id_override=bundle.run_id,
+            applied_events_override=bundle.applied_events,
+        )
+    )
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
     ]
@@ -140,8 +172,7 @@ def _verified_run_prefix(
         raise ReplayIntegrityError(
             f"journal_digest mismatch: recorded {bundle.journal_digest}, recomputed {digest}"
         )
-    _preflight_run_replay_pairing(artifacts.journal)
-    return prepared
+    return artifacts
 
 
 def _assert_replay_boundary(run_input: RunInput, *, applied_events: int) -> None:

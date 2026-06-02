@@ -42,6 +42,11 @@ _REGEX_TO_MIN_KEY: Final[dict[str, str]] = {
     "ffprobe": "ffprobe",
     "mkvmerge": "mkvtoolnix",
 }
+_VERSION_ARGS: Final[dict[str, tuple[str, ...]]] = {
+    "ffmpeg": ("-version",),
+    "ffprobe": ("-version",),
+    "mkvmerge": ("--version",),
+}
 
 # Indirection so tests can monkeypatch shutil.which at the module boundary.
 shutil_which = shutil.which
@@ -69,7 +74,7 @@ def _probe_one(name: str, *, regex_key: str) -> ToolStatus:
     path = shutil_which(name)
     if path is None:
         return ToolStatus(found=False, version=None, path=None, meets_minimum=False)
-    stdout = _capability_stdout([path, "-version"], tool=name)
+    stdout = _capability_stdout([path, *_VERSION_ARGS[regex_key]], tool=name)
     if stdout is None:
         return ToolStatus(found=True, version=None, path=path, meets_minimum=False)
     first_line = stdout.splitlines()[0] if stdout else ""

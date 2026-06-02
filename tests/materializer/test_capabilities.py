@@ -211,6 +211,42 @@ def test_detect_capabilities_reports_muxing_ready_without_vp9(
     assert not caps.ready_for.materialize_webm_video
 
 
+def test_detect_capabilities_probes_mkvmerge_with_long_version_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """WHY: mkvmerge rejects ffmpeg's ``-version`` flag; use ``--version``."""
+
+    seen: list[list[str]] = []
+
+    def record_run(argv: list[str], **_: object) -> subprocess.CompletedProcess[str]:
+        seen.append(argv)
+        tool = Path(argv[0]).name
+        stdout = {
+            "ffmpeg": OK_FFMPEG,
+            "ffprobe": OK_FFPROBE,
+            "mkvmerge": OK_MKV,
+        }[tool]
+        return subprocess.CompletedProcess(args=argv, returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(
+        cap_mod,
+        "shutil_which",
+        _stub_which(
+            {
+                "ffmpeg": "/usr/bin/ffmpeg",
+                "ffprobe": "/usr/bin/ffprobe",
+                "mkvmerge": "/usr/bin/mkvmerge",
+            }
+        ),
+    )
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", record_run)
+
+    caps = detect_capabilities()
+
+    assert caps.mkvtoolnix.meets_minimum
+    assert ["/usr/bin/mkvmerge", "--version"] in seen
+
+
 def test_detect_capabilities_requires_libx264_for_resolution_switch_video(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

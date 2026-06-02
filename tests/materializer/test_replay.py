@@ -670,6 +670,41 @@ def test_run_replay_rejects_mid_network_lag_prefix_before_creating_output(
     assert not out.exists()
 
 
+def test_run_replay_checks_digest_before_capability_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caps = Capabilities(
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
+        ffmpeg=ToolStatus(found=False, meets_minimum=False),
+        ffprobe=ToolStatus(found=False, meets_minimum=False),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=False,
+            materialize_filesystem_mutations=False,
+            materialize_media_mutations=False,
+            materialize_hevc_video=False,
+            materialize_hdr_video=False,
+            materialize_resolution_switch_video=False,
+            materialize_audio_recipes=False,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
+        ),
+    )
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
+    bundle = _run_bundle_for(_NETWORK_LAG_SCENARIO, applied_events=3).model_copy(
+        update={"journal_digest": "0" * 64}
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="journal_digest mismatch"):
+        replay_run_bundle(bundle, out)
+
+    assert not out.exists()
+
+
 def test_run_replay_rejects_mid_network_fs_window_before_creating_output(
     tmp_path: Path,
 ) -> None:
