@@ -47,11 +47,15 @@ def test_prepare_materializer_run_input_uses_existing_input_and_plan_overrides(
     run_input = prepare_run_input(FIXTURE_DIR / "identity-move-rename.yaml")
 
     prepared = prep_mod.prepare_materializer_run_input(
-        run_input,
-        validation_failure_message="scenario failed semantic validation",
-        validation_payload_exclude_none=True,
-        run_id_override=RUN_ID,
-        applied_events_override=0,
+        prep_mod.MaterializerPreparationRequest(
+            run_input=run_input,
+            mode=prep_mod.MaterializerPreparationMode.RUN_REPLAY,
+            replay=prep_mod.MaterializerReplayOverrides(
+                resolved_seed=1234,
+                run_id=RUN_ID,
+                applied_events=0,
+            ),
+        )
     )
 
     assert prepared.run_input is run_input

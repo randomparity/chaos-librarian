@@ -69,7 +69,10 @@ from chaos_librarian.materializer.phase_b.dispatch import (
 )
 from chaos_librarian.materializer.phase_b.filesystem import promote_slow_copy
 from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
-from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
+from chaos_librarian.materializer.preparation.run_setup import (
+    MaterializerPreparationMode,
+    prepare_materializer_run,
+)
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
     CHAOS_ENTRY_ACTIONS,
@@ -220,10 +223,7 @@ def run_wall_clock_scenario(
     started_at = _utc_now()
     prepared = prepare_materializer_run(
         scenario_path,
-        validation_failure_message="scenario failed semantic validation; refusing to run",
-        validation_payload_exclude_none=False,
-        allow_network_lag=True,
-        allow_network_fs_chaos=True,
+        mode=MaterializerPreparationMode.WALL_CLOCK,
         resolved_timeline_check=_preflight_wall_clock_slow_copies,
     )
     scenario = prepared.scenario

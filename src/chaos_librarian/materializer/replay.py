@@ -56,8 +56,11 @@ from chaos_librarian.materializer.phase_b.dispatch import (
 )
 from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
 from chaos_librarian.materializer.preparation.run_setup import (
+    MaterializerPreparationMode,
+    MaterializerPreparationRequest,
+    MaterializerReplayOverrides,
     PreparedMaterializerRun,
-    prepare_validated_materializer_run_input,
+    prepare_materializer_run_input,
 )
 from chaos_librarian.materializer.runtime.network_fs_chaos import (
     CHAOS_CLOSE_ACTIONS,
@@ -109,16 +112,17 @@ def _verified_run_prefix(
     run_input = prepared_input.run_input
     _assert_replay_boundary(run_input, applied_events=bundle.applied_events)
     try:
-        prepared = prepare_validated_materializer_run_input(
-            run_input=run_input,
-            validation_report=prepared_input.validation_report,
-            validation_failure_message="run replay scenario re-validation failed",
-            validation_payload_exclude_none=True,
-            allow_network_lag=True,
-            allow_network_fs_chaos=True,
-            resolved_seed_override=bundle.resolved_seed,
-            run_id_override=bundle.run_id,
-            applied_events_override=bundle.applied_events,
+        prepared = prepare_materializer_run_input(
+            MaterializerPreparationRequest(
+                run_input=run_input,
+                mode=MaterializerPreparationMode.RUN_REPLAY,
+                validation_report=prepared_input.validation_report,
+                replay=MaterializerReplayOverrides(
+                    resolved_seed=bundle.resolved_seed,
+                    run_id=bundle.run_id,
+                    applied_events=bundle.applied_events,
+                ),
+            )
         )
     except ScenarioValidationError as exc:
         errors = [

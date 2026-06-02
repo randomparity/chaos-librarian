@@ -49,7 +49,10 @@ from chaos_librarian.materializer.phase_b.dispatch import (
     phase_b_failure_outcome,
 )
 from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
-from chaos_librarian.materializer.preparation.run_setup import prepare_materializer_run
+from chaos_librarian.materializer.preparation.run_setup import (
+    MaterializerPreparationMode,
+    prepare_materializer_run,
+)
 
 __all__ = ["MaterializeArtifacts", "RunContext", "materialize_scenario"]
 
@@ -80,9 +83,7 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
     started_at = datetime.now(UTC)
     prepared = prepare_materializer_run(
         scenario_path,
-        validation_failure_message="scenario failed semantic validation; refusing to materialize",
-        validation_payload_exclude_none=True,
-        check_hevc_video=True,
+        mode=MaterializerPreparationMode.MATERIALIZE,
     )
     scenario = prepared.scenario
     ctx = RunContext(

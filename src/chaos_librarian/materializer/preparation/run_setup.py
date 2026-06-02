@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import enum
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Final
 
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.scenario import Scenario
@@ -16,6 +18,7 @@ from chaos_librarian.engine.plan import (
     run_materializer_plan,
 )
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline
+from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.errors import CapabilityGateError, ScenarioValidationError
 from chaos_librarian.materializer.preparation.capability_gates import (
     assert_capable_for_audio_recipes,
@@ -39,11 +42,41 @@ from chaos_librarian.validation import RunInput, run_validation
 from chaos_librarian.validation.input import prepare_run_input
 
 __all__ = [
+    "MaterializerPreparationMode",
+    "MaterializerPreparationRequest",
+    "MaterializerReplayOverrides",
     "PreparedMaterializerRun",
     "prepare_materializer_run",
     "prepare_materializer_run_input",
-    "prepare_validated_materializer_run_input",
 ]
+
+
+class MaterializerPreparationMode(enum.StrEnum):
+    """Execution mode whose policy controls materializer preparation."""
+
+    MATERIALIZE = "materialize"
+    WALL_CLOCK = "wall_clock"
+    RUN_REPLAY = "run_replay"
+
+
+@dataclass(frozen=True)
+class MaterializerReplayOverrides:
+    """Replay identity and journal-prefix overrides for run replay preparation."""
+
+    resolved_seed: int
+    run_id: uuid.UUID
+    applied_events: int
+
+
+@dataclass(frozen=True)
+class MaterializerPreparationRequest:
+    """Materializer preparation input plus the concrete execution mode policy."""
+
+    run_input: RunInput
+    mode: MaterializerPreparationMode
+    validation_report: ValidationReport | None = None
+    replay: MaterializerReplayOverrides | None = None
+    resolved_timeline_check: Callable[[list[ResolvedEvent]], None] | None = None
 
 
 @dataclass(frozen=True)
@@ -58,27 +91,51 @@ class PreparedMaterializerRun:
     plan_artifacts: PlanArtifacts
 
 
+@dataclass(frozen=True)
+class _PreparationModePolicy:
+    validation_failure_message: str
+    validation_payload_exclude_none: bool
+    allow_network_lag: bool
+    allow_network_fs_chaos: bool
+    check_hevc_video: bool
+
+
+_PREPARATION_MODE_POLICIES: Final = {
+    MaterializerPreparationMode.MATERIALIZE: _PreparationModePolicy(
+        validation_failure_message="scenario failed semantic validation; refusing to materialize",
+        validation_payload_exclude_none=True,
+        allow_network_lag=False,
+        allow_network_fs_chaos=False,
+        check_hevc_video=True,
+    ),
+    MaterializerPreparationMode.WALL_CLOCK: _PreparationModePolicy(
+        validation_failure_message="scenario failed semantic validation; refusing to run",
+        validation_payload_exclude_none=False,
+        allow_network_lag=True,
+        allow_network_fs_chaos=True,
+        check_hevc_video=False,
+    ),
+    MaterializerPreparationMode.RUN_REPLAY: _PreparationModePolicy(
+        validation_failure_message="run replay scenario re-validation failed",
+        validation_payload_exclude_none=True,
+        allow_network_lag=True,
+        allow_network_fs_chaos=True,
+        check_hevc_video=False,
+    ),
+}
+
+
 def prepare_materializer_run(
     scenario_path: Path,
     *,
-    validation_failure_message: str,
-    validation_payload_exclude_none: bool,
-    allow_network_lag: bool = False,
-    allow_network_fs_chaos: bool = False,
-    check_hevc_video: bool = False,
+    mode: MaterializerPreparationMode,
     resolved_timeline_check: Callable[[list[ResolvedEvent]], None] | None = None,
 ) -> PreparedMaterializerRun:
     """Validate, preflight, gate, and plan a materializer scenario.
 
     Args:
         scenario_path: Scenario YAML file to prepare.
-        validation_failure_message: Mode-specific validation error message.
-        validation_payload_exclude_none: Whether the embedded validation
-            report payload should omit ``None`` values.
-        allow_network_lag: Allow wall-clock-only network lag timeline actions.
-        allow_network_fs_chaos: Allow wall-clock-only network filesystem chaos
-            timeline actions.
-        check_hevc_video: Require the legacy materialize HEVC encoder gate.
+        mode: Materializer execution mode whose policy should be applied.
         resolved_timeline_check: Optional mode-specific check that runs after
             timeline preflight and before capability/tool detection.
 
@@ -93,45 +150,22 @@ def prepare_materializer_run(
     """
     run_input = prepare_run_input(scenario_path)
     return prepare_materializer_run_input(
-        run_input,
-        validation_failure_message=validation_failure_message,
-        validation_payload_exclude_none=validation_payload_exclude_none,
-        allow_network_lag=allow_network_lag,
-        allow_network_fs_chaos=allow_network_fs_chaos,
-        check_hevc_video=check_hevc_video,
-        resolved_timeline_check=resolved_timeline_check,
+        MaterializerPreparationRequest(
+            run_input=run_input,
+            mode=mode,
+            resolved_timeline_check=resolved_timeline_check,
+        )
     )
 
 
 def prepare_materializer_run_input(
-    run_input: RunInput,
-    *,
-    validation_failure_message: str,
-    validation_payload_exclude_none: bool,
-    allow_network_lag: bool = False,
-    allow_network_fs_chaos: bool = False,
-    check_hevc_video: bool = False,
-    resolved_timeline_check: Callable[[list[ResolvedEvent]], None] | None = None,
-    resolved_seed_override: int | None = None,
-    run_id_override: uuid.UUID | None = None,
-    applied_events_override: int | None = None,
+    request: MaterializerPreparationRequest,
 ) -> PreparedMaterializerRun:
-    """Validate, preflight, gate, and plan an already-loaded materializer input.
+    """Validate, preflight, gate, and plan an already-loaded materializer request.
 
     Args:
-        run_input: Parsed scenario bytes and model from the caller's boundary.
-        validation_failure_message: Mode-specific validation error message.
-        validation_payload_exclude_none: Whether the embedded validation
-            report payload should omit ``None`` values.
-        allow_network_lag: Allow wall-clock-only network lag timeline actions.
-        allow_network_fs_chaos: Allow wall-clock-only network filesystem chaos
-            timeline actions.
-        check_hevc_video: Require the legacy materialize HEVC encoder gate.
-        resolved_timeline_check: Optional mode-specific check that runs after
-            timeline preflight and before capability/tool detection.
-        resolved_seed_override: Optional plan seed override for replayed runs.
-        run_id_override: Optional run id override for replayed runs.
-        applied_events_override: Optional raw event prefix for replayed runs.
+        request: Parsed input plus the preparation mode and optional replay
+            metadata.
 
     Returns:
         Shared materializer inputs, including the planned artifact prefix.
@@ -141,101 +175,80 @@ def prepare_materializer_run_input(
         TimelineUnsupportedError: the timeline contains an unsupported action.
         CapabilityGateError: required materialization capabilities are missing.
     """
-    validation_report = run_validation(run_input)
-    return prepare_validated_materializer_run_input(
-        run_input=run_input,
-        validation_report=validation_report,
-        validation_failure_message=validation_failure_message,
-        validation_payload_exclude_none=validation_payload_exclude_none,
-        allow_network_lag=allow_network_lag,
-        allow_network_fs_chaos=allow_network_fs_chaos,
-        check_hevc_video=check_hevc_video,
-        resolved_timeline_check=resolved_timeline_check,
-        resolved_seed_override=resolved_seed_override,
-        run_id_override=run_id_override,
-        applied_events_override=applied_events_override,
-    )
+    _validate_preparation_request(request)
+    validation_report = request.validation_report or run_validation(request.run_input)
+    policy = _PREPARATION_MODE_POLICIES[request.mode]
 
-
-def prepare_validated_materializer_run_input(
-    *,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    validation_failure_message: str,
-    validation_payload_exclude_none: bool,
-    allow_network_lag: bool = False,
-    allow_network_fs_chaos: bool = False,
-    check_hevc_video: bool = False,
-    resolved_timeline_check: Callable[[list[ResolvedEvent]], None] | None = None,
-    resolved_seed_override: int | None = None,
-    run_id_override: uuid.UUID | None = None,
-    applied_events_override: int | None = None,
-) -> PreparedMaterializerRun:
-    """Preflight, gate, and plan an already-validated materializer input.
-
-    Args:
-        run_input: Parsed scenario bytes and model from the caller's boundary.
-        validation_report: Validation report already produced for ``run_input``.
-        validation_failure_message: Mode-specific validation error message.
-        validation_payload_exclude_none: Whether the embedded validation
-            report payload should omit ``None`` values.
-        allow_network_lag: Allow wall-clock-only network lag timeline actions.
-        allow_network_fs_chaos: Allow wall-clock-only network filesystem chaos
-            timeline actions.
-        check_hevc_video: Require the legacy materialize HEVC encoder gate.
-        resolved_timeline_check: Optional mode-specific check that runs after
-            timeline preflight and before capability/tool detection.
-        resolved_seed_override: Optional plan seed override for replayed runs.
-        run_id_override: Optional run id override for replayed runs.
-        applied_events_override: Optional raw event prefix for replayed runs.
-
-    Returns:
-        Shared materializer inputs, including the planned artifact prefix.
-
-    Raises:
-        ScenarioValidationError: scenario fails semantic validation.
-        TimelineUnsupportedError: the timeline contains an unsupported action.
-        CapabilityGateError: required materialization capabilities are missing.
-    """
     if not validation_report.ok:
         raise ScenarioValidationError(
-            validation_failure_message,
+            policy.validation_failure_message,
             payload={
                 "validation_report": validation_report.model_dump(
                     mode="json",
-                    exclude_none=validation_payload_exclude_none,
+                    exclude_none=policy.validation_payload_exclude_none,
                 ),
             },
             validation_report=validation_report,
         )
-    scenario = run_input.scenario
+    scenario = request.run_input.scenario
     preflight_timeline(
         scenario,
-        allow_network_lag=allow_network_lag,
-        allow_network_fs_chaos=allow_network_fs_chaos,
+        allow_network_lag=policy.allow_network_lag,
+        allow_network_fs_chaos=policy.allow_network_fs_chaos,
     )
-    if resolved_timeline_check is not None:
-        resolved_timeline_check(resolve_timeline(scenario))
+    if request.resolved_timeline_check is not None:
+        request.resolved_timeline_check(resolve_timeline(scenario))
     caps = detect_capabilities()
-    _assert_capabilities(scenario, caps, check_hevc_video=check_hevc_video)
-    run_id = run_id_override or uuid.uuid4()
+    _assert_capabilities(scenario, caps, check_hevc_video=policy.check_hevc_video)
+    run_id = _prepared_run_id(request)
     plan_artifacts = run_materializer_plan(
-        PlanExecutionRequest(
-            run_input=run_input,
+        _plan_execution_request(
+            request=request,
             validation_report=validation_report,
-            resolved_seed_override=resolved_seed_override,
-            run_id_override=run_id,
-            applied_events_override=applied_events_override,
+            run_id=run_id,
         )
     )
     _preflight_assets(scenario)
     return PreparedMaterializerRun(
-        run_input=run_input,
+        run_input=request.run_input,
         validation_report=validation_report,
         scenario=scenario,
         caps=caps,
         run_id=run_id,
         plan_artifacts=plan_artifacts,
+    )
+
+
+def _validate_preparation_request(request: MaterializerPreparationRequest) -> None:
+    if request.mode is MaterializerPreparationMode.RUN_REPLAY:
+        if request.replay is not None:
+            return
+        raise ChaosLibrarianValueError("run replay preparation requires replay overrides")
+    if request.replay is not None:
+        raise ChaosLibrarianValueError(
+            f"{request.mode.value} preparation must not include replay overrides"
+        )
+
+
+def _prepared_run_id(request: MaterializerPreparationRequest) -> uuid.UUID:
+    if request.replay is not None:
+        return request.replay.run_id
+    return uuid.uuid4()
+
+
+def _plan_execution_request(
+    *,
+    request: MaterializerPreparationRequest,
+    validation_report: ValidationReport,
+    run_id: uuid.UUID,
+) -> PlanExecutionRequest:
+    replay = request.replay
+    return PlanExecutionRequest(
+        run_input=request.run_input,
+        validation_report=validation_report,
+        resolved_seed_override=replay.resolved_seed if replay is not None else None,
+        run_id_override=run_id,
+        applied_events_override=replay.applied_events if replay is not None else None,
     )
 
 
