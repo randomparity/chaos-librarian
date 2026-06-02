@@ -412,6 +412,40 @@ def _version_media_action(
     )
 
 
+def _run_and_finalize_version_action(
+    ctx: MediaPhaseBContext,
+    entry: JournalEntry,
+    *,
+    action: TimelineActionName,
+    argv: list[str],
+    output_path: Path,
+    temp_output: Path,
+    failure_label: str,
+) -> MediaAction:
+    started = time.monotonic_ns()
+    invocation_index = _run_ffmpeg_checked(
+        ctx,
+        argv=argv,
+        entry=entry,
+        action=action,
+        failure_label=failure_label,
+        asset_id=_target_asset_id(entry),
+    )
+    version = _finalize_version_output(
+        ctx,
+        temp_output=temp_output,
+        output_path=output_path,
+        output_version_id=entry.output_version_ids[0],
+    )
+    return _version_media_action(
+        entry=entry,
+        action=action,
+        version=version,
+        tool_invocation_index=invocation_index,
+        started_ns=started,
+    )
+
+
 def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Re-encode video in place; produce a new ManifestVersion's content_hash.
 
@@ -454,27 +488,14 @@ def _apply_reencode_video(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         *BITEXACT_FLAGS,
         str(temp_output),
     ]
-    started = time.monotonic_ns()
-    invocation_index = _run_ffmpeg_checked(
+    return _run_and_finalize_version_action(
         ctx,
+        entry,
+        action=TimelineActionName.REENCODE_VIDEO,
         argv=argv,
-        entry=entry,
-        action=TimelineActionName.REENCODE_VIDEO,
-        failure_label="reencode_video",
-        asset_id=_target_asset_id(entry),
-    )
-    version = _finalize_version_output(
-        ctx,
-        temp_output=temp_output,
         output_path=output_path,
-        output_version_id=entry.output_version_ids[0],
-    )
-    return _version_media_action(
-        entry=entry,
-        action=TimelineActionName.REENCODE_VIDEO,
-        version=version,
-        tool_invocation_index=invocation_index,
-        started_ns=started,
+        temp_output=temp_output,
+        failure_label="reencode_video",
     )
 
 
@@ -513,27 +534,14 @@ def _apply_reencode_audio(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         *BITEXACT_FLAGS,
         str(temp_output),
     ]
-    started = time.monotonic_ns()
-    invocation_index = _run_ffmpeg_checked(
+    return _run_and_finalize_version_action(
         ctx,
+        entry,
+        action=TimelineActionName.REENCODE_AUDIO,
         argv=argv,
-        entry=entry,
-        action=TimelineActionName.REENCODE_AUDIO,
-        failure_label="reencode_audio",
-        asset_id=_target_asset_id(entry),
-    )
-    version = _finalize_version_output(
-        ctx,
-        temp_output=temp_output,
         output_path=output_path,
-        output_version_id=entry.output_version_ids[0],
-    )
-    return _version_media_action(
-        entry=entry,
-        action=TimelineActionName.REENCODE_AUDIO,
-        version=version,
-        tool_invocation_index=invocation_index,
-        started_ns=started,
+        temp_output=temp_output,
+        failure_label="reencode_audio",
     )
 
 
@@ -570,31 +578,19 @@ def _apply_remux_container(ctx: MediaPhaseBContext, entry: JournalEntry) -> Medi
         *BITEXACT_FLAGS,
         str(temp_output),
     ]
-    started = time.monotonic_ns()
-    invocation_index = _run_ffmpeg_checked(
-        ctx,
-        argv=argv,
-        entry=entry,
-        action=TimelineActionName.REMUX_CONTAINER,
-        failure_label="remux_container",
-        asset_id=_target_asset_id(entry),
-    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    version = _finalize_version_output(
+    action = _run_and_finalize_version_action(
         ctx,
-        temp_output=temp_output,
+        entry,
+        action=TimelineActionName.REMUX_CONTAINER,
+        argv=argv,
         output_path=output_path,
-        output_version_id=entry.output_version_ids[0],
+        temp_output=temp_output,
+        failure_label="remux_container",
     )
     if input_path.resolve() != output_path.resolve():
         input_path.unlink(missing_ok=False)
-    return _version_media_action(
-        entry=entry,
-        action=TimelineActionName.REMUX_CONTAINER,
-        version=version,
-        tool_invocation_index=invocation_index,
-        started_ns=started,
-    )
+    return action
 
 
 def _apply_edit_metadata(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
@@ -635,27 +631,14 @@ def _apply_edit_metadata(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaA
         *BITEXACT_FLAGS,
         str(temp_output),
     ]
-    started = time.monotonic_ns()
-    invocation_index = _run_ffmpeg_checked(
+    return _run_and_finalize_version_action(
         ctx,
+        entry,
+        action=TimelineActionName.EDIT_METADATA,
         argv=argv,
-        entry=entry,
-        action=TimelineActionName.EDIT_METADATA,
-        failure_label="edit_metadata",
-        asset_id=_target_asset_id(entry),
-    )
-    version = _finalize_version_output(
-        ctx,
-        temp_output=temp_output,
         output_path=output_path,
-        output_version_id=entry.output_version_ids[0],
-    )
-    return _version_media_action(
-        entry=entry,
-        action=TimelineActionName.EDIT_METADATA,
-        version=version,
-        tool_invocation_index=invocation_index,
-        started_ns=started,
+        temp_output=temp_output,
+        failure_label="edit_metadata",
     )
 
 
@@ -707,29 +690,17 @@ def _apply_embed_subtitle(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         *BITEXACT_FLAGS,
         str(temp_output),
     ]
-    started = time.monotonic_ns()
-    invocation_index = _run_ffmpeg_checked(
+    action = _run_and_finalize_version_action(
         ctx,
-        argv=argv,
-        entry=entry,
+        entry,
         action=TimelineActionName.EMBED_SUBTITLE,
-        failure_label="embed_subtitle",
-        asset_id=_target_asset_id(entry),
-    )
-    version = _finalize_version_output(
-        ctx,
-        temp_output=temp_output,
+        argv=argv,
         output_path=output_path,
-        output_version_id=entry.output_version_ids[0],
+        temp_output=temp_output,
+        failure_label="embed_subtitle",
     )
     sidecar_disk_path.unlink()
-    return _version_media_action(
-        entry=entry,
-        action=TimelineActionName.EMBED_SUBTITLE,
-        version=version,
-        tool_invocation_index=invocation_index,
-        started_ns=started,
-    )
+    return action
 
 
 def _probe_subtitle_index_for_language(
