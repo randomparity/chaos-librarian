@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
-from chaos_librarian.cli._replay_io import load_replay_bundle, load_sentinel
+from chaos_librarian.cli._replay_io import load_plan_only_replay_bundle, load_sentinel
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
 from chaos_librarian.contract import (
@@ -66,7 +66,7 @@ def test_soft_replay_loaders_return_none_for_unreadable_paths(tmp_path: Path) ->
     replay_path.mkdir()
 
     assert load_sentinel(sentinel_path) is None
-    assert load_replay_bundle(replay_path) is None
+    assert load_plan_only_replay_bundle(replay_path) is None
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:
