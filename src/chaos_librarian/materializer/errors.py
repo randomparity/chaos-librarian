@@ -3,7 +3,7 @@
 Every concrete subclass carries an ``error_code`` class attribute matching
 the spec's error model. The CLI handler dispatches on subclass identity
 and reads ``error_code`` / ``asset_id`` / ``field`` / ``payload`` into the
-stdout JSON.
+shared stderr error envelope.
 """
 
 from __future__ import annotations
