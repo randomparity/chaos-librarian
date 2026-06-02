@@ -17,6 +17,7 @@ from chaos_librarian.contract.content_sources import (
     ContentTrackKind,
 )
 from chaos_librarian.contract.materialization import (
+    CORRUPTION_TIMELINE_ACTIONS,
     CorruptionAction,
     FailureStage,
     FilesystemAction,
@@ -462,6 +463,45 @@ def test_corruption_action_round_trips_hashes_and_probe_outcome() -> None:
     assert loaded == action
     assert loaded.input_content_hash == "sha256:" + "0" * 64
     assert loaded.probe_outcome is CorruptionProbeOutcome.FAILED_EXPECTED
+
+
+def test_corruption_timeline_action_subset_is_contract_owned() -> None:
+    expected = frozenset(
+        {
+            TimelineActionName.CORRUPT_CONTAINER_HEADER,
+            TimelineActionName.TRUNCATE_FILE,
+            TimelineActionName.CORRUPT_PACKET_RANGE,
+            TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+            TimelineActionName.CORRUPT_TAGS,
+        }
+    )
+    assert expected == CORRUPTION_TIMELINE_ACTIONS
+    assert CorruptionAction.model_fields["action"].annotation is TimelineActionName
+
+
+def test_corruption_action_rejects_non_corruption_timeline_action() -> None:
+    payload = {
+        "event_id": "corrupt_header_001",
+        "action": "move_asset",
+        "target_asset_id": "asset_main",
+        "input_path": "movies-hd/asset_main.mkv",
+        "output_path": "movies-hd/asset_main.mkv",
+        "input_version_id": "version_0001",
+        "output_version_id": "version_0002",
+        "input_content_hash": "sha256:" + "0" * 64,
+        "output_content_hash": "sha256:" + "1" * 64,
+        "corruptor": "container_header_v1",
+        "input_size_bytes": 8192,
+        "output_size_bytes": 8192,
+        "byte_start": 0,
+        "byte_count": 64,
+        "seed_material": "container_header_v1:42:corrupt_header_001:asset_main",
+        "probe_outcome": "failed_expected",
+        "duration_ns": 1_234_567,
+    }
+
+    with pytest.raises(ValidationError, match="corruption timeline action"):
+        CorruptionAction.model_validate(payload)
 
 
 def test_truncate_file_corruption_action_round_trip() -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
 import stat
 from datetime import UTC, datetime, timedelta
@@ -11,6 +12,7 @@ from textwrap import dedent
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as preparation_mod
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -27,10 +29,10 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer import replay as replay_mod
-from chaos_librarian.materializer import wall_clock
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.materializer.runtime import wall_clock
 
 _ASSET_REL_PATH = "movies-hd/Clip/Clip - hd.mkv"
 
@@ -110,8 +112,12 @@ def _fake_runtime(monkeypatch: pytest.MonkeyPatch) -> _FakeClock:
     monkeypatch.setattr(wall_clock, "_monotonic_ns", clock.monotonic_ns)
     monkeypatch.setattr(wall_clock, "_sleep_until", clock.sleep_until)
     monkeypatch.setattr(wall_clock, "_utc_now", clock.utc_now)
-    monkeypatch.setattr(wall_clock, "detect_capabilities", _capabilities)
-    monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(preparation_mod, "detect_capabilities", _capabilities)
+    monkeypatch.setattr(
+        preparation_mod,
+        "assert_capable_for_static_materialize",
+        lambda _caps: None,
+    )
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
     return clock
 
@@ -339,8 +345,7 @@ def test_no_chaos_actions_leaves_empty_record_list(tmp_path: Path) -> None:
 
 def test_replay_reproduces_chaos_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
-    monkeypatch.setattr(replay_mod, "detect_capabilities", _capabilities)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(preparation_mod, "detect_capabilities", _capabilities)
 
     timeline = dedent(
         """\
@@ -437,5 +442,44 @@ def test_failure_path_restores_chmod(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     # The Phase-B failure path restores the captured mode before wiping library/,
     # so cleanup succeeds and the tree is removed rather than left at chmod 000.
+    assert not (out_dir / "library").exists()
+    shutil.rmtree(out_dir)
+
+
+def test_restore_failure_writes_run_failure_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    timeline = dedent(
+        """\
+        timeline:
+          - id: chmod_001
+            at: 1s
+            action: change_permissions
+            target: asset_main
+            mode: "000"
+        """
+    )
+
+    def fail_restore(_chaos) -> None:
+        raise PermissionError(13, "restore denied")
+
+    monkeypatch.setattr(wall_clock, "restore_chaos_modes", fail_restore)
+
+    scenario = tmp_path / "scenario.yaml"
+    scenario.write_text(_scenario_yaml(timeline))
+    out_dir = tmp_path / "run"
+    with pytest.raises(FilesystemActionError) as exc_info:
+        wall_clock.run_wall_clock_scenario(scenario, out_dir, duration="10s", speed="1x")
+
+    err = exc_info.value
+    assert err.event_id == "chmod_001"
+    assert err.action is TimelineActionName.CHANGE_PERMISSIONS
+    assert err.asset_id == "asset_main"
+    assert err.payload["operation"] == "network_fs_chaos_restore"
+
+    report = json.loads((out_dir / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == "fs_failed"
+    assert report["failures"][0]["stage"] == "filesystem"
     assert not (out_dir / "library").exists()
     shutil.rmtree(out_dir)

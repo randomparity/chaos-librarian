@@ -11,12 +11,12 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from chaos_librarian import generation
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import generate as generate_cmd
 from chaos_librarian.contract.profiles import CANONICAL_FUZZ_LANES, FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.generation import api as generation_api
+from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 runner = CliRunner()
 _ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
@@ -66,14 +66,14 @@ def test_generate_json_validates_generated_yaml_once(
 ) -> None:
     out = tmp_path / "generated.yaml"
     calls = 0
-    original_run_validation = generation.run_validation
+    original_run_validation = generation_api.run_validation
 
     def counting_run_validation(run_input: Any) -> Any:
         nonlocal calls
         calls += 1
         return original_run_validation(run_input)
 
-    monkeypatch.setattr(generation, "run_validation", counting_run_validation)
+    monkeypatch.setattr(generation_api, "run_validation", counting_run_validation)
 
     result = runner.invoke(
         app,
@@ -91,6 +91,41 @@ def test_generate_json_validates_generated_yaml_once(
 
     assert result.exit_code == 0, result.stdout + result.stderr
     assert calls == 1
+
+
+def test_generate_single_write_failure_uses_error_envelope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    out = tmp_path / "generated.yaml"
+
+    def fail_write(_path: Path, _data: bytes) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(generate_cmd, "write_generated_scenario", fail_write)
+
+    result = runner.invoke(
+        app,
+        [
+            "generate",
+            "--profile",
+            "fuzz-smoke",
+            "--seed",
+            "123",
+            "--out",
+            str(out),
+            "--json",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_GENERATE_FAILED"
+    assert payload["details"]["operation"] == "write_generated_scenario"
+    assert payload["details"]["path"] == str(out)
+    assert payload["details"]["exception_type"] == "OSError"
+    assert not out.exists()
 
 
 def test_generate_regression_requires_lane(tmp_path: Path) -> None:
@@ -417,6 +452,52 @@ def test_batch_rollback_removes_written_files_on_failure(
     assert result.exit_code == 1
     assert "rolled back" in _plain_output(result)
     # first file was written then rolled back; nothing remains
+    assert list(out.glob("*.yaml")) == []
+
+
+def test_batch_failure_json_uses_cli_error_envelope(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    out = tmp_path / "gen"
+    out.mkdir()
+
+    real_generate = generate_cmd.generate_scenario
+    calls = {"n": 0}
+
+    def failing_generate(**kwargs: Any) -> Any:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("boom")
+        return real_generate(**kwargs)
+
+    monkeypatch.setattr(generate_cmd, "generate_scenario", failing_generate)
+
+    result = _run(
+        [
+            "generate",
+            "--profile",
+            "fuzz-smoke",
+            "--count",
+            "3",
+            "--seed",
+            "42",
+            "--out",
+            str(out),
+            "--json",
+        ]
+    )
+
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    payload = json.loads(result.stderr)
+    assert payload["error_code"] == "E_GENERATE_FAILED"
+    assert "rolled back 1 partially written files" in payload["message"]
+    assert payload["details"]["profile"] == "fuzz-smoke"
+    assert payload["details"]["lane"] == "smoke"
+    assert payload["details"]["seed"] == 43
+    assert payload["details"]["exception_type"] == "RuntimeError"
+    assert len(payload["details"]["removed_paths"]) == 1
+    assert payload["details"]["unremoved_paths"] == []
     assert list(out.glob("*.yaml")) == []
 
 

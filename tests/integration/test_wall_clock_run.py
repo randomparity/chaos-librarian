@@ -10,6 +10,7 @@ from pathlib import Path
 import pytest
 from pydantic import TypeAdapter
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -22,9 +23,10 @@ from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamK
 from chaos_librarian.contract.materialization import MaterializedAsset, MediaAction
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import run_materializer_plan
-from chaos_librarian.materializer import phase_b, wall_clock
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
+from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
+from chaos_librarian.materializer.runtime import wall_clock
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 FIXTURE = (
@@ -80,10 +82,10 @@ def fake_tool_boundaries(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(wall_clock, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(wall_clock, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
+    monkeypatch.setattr(prep_mod, "assert_capable_for_static_materialize", lambda _caps: None)
     monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
-    monkeypatch.setattr(phase_b, "apply_media_action", _fake_apply_media_action)
+    monkeypatch.setattr(dispatch_mod, "apply_media_action", _fake_apply_media_action)
 
 
 def _fake_materialize_one_asset(
@@ -170,10 +172,12 @@ def _logical_journal(run_id, applied_events: int):
     run_input = prepare_run_input(FIXTURE)
     report = run_validation(run_input)
     return run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        run_id_override=run_id,
-        applied_events_override=applied_events,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=run_id,
+            applied_events_override=applied_events,
+        )
     ).journal
 
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-from typing import Protocol
+from datetime import date, datetime
+from typing import Final, Protocol
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
@@ -35,6 +36,11 @@ from chaos_librarian.path_rendering import RenderableAssetContext
 
 __all__ = [
     "AssetContext",
+    "AssetContextBranch",
+    "EpisodeAssetBranch",
+    "MovieAssetBranch",
+    "PodcastEpisodeAssetBranch",
+    "TrackAssetBranch",
     "asset_contexts_by_id",
     "asset_ids_under_target",
     "iter_asset_contexts",
@@ -43,42 +49,93 @@ __all__ = [
 
 
 @dataclass(frozen=True, slots=True)
+class MovieAssetBranch:
+    movie: Movie
+
+    @property
+    def parent_kind(self) -> ParentKind:
+        return ParentKind.MOVIE
+
+    @property
+    def parent_id(self) -> str:
+        return self.movie.id
+
+
+@dataclass(frozen=True, slots=True)
+class EpisodeAssetBranch:
+    series: Series
+    season: Season
+    episode: Episode
+
+    @property
+    def parent_kind(self) -> ParentKind:
+        return ParentKind.EPISODE
+
+    @property
+    def parent_id(self) -> str:
+        return self.episode.id
+
+
+@dataclass(frozen=True, slots=True)
+class TrackAssetBranch:
+    artist: Artist
+    album: Album
+    disc: Disc
+    track: Track
+
+    @property
+    def parent_kind(self) -> ParentKind:
+        return ParentKind.TRACK
+
+    @property
+    def parent_id(self) -> str:
+        return self.track.id
+
+
+@dataclass(frozen=True, slots=True)
+class PodcastEpisodeAssetBranch:
+    podcast: Podcast
+    podcast_episode: PodcastEpisode
+
+    @property
+    def parent_kind(self) -> ParentKind:
+        return ParentKind.PODCAST_EPISODE
+
+    @property
+    def parent_id(self) -> str:
+        return self.podcast_episode.id
+
+
+type AssetContextBranch = (
+    MovieAssetBranch | EpisodeAssetBranch | TrackAssetBranch | PodcastEpisodeAssetBranch
+)
+
+
+@dataclass(frozen=True, slots=True)
 class AssetContext:
-    parent_kind: ParentKind
-    parent_id: str
-    movie: Movie | None
-    series: Series | None
-    season: Season | None
-    episode: Episode | None
-    artist: Artist | None
-    album: Album | None
-    disc: Disc | None
-    track: Track | None
-    podcast: Podcast | None
-    podcast_episode: PodcastEpisode | None
+    branch: AssetContextBranch
     variant: Variant
     bundle: Bundle
     asset: Asset
     bundle_asset_count: int
+
+    @property
+    def parent_kind(self) -> ParentKind:
+        return self.branch.parent_kind
+
+    @property
+    def parent_id(self) -> str:
+        return self.branch.parent_id
 
 
 class _Identified(Protocol):
     id: str
 
 
-_TargetGetter = Callable[[AssetContext], _Identified | None]
+_TargetGetter = Callable[[AssetContext], _Identified]
 
-_TARGET_GETTERS: dict[str, _TargetGetter] = {
-    "movie": lambda context: context.movie,
-    "series": lambda context: context.series,
-    "season": lambda context: context.season,
-    "episode": lambda context: context.episode,
-    "artist": lambda context: context.artist,
-    "album": lambda context: context.album,
-    "disc": lambda context: context.disc,
-    "track": lambda context: context.track,
-    "podcast": lambda context: context.podcast,
-    "podcast_episode": lambda context: context.podcast_episode,
+
+_OUTER_TARGET_GETTERS: dict[str, _TargetGetter] = {
     "variant": lambda context: context.variant,
     "bundle": lambda context: context.bundle,
     "asset": lambda context: context.asset,
@@ -95,40 +152,14 @@ def iter_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
 
 def _asset_context(
     *,
-    parent_kind: ParentKind,
-    parent_id: str,
+    branch: AssetContextBranch,
     variant: Variant,
     bundle: Bundle,
     asset: Asset,
-    movie: Movie | None = None,
-    series: Series | None = None,
-    season: Season | None = None,
-    episode: Episode | None = None,
-    artist: Artist | None = None,
-    album: Album | None = None,
-    disc: Disc | None = None,
-    track: Track | None = None,
-    podcast: Podcast | None = None,
-    podcast_episode: PodcastEpisode | None = None,
 ) -> AssetContext:
-    """Build an AssetContext, defaulting the irrelevant domain rows to None.
-
-    Each walker passes only the domain objects on its branch; the rest stay
-    None and ``bundle_asset_count`` is derived from the bundle.
-    """
+    """Build an AssetContext and derive bundle-wide tail metadata."""
     return AssetContext(
-        parent_kind=parent_kind,
-        parent_id=parent_id,
-        movie=movie,
-        series=series,
-        season=season,
-        episode=episode,
-        artist=artist,
-        album=album,
-        disc=disc,
-        track=track,
-        podcast=podcast,
-        podcast_episode=podcast_episode,
+        branch=branch,
         variant=variant,
         bundle=bundle,
         asset=asset,
@@ -142,9 +173,7 @@ def _movie_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
             bundle = variant.bundle
             for asset in bundle.assets:
                 yield _asset_context(
-                    parent_kind=ParentKind.MOVIE,
-                    parent_id=movie.id,
-                    movie=movie,
+                    branch=MovieAssetBranch(movie=movie),
                     variant=variant,
                     bundle=bundle,
                     asset=asset,
@@ -159,11 +188,11 @@ def _episode_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                     bundle = variant.bundle
                     for asset in bundle.assets:
                         yield _asset_context(
-                            parent_kind=ParentKind.EPISODE,
-                            parent_id=episode.id,
-                            series=series,
-                            season=season,
-                            episode=episode,
+                            branch=EpisodeAssetBranch(
+                                series=series,
+                                season=season,
+                                episode=episode,
+                            ),
                             variant=variant,
                             bundle=bundle,
                             asset=asset,
@@ -179,12 +208,12 @@ def _track_asset_contexts(scenario: Scenario) -> Iterator[AssetContext]:
                         bundle = variant.bundle
                         for asset in bundle.assets:
                             yield _asset_context(
-                                parent_kind=ParentKind.TRACK,
-                                parent_id=track.id,
-                                artist=artist,
-                                album=album,
-                                disc=disc,
-                                track=track,
+                                branch=TrackAssetBranch(
+                                    artist=artist,
+                                    album=album,
+                                    disc=disc,
+                                    track=track,
+                                ),
                                 variant=variant,
                                 bundle=bundle,
                                 asset=asset,
@@ -198,10 +227,10 @@ def _podcast_episode_asset_contexts(scenario: Scenario) -> Iterator[AssetContext
                 bundle = variant.bundle
                 for asset in bundle.assets:
                     yield _asset_context(
-                        parent_kind=ParentKind.PODCAST_EPISODE,
-                        parent_id=episode.id,
-                        podcast=podcast,
-                        podcast_episode=episode,
+                        branch=PodcastEpisodeAssetBranch(
+                            podcast=podcast,
+                            podcast_episode=episode,
+                        ),
                         variant=variant,
                         bundle=bundle,
                         asset=asset,
@@ -217,7 +246,7 @@ def asset_ids_under_target(
     scenario: Scenario, *, target_kind: str, target_id: str
 ) -> tuple[str, ...]:
     """Return initially declared asset ids under a target in manifest order."""
-    if target_kind not in _TARGET_GETTERS:
+    if target_kind not in _KNOWN_TARGET_KINDS:
         raise ValueError(f"unknown target_kind: {target_kind}")
 
     matched: list[str] = []
@@ -228,8 +257,73 @@ def asset_ids_under_target(
 
 
 def _context_matches_target(context: AssetContext, *, target_kind: str, target_id: str) -> bool:
-    target = _TARGET_GETTERS[target_kind](context)
+    target = _target_for_context(context, target_kind)
     return target is not None and target.id == target_id
+
+
+_KNOWN_TARGET_KINDS: Final = frozenset(
+    {
+        "movie",
+        "series",
+        "season",
+        "episode",
+        "artist",
+        "album",
+        "disc",
+        "track",
+        "podcast",
+        "podcast_episode",
+        *_OUTER_TARGET_GETTERS,
+    }
+)
+
+
+def _target_for_context(context: AssetContext, target_kind: str) -> _Identified | None:
+    outer = _OUTER_TARGET_GETTERS.get(target_kind)
+    if outer is not None:
+        return outer(context)
+    branch = context.branch
+    if isinstance(branch, MovieAssetBranch):
+        return branch.movie if target_kind == "movie" else None
+    if isinstance(branch, EpisodeAssetBranch):
+        return _episode_branch_target(branch, target_kind)
+    if isinstance(branch, TrackAssetBranch):
+        return _track_branch_target(branch, target_kind)
+    if isinstance(branch, PodcastEpisodeAssetBranch):
+        return _podcast_branch_target(branch, target_kind)
+    return None
+
+
+def _episode_branch_target(branch: EpisodeAssetBranch, target_kind: str) -> _Identified | None:
+    if target_kind == "series":
+        return branch.series
+    if target_kind == "season":
+        return branch.season
+    if target_kind == "episode":
+        return branch.episode
+    return None
+
+
+def _track_branch_target(branch: TrackAssetBranch, target_kind: str) -> _Identified | None:
+    if target_kind == "artist":
+        return branch.artist
+    if target_kind == "album":
+        return branch.album
+    if target_kind == "disc":
+        return branch.disc
+    if target_kind == "track":
+        return branch.track
+    return None
+
+
+def _podcast_branch_target(
+    branch: PodcastEpisodeAssetBranch, target_kind: str
+) -> _Identified | None:
+    if target_kind == "podcast":
+        return branch.podcast
+    if target_kind == "podcast_episode":
+        return branch.podcast_episode
+    return None
 
 
 def renderable_asset_context(context: AssetContext, root_path: str) -> RenderableAssetContext:
@@ -244,25 +338,21 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
         root_path=root_path,
         layout=_layout_for_context(context),
         naming=_naming_for_context(context),
-        movie_title=context.movie.title if context.movie is not None else None,
-        series_title=context.series.title if context.series is not None else None,
-        season_number=context.season.season_number if context.season is not None else None,
-        episode_number=context.episode.episode_number if context.episode is not None else None,
+        movie_title=_movie_title_for_context(context),
+        series_title=_series_title_for_context(context),
+        season_number=_season_number_for_context(context),
+        episode_number=_episode_number_for_context(context),
         episode_title=_episode_title_for_context(context),
-        aired_on=context.episode.aired_on if context.episode is not None else None,
-        absolute_number=context.episode.absolute_number if context.episode is not None else None,
-        artist_name=context.artist.name if context.artist is not None else None,
-        album_title=context.album.title if context.album is not None else None,
-        disc_number=context.disc.disc_number if context.disc is not None else None,
-        track_number=context.track.track_number if context.track is not None else None,
-        track_title=context.track.title if context.track is not None else None,
-        podcast_title=context.podcast.title if context.podcast is not None else None,
-        published_at=(
-            context.podcast_episode.published_at if context.podcast_episode is not None else None
-        ),
-        episode_slug=(
-            context.podcast_episode.slug if context.podcast_episode is not None else None
-        ),
+        aired_on=_aired_on_for_context(context),
+        absolute_number=_absolute_number_for_context(context),
+        artist_name=_artist_name_for_context(context),
+        album_title=_album_title_for_context(context),
+        disc_number=_disc_number_for_context(context),
+        track_number=_track_number_for_context(context),
+        track_title=_track_title_for_context(context),
+        podcast_title=_podcast_title_for_context(context),
+        published_at=_published_at_for_context(context),
+        episode_slug=_episode_slug_for_context(context),
         edition=context.variant.edition,
         variant_label=context.variant.label,
         asset_role=context.asset.role,
@@ -274,32 +364,107 @@ def renderable_asset_context(context: AssetContext, root_path: str) -> Renderabl
 def _layout_for_context(
     context: AssetContext,
 ) -> MovieLayout | SeriesLayout | ArtistLayout | PodcastLayout:
-    if context.movie is not None:
-        return context.movie.layout
-    if context.series is not None:
-        return context.series.layout
-    if context.artist is not None:
-        return context.artist.layout
-    if context.podcast is not None:
-        return context.podcast.layout
+    branch = context.branch
+    if isinstance(branch, MovieAssetBranch):
+        return branch.movie.layout
+    if isinstance(branch, EpisodeAssetBranch):
+        return branch.series.layout
+    if isinstance(branch, TrackAssetBranch):
+        return branch.artist.layout
+    if isinstance(branch, PodcastEpisodeAssetBranch):
+        return branch.podcast.layout
     raise ChaosLibrarianValueError(f"asset {context.asset.id} has no hierarchy layout")
 
 
 def _naming_for_context(
     context: AssetContext,
 ) -> EpisodeNaming | TrackNaming | PodcastEpisodeNaming | None:
-    if context.series is not None:
-        return context.series.episode_naming
-    if context.artist is not None:
-        return context.artist.track_naming
-    if context.podcast is not None:
-        return context.podcast.episode_naming
+    branch = context.branch
+    if isinstance(branch, EpisodeAssetBranch):
+        return branch.series.episode_naming
+    if isinstance(branch, TrackAssetBranch):
+        return branch.artist.track_naming
+    if isinstance(branch, PodcastEpisodeAssetBranch):
+        return branch.podcast.episode_naming
     return None
+
+
+def _movie_title_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.movie.title if isinstance(branch, MovieAssetBranch) else None
+
+
+def _series_title_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.series.title if isinstance(branch, EpisodeAssetBranch) else None
+
+
+def _season_number_for_context(context: AssetContext) -> int | None:
+    branch = context.branch
+    return branch.season.season_number if isinstance(branch, EpisodeAssetBranch) else None
+
+
+def _episode_number_for_context(context: AssetContext) -> int | None:
+    branch = context.branch
+    return branch.episode.episode_number if isinstance(branch, EpisodeAssetBranch) else None
 
 
 def _episode_title_for_context(context: AssetContext) -> str | None:
-    if context.episode is not None:
-        return context.episode.title
-    if context.podcast_episode is not None:
-        return context.podcast_episode.title
+    branch = context.branch
+    if isinstance(branch, EpisodeAssetBranch):
+        return branch.episode.title
+    if isinstance(branch, PodcastEpisodeAssetBranch):
+        return branch.podcast_episode.title
     return None
+
+
+def _aired_on_for_context(context: AssetContext) -> date | None:
+    branch = context.branch
+    return branch.episode.aired_on if isinstance(branch, EpisodeAssetBranch) else None
+
+
+def _absolute_number_for_context(context: AssetContext) -> int | None:
+    branch = context.branch
+    return branch.episode.absolute_number if isinstance(branch, EpisodeAssetBranch) else None
+
+
+def _artist_name_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.artist.name if isinstance(branch, TrackAssetBranch) else None
+
+
+def _album_title_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.album.title if isinstance(branch, TrackAssetBranch) else None
+
+
+def _disc_number_for_context(context: AssetContext) -> int | None:
+    branch = context.branch
+    return branch.disc.disc_number if isinstance(branch, TrackAssetBranch) else None
+
+
+def _track_number_for_context(context: AssetContext) -> int | None:
+    branch = context.branch
+    return branch.track.track_number if isinstance(branch, TrackAssetBranch) else None
+
+
+def _track_title_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.track.title if isinstance(branch, TrackAssetBranch) else None
+
+
+def _podcast_title_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.podcast.title if isinstance(branch, PodcastEpisodeAssetBranch) else None
+
+
+def _published_at_for_context(context: AssetContext) -> datetime | None:
+    branch = context.branch
+    if isinstance(branch, PodcastEpisodeAssetBranch):
+        return branch.podcast_episode.published_at
+    return None
+
+
+def _episode_slug_for_context(context: AssetContext) -> str | None:
+    branch = context.branch
+    return branch.podcast_episode.slug if isinstance(branch, PodcastEpisodeAssetBranch) else None

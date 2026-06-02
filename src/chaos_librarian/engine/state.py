@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from dataclasses import dataclass, field
+from typing import TypedDict
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
 from chaos_librarian.contract.domain import ParentKind
@@ -65,6 +66,14 @@ from chaos_librarian.path_rendering import (
 from chaos_librarian.topology import AssetContext, iter_asset_contexts, renderable_asset_context
 
 
+class _RenderableContextBaseFields(TypedDict):
+    root_path: str
+    variant_label: str
+    asset_role: str
+    asset_container: str
+    bundle_asset_count: int
+
+
 @dataclass
 class WorldState:
     """Mutable mirror of ``Manifest`` indexed by id."""
@@ -90,19 +99,6 @@ class WorldState:
     # without an O(n) scan.
     _asset_to_location: dict[str, str] = field(default_factory=dict)
     _asset_to_version: dict[str, str] = field(default_factory=dict)
-
-    # Maps slow_copy_start event_id → (location_id, final_path). Drained on commit.
-    pending_slow_copies: dict[str, tuple[str, str]] = field(default_factory=dict)
-
-    # Journal-derived evidence used by an immediately following multi-phase event.
-    # Not serialized into the manifest; only supports same-run handlers.
-    previous_event_delta: tuple[str, dict[str, object]] | None = None
-    pending_network_lags: dict[str, dict[str, object]] = field(default_factory=dict)
-    # Open network-fs-chaos windows keyed by the open event's id; the close
-    # event (release_lock / remount_path) pops the matching entry. Twins of
-    # pending_network_lags.
-    pending_locks: dict[str, dict[str, object]] = field(default_factory=dict)
-    pending_unmounts: dict[str, dict[str, object]] = field(default_factory=dict)
 
     # Populated once in ``build_initial_state`` from ``scenario.library`` so
     # archive_file / move_between_roots handlers can resolve root paths and
@@ -156,7 +152,6 @@ class WorldState:
         return self._asset_to_location[asset_id]
 
     def version_id_for_asset(self, asset_id: str) -> str:
-        """Return the version id currently bound to ``asset_id``."""
         return self._asset_to_version[asset_id]
 
     def sidecar_id_for_path(self, asset_id: str, path: str) -> str:
@@ -176,27 +171,22 @@ class WorldState:
         raise KeyError(f"no sidecar for asset {asset_id!r} at path {path!r}")
 
     def has_location(self, asset_id: str) -> bool:
-        """Return True if ``asset_id`` is currently placed at some location."""
         return asset_id in self._asset_to_location
 
     def bind_location(self, asset_id: str, location: ManifestLocation) -> None:
-        """Register a new location for ``asset_id``."""
         self.locations[location.id] = location
         self._asset_to_location[asset_id] = location.id
 
     def unbind_location(self, asset_id: str) -> None:
-        """Remove the asset's current location (delete_file)."""
         loc_id = self._asset_to_location.pop(asset_id)
         self.locations.pop(loc_id)
         self._renderer_managed_asset_ids.discard(asset_id)
 
     def bind_version(self, asset_id: str, version: ManifestVersion) -> None:
-        """Register a new version for ``asset_id``."""
         self.versions[version.id] = version
         self._asset_to_version[asset_id] = version.id
 
     def renderer_manages_asset(self, asset_id: str) -> bool:
-        """Return True if hierarchy actions should rerender this asset."""
         return asset_id in self._renderer_managed_asset_ids
 
     def renderer_derived_sidecars_by_asset(
@@ -216,7 +206,6 @@ class WorldState:
         return grouped
 
     def discard_renderer_sidecar(self, sidecar_id: str) -> None:
-        """Mark a removed sidecar as no longer renderer-derived."""
         self._renderer_derived_sidecar_ids.discard(sidecar_id)
 
     def asset_ids_for_episode(self, episode_id: str) -> list[str]:
@@ -271,6 +260,13 @@ class WorldState:
         bundle_asset_count = sum(
             1 for candidate in self.assets.values() if candidate.bundle_id == bundle.id
         )
+        base_fields: _RenderableContextBaseFields = {
+            "root_path": root_path,
+            "variant_label": variant.label,
+            "asset_role": asset.role,
+            "asset_container": asset.container,
+            "bundle_asset_count": bundle_asset_count,
+        }
         if variant.parent_kind is ParentKind.MOVIE:
             movie = self.movies[variant.parent_id]
             # No movie hierarchy/path action re-renders from manifest context, so
@@ -279,25 +275,9 @@ class WorldState:
             # topology.renderable_asset_context. See ADR 0010.
             return RenderableAssetContext(
                 parent_kind=ParentKind.MOVIE,
-                root_path=root_path,
                 layout=MovieLayout(movie.layout),
-                naming=None,
                 movie_title=movie.title,
-                series_title=None,
-                season_number=None,
-                episode_number=None,
-                episode_title=None,
-                aired_on=None,
-                absolute_number=None,
-                artist_name=None,
-                album_title=None,
-                disc_number=None,
-                track_number=None,
-                track_title=None,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.EPISODE:
             episode = self.episodes[variant.parent_id]
@@ -305,25 +285,15 @@ class WorldState:
             series = self.series[season.series_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.EPISODE,
-                root_path=root_path,
                 layout=SeriesLayout(series.layout),
                 naming=EpisodeNaming(series.episode_naming),
-                movie_title=None,
                 series_title=series.title,
                 season_number=season.season_number,
                 episode_number=episode.episode_number,
                 episode_title=episode.title,
                 aired_on=episode.aired_on,
                 absolute_number=episode.absolute_number,
-                artist_name=None,
-                album_title=None,
-                disc_number=None,
-                track_number=None,
-                track_title=None,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.TRACK:
             track = self.tracks[variant.parent_id]
@@ -332,42 +302,27 @@ class WorldState:
             artist = self.artists[album.artist_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.TRACK,
-                root_path=root_path,
                 layout=ArtistLayout(artist.layout),
                 naming=TrackNaming(artist.track_naming),
-                movie_title=None,
-                series_title=None,
-                season_number=None,
-                episode_number=None,
-                episode_title=None,
-                aired_on=None,
-                absolute_number=None,
                 artist_name=artist.name,
                 album_title=album.title,
                 disc_number=disc.disc_number,
                 track_number=track.track_number,
                 track_title=track.title,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         if variant.parent_kind is ParentKind.PODCAST_EPISODE:
             episode = self.podcast_episodes[variant.parent_id]
             podcast = self.podcasts[episode.podcast_id]
             return RenderableAssetContext(
                 parent_kind=ParentKind.PODCAST_EPISODE,
-                root_path=root_path,
                 layout=PodcastLayout(podcast.layout),
                 naming=PodcastEpisodeNaming(podcast.episode_naming),
                 podcast_title=podcast.title,
                 published_at=episode.published_at,
                 episode_slug=episode.slug,
                 episode_title=episode.title,
-                variant_label=variant.label,
-                asset_role=asset.role,
-                asset_container=asset.container,
-                bundle_asset_count=bundle_asset_count,
+                **base_fields,
             )
         raise ChaosLibrarianValueError(f"asset {asset_id!r} has unsupported parent kind")
 

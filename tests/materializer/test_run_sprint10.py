@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian import __version__ as _chaos_librarian_version
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
@@ -43,12 +44,11 @@ from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.contract.validation import ValidationReport
 from chaos_librarian.engine import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
-from chaos_librarian.materializer import phase_b
-from chaos_librarian.materializer import run as run_mod
-from chaos_librarian.materializer import synthesis as synthesis_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import CorruptionActionError
 from chaos_librarian.materializer.persistence.reports import build_reports
-from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b import dispatch as phase_b_dispatch
+from chaos_librarian.materializer.phase_b.corruption.handler import CorruptionPhaseBContext
 from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 from chaos_librarian.materializer.run import materialize_scenario
 
@@ -391,7 +391,7 @@ def _patch_successful_synthesis(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(synthesis_mod, "run_ffmpeg", fake_run)
     monkeypatch.setattr(synthesis_mod, "probe_file", lambda _path: _probed())
-    monkeypatch.setattr(run_mod, "detect_capabilities", _fake_capabilities)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", _fake_capabilities)
 
 
 def _fake_capabilities() -> Capabilities:
@@ -422,7 +422,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         ctx.post_phase_b_versions[output_version_id] = (_CORRUPTED_HASH, _probed())
         return _corruption_action(output_version_id)
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(phase_b_dispatch, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -435,7 +435,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(phase_b_dispatch, "apply_corruption_action", fake_apply)
 
 
 def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -465,7 +465,7 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
+    monkeypatch.setattr(phase_b_dispatch, "apply_wrong_oracle_hash", fake_apply)
 
 
 def _probed() -> ProbedMedia:

@@ -12,14 +12,20 @@ Zero new runtime dependencies.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, cast
 
-from pydantic import TypeAdapter
+from pydantic import BaseModel, TypeAdapter
 
 from chaos_librarian.contract.journal import JournalEntry
+from chaos_librarian.contract.materialization import (
+    FilesystemAction,
+    MaterializationReport,
+    NetworkLagAction,
+)
+from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 
 _DiffKind = Literal["byte_diff", "missing_in_left", "missing_in_right"]
@@ -240,22 +246,25 @@ def _compare_tree_bytes(
 
 
 def _normalize_materialization_for_run_replay(data: object) -> dict[str, object]:
-    data_obj = _str_keyed_dict(data)
-    if data_obj is None:
-        data_obj = {}
+    report = MaterializationReport.model_validate(data)
+    # Run replay compares semantic evidence, not host/timing volatility. Omitted
+    # fields are platform, started_at/finished_at, toolchain, invocations, run
+    # duration/speed fields, per-action duration_ns, and network-lag actual
+    # duration; the stable action payloads remain compared below.
     return {
-        "outcome": data_obj.get("outcome"),
-        "execution_mode": data_obj.get("execution_mode"),
-        "content_sources": _required_list_or_missing(data_obj, "content_sources"),
-        "materialized": _list_or_empty(data_obj.get("materialized")),
-        "failures": _list_or_empty(data_obj.get("failures")),
-        "filesystem_actions": _normalize_filesystem_action_list(data_obj.get("filesystem_actions")),
-        "media_actions": _normalize_action_list(data_obj.get("media_actions")),
-        "corruption_actions": _normalize_action_list(data_obj.get("corruption_actions")),
-        "oracle_hash_actions": _normalize_action_list(data_obj.get("oracle_hash_actions")),
-        "network_lag_actions": _normalize_network_lag_action_list(
-            data_obj.get("network_lag_actions")
-        ),
+        "schema_version": report.schema_version,
+        "run_id": str(report.run_id),
+        "outcome": report.outcome.value,
+        "execution_mode": report.execution_mode.value,
+        "content_sources": _model_json_list(report.content_sources),
+        "materialized": _model_json_list(report.materialized),
+        "failures": _model_json_list(report.failures),
+        "filesystem_actions": _normalize_filesystem_actions(report.filesystem_actions),
+        "media_actions": _normalize_action_models(report.media_actions),
+        "corruption_actions": _normalize_action_models(report.corruption_actions),
+        "oracle_hash_actions": _normalize_action_models(report.oracle_hash_actions),
+        "network_lag_actions": _normalize_network_lag_actions(report.network_lag_actions),
+        "network_fs_chaos_actions": _model_json_list(report.network_fs_chaos_actions),
     }
 
 
@@ -266,64 +275,34 @@ def _normalize_replay_bundle_for_run_replay(data: object) -> dict[str, object]:
     return {key: data_obj.get(key) for key in _RUN_REPLAY_COMPARE_KEYS}
 
 
-def _list_or_empty(value: object) -> list[object]:
-    if not isinstance(value, list):
-        return []
-    return cast("list[object]", value)
+def _model_json_list(models: Iterable[BaseModel]) -> list[dict[str, object]]:
+    return [_model_json(model) for model in models]
 
 
-def _required_list_or_missing(data: dict[str, object], field: str) -> object:
-    if field not in data:
-        return {"missing_required_field": field}
-    value = data[field]
-    if isinstance(value, list):
-        return cast("list[object]", value)
-    return value
+def _normalize_action_models(actions: Iterable[BaseModel]) -> list[dict[str, object]]:
+    return [_drop_action_duration(_model_json(action)) for action in actions]
 
 
-def _normalize_action_list(value: object) -> list[object]:
-    actions = _list_or_empty(value)
-    normalized: list[object] = []
+def _normalize_filesystem_actions(actions: Iterable[FilesystemAction]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
     for action in actions:
-        action_data = _str_keyed_dict(action)
-        if action_data is None:
-            normalized.append(action)
-            continue
-        normalized.append(_drop_action_duration(action_data))
-    return normalized
-
-
-def _normalize_filesystem_action_list(value: object) -> list[object]:
-    actions = _list_or_empty(value)
-    normalized: list[object] = []
-    for action in actions:
-        action_data = _str_keyed_dict(action)
-        if action_data is None:
-            normalized.append(action)
-            continue
+        action_data = _model_json(action)
         normalized_action = _drop_action_duration(action_data)
-        if normalized_action.get("action") == "touch_mtime":
-            before_ns = _int_or_none(action_data.get("mtime_before_ns"))
-            after_ns = _int_or_none(action_data.get("mtime_after_ns"))
+        if action.action is TimelineActionName.TOUCH_MTIME:
             normalized_action.pop("mtime_before_ns", None)
             normalized_action.pop("mtime_after_ns", None)
-            if before_ns is not None and after_ns is not None:
-                normalized_action["mtime_delta_ns"] = after_ns - before_ns
+            if action.mtime_before_ns is not None and action.mtime_after_ns is not None:
+                normalized_action["mtime_delta_ns"] = action.mtime_after_ns - action.mtime_before_ns
         normalized.append(normalized_action)
     return normalized
 
 
-def _normalize_network_lag_action_list(value: object) -> list[object]:
-    actions = _list_or_empty(value)
-    normalized: list[object] = []
+def _normalize_network_lag_actions(actions: Iterable[NetworkLagAction]) -> list[dict[str, object]]:
+    normalized: list[dict[str, object]] = []
     for action in actions:
-        action_data = _str_keyed_dict(action)
-        if action_data is None:
-            normalized.append(action)
-            continue
-        normalized_action = dict(action_data)
-        normalized_action.pop("actual_duration_ns", None)
-        normalized.append(normalized_action)
+        action_data = _model_json(action)
+        action_data.pop("actual_duration_ns", None)
+        normalized.append(action_data)
     return normalized
 
 
@@ -333,10 +312,8 @@ def _drop_action_duration(action_data: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _int_or_none(value: object) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
+def _model_json(model: BaseModel) -> dict[str, object]:
+    return cast("dict[str, object]", model.model_dump(mode="json"))
 
 
 def _str_keyed_dict(data: object) -> dict[str, object] | None:

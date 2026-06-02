@@ -23,10 +23,10 @@ import pytest
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.materialization import FailureStage, FilesystemAction, Outcome
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer.errors import (
     FilesystemActionError,
 )
+from chaos_librarian.materializer.phase_b import dispatch as phase_b
 from chaos_librarian.materializer.phase_b import filesystem as filesystem_mod
 from chaos_librarian.materializer.run import materialize_scenario
 from chaos_librarian.materializer.tooling.capabilities import (

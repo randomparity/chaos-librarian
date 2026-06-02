@@ -12,56 +12,58 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
-from chaos_librarian.validation.rules._common import Rule
-from chaos_librarian.validation.rules.asset_path_safety import (
-    rule_asset_id_container_safe,
-    rule_remux_container_safe,
+from chaos_librarian.validation.rules.core.content_reference import rule_content_reference
+from chaos_librarian.validation.rules.core.duration_syntax import rule_duration_syntax
+from chaos_librarian.validation.rules.core.id_duplicate import rule_id_duplicate
+from chaos_librarian.validation.rules.core.raw_helpers import Rule
+from chaos_librarian.validation.rules.core.target_unknown import (
+    rule_root_unknown,
+    rule_target_unknown,
 )
-from chaos_librarian.validation.rules.content_reference import rule_content_reference
-from chaos_librarian.validation.rules.create_sidecar_content import (
-    rule_create_sidecar_content,
-)
-from chaos_librarian.validation.rules.duration_syntax import rule_duration_syntax
-from chaos_librarian.validation.rules.extract_track_unknown import (
-    rule_extract_track_unknown,
-)
-from chaos_librarian.validation.rules.hierarchy import (
+from chaos_librarian.validation.rules.hierarchy.rules import (
     rule_hierarchy_invariants,
     rule_hierarchy_timeline,
     rule_media_action_compatible_with_parent,
     rule_rendered_path_collisions,
 )
-from chaos_librarian.validation.rules.id_duplicate import rule_id_duplicate
-from chaos_librarian.validation.rules.materialize_media_matrix import (
+from chaos_librarian.validation.rules.media.extract_track_unknown import (
+    rule_extract_track_unknown,
+)
+from chaos_librarian.validation.rules.media.materialize_media_matrix import (
     rule_materialize_media_matrix,
 )
-from chaos_librarian.validation.rules.network_fs_chaos import (
+from chaos_librarian.validation.rules.network.network_fs_chaos import (
     rule_network_fs_chaos_pairing,
     rule_network_fs_chaos_target,
 )
-from chaos_librarian.validation.rules.network_lag import rule_network_lag
-from chaos_librarian.validation.rules.path_containment import rule_path_containment
-from chaos_librarian.validation.rules.path_duplicate import rule_path_duplicate
-from chaos_librarian.validation.rules.profile_budgets import rule_profile_budgets
-from chaos_librarian.validation.rules.profile_opt_in import rule_profile_opt_in
-from chaos_librarian.validation.rules.sidecar_language import rule_sidecar_language_consistent
-from chaos_librarian.validation.rules.sidecar_target import rule_sidecar_target
-from chaos_librarian.validation.rules.slow_copy import (
+from chaos_librarian.validation.rules.network.network_lag import rule_network_lag
+from chaos_librarian.validation.rules.paths.asset_path_safety import (
+    rule_asset_id_container_safe,
+    rule_remux_container_safe,
+)
+from chaos_librarian.validation.rules.paths.path_containment import rule_path_containment
+from chaos_librarian.validation.rules.paths.path_duplicate import rule_path_duplicate
+from chaos_librarian.validation.rules.paths.symlink_target import rule_symlink_target_escape
+from chaos_librarian.validation.rules.profiles.profile_budgets import rule_profile_budgets
+from chaos_librarian.validation.rules.profiles.profile_opt_in import rule_profile_opt_in
+from chaos_librarian.validation.rules.sidecar.create_sidecar_content import (
+    rule_create_sidecar_content,
+)
+from chaos_librarian.validation.rules.sidecar.sidecar_language import (
+    rule_sidecar_language_consistent,
+)
+from chaos_librarian.validation.rules.sidecar.sidecar_target import rule_sidecar_target
+from chaos_librarian.validation.rules.timeline.slow_copy import (
     rule_slow_copy_path_collision,
     rule_slow_copy_timing,
     rule_slow_copy_unpaired,
 )
-from chaos_librarian.validation.rules.symlink_target import rule_symlink_target_escape
-from chaos_librarian.validation.rules.target_unknown import (
-    rule_root_unknown,
-    rule_target_unknown,
-)
-from chaos_librarian.validation.rules.timeline_lifecycle import rule_timeline_lifecycle
-from chaos_librarian.validation.rules.timeline_order import rule_timeline_order
+from chaos_librarian.validation.rules.timeline.timeline_lifecycle import rule_timeline_lifecycle
+from chaos_librarian.validation.rules.timeline.timeline_order import rule_timeline_order
 
 if TYPE_CHECKING:
-    from chaos_librarian.scenario_io import LineIndex
-    from chaos_librarian.validation.pipeline import IssueCollector
+    from chaos_librarian.validation.reporting import IssueCollector
+    from chaos_librarian.validation.scenario_io import LineIndex
 
 
 _RULES: list[Rule] = [

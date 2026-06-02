@@ -8,7 +8,7 @@ import typer
 
 from chaos_librarian.validation import ValidationReport, ValidationSeverity
 
-__all__ = ["render_human", "stub", "validate_new_out_path"]
+__all__ = ["render_human", "validate_new_out_path"]
 
 
 _SEVERITY_LABEL = {
@@ -16,12 +16,6 @@ _SEVERITY_LABEL = {
     ValidationSeverity.WARNING: "WARN ",
     ValidationSeverity.INFO: "INFO ",
 }
-
-
-def stub(command: str) -> None:
-    """Emit the standard "not yet implemented" stderr line and exit 1."""
-    typer.echo(f"chaos-librarian {command}: not yet implemented.", err=True)
-    raise typer.Exit(code=1)
 
 
 def validate_new_out_path(value: Path) -> Path:

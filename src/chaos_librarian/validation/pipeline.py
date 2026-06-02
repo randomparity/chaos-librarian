@@ -1,4 +1,4 @@
-"""Validation pipeline: orchestrator and IssueCollector.
+"""Validation pipeline orchestrator.
 
 Flow (matches the Sprint 1 design spec):
 
@@ -22,49 +22,12 @@ Flow (matches the Sprint 1 design spec):
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-from chaos_librarian.contract.validation import (
-    ValidationIssue,
-    ValidationReport,
-    ValidationSeverity,
-)
-from chaos_librarian.scenario_io import LineIndex
-from chaos_librarian.validation.codes import (
-    E_TOP_LEVEL_NOT_MAPPING,
-    format_jsonpath,
-)
+from chaos_librarian.contract.validation import ValidationReport, ValidationSeverity
+from chaos_librarian.validation.codes import E_TOP_LEVEL_NOT_MAPPING
 from chaos_librarian.validation.input import RunInput
+from chaos_librarian.validation.reporting import IssueCollector
 from chaos_librarian.validation.semantic import run_semantic_pass
 from chaos_librarian.validation.shape import run_shape_pass
-
-
-@dataclass
-class IssueCollector:
-    """Accumulator passed to every pass; resolves loc → (line, column)."""
-
-    issues: list[ValidationIssue] = field(default_factory=list)
-
-    def add(
-        self,
-        *,
-        code: str,
-        severity: ValidationSeverity,
-        message: str,
-        loc: tuple[str | int, ...],
-        line_index: LineIndex,
-    ) -> None:
-        position = _resolve_position(loc, line_index)
-        self.issues.append(
-            ValidationIssue(
-                severity=severity,
-                code=code,
-                message=message,
-                line=position[0],
-                column=position[1],
-                path=format_jsonpath(loc) if loc else None,
-            )
-        )
 
 
 def run_validation(run_input: RunInput) -> ValidationReport:
@@ -120,26 +83,3 @@ def _assemble_report(scenario_id: str, collector: IssueCollector) -> ValidationR
         ok=ok,
         issues=issues_sorted,
     )
-
-
-def _resolve_position(
-    loc: tuple[str | int, ...],
-    line_index: LineIndex,
-) -> tuple[int | None, int | None]:
-    """Look up ``loc`` in the line index, walking up if the exact path misses.
-
-    Whole-file fallback is ``(1, 0)`` so issues without precise location
-    still anchor to *something* — never (None, None) once a line index
-    exists.
-    """
-    current = loc
-    while current:
-        hit = line_index.lookup(current)
-        if hit is not None:
-            return hit
-        current = current[:-1]
-    # Top-level fallback.
-    top = line_index.lookup(())
-    if top is not None:
-        return top
-    return 1, 0

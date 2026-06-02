@@ -5,9 +5,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
+from chaos_librarian.cli.commands import plan as plan_cmd
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -36,6 +38,37 @@ class TestPlanExitCodes:
         result = runner.invoke(app, ["plan", str(bad), "--out", str(out)])
         assert result.exit_code == 3
         assert not out.exists()
+
+    def test_write_failure_uses_error_envelope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        out = tmp_path / "run-001"
+
+        def fail_write(*_args: object, **_kwargs: object) -> None:
+            raise OSError("staging unavailable")
+
+        monkeypatch.setattr(plan_cmd, "write_fixture", fail_write)
+
+        result = runner.invoke(
+            app,
+            [
+                "plan",
+                str(FIXTURE_DIR / "identity-move-rename.yaml"),
+                "--out",
+                str(out),
+                "--json",
+            ],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_PLAN_WRITE_FAILED"
+        assert payload["details"]["operation"] == "write_fixture"
+        assert payload["details"]["path"] == str(out)
+        assert payload["details"]["exception_type"] == "OSError"
 
 
 class TestPlanJSONSummary:

@@ -9,18 +9,26 @@ each other.
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
 from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.manifest import Manifest
-from chaos_librarian.contract.materialization import MaterializationReport
+from chaos_librarian.contract.materialization import (
+    CorruptionAction,
+    FilesystemAction,
+    MaterializationReport,
+    MediaAction,
+    NetworkFsChaosAction,
+    NetworkLagAction,
+    OracleHashAction,
+)
 from chaos_librarian.contract.replay_bundle import MaterializeReplayBundle
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.validation import RunInput
 
-__all__ = ["MaterializeArtifacts", "RunContext"]
+__all__ = ["MaterializeArtifacts", "ReportActions", "RunContext"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,6 +38,18 @@ class MaterializeArtifacts:
     current_manifest: Manifest
     materialization_report: MaterializationReport
     replay_bundle: MaterializeReplayBundle
+
+
+@dataclass(frozen=True, slots=True)
+class ReportActions:
+    """Phase-B action families recorded into ``MaterializationReport``."""
+
+    filesystem: list[FilesystemAction] = field(default_factory=list)
+    media: list[MediaAction] = field(default_factory=list)
+    corruption: list[CorruptionAction] = field(default_factory=list)
+    oracle_hash: list[OracleHashAction] = field(default_factory=list)
+    network_lag: list[NetworkLagAction] = field(default_factory=list)
+    network_fs_chaos: list[NetworkFsChaosAction] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

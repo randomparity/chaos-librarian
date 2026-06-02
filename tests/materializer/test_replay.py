@@ -11,6 +11,7 @@ from typing import cast
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION, REPLAY_BUNDLE_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
@@ -33,13 +34,16 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import run_materializer_plan
+from chaos_librarian.engine import (
+    ReplayIntegrityError,
+)
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.materializer import phase_b
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
+from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.replay import replay_run_bundle
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO_BYTES
 
@@ -353,6 +357,23 @@ _NETWORK_LAG_SCENARIO = _scenario_bytes(
 """,
 )
 
+_NETWORK_FS_LOCK_SCENARIO = _scenario_bytes(
+    scenario_id="run-replay-network-fs-lock-test",
+    profiles=("network-fs-chaos",),
+    title="Network FS Lock Replay",
+    timeline="""\
+  - id: acquire_001
+    at: 0ns
+    action: acquire_lock
+    target: asset_main
+    lock_type: exclusive
+  - id: release_001
+    at: 10ns
+    action: release_lock
+    for: acquire_001
+""",
+)
+
 
 def test_run_replay_reproduces_corruption_action_evidence(
     monkeypatch: pytest.MonkeyPatch,
@@ -404,8 +425,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -443,8 +463,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -482,8 +501,7 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -546,8 +564,7 @@ def test_run_replay_refuses_muxing_profile_capability_regressions(
             materialize_webm_video=webm_ready,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
         replay_mod,
         "materialize_one_asset",
@@ -642,6 +659,63 @@ def test_run_replay_oracle_hash_failure_preserves_partial_actions(
     assert report["oracle_hash_actions"][0]["reported_content_hash"] == "sha256:" + "9" * 64
 
 
+def test_run_replay_rejects_mid_network_lag_prefix_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="uncommitted network_lag_start"):
+        replay_run_bundle(_run_bundle_for(_NETWORK_LAG_SCENARIO, applied_events=2), out)
+
+    assert not out.exists()
+
+
+def test_run_replay_checks_digest_before_capability_gate(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    caps = Capabilities(
+        schema_version=CAPABILITIES_SCHEMA_VERSION,
+        ffmpeg=ToolStatus(found=False, meets_minimum=False),
+        ffprobe=ToolStatus(found=False, meets_minimum=False),
+        mkvtoolnix=ToolStatus(found=False, meets_minimum=False),
+        platform="test",
+        content_sources=ContentSourceCapabilities(),
+        ready_for=ReadyFor(
+            materialize_static=False,
+            materialize_filesystem_mutations=False,
+            materialize_media_mutations=False,
+            materialize_hevc_video=False,
+            materialize_hdr_video=False,
+            materialize_resolution_switch_video=False,
+            materialize_audio_recipes=False,
+            materialize_matroska_muxing_profiles=False,
+            materialize_webm_video=False,
+        ),
+    )
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
+    bundle = _run_bundle_for(_NETWORK_LAG_SCENARIO, applied_events=3).model_copy(
+        update={"journal_digest": "0" * 64}
+    )
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="journal_digest mismatch"):
+        replay_run_bundle(bundle, out)
+
+    assert not out.exists()
+
+
+def test_run_replay_rejects_mid_network_fs_window_before_creating_output(
+    tmp_path: Path,
+) -> None:
+    out = tmp_path / "replay"
+
+    with pytest.raises(ReplayIntegrityError, match="unclosed network-fs-chaos open windows"):
+        replay_run_bundle(_run_bundle_for(_NETWORK_FS_LOCK_SCENARIO, applied_events=1), out)
+
+    assert not out.exists()
+
+
 def test_run_replay_reproduces_network_lag_evidence(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
@@ -719,10 +793,12 @@ def _run_bundle_for(scenario: bytes, *, applied_events: int = 1) -> MaterializeR
     )
     report = run_validation(run_input)
     artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        run_id_override=_RUN_ID,
-        applied_events_override=applied_events,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=_RUN_ID,
+            applied_events_override=applied_events,
+        )
     )
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
@@ -767,8 +843,7 @@ def _patch_replay_materializer(
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
     if patch_corruption:
         _patch_successful_corruption(monkeypatch)
@@ -851,7 +926,7 @@ def _patch_successful_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
         )
         return _corruption_action(output_version_id=output_version_id)
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_successful_truncate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -881,7 +956,7 @@ def _patch_successful_truncate(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -894,7 +969,7 @@ def _patch_failing_corruption(monkeypatch: pytest.MonkeyPatch) -> None:
             asset_id=entry.target_ids[0],
         )
 
-    monkeypatch.setattr(phase_b, "apply_corruption_action", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_corruption_action", fake_apply)
 
 
 def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -927,7 +1002,7 @@ def _patch_second_oracle_hash_failure(monkeypatch: pytest.MonkeyPatch) -> None:
             duration_ns=1,
         )
 
-    monkeypatch.setattr(phase_b, "apply_wrong_oracle_hash", fake_apply)
+    monkeypatch.setattr(dispatch_mod, "apply_wrong_oracle_hash", fake_apply)
 
 
 def _corruption_action(*, output_version_id: str) -> CorruptionAction:

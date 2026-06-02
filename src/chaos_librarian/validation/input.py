@@ -16,7 +16,11 @@ from pathlib import Path
 from typing import Any
 
 from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.scenario_io import LineIndex, ScenarioLoadError, parse_scenario_bytes
+from chaos_librarian.validation.scenario_io import (
+    LineIndex,
+    ScenarioLoadError,
+    parse_scenario_bytes,
+)
 
 _SCENARIO_CACHE_KEY = "scenario"
 

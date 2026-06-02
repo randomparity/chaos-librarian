@@ -177,6 +177,29 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_validation_pipeline_docs_name_current_helper_modules() -> None:
+    validation_pipeline = _read(DOCS / "developer" / "validation-pipeline.md")
+
+    required_snippets = [
+        "`validation/rules/core/raw_helpers.py`",
+        "`validation/rules/hierarchy/walkers.py`",
+        "`validation/rules/hierarchy/projection.py`",
+        "`validation/rules/hierarchy/rendering_projection.py`",
+        "`validation/rules/sidecar/projection.py`",
+    ]
+    stale_snippets = [
+        "`raw_helpers.py`",
+        "`hierarchy_walkers.py`",
+        "`hierarchy_projection.py`",
+        "`sidecar_projection.py`",
+    ]
+
+    for snippet in required_snippets:
+        assert snippet in validation_pipeline
+    for snippet in stale_snippets:
+        assert snippet not in validation_pipeline
+
+
 def test_observed_state_docs_cover_language_and_sidecar_normalization() -> None:
     observed_state = _read(DOCS / "contract" / "observed-state.md")
 
@@ -289,8 +312,8 @@ def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
     materializer = _read(DOCS / "developer" / "materializer.md")
     testing = _read(DOCS / "developer" / "testing.md")
 
-    assert "If `reports/` is present" in adapter_compare
-    assert "if `reports/` is absent, the loader derives reports" in adapter_compare
+    assert "`reports/` is required adapter input" in adapter_compare
+    assert "every report family directory" in adapter_compare
     assert "CLI startup gate for `materialize` and `run`" in materializer
     assert "not as an extra" in materializer
     assert "startup gate" in materializer
@@ -299,6 +322,27 @@ def test_developer_docs_match_current_loader_and_capability_behavior() -> None:
     assert "Use `--no-cov`" in testing
     assert "for subset checks" in testing
     assert "full\n`uv run pytest` suite" in testing
+
+
+def test_developer_docs_match_current_module_ownership() -> None:
+    architecture = _read(DOCS / "developer" / "architecture.md")
+    timeline_engine = _read(DOCS / "developer" / "timeline-engine.md")
+    materializer = _read(DOCS / "developer" / "materializer.md")
+    synthesis = _read(
+        ROOT / "src" / "chaos_librarian" / "materializer" / "content" / "synthesis.py"
+    )
+
+    required_snippets = [
+        "`engine/events.py` is dispatch and state-delta orchestration",
+        "`engine/event_handlers/*` owns the action-family handlers",
+        "`materializer/content/*` owns phase-A content-source resolution and synthesis",
+        "`materializer/phase_b/*` owns real timeline filesystem, media",
+    ]
+    combined_docs = " ".join(
+        "\n".join([architecture, timeline_engine, materializer, synthesis]).split()
+    )
+    for snippet in required_snippets:
+        assert snippet in combined_docs
 
 
 def test_user_docs_describe_current_replay_support() -> None:

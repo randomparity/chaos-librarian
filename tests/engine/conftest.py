@@ -464,8 +464,8 @@ _NEEDS_PENDING_SIDECAR: Final[frozenset[TimelineActionName]] = frozenset(
 )
 
 
-def _prepare_pending_slow_copy(state: WorldState) -> None:
-    """Pre-apply slow_copy_start so ``state.pending_slow_copies`` carries the id.
+def _prepare_pending_slow_copy(state: WorldState, ctx: EngineEventContext) -> None:
+    """Pre-apply slow_copy_start so ``ctx.pending_slow_copies`` carries the id.
 
     The matching builder in ``_TERMINAL_EVENT_BUILDERS`` returns a
     ``SlowCopyCommitEvent`` referencing ``_PENDING_COPY_ID``; without this
@@ -483,22 +483,22 @@ def _prepare_pending_slow_copy(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=start_event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
-def _prepare_deleted_asset(state: WorldState) -> None:
+def _prepare_deleted_asset(state: WorldState, ctx: EngineEventContext) -> None:
     """Pre-apply delete_file so ``add_file`` can restore a missing asset."""
     delete_event = DeleteFileEvent(id="prep_delete", at="0ns", target="asset_hd_main")
     apply_event(
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=delete_event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
-def _prepare_pending_sidecar(state: WorldState) -> None:
+def _prepare_pending_sidecar(state: WorldState, ctx: EngineEventContext) -> None:
     """Pre-apply create_sidecar so the embed/remove/update terminal can resolve it.
 
     The matching builders in ``_TERMINAL_EVENT_BUILDERS`` reference
@@ -516,11 +516,11 @@ def _prepare_pending_sidecar(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=create_event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
-def _prepare_network_lag_source(state: WorldState) -> None:
+def _prepare_network_lag_source(state: WorldState, ctx: EngineEventContext) -> None:
     """Pre-apply a rename whose delta a network_lag_start can reference."""
     rename_event = RenameFileEvent(
         id=_PENDING_LAG_AFTER_ID,
@@ -532,13 +532,13 @@ def _prepare_network_lag_source(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=0, event=rename_event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
-def _prepare_pending_network_lag(state: WorldState) -> None:
+def _prepare_pending_network_lag(state: WorldState, ctx: EngineEventContext) -> None:
     """Pre-apply network_lag_start so commit can drain the pending lag."""
-    _prepare_network_lag_source(state)
+    _prepare_network_lag_source(state, ctx)
     start_event = NetworkLagStartEvent(
         id=_PENDING_LAG_ID,
         at="0ns",
@@ -551,19 +551,19 @@ def _prepare_pending_network_lag(state: WorldState) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=0, declared_index=1, event=start_event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
 def _minimal_scenario_for_action(
     action: TimelineActionName,
-) -> tuple[Scenario, WorldState, ResolvedEvent]:
+) -> tuple[Scenario, WorldState, ResolvedEvent, EngineEventContext]:
     """Build the smallest scenario whose terminal event is ``action``.
 
-    Returns (scenario, prepared_world_state, resolved_event). The state is
+    Returns (scenario, prepared_world_state, resolved_event, ctx). The state is
     pre-advanced through any prerequisite events (e.g. ``slow_copy_commit``
     needs its matching ``slow_copy_start`` applied first so
-    ``state.pending_slow_copies`` is populated; the four sidecar-touching
+    ``ctx.pending_slow_copies`` is populated; the four sidecar-touching
     Sprint 7 actions need a ``create_sidecar`` pre-applied so
     ``sidecar_id_for_path`` can resolve their target).
     """
@@ -574,26 +574,30 @@ def _minimal_scenario_for_action(
     }:
         scenario = _build_minimal_series_scenario()
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        ctx = _engine_event_context()
         builder = _TERMINAL_EVENT_BUILDERS[action]
-        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder()), ctx
 
     if action in {TimelineActionName.RENUMBER_DISC, TimelineActionName.MOVE_TRACK_TO_DISC}:
         scenario = _build_minimal_music_scenario()
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        ctx = _engine_event_context()
         builder = _TERMINAL_EVENT_BUILDERS[action]
-        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder()), ctx
 
     if action is TimelineActionName.SWAP_EPISODE_NUMBERS:
         scenario = _build_swap_series_scenario()
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        ctx = _engine_event_context()
         builder = _TERMINAL_EVENT_BUILDERS[action]
-        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder()), ctx
 
     if action in {TimelineActionName.SWAP_DISC_NUMBERS, TimelineActionName.SWAP_TRACK_NUMBERS}:
         scenario = _build_swap_music_scenario()
         state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+        ctx = _engine_event_context()
         builder = _TERMINAL_EVENT_BUILDERS[action]
-        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder())
+        return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=builder()), ctx
 
     scenario = _build_minimal_scenario(
         roots=[
@@ -606,22 +610,23 @@ def _minimal_scenario_for_action(
         with_declared_subtitle=action in _NEEDS_DECLARED_SUBTITLE,
     )
     state = build_initial_state(scenario, IdAllocator(TraceRecorder()))
+    ctx = _engine_event_context()
     if action is TimelineActionName.SLOW_COPY_COMMIT:
-        _prepare_pending_slow_copy(state)
+        _prepare_pending_slow_copy(state, ctx)
     if action is TimelineActionName.ADD_FILE:
-        _prepare_deleted_asset(state)
+        _prepare_deleted_asset(state, ctx)
     if action in _NEEDS_PENDING_SIDECAR:
-        _prepare_pending_sidecar(state)
+        _prepare_pending_sidecar(state, ctx)
     if action is TimelineActionName.NETWORK_LAG_START:
-        _prepare_network_lag_source(state)
+        _prepare_network_lag_source(state, ctx)
     if action is TimelineActionName.NETWORK_LAG_COMMIT:
-        _prepare_pending_network_lag(state)
+        _prepare_pending_network_lag(state, ctx)
 
     builder = _TERMINAL_EVENT_BUILDERS.get(action)
     if builder is None:
         raise AssertionError(f"unhandled action: {action!r}")
     event = builder()
-    return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=event)
+    return scenario, state, ResolvedEvent(at_ns=1, declared_index=0, event=event), ctx
 
 
 def _build_minimal_series_scenario() -> Scenario:

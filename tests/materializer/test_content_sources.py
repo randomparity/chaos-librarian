@@ -28,22 +28,28 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
     VideoVfrCadence,
 )
-from chaos_librarian.materializer import content_sources
-from chaos_librarian.materializer.content_sources import (
+from chaos_librarian.materializer.content import media_sources
+from chaos_librarian.materializer.content.media_sources import (
     AudioSourceRequest,
-    ChapterSourceRequest,
-    CoverArtSourceRequest,
-    MuxingSourceRequest,
     VideoSourceRequest,
-    collect_content_source_capabilities,
     resolve_audio_source,
-    resolve_chapter_source,
-    resolve_cover_art_source,
-    resolve_muxing_source,
     resolve_video_source,
 )
+from chaos_librarian.materializer.content.metadata_sources import (
+    ChapterSourceRequest,
+    CoverArtSourceRequest,
+    resolve_chapter_source,
+    resolve_cover_art_source,
+)
+from chaos_librarian.materializer.content.muxing_sources import (
+    MuxingSourceRequest,
+    resolve_muxing_source,
+)
+from chaos_librarian.materializer.content.source_capabilities import (
+    collect_content_source_capabilities,
+)
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.preflight import preflight_asset
+from chaos_librarian.materializer.preparation.preflight import preflight_asset
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 
 
@@ -182,7 +188,7 @@ def test_resolve_video_source_digest_changes_with_recipe_output(
         return FFmpegInput(lavfi="testsrc=size=640x480:rate=24")
 
     monkeypatch.setitem(
-        content_sources.VIDEO_RECIPES,
+        media_sources.VIDEO_RECIPES,
         VideoSource.COLOR_BARS,
         alternate_color_bars,
     )
@@ -401,7 +407,7 @@ def test_preflight_asset_does_not_build_content_source_evidence(
     def fail_recipe_digest(**_kwargs):
         raise AssertionError("preflight should not compute replay evidence")
 
-    monkeypatch.setattr(content_sources, "_recipe_digest", fail_recipe_digest)
+    monkeypatch.setattr(media_sources, "_recipe_digest", fail_recipe_digest)
 
     preflight_asset(
         parent_kind=ParentKind.MOVIE,

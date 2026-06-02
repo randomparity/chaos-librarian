@@ -17,19 +17,22 @@ from chaos_librarian.contract.scenario import (
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
-    SidecarKind,
+    PosterImageFormat,
+    SidecarMediaType,
     TimelineActionName,
     VideoSource,
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import MediaActionError
-from chaos_librarian.materializer.phase_b import media as media_module
-from chaos_librarian.materializer.phase_b.media import (
-    LiveSidecar,
+from chaos_librarian.materializer.phase_b.media import handler as media_module
+from chaos_librarian.materializer.phase_b.media.handler import (
+    LivePosterSidecar,
+    LiveSubtitleSidecar,
     MediaPhaseBContext,
     _subtitle_codec_for_container,
     apply_media_action,
 )
+from chaos_librarian.materializer.tooling._subprocess import RecordedToolResult
 from chaos_librarian.materializer.tooling.recipes import srt_payload
 
 
@@ -149,8 +152,50 @@ def _stub_ffmpeg_writes(monkeypatch, *, stub_bytes=b"x" * 100, exit_code=0):
             streams=[],
         )
 
-    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
-    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.probe_file", fake_probe)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run)
+    monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.handler.probe_file", fake_probe)
+
+
+def test_version_media_action_assembles_common_version_fields(monkeypatch):
+    helper = getattr(media_module, "_version_media_action", None)
+    assert helper is not None, "version-producing media handlers should share action assembly"
+    monkeypatch.setattr(media_module.time, "monotonic_ns", lambda: 2_500)
+    entry = _atomic_entry(
+        event_id="ev_version",
+        action=TimelineActionName.REENCODE_VIDEO,
+        target="a0",
+        input_version_ids=["v0"],
+        output_version_ids=["v1"],
+        state_delta={
+            "resolution": "sd",
+            "codec": "h264",
+            "input_path": "x.mkv",
+            "output_path": "x.mkv",
+        },
+    )
+    version = media_module._VersionOutput(
+        version_id="v1",
+        content_hash="sha256:" + "a" * 64,
+    )
+
+    result = helper(
+        entry=entry,
+        action=TimelineActionName.REENCODE_VIDEO,
+        version=version,
+        tool_invocation_index=7,
+        started_ns=2_000,
+    )
+
+    assert result.event_id == "ev_version"
+    assert result.action == TimelineActionName.REENCODE_VIDEO
+    assert result.target_asset_id == "a0"
+    assert result.input_path == "x.mkv"
+    assert result.output_path == "x.mkv"
+    assert result.input_version_id == "v0"
+    assert result.output_version_id == "v1"
+    assert result.output_content_hash == "sha256:" + "a" * 64
+    assert result.tool_invocation_index == 7
+    assert result.duration_ns == 500
 
 
 class TestApplyReencodeVideo:
@@ -200,9 +245,11 @@ class TestApplyReencodeVideo:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -259,7 +306,9 @@ class TestApplyReencodeVideo:
             ffmpeg_calls.append(1)
             raise AssertionError("ffmpeg invoked for unknown resolution")
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         entry = _atomic_entry(
             event_id="ev_rv_bad",
             action=TimelineActionName.REENCODE_VIDEO,
@@ -323,9 +372,11 @@ class TestApplyReencodeAudio:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -368,9 +419,11 @@ class TestApplyReencodeAudio:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -410,9 +463,11 @@ class TestApplyReencodeAudio:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="flac", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -469,7 +524,9 @@ class TestApplyReencodeAudio:
             ffmpeg_calls.append(1)
             raise AssertionError("ffmpeg invoked for unknown channel layout")
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         entry = _atomic_entry(
             event_id="ev_ra_bad",
             action=TimelineActionName.REENCODE_AUDIO,
@@ -531,9 +588,11 @@ class TestApplyRemuxContainer:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="mp4", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -635,9 +694,11 @@ class TestApplyEditMetadata:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -704,9 +765,11 @@ class TestApplyEmbedSubtitle:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="matroska", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -751,9 +814,11 @@ class TestApplyEmbedSubtitle:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media.probe_file",
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.probe_file",
             lambda p, **k: ProbedMedia(
                 container="mp4", duration_seconds=1.0, size_bytes=100, streams=[]
             ),
@@ -783,7 +848,7 @@ class TestApplyExtractSubtitle:
         (tmp_path / "x.mkv").write_bytes(b"y" * 50)
         _stub_ffmpeg_writes(monkeypatch, stub_bytes=b"s" * 100)
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media._probe_subtitle_index_for_language",
+            "chaos_librarian.materializer.phase_b.media.handler._probe_subtitle_index_for_language",
             lambda ctx, path, lang: 0,
         )
         entry = _atomic_entry(
@@ -825,11 +890,13 @@ class TestApplyExtractSubtitle:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         # Probe stub returns index 1 (i.e. the SECOND subtitle stream
         # matches "fra"), so the argv must contain 0:s:1.
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media._probe_subtitle_index_for_language",
+            "chaos_librarian.materializer.phase_b.media.handler._probe_subtitle_index_for_language",
             lambda ctx, path, lang: 1,
         )
         entry = _atomic_entry(
@@ -872,10 +939,12 @@ class TestApplyExtractSubtitle:
                 "",
             )
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         # Probe stub returns 0 — fallback path (no language matched).
         monkeypatch.setattr(
-            "chaos_librarian.materializer.phase_b.media._probe_subtitle_index_for_language",
+            "chaos_librarian.materializer.phase_b.media.handler._probe_subtitle_index_for_language",
             lambda ctx, path, lang: 0,
         )
         entry = _atomic_entry(
@@ -920,11 +989,7 @@ class TestApplyUpdateSidecar:
             resolved_seed=42,
             ffmpeg_version="7.0",
             ffprobe_version="7.0",
-            live_sidecars={
-                "sidecar_0001": LiveSidecar(
-                    kind=SidecarKind.SUBTITLE, language="eng", asset_id="a0"
-                )
-            },
+            live_sidecars={"sidecar_0001": LiveSubtitleSidecar(asset_id="a0", language="eng")},
         )
         entry = _atomic_entry(
             event_id="ev_us_001",
@@ -1272,7 +1337,9 @@ class TestApplyCreateSidecar:
             )
             return invocation, ""
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         ctx = MediaPhaseBContext(
             library_root=tmp_path,
             scenario_assets={"a0": self._asset()},
@@ -1298,6 +1365,47 @@ class TestApplyCreateSidecar:
         assert result.tool_invocation_index == 0
         assert ctx.invocations[0].tool == "ffmpeg"
         assert "sidecar_poster" in ctx.post_phase_b_sidecars
+
+    def test_poster_kind_preserves_authoring_knob_enums(self, monkeypatch, tmp_path):
+        captured_argv: list[str] = []
+
+        def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
+            captured_argv[:] = argv
+            Path(argv[-1]).write_bytes(b"webp")
+            invocation = ToolInvocation(
+                tool="ffmpeg",
+                version=ffmpeg_version,
+                command=list(argv),
+                exit_code=0,
+                duration_ns=1000,
+            )
+            return invocation, ""
+
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_poster_webp",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.poster.webp",
+                "sidecar_id": "sidecar_poster",
+                "language": None,
+                "kind": "poster",
+                "media_type": "image",
+                "image_format": "webp",
+            },
+        )
+
+        apply_media_action(ctx, entry)
+
+        sidecar = ctx.live_sidecars["sidecar_poster"]
+        assert isinstance(sidecar, LivePosterSidecar)
+        assert sidecar.media_type is SidecarMediaType.IMAGE
+        assert sidecar.image_format is PosterImageFormat.WEBP
+        assert "libwebp" in captured_argv
 
     def _ctx(self, tmp_path):
         return MediaPhaseBContext(
@@ -1379,7 +1487,9 @@ class TestApplyCreateSidecar:
             },
         )
         apply_media_action(ctx, entry)
-        assert ctx.live_sidecars["sidecar_sub"].encoding == "utf16_le"
+        sidecar = ctx.live_sidecars["sidecar_sub"]
+        assert isinstance(sidecar, LiveSubtitleSidecar)
+        assert sidecar.encoding == "utf16_le"
 
     def test_poster_kind_ffmpeg_failure_raises_media_action_error(self, monkeypatch, tmp_path):
         def fake_run(argv, *, ffmpeg_version, timeout_s=60.0):
@@ -1392,7 +1502,9 @@ class TestApplyCreateSidecar:
             )
             return invocation, "ffmpeg crashed"
 
-        monkeypatch.setattr("chaos_librarian.materializer.phase_b.media.run_ffmpeg", fake_run)
+        monkeypatch.setattr(
+            "chaos_librarian.materializer.phase_b.media.handler.run_ffmpeg", fake_run
+        )
         ctx = MediaPhaseBContext(
             library_root=tmp_path,
             scenario_assets={"a0": self._asset()},
@@ -1416,11 +1528,25 @@ class TestApplyCreateSidecar:
         assert exc_info.value.action == TimelineActionName.CREATE_SIDECAR
 
 
-class _FakeCompleted:
-    def __init__(self, *, stdout: str = "", stderr: str = "", returncode: int = 0) -> None:
-        self.stdout = stdout
-        self.stderr = stderr
-        self.returncode = returncode
+def _recorded_probe_result(
+    *,
+    stdout: str = "",
+    stderr_tail: str = "",
+    returncode: int = 0,
+    argv: list[str] | None = None,
+    version: str = "7.1",
+) -> RecordedToolResult:
+    return RecordedToolResult(
+        invocation=ToolInvocation(
+            tool="ffprobe",
+            version=version,
+            command=list(argv or ["ffprobe"]),
+            exit_code=returncode,
+            duration_ns=1,
+        ),
+        stderr_tail=stderr_tail,
+        stdout=stdout,
+    )
 
 
 class TestProbeSubtitleIndexForLanguage:
@@ -1444,10 +1570,14 @@ class TestProbeSubtitleIndexForLanguage:
             ]
         }
 
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout=json.dumps(payload))
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout=json.dumps(payload),
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "fra")
         assert idx == 1
@@ -1464,30 +1594,40 @@ class TestProbeSubtitleIndexForLanguage:
             ]
         }
 
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout=json.dumps(payload))
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout=json.dumps(payload),
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "deu")
         assert idx == 0
         assert len(ctx.invocations) == 1
 
     def test_probe_falls_back_to_zero_when_no_streams_key(self, monkeypatch, tmp_path):
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout="{}")
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(stdout="{}", argv=argv, version=kwargs["version"])
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         idx = media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")
         assert idx == 0
         assert len(ctx.invocations) == 1
 
     def test_probe_nonzero_exit_raises_runtime_error(self, monkeypatch, tmp_path):
-        def fake_run(argv, **_kwargs):
-            return _FakeCompleted(stdout="", stderr="boom", returncode=1)
+        def fake_run(argv, **kwargs):
+            return _recorded_probe_result(
+                stdout="",
+                stderr_tail="boom",
+                returncode=1,
+                argv=argv,
+                version=kwargs["version"],
+            )
 
-        monkeypatch.setattr(media_module.subprocess, "run", fake_run)
+        monkeypatch.setattr(media_module, "run_recorded_tool", fake_run)
         ctx = self._ctx(tmp_path)
         with pytest.raises(RuntimeError, match="ffprobe"):
             media_module._probe_subtitle_index_for_language(ctx, tmp_path / "x.mkv", "eng")

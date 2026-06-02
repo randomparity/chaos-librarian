@@ -18,7 +18,7 @@ from chaos_librarian.determinism import IdAllocator, TraceRecorder
 from chaos_librarian.engine.events import _STATE_DELTA_KEYS, apply_event
 from chaos_librarian.engine.resolution import ResolvedEvent
 from chaos_librarian.errors import ChaosLibrarianValueError
-from tests.engine.conftest import _engine_event_context, _minimal_scenario_for_action
+from tests.engine.conftest import _minimal_scenario_for_action
 
 
 def test_apply_event_uses_engine_event_context_signature() -> None:
@@ -31,7 +31,9 @@ def test_apply_event_uses_engine_event_context_signature() -> None:
 
 
 def test_apply_event_rejects_mismatched_event_model() -> None:
-    _scenario, state, _resolved_event = _minimal_scenario_for_action(TimelineActionName.MOVE_ASSET)
+    _scenario, state, _resolved_event, ctx = _minimal_scenario_for_action(
+        TimelineActionName.MOVE_ASSET
+    )
     event = RenameFileEvent(
         id="ev",
         at="0ns",
@@ -44,7 +46,7 @@ def test_apply_event_rejects_mismatched_event_model() -> None:
             state=state,
             resolved=ResolvedEvent(at_ns=1, declared_index=0, event=event),
             ids=IdAllocator(TraceRecorder()),
-            ctx=_engine_event_context(),
+            ctx=ctx,
         )
 
 
@@ -82,12 +84,12 @@ def test_create_sidecar_state_delta_contract_keys() -> None:
 @pytest.mark.parametrize("action", sorted(_STATE_DELTA_KEYS, key=lambda a: a.value))
 def test_state_delta_keys_match_contract(action: TimelineActionName) -> None:
     """Every handler's emitted state_delta is a superset of _STATE_DELTA_KEYS[action]."""
-    _scenario, state, resolved_event = _minimal_scenario_for_action(action)
+    _scenario, state, resolved_event, ctx = _minimal_scenario_for_action(action)
     entries = apply_event(
         state=state,
         resolved=resolved_event,
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
     # Walk all emitted entries: slow_copy_start emits a Started entry whose
     # state_delta carries the start-time fields, slow_copy_commit emits a

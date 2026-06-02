@@ -5,8 +5,8 @@ walks the timeline, and returns the complete set of in-memory artifacts.
 Persistence is delegated to ``chaos_librarian.engine.writer.write_fixture``.
 
 ``replay_plan_bundle`` re-runs ``plan`` from a recorded ``PlanOnlyReplayBundle``
-so a previously emitted fixture can be reproduced from its bundle alone.
-Sprint 4 wraps it in the public ``replay`` CLI command.
+plus validation-prepared embedded scenario bytes. Sprint 4 wraps it in
+the public ``replay`` CLI command.
 """
 
 from __future__ import annotations
@@ -38,11 +38,7 @@ from chaos_librarian.engine.reports import ReportSet, build_report_set
 from chaos_librarian.engine.resolution import ResolvedEvent, resolve_timeline, step_boundaries
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.errors import ChaosLibrarianError, ChaosLibrarianValueError
-from chaos_librarian.validation import (
-    RunInput,
-    prepare_run_input_from_bytes,
-    run_validation,
-)
+from chaos_librarian.validation import PreparedReplayInput, RunInput
 
 
 @dataclass(frozen=True)
@@ -56,6 +52,18 @@ class PlanArtifacts:
     validation_report: ValidationReport
     sentinel: RunSentinel
     reports: ReportSet
+
+
+@dataclass(slots=True)
+class PlanExecutionRequest:
+    """Inputs and optional overrides for an engine plan execution."""
+
+    run_input: RunInput
+    validation_report: ValidationReport
+    resolved_seed_override: int | None = None
+    steps_limit: int | None = None
+    run_id_override: uuid.UUID | None = None
+    applied_events_override: int | None = None
 
 
 def run_plan(
@@ -84,65 +92,38 @@ def run_plan(
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
     return _run_plan_artifacts(
-        run_input=run_input,
-        validation_report=validation_report,
-        steps_limit=steps_limit,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=validation_report,
+            steps_limit=steps_limit,
+        )
     )
 
 
-def run_materializer_plan(
-    *,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    resolved_seed_override: int | None = None,
-    steps_limit: int | None = None,
-    run_id_override: uuid.UUID | None = None,
-    applied_events_override: int | None = None,
-) -> PlanArtifacts:
+def run_materializer_plan(request: PlanExecutionRequest) -> PlanArtifacts:
     """Assemble artifacts for internal replay/materializer-owned plan prefixes.
 
     Args:
-        run_input: A frozen, byte-bound read of the scenario.
-        validation_report: The validation report to serialize into the fixture.
-        resolved_seed_override: Use a recorded seed instead of resolving the
-            scenario seed expression.
-        steps_limit: Public plan-mode step-unit cap.
-        run_id_override: Internal-only. When set, use this materializer-owned
-            run id instead of deriving a deterministic plan-only id.
-        applied_events_override: Internal-only raw resolved-event count for
-            materializer-owned prefixes. Unlike ``steps_limit``, this is not
-            step-boundary translated and does not silently clamp.
+        request: Scenario input, validation report, and materializer-only
+            overrides for seed, run id, step cap, or raw applied-event prefix.
 
     Returns:
         ``PlanArtifacts`` ready to hand to ``write_fixture``.
     """
-    return _run_plan_artifacts(
-        run_input=run_input,
-        validation_report=validation_report,
-        resolved_seed_override=resolved_seed_override,
-        steps_limit=steps_limit,
-        run_id_override=run_id_override,
-        applied_events_override=applied_events_override,
-    )
+    return _run_plan_artifacts(request)
 
 
-def _run_plan_artifacts(
-    *,
-    run_input: RunInput,
-    validation_report: ValidationReport,
-    resolved_seed_override: int | None = None,
-    steps_limit: int | None = None,
-    run_id_override: uuid.UUID | None = None,
-    applied_events_override: int | None = None,
-) -> PlanArtifacts:
-    if steps_limit is not None and applied_events_override is not None:
+def _run_plan_artifacts(request: PlanExecutionRequest) -> PlanArtifacts:
+    if request.steps_limit is not None and request.applied_events_override is not None:
         raise ChaosLibrarianValueError(
             "steps_limit and applied_events_override are mutually exclusive"
         )
 
-    parsed = run_input.scenario
+    parsed = request.run_input.scenario
     resolved_seed = (
-        resolved_seed_override if resolved_seed_override is not None else resolve_seed(parsed.seed)
+        request.resolved_seed_override
+        if request.resolved_seed_override is not None
+        else resolve_seed(parsed.seed)
     )
     recorder = TraceRecorder()
     ids = IdAllocator(recorder)
@@ -153,13 +134,13 @@ def _run_plan_artifacts(
     resolved_timeline = resolve_timeline(parsed)
     applied_events = _select_applied_events(
         resolved_timeline=resolved_timeline,
-        steps_limit=steps_limit,
-        applied_events_override=applied_events_override,
+        steps_limit=request.steps_limit,
+        applied_events_override=request.applied_events_override,
     )
     run_id = _select_run_id(
-        run_input=run_input,
+        run_input=request.run_input,
         resolved_seed=resolved_seed,
-        run_id_override=run_id_override,
+        run_id_override=request.run_id_override,
     )
     ctx = EngineEventContext(
         run_id=run_id,
@@ -190,7 +171,7 @@ def _run_plan_artifacts(
     bundle = PlanOnlyReplayBundle(
         schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
         chaos_librarian_version=_chaos_librarian_version,
-        scenario=run_input.raw_bytes.decode("utf-8"),
+        scenario=request.run_input.raw_bytes.decode("utf-8"),
         run_id=run_id,
         resolved_seed=resolved_seed,
         applied_events=applied_events,
@@ -212,7 +193,7 @@ def _run_plan_artifacts(
         current_manifest=current_manifest,
         journal=tuple(journal),
         replay_bundle=bundle,
-        validation_report=validation_report,
+        validation_report=request.validation_report,
         sentinel=sentinel,
         reports=reports,
     )
@@ -274,14 +255,17 @@ class ReplayIntegrityError(ChaosLibrarianError):
     """
 
 
-def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
+def replay_plan_bundle(
+    bundle: PlanOnlyReplayBundle,
+    prepared_input: PreparedReplayInput,
+) -> PlanArtifacts:
     """Re-run ``plan`` from a recorded plan-only bundle.
 
-    Takes the bundle's verbatim ``scenario`` field, treats it as the
-    canonical bytes for the replay run, and returns a ``PlanArtifacts``
-    record identical to the original run on success. Sprint 4 wraps this
-    helper in the public ``chaos-librarian replay`` CLI command and adds
-    divergence reporting (exit 6).
+    Takes the validation-prepared bytes from the bundle's verbatim
+    ``scenario`` field and returns a ``PlanArtifacts`` record identical
+    to the original run on success. Sprint 4 wraps this helper in the
+    public ``chaos-librarian replay`` CLI command and adds divergence
+    reporting (exit 6).
 
     Three integrity checks fire in order before returning artifacts:
 
@@ -295,10 +279,10 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
        (Codex round 3 finding 2 — without this, flipping ``applied_events``
        between two valid boundaries would silently produce a longer fixture).
 
-    After the boundary check passes, ``bundle.applied_events`` (translated
-    from a raw-event count to a step-unit count) is threaded through to
-    ``run_materializer_plan`` as ``steps_limit`` so a partial bundle replays
-    as the same partial fixture.
+    After the boundary check passes, ``bundle.applied_events`` is translated
+    from a raw-event count to a step-unit count and threaded through to
+    ``run_materializer_plan`` so a partial bundle replays as the same
+    partial fixture.
 
     Raises:
         ReplayIntegrityError: if any of the three integrity checks fails —
@@ -309,11 +293,13 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
             between two valid boundaries).
     """
     yaml_bytes = bundle.scenario.encode("utf-8")
-    run_input = prepare_run_input_from_bytes(
-        raw_bytes=yaml_bytes,
-        source_label=f"replay:{bundle.run_id}",
-    )
-    report = run_validation(run_input)
+    if prepared_input.run_input.raw_bytes != yaml_bytes:
+        raise ReplayIntegrityError(
+            "replay input integrity check failed: prepared scenario bytes "
+            "do not match bundle.scenario"
+        )
+    run_input = prepared_input.run_input
+    report = prepared_input.validation_report
     if not report.ok:
         errors = [i.code for i in report.issues if i.severity == ValidationSeverity.ERROR]
         # Surface as ReplayIntegrityError so the CLI maps it to the
@@ -338,10 +324,12 @@ def replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
     step_count = 0 if bundle.applied_events == 0 else boundaries.index(bundle.applied_events) + 1
 
     artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        resolved_seed_override=bundle.resolved_seed,
-        steps_limit=step_count,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            resolved_seed_override=bundle.resolved_seed,
+            steps_limit=step_count,
+        )
     )
 
     recomputed = artifacts.replay_bundle.run_id

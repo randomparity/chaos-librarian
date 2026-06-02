@@ -10,32 +10,29 @@ converts them to exit codes.
 
 from __future__ import annotations
 
-import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
-from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.materialization import Outcome
 from chaos_librarian.contract.run_sentinel import RunSentinelState
 from chaos_librarian.contract.scenario import Scenario
-from chaos_librarian.engine import run_materializer_plan
-from chaos_librarian.materializer.capability_gates import (
-    assert_capable_for_audio_recipes,
-    assert_capable_for_hdr_video,
-    assert_capable_for_matroska_muxing_profiles,
-    assert_capable_for_resolution_switch_video,
-    assert_capable_for_webm_video,
+from chaos_librarian.materializer.content.synthesis import (
+    PhaseAInputs,
+    PhaseAResult,
+    materialize_assets_phase_a,
 )
 from chaos_librarian.materializer.errors import (
-    CapabilityGateError,
     CorruptionActionError,
     FilesystemActionError,
+    MaterializationWriteError,
     MediaActionError,
     ProbeParseError,
-    ScenarioValidationError,
     ToolFailedError,
 )
-from chaos_librarian.materializer.persistence._context import MaterializeArtifacts, RunContext
+from chaos_librarian.materializer.persistence._context import (
+    MaterializeArtifacts,
+    RunContext,
+)
 from chaos_librarian.materializer.persistence.finalize import (
     build_sentinel,
     finalize_failure,
@@ -43,27 +40,19 @@ from chaos_librarian.materializer.persistence.finalize import (
     finalize_success,
 )
 from chaos_librarian.materializer.persistence.writer import begin_materialize_run
-from chaos_librarian.materializer.phase_b import (
+from chaos_librarian.materializer.phase_b.dispatch import (
     PhaseBState,
+    PhaseBStateInputs,
     augment_phase_b_outputs,
     dispatch_phase_b_entry,
     make_phase_b_state,
     phase_b_failure_outcome,
 )
-from chaos_librarian.materializer.preflight import (
-    iter_assets,
-    preflight_asset,
-    preflight_timeline,
+from chaos_librarian.materializer.phase_b.report_actions import report_actions_from_phase_b
+from chaos_librarian.materializer.preparation.run_setup import (
+    MaterializerPreparationMode,
+    prepare_materializer_run,
 )
-from chaos_librarian.materializer.synthesis import PhaseAResult, materialize_assets_phase_a
-from chaos_librarian.materializer.tooling.capabilities import (
-    assert_capable_for_static_materialize,
-    detect_capabilities,
-)
-from chaos_librarian.media_matrix import HEVC_VIDEO_CODECS
-from chaos_librarian.topology import iter_asset_contexts
-from chaos_librarian.validation import run_validation
-from chaos_librarian.validation.input import prepare_run_input
 
 __all__ = ["MaterializeArtifacts", "RunContext", "materialize_scenario"]
 
@@ -85,90 +74,39 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
             synthesis.
         ProbeParseError: ffprobe output is malformed or missing required
             fields.
+        MaterializationWriteError: run directory lifecycle metadata,
+            report, or cleanup writes failed.
         FilesystemActionError: a phase-B stdlib helper raised.
         MediaActionError: a phase-B media handler (ffmpeg-backed or
             sidecar regeneration) raised.
     """
     started_at = datetime.now(UTC)
-    run_input = prepare_run_input(scenario_path)
-    # Run semantic validation BEFORE the timeline scope check so
-    # containment/lifecycle errors surface as ScenarioValidationError
-    # (exit 3) instead of being shadowed by TimelineUnsupportedError when an
-    # invalid scenario happens to also declare timeline events.
-    validation_report = run_validation(run_input)
-    if not validation_report.ok:
-        raise ScenarioValidationError(
-            "scenario failed semantic validation; refusing to materialize",
-            payload={
-                "validation_report": validation_report.model_dump(mode="json", exclude_none=True),
-            },
-            validation_report=validation_report,
-        )
-    # Validation succeeded → ``RunInput.scenario`` cache is primed by the
-    # shape pass; access the cached parse instead of re-validating.
-    scenario = run_input.scenario
-    # Pre-flight the timeline before any other gate. Matrix-rejection
-    # contract: TimelineUnsupportedError must surface before run-dir
-    # allocation, so callers see exit 5 without a stale half-allocated
-    # directory on disk.
-    preflight_timeline(scenario)
-    caps = detect_capabilities()
-    assert_capable_for_static_materialize(caps)
-    assert_capable_for_matroska_muxing_profiles(scenario, caps)
-    assert_capable_for_webm_video(scenario, caps)
-    assert_capable_for_audio_recipes(scenario, caps)
-    assert_capable_for_resolution_switch_video(scenario, caps)
-    _assert_capable_for_hevc_video(scenario, caps)
-    assert_capable_for_hdr_video(scenario, caps)
-    run_id = uuid.uuid4()
-    # materialize executes the whole timeline; pass ``steps_limit=None`` so
-    # ``run_materializer_plan`` applies every resolved event. Sprint 5 capped this at 0
-    # because phase B did not yet exist and the materializer reused the
-    # plan-only manifest as-is.
-    plan_artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=validation_report,
-        run_id_override=run_id,
-        steps_limit=None,
+    prepared = prepare_materializer_run(
+        scenario_path,
+        mode=MaterializerPreparationMode.MATERIALIZE,
     )
-    for context in iter_asset_contexts(scenario):
-        asset = context.asset
-        preflight_asset(
-            parent_kind=context.parent_kind,
-            video=asset.video,
-            audios=asset.audio,
-            subtitles=asset.subtitles,
-            container=asset.container,
-        )
+    scenario = prepared.scenario
     ctx = RunContext(
-        run_input=run_input,
+        run_input=prepared.run_input,
         out_dir=out_dir,
-        run_id=run_id,
+        run_id=prepared.run_id,
         started_at=started_at,
-        caps=caps,
-        plan_artifacts=plan_artifacts,
+        caps=prepared.caps,
+        plan_artifacts=prepared.plan_artifacts,
     )
-    begin_materialize_run(ctx.out_dir, build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
+    _begin_materialize_run(ctx)
     return _run_synthesis(ctx, scenario)
 
 
-def _assert_capable_for_hevc_video(scenario: Scenario, caps: Capabilities) -> None:
-    """Raise before run-dir allocation when scenario needs HEVC and libx265 is absent."""
-    for asset in iter_assets(scenario):
-        if asset.video is None or asset.video.codec not in HEVC_VIDEO_CODECS:
-            continue
-        if caps.ready_for.materialize_hevc_video:
-            return
-        raise CapabilityGateError(
-            "HEVC/H.265 video materialization requires FFmpeg with the libx265 encoder",
-            asset_id=asset.id,
-            field="ready_for.materialize_hevc_video",
-            payload={
-                "capability": "ready_for.materialize_hevc_video",
-                "required_encoder": "libx265",
-                "video_codec": asset.video.codec,
-            },
-        )
+def _begin_materialize_run(ctx: RunContext) -> None:
+    try:
+        begin_materialize_run(ctx.out_dir, build_sentinel(ctx, RunSentinelState.IN_PROGRESS))
+    except OSError as exc:
+        raise MaterializationWriteError(
+            operation="begin_materialize_run",
+            path=ctx.out_dir,
+            cause=exc,
+        ) from exc
 
 
 def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
@@ -177,22 +115,26 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
     phase_b_state: PhaseBState | None = None
     try:
         materialize_assets_phase_a(
-            scenario=scenario,
-            out_dir=ctx.out_dir,
-            artifacts=ctx.plan_artifacts,
-            caps=ctx.caps,
-            result=phase_a,
-            stamp_manifest=True,
+            PhaseAInputs(
+                scenario=scenario,
+                out_dir=ctx.out_dir,
+                artifacts=ctx.plan_artifacts,
+                caps=ctx.caps,
+                phase_a_accumulator=phase_a,
+                stamp_manifest=True,
+            )
         )
         phase_b_state = make_phase_b_state(
-            library_root=ctx.out_dir / "library",
-            scenario=scenario,
-            resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
-            ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
-            ffprobe_version=ctx.caps.ffprobe.version or "unknown",
-            invocations=phase_a.invocations,
-            manifest=ctx.plan_artifacts.current_manifest,
-            initial_manifest=ctx.plan_artifacts.initial_manifest,
+            PhaseBStateInputs(
+                library_root=ctx.out_dir / "library",
+                scenario=scenario,
+                resolved_seed=ctx.plan_artifacts.replay_bundle.resolved_seed,
+                ffmpeg_version=ctx.caps.ffmpeg.version or "unknown",
+                ffprobe_version=ctx.caps.ffprobe.version or "unknown",
+                invocations=phase_a.invocations,
+                manifest=ctx.plan_artifacts.current_manifest,
+                initial_manifest=ctx.plan_artifacts.initial_manifest,
+            )
         )
         for entry in ctx.plan_artifacts.journal:
             dispatch_phase_b_entry(phase_b_state, entry)
@@ -218,10 +160,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
             phase_b_failure_outcome(exc),
             phase_a.invocations,
             phase_a.materialized_assets,
-            filesystem_actions=phase_b_state.filesystem_actions,
-            media_actions=phase_b_state.media_actions,
-            corruption_actions=phase_b_state.corruption_actions,
-            oracle_hash_actions=phase_b_state.oracle_hash_actions,
+            actions=report_actions_from_phase_b(phase_b_state),
             content_sources=phase_a.content_sources,
         )
         raise
@@ -230,9 +169,6 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
         ctx,
         phase_a.invocations,
         phase_a.materialized_assets,
-        filesystem_actions=phase_b_state.filesystem_actions,
-        media_actions=phase_b_state.media_actions,
-        corruption_actions=phase_b_state.corruption_actions,
-        oracle_hash_actions=phase_b_state.oracle_hash_actions,
+        actions=report_actions_from_phase_b(phase_b_state),
         content_sources=phase_a.content_sources,
     )

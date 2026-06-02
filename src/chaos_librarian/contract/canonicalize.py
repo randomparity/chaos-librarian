@@ -33,13 +33,13 @@ def canonicalize(manifest: Manifest) -> dict[str, Any]:
     (the stripped fields would fail re-parse if a stricter schema requires
     them in the future).
     """
-    blob = manifest.model_dump(mode="json", exclude_none=True)
-    for version in blob.get("versions", []):
+    manifest_payload = manifest.model_dump(mode="json", exclude_none=True)
+    for version in manifest_payload.get("versions", []):
         version.pop("content_hash", None)
         version.pop("probed", None)
-    for sidecar in blob.get("sidecars", []):
+    for sidecar in manifest_payload.get("sidecars", []):
         sidecar.pop("content_hash", None)
-    return blob
+    return manifest_payload
 
 
 def corruption_evidence(manifest: Manifest, report: MaterializationReport) -> dict[str, Any]:

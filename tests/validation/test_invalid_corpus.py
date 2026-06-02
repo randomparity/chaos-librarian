@@ -13,8 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import prepare_run_input, run_validation
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_DIR = FIXTURE_DIR / "invalid"

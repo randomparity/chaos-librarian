@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import subprocess
 import uuid
 from pathlib import Path
 
@@ -15,19 +14,20 @@ from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError, ProbeParseError
-from chaos_librarian.materializer.phase_b import corruption as corruption_module
-from chaos_librarian.materializer.phase_b import packet_probe
-from chaos_librarian.materializer.phase_b.corruption import (
-    CorruptionPhaseBContext,
-    apply_corruption_action,
-)
-from chaos_librarian.materializer.phase_b.corruption_bytes import (
+from chaos_librarian.materializer.phase_b.corruption import handler as corruption_module
+from chaos_librarian.materializer.phase_b.corruption.bytes import (
     malformed_id3_header,
     overwrite_range,
     replacement_bytes,
     truncate_bytes,
     zero_range,
 )
+from chaos_librarian.materializer.phase_b.corruption.handler import (
+    CorruptionPhaseBContext,
+    apply_corruption_action,
+)
+from chaos_librarian.materializer.phase_b.media import packet_probe
+from chaos_librarian.materializer.tooling._subprocess import RecordedToolResult
 
 
 def _entry(*, byte_count: int = 8) -> AtomicJournalEntry:
@@ -358,12 +358,17 @@ def test_packet_range_corruption_records_ffprobe_invocation(tmp_path, monkeypatc
     asset.write_bytes(b"0123456789abcdef")
     monkeypatch.setattr(corruption_module, "probe_file", lambda _p: _probed())
 
-    def fake_run_ffprobe(_argv, **_kwargs):
-        return subprocess.CompletedProcess(
-            args=["ffprobe"],
-            returncode=0,
+    def fake_run_ffprobe(argv, **kwargs):
+        return RecordedToolResult(
+            invocation=ToolInvocation(
+                tool="ffprobe",
+                version=kwargs["ffprobe_version"],
+                command=list(argv),
+                exit_code=0,
+                duration_ns=1,
+            ),
+            stderr_tail="",
             stdout='{"packets": [{"pos": "4", "size": "4"}]}',
-            stderr="",
         )
 
     monkeypatch.setattr(packet_probe, "_run_ffprobe_packets", fake_run_ffprobe)

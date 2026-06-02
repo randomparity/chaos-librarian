@@ -119,9 +119,10 @@ class TestSlowCopyCommit:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         resolved = resolve_timeline(scenario)
+        ctx = _engine_event_context("sc", run_id=_RUN_ID)
         entries: tuple[object, ...] = ()
         for r in resolved:
-            entries = apply_event(state, r, ids, _engine_event_context("sc", run_id=_RUN_ID))
+            entries = apply_event(state, r, ids, ctx)
         (commit_entry,) = entries
         assert isinstance(commit_entry, CommittedJournalEntry)
         assert commit_entry.phase == JournalPhase.COMMITTED
@@ -129,7 +130,7 @@ class TestSlowCopyCommit:
         loc = state.locations[state.location_id_for_asset("a0")]
         assert loc.temp_path is None
         assert loc.path == "movies-hd/Nova.mkv"
-        assert state.pending_slow_copies == {}
+        assert ctx.pending_slow_copies == {}
 
 
 class TestSlowCopyCommitAfterDeleteCrashes:
@@ -148,9 +149,10 @@ class TestSlowCopyCommitAfterDeleteCrashes:
         ids = IdAllocator(TraceRecorder())
         state = build_initial_state(scenario, ids)
         start_event, commit_event = resolve_timeline(scenario)
+        ctx = _engine_event_context("sc", run_id=_RUN_ID)
 
-        apply_event(state, start_event, ids, _engine_event_context("sc", run_id=_RUN_ID))
-        assert "copy_start_001" in state.pending_slow_copies
+        apply_event(state, start_event, ids, ctx)
+        assert "copy_start_001" in ctx.pending_slow_copies
 
         # Hand-build a delete: scenario.Scenario.model_validate would reject
         # the mixed timeline if we tried to put delete + commit in one
@@ -159,4 +161,4 @@ class TestSlowCopyCommitAfterDeleteCrashes:
         state.unbind_location("a0")
 
         with pytest.raises(KeyError):
-            apply_event(state, commit_event, ids, _engine_event_context("sc", run_id=_RUN_ID))
+            apply_event(state, commit_event, ids, ctx)

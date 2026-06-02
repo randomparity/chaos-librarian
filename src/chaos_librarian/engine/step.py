@@ -1,11 +1,12 @@
 """Step-mode advance: re-derive cursor state, apply N more events.
 
 ``step_fixture`` reads an existing plan-only fixture, verifies it has a
-parseable sentinel and matching ``run_id``, recovers world state by
-replaying ``resolve_timeline(scenario)`` against the on-disk journal
-(verifying every regenerated entry against its counterpart), and then
-applies up to ``n_steps`` more step units. The function does NOT write —
-the CLI layer calls ``append_step`` to persist the result.
+parseable sentinel and matching ``run_id``, consumes caller-prepared
+scenario bytes, recovers world state by replaying
+``resolve_timeline(scenario)`` against the on-disk journal (verifying every
+regenerated entry against its counterpart), and then applies up to
+``n_steps`` more step units. The function does NOT write — the CLI layer
+calls ``append_step`` to persist the result.
 
 The recovery loop catches hand-edited or duplicated journal lines (every
 regenerated entry must equal its on-disk counterpart) and off-step-unit-
@@ -40,7 +41,7 @@ from chaos_librarian.engine.resolution import (
 )
 from chaos_librarian.engine.state import WorldState, build_initial_state
 from chaos_librarian.errors import ChaosLibrarianError, ChaosLibrarianValueError
-from chaos_librarian.validation import prepare_run_input_from_bytes
+from chaos_librarian.validation import PreparedReplayInput
 
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
 
@@ -94,7 +95,12 @@ class StepResult:
     done: bool
 
 
-def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
+def step_fixture(
+    run_dir: Path,
+    *,
+    n_steps: int,
+    prepared_input: PreparedReplayInput,
+) -> StepResult:
     """Advance an existing plan-only fixture by up to ``n_steps`` step units.
 
     Args:
@@ -103,6 +109,8 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
         n_steps: Maximum step units to apply this call. A ``slow_copy_start``
             + ``slow_copy_commit`` adjacent pair is one step unit covering
             two raw journal entries. Must be at least 1.
+        prepared_input: Validation-prepared scenario bytes for
+            ``run_dir / "scenario.yaml"``.
 
     Returns:
         ``StepResult`` describing what was applied. The function never
@@ -121,13 +129,15 @@ def step_fixture(run_dir: Path, *, n_steps: int) -> StepResult:
     verify_sentinel(run_dir)
     scenario_bytes = (run_dir / "scenario.yaml").read_bytes()
     bundle = PlanOnlyReplayBundle.model_validate_json((run_dir / "replay.json").read_text())
+    if prepared_input.run_input.raw_bytes != scenario_bytes:
+        raise ScenarioTamperedError(
+            recorded=str(bundle.run_id),
+            recomputed="prepared-input-mismatch",
+        )
     _verify_scenario_integrity(scenario_bytes, bundle)
 
     existing_journal = _parse_journal(run_dir / "journal.jsonl")
-    run_input = prepare_run_input_from_bytes(
-        raw_bytes=scenario_bytes,
-        source_label=f"step:{run_dir}",
-    )
+    run_input = prepared_input.run_input
     scenario = run_input.scenario
     recorder = TraceRecorder()
     ids = IdAllocator(recorder)

@@ -1,4 +1,4 @@
-"""Tests for media + sidecar handlers in chaos_librarian.engine.events."""
+"""Tests for media and sidecar event handling through the engine dispatcher."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.profiles import ProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.determinism import IdAllocator, TraceRecorder
-from chaos_librarian.engine.events import _swap_extension, apply_event
+from chaos_librarian.engine.event_handlers.media import _swap_extension
+from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
 from chaos_librarian.engine.version_history import derive_version_history

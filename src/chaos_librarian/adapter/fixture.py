@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, NoReturn
+from typing import NoReturn
 
 from pydantic import BaseModel, TypeAdapter, ValidationError
 
@@ -20,7 +20,6 @@ from chaos_librarian.contract.replay_bundle import (
     compute_plan_only_run_id,
 )
 from chaos_librarian.contract.reports import (
-    REPORT_FAMILIES,
     REPORT_FAMILY_NAMES,
     AlbumReport,
     ArtistReport,
@@ -35,7 +34,6 @@ from chaos_librarian.contract.reports import (
     VariantReport,
 )
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
-from chaos_librarian.engine import build_report_set
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
@@ -108,12 +106,7 @@ def _load_fixture_checked(run_dir: Path) -> OracleFixture:
         scenario_id=scenario_id,
         journal=journal,
     )
-    reports = _load_or_derive_reports(
-        run_dir=run_dir,
-        initial_manifest=initial_manifest,
-        current_manifest=current_manifest,
-        journal=journal,
-    )
+    reports = _load_present_reports(run_dir / "reports", initial_manifest)
     return OracleFixture(
         run_dir=run_dir,
         run_id=replay_bundle.run_id,
@@ -265,36 +258,9 @@ def _serialize_journal_bytes(entries: tuple[JournalEntry, ...]) -> bytes:
     return b"".join(chunks)
 
 
-def _load_or_derive_reports(
-    *,
-    run_dir: Path,
-    initial_manifest: Manifest,
-    current_manifest: Manifest,
-    journal: tuple[JournalEntry, ...],
-) -> OracleReports:
-    reports_dir = run_dir / "reports"
-    if not reports_dir.exists():
-        return _reports_from_report_set(
-            build_report_set(initial=initial_manifest, current=current_manifest, journal=journal)
-        )
-    return _load_present_reports(reports_dir, initial_manifest)
-
-
-def _reports_from_report_set(report_set: Any) -> OracleReports:
-    maps = {
-        family.name: _required_report_map(report_set, family.name, family.id_field)
-        for family in REPORT_FAMILIES
-    }
-    return OracleReports(**maps)
-
-
-def _required_report_map(report_set: Any, name: str, id_field: str) -> dict[str, Any]:
-    if not hasattr(report_set, name):
-        raise ValueError(f"report set is missing required {name} reports")
-    return {getattr(report, id_field): report for report in getattr(report_set, name)}
-
-
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:
+    if not reports_dir.is_dir():
+        _fixture_invalid("reports directory is required", path=reports_dir)
     present_names = {path.name for path in reports_dir.iterdir() if path.is_dir()}
     expected_names = set(REPORT_FAMILY_NAMES)
     if present_names != expected_names:

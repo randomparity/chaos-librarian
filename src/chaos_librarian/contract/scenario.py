@@ -536,28 +536,25 @@ class Asset(BaseModel):
 
     @model_validator(mode="after")
     def _check_content_dedup_fields(self) -> Asset:
-        if self.same_content_as is not None and self.hash_collision_with is not None:
-            raise ValueError("same_content_as and hash_collision_with are mutually exclusive")
-        if self.hardlinked_to is not None and self.same_content_as is not None:
-            raise ValueError("hardlinked_to and same_content_as are mutually exclusive")
-        if self.hardlinked_to is not None and self.hash_collision_with is not None:
-            raise ValueError("hardlinked_to and hash_collision_with are mutually exclusive")
-        if self.symlink is not None and self.same_content_as is not None:
-            raise ValueError("symlink and same_content_as are mutually exclusive")
-        if self.symlink is not None and self.hash_collision_with is not None:
-            raise ValueError("symlink and hash_collision_with are mutually exclusive")
-        if self.symlink is not None and self.hardlinked_to is not None:
-            raise ValueError("symlink and hardlinked_to are mutually exclusive")
+        selected_fields = [
+            field_name
+            for field_name, value in (
+                ("same_content_as", self.same_content_as),
+                ("hash_collision_with", self.hash_collision_with),
+                ("hardlinked_to", self.hardlinked_to),
+                ("symlink", self.symlink),
+            )
+            if value is not None
+        ]
+        if len(selected_fields) > 1:
+            raise ValueError(f"{', '.join(selected_fields)} are mutually exclusive")
         if (self.hash_collision_with is None) != (self.collision_prefix_len is None):
             raise ValueError(
                 "collision_prefix_len must be set if and only if hash_collision_with is set"
             )
-        if self.same_content_as is not None and self.subtitles:
-            raise ValueError("same_content_as forbids declaring the asset's own subtitles")
-        if self.hardlinked_to is not None and self.subtitles:
-            raise ValueError("hardlinked_to forbids declaring the asset's own subtitles")
-        if self.symlink is not None and self.subtitles:
-            raise ValueError("symlink forbids declaring the asset's own subtitles")
+        subtitle_exclusive_links = (self.same_content_as, self.hardlinked_to, self.symlink)
+        if self.subtitles and any(value is not None for value in subtitle_exclusive_links):
+            raise ValueError("content link fields forbid declaring the asset's own subtitles")
         return self
 
 

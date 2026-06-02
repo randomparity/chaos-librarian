@@ -9,13 +9,20 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 from typer.testing import CliRunner
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian import generation as generation_mod
 from chaos_librarian.cli._envelope import E_REPLAY_DIVERGENCE
+from chaos_librarian.cli._replay_io import load_plan_only_replay_bundle, load_sentinel
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import replay as replay_cmd
-from chaos_librarian.contract import REPLAY_BUNDLE_SCHEMA_VERSION, RUN_SENTINEL_SCHEMA_VERSION
+from chaos_librarian.contract import (
+    MATERIALIZATION_SCHEMA_VERSION,
+    REPLAY_BUNDLE_SCHEMA_VERSION,
+    RUN_SENTINEL_SCHEMA_VERSION,
+)
 from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolStatus
 from chaos_librarian.contract.content_sources import (
     CacheDisposition,
@@ -32,13 +39,16 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel, RunSentinelState
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.engine import compare_run_replay, run_materializer_plan
+from chaos_librarian.engine import (
+    compare_run_replay,
+)
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import resolve_timeline
-from chaos_librarian.engine.writer import canonical_json
 from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
-from chaos_librarian.materializer.synthesis import MaterializeAssetResult
+from chaos_librarian.persistence.atomic import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
@@ -46,6 +56,17 @@ FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
 FAKE_PROVIDER = "fake-content-source"
 FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
+
+
+def test_soft_replay_loaders_return_none_for_unreadable_paths(tmp_path: Path) -> None:
+    """Auto-discovery treats unreadable optional artifacts as absent."""
+    sentinel_path = tmp_path / SENTINEL_FILENAME
+    replay_path = tmp_path / "replay.json"
+    sentinel_path.mkdir()
+    replay_path.mkdir()
+
+    assert load_sentinel(sentinel_path) is None
+    assert load_plan_only_replay_bundle(replay_path) is None
 
 
 def _make_full_fixture(tmp_path: Path, name: str = "identity-move-rename.yaml") -> Path:
@@ -67,10 +88,12 @@ def _make_wall_clock_fixture(
     if applied_events > len(resolve_timeline(run_input.scenario)):
         safe_count = 0
     artifacts = run_materializer_plan(
-        run_input=run_input,
-        validation_report=report,
-        run_id_override=RUN_ID,
-        applied_events_override=safe_count,
+        PlanExecutionRequest(
+            run_input=run_input,
+            validation_report=report,
+            run_id_override=RUN_ID,
+            applied_events_override=safe_count,
+        )
     )
     digest_entries = [
         entry.model_copy(update={"wall_clock_time": None}) for entry in artifacts.journal
@@ -136,8 +159,7 @@ def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
             materialize_webm_video=True,
         ),
     )
-    monkeypatch.setattr(replay_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "assert_capable_for_static_materialize", lambda _caps: None)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
 
@@ -295,6 +317,32 @@ class TestReplayHappyPath:
         )
 
         assert result.exit_code == 0, result.stdout + result.stderr
+
+    def test_plan_fixture_write_failure_uses_error_envelope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fixture = _make_full_fixture(tmp_path)
+        out = tmp_path / "replay"
+
+        def fail_write(*_args: object, **_kwargs: object) -> None:
+            raise OSError("target read-only")
+
+        monkeypatch.setattr(replay_cmd, "write_fixture", fail_write)
+
+        result = runner.invoke(
+            app,
+            ["replay", str(fixture / "replay.json"), "--out", str(out), "--json"],
+        )
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_REPLAY_WRITE_FAILED"
+        assert payload["details"]["operation"] == "write_fixture"
+        assert payload["details"]["path"] == str(out)
+        assert payload["details"]["exception_type"] == "OSError"
 
 
 class TestReplayIntegrityErrors:
@@ -650,7 +698,7 @@ def test_compare_run_replay_compares_materialization_content_sources(tmp_path: P
     assert [item.path for item in diff.files] == ["materialization.json"]
 
 
-def test_compare_run_replay_catches_missing_materialization_content_sources(
+def test_compare_run_replay_validates_materialization_report_contract(
     tmp_path: Path,
 ) -> None:
     left = _write_run_compare_fixture(tmp_path / "left")
@@ -659,9 +707,8 @@ def test_compare_run_replay_catches_missing_materialization_content_sources(
     _update_materialization(right, "content_sources", [])
     _delete_materialization_field(right, "content_sources")
 
-    diff = compare_run_replay(left, right)
-
-    assert [item.path for item in diff.files] == ["materialization.json"]
+    with pytest.raises(ValidationError, match="content_sources"):
+        compare_run_replay(left, right)
 
 
 def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path: Path) -> None:
@@ -669,13 +716,29 @@ def test_compare_run_replay_ignores_toolchain_and_invocation_volatility(tmp_path
         tmp_path / "left",
         platform="darwin",
         toolchain={"ffmpeg": "7.1.1", "ffprobe": "7.1.1"},
-        invocations=[{"tool": "ffmpeg", "version": "7.1.1", "command": ["a"], "exit_code": 0}],
+        invocations=[
+            {
+                "tool": "ffmpeg",
+                "version": "7.1.1",
+                "command": ["a"],
+                "exit_code": 0,
+                "duration_ns": 1,
+            }
+        ],
     )
     right = _write_run_compare_fixture(
         tmp_path / "right",
         platform="linux",
         toolchain={"ffmpeg": "8.0.0", "ffprobe": "8.0.0"},
-        invocations=[{"tool": "ffmpeg", "version": "8.0.0", "command": ["b"], "exit_code": 0}],
+        invocations=[
+            {
+                "tool": "ffmpeg",
+                "version": "8.0.0",
+                "command": ["b"],
+                "exit_code": 0,
+                "duration_ns": 2,
+            }
+        ],
     )
 
     diff = compare_run_replay(left, right)
@@ -819,6 +882,21 @@ def test_compare_run_replay_ignores_network_lag_actual_duration(
     assert diff.is_clean()
 
 
+def test_compare_run_replay_compares_network_fs_chaos_actions(tmp_path: Path) -> None:
+    left = _write_run_compare_fixture(tmp_path / "left")
+    right = _write_run_compare_fixture(tmp_path / "right")
+    _update_materialization(left, "network_fs_chaos_actions", [_network_fs_chaos_action()])
+    _update_materialization(
+        right,
+        "network_fs_chaos_actions",
+        [_network_fs_chaos_action(condition="unavailable")],
+    )
+
+    diff = compare_run_replay(left, right)
+
+    assert [item.path for item in diff.files] == ["materialization.json"]
+
+
 def test_replay_refuses_materialize_bundle(tmp_path: Path) -> None:
     """WHY: Sprint 5 ships the MaterializeReplayBundle variant for schema
     stability but does NOT implement materialize replay. The CLI must
@@ -882,6 +960,8 @@ def _write_run_compare_fixture(
     (root / "materialization.json").write_text(
         json.dumps(
             {
+                "schema_version": MATERIALIZATION_SCHEMA_VERSION,
+                "run_id": str(RUN_ID),
                 "outcome": "success",
                 "execution_mode": "run",
                 "platform": platform,
@@ -902,6 +982,8 @@ def _write_run_compare_fixture(
                         "input_content_hash": "sha256:" + "1" * 64,
                         "output_content_hash": "sha256:" + "2" * 64,
                         "corruptor": "container_header_v1",
+                        "input_size_bytes": 4096,
+                        "output_size_bytes": 4096,
                         "byte_start": 0,
                         "byte_count": 64,
                         "seed_material": "container_header_v1:7:corrupt_header_001:asset_main",
@@ -949,6 +1031,19 @@ def _network_lag_action(
         "enforced": True,
     }
     return {key: value for key, value in action.items() if value is not None}
+
+
+def _network_fs_chaos_action(*, condition: str = "eagain") -> dict[str, object]:
+    return {
+        "event_id": "acquire_001",
+        "action": "release_lock",
+        "target_ref": "asset_main",
+        "condition": condition,
+        "enforced": False,
+        "lock_type": "exclusive",
+        "related_event_id": "release_001",
+        "related_target_ref": "asset_main",
+    }
 
 
 def _write_asset_report(root: Path, *, content_hash: str) -> None:

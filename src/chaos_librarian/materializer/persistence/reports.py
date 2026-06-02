@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import uuid
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
@@ -14,113 +14,124 @@ from chaos_librarian.contract import (
     MATERIALIZATION_SCHEMA_VERSION,
     REPLAY_BUNDLE_SCHEMA_VERSION,
 )
-from chaos_librarian.contract.capabilities import Capabilities
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import (
-    CorruptionAction,
-    FilesystemAction,
     MaterializationExecutionMode,
     MaterializationFailure,
     MaterializationReport,
     MaterializedAsset,
-    MediaAction,
-    NetworkFsChaosAction,
-    NetworkLagAction,
-    OracleHashAction,
     Outcome,
     ToolchainInfo,
     ToolInvocation,
 )
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel
-from chaos_librarian.engine import PlanArtifacts
+from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.engine.reports import build_report_set
+from chaos_librarian.materializer.persistence._context import ReportActions, RunContext
 from chaos_librarian.materializer.persistence.writer import MaterializeMetadata, MaterializeReports
 
-__all__ = ["build_metadata", "build_replay_bundle", "build_report", "build_reports"]
+__all__ = [
+    "MaterializationReportRequest",
+    "ReplayBundleAssemblyRequest",
+    "ReportInputs",
+    "build_metadata",
+    "build_replay_bundle",
+    "build_report",
+    "build_reports",
+]
 
 
-def build_report(
-    *,
-    outcome: Outcome,
-    run_id: uuid.UUID,
-    caps: Capabilities,
-    started_at: datetime,
-    finished_at: datetime,
-    invocations: list[ToolInvocation],
-    materialized: list[MaterializedAsset],
-    failures: list[MaterializationFailure],
-    filesystem_actions: list[FilesystemAction] | None = None,
-    media_actions: list[MediaAction] | None = None,
-    corruption_actions: list[CorruptionAction] | None = None,
-    oracle_hash_actions: list[OracleHashAction] | None = None,
-    network_lag_actions: list[NetworkLagAction] | None = None,
-    network_fs_chaos_actions: list[NetworkFsChaosAction] | None = None,
-    requested_duration_ns: int | None = None,
-    actual_duration_ns: int | None = None,
-    speed_multiplier: str | None = None,
-    overran_duration: bool = False,
-    content_sources: list[ContentSourceEvidence],
-    execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE,
-) -> MaterializationReport:
-    return MaterializationReport(
-        schema_version=MATERIALIZATION_SCHEMA_VERSION,
-        run_id=run_id,
-        outcome=outcome,
-        platform=caps.platform,
-        started_at=started_at,
-        finished_at=finished_at,
-        toolchain=ToolchainInfo(
-            ffmpeg=caps.ffmpeg.version,
-            ffprobe=caps.ffprobe.version,
-            mkvtoolnix=caps.mkvtoolnix.version,
-        ),
-        content_sources=content_sources,
-        invocations=invocations,
-        materialized=materialized,
-        failures=failures,
-        filesystem_actions=filesystem_actions or [],
-        media_actions=media_actions or [],
-        corruption_actions=corruption_actions or [],
-        oracle_hash_actions=oracle_hash_actions or [],
-        network_lag_actions=network_lag_actions or [],
-        network_fs_chaos_actions=network_fs_chaos_actions or [],
-        requested_duration_ns=requested_duration_ns,
-        actual_duration_ns=actual_duration_ns,
-        speed_multiplier=speed_multiplier,
-        overran_duration=overran_duration,
-        execution_mode=execution_mode,
+@dataclass(frozen=True, slots=True)
+class ReportInputs:
+    """Per-finalize report payload captured after materialization work completes."""
+
+    finished_at: datetime
+    invocations: list[ToolInvocation]
+    materialized: list[MaterializedAsset]
+    actions: ReportActions | None
+    content_sources: list[ContentSourceEvidence]
+
+
+@dataclass(frozen=True, slots=True)
+class MaterializationReportRequest:
+    """Inputs required to assemble one ``MaterializationReport``."""
+
+    run_context: RunContext
+    report_inputs: ReportInputs
+    outcome: Outcome
+    failures: list[MaterializationFailure]
+    requested_duration_ns: int | None = None
+    actual_duration_ns: int | None = None
+    speed_multiplier: str | None = None
+    overran_duration: bool = False
+    execution_mode: MaterializationExecutionMode = MaterializationExecutionMode.MATERIALIZE
+
+
+@dataclass(frozen=True, slots=True)
+class ReplayBundleAssemblyRequest:
+    """Inputs required to assemble one materialize/run replay bundle."""
+
+    run_context: RunContext
+    plan_artifacts: PlanArtifacts
+    created_at: datetime
+    content_sources: list[ContentSourceEvidence]
+    execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN] = (
+        ExecutionMode.MATERIALIZE
     )
 
 
-def build_replay_bundle(
-    *,
-    run_id: uuid.UUID,
-    scenario_yaml_bytes: bytes,
-    plan_artifacts: PlanArtifacts,
-    caps: Capabilities,
-    created_at: datetime,
-    content_sources: list[ContentSourceEvidence],
-    execution_mode: Literal[ExecutionMode.MATERIALIZE, ExecutionMode.RUN] = (
-        ExecutionMode.MATERIALIZE
-    ),
-) -> MaterializeReplayBundle:
-    return MaterializeReplayBundle(
-        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
-        chaos_librarian_version=_chaos_librarian_version,
-        scenario=scenario_yaml_bytes.decode("utf-8"),
-        run_id=run_id,
-        resolved_seed=plan_artifacts.replay_bundle.resolved_seed,
-        applied_events=plan_artifacts.replay_bundle.applied_events,
-        journal_digest=plan_artifacts.replay_bundle.journal_digest,
-        execution_mode=execution_mode,
-        created_at=created_at,
+def build_report(request: MaterializationReportRequest) -> MaterializationReport:
+    report_actions = request.report_inputs.actions or ReportActions()
+    caps = request.run_context.caps
+    return MaterializationReport(
+        schema_version=MATERIALIZATION_SCHEMA_VERSION,
+        run_id=request.run_context.run_id,
+        outcome=request.outcome,
+        platform=caps.platform,
+        started_at=request.run_context.started_at,
+        finished_at=request.report_inputs.finished_at,
         toolchain=ToolchainInfo(
             ffmpeg=caps.ffmpeg.version,
             ffprobe=caps.ffprobe.version,
             mkvtoolnix=caps.mkvtoolnix.version,
         ),
-        content_sources=content_sources,
+        content_sources=request.report_inputs.content_sources,
+        invocations=request.report_inputs.invocations,
+        materialized=request.report_inputs.materialized,
+        failures=request.failures,
+        filesystem_actions=report_actions.filesystem,
+        media_actions=report_actions.media,
+        corruption_actions=report_actions.corruption,
+        oracle_hash_actions=report_actions.oracle_hash,
+        network_lag_actions=report_actions.network_lag,
+        network_fs_chaos_actions=report_actions.network_fs_chaos,
+        requested_duration_ns=request.requested_duration_ns,
+        actual_duration_ns=request.actual_duration_ns,
+        speed_multiplier=request.speed_multiplier,
+        overran_duration=request.overran_duration,
+        execution_mode=request.execution_mode,
+    )
+
+
+def build_replay_bundle(request: ReplayBundleAssemblyRequest) -> MaterializeReplayBundle:
+    caps = request.run_context.caps
+    return MaterializeReplayBundle(
+        schema_version=REPLAY_BUNDLE_SCHEMA_VERSION,
+        chaos_librarian_version=_chaos_librarian_version,
+        scenario=request.run_context.run_input.raw_bytes.decode("utf-8"),
+        run_id=request.run_context.run_id,
+        resolved_seed=request.plan_artifacts.replay_bundle.resolved_seed,
+        applied_events=request.plan_artifacts.replay_bundle.applied_events,
+        journal_digest=request.plan_artifacts.replay_bundle.journal_digest,
+        execution_mode=request.execution_mode,
+        created_at=request.created_at,
+        toolchain=ToolchainInfo(
+            ffmpeg=caps.ffmpeg.version,
+            ffprobe=caps.ffprobe.version,
+            mkvtoolnix=caps.mkvtoolnix.version,
+        ),
+        content_sources=request.content_sources,
     )
 
 

@@ -1,19 +1,17 @@
-"""Structural invariant: ``validation/rules/<rule>.py`` cannot import from
-a sibling rule module. Cross-cutting helpers must live in ``_common``.
+"""Structural invariant: semantic rule modules cannot import sibling rules.
 
-WHY: After #27 lifted the cross-rule helpers (``iter_asset_ids``,
-``iter_global_namespaces``, ``iter_assets_with_loc``, ``try_parse_duration``,
-and the ``NS_*`` namespace constants) into ``validation/rules/_common.py``,
-the rule modules depend on each other only through ``semantic.py``'s
-``_RULES`` registry — never through direct
-``from chaos_librarian.validation.rules.<other_rule> import …`` edges.
+WHY: Rule modules depend on each other only through ``semantic.py``'s
+``_RULES`` registry — never through direct ``from
+chaos_librarian.validation.rules.<family>.<other_rule> import …`` edges.
+Cross-cutting validation helpers live in the shared helper modules listed in
+``tests.validation.rule_modules.SHARED_HELPER_MODULES``.
 
-``test_rule_import_isolation.py`` proves no rule module drags
-``IssueCollector`` into the ``pipeline → semantic → rules`` chain. This
-test proves the orthogonal invariant: no rule module imports from a
-sibling rule module. Together they lock the structural goal of the #22
-split: rule files are siblings, and ``_common`` is the only intra-
-subpackage import target.
+``test_rule_import_isolation.py`` proves every rule package module imports
+cleanly from the pipeline entrypoint. This test proves the orthogonal
+invariant: no rule module imports from a sibling semantic rule module.
+Together they lock the structural goal of the #22 split: semantic rule
+families are explicit, and shared helpers are the only intra-package import
+targets across leaf rule modules.
 """
 
 from __future__ import annotations
@@ -22,8 +20,8 @@ import ast
 
 import pytest
 
+from tests.validation.rule_modules import RULE_MODULE_PATHS as _RULE_MODULE_PATHS
 from tests.validation.rule_modules import RULE_MODULES as _RULE_MODULES
-from tests.validation.rule_modules import RULES_DIR as _RULES_DIR
 
 _RULES_PACKAGE_PREFIX = "chaos_librarian.validation.rules."
 _SIBLING_PREFIXES: frozenset[str] = frozenset(
@@ -33,17 +31,19 @@ _SIBLING_PREFIXES: frozenset[str] = frozenset(
 
 @pytest.mark.parametrize("module_name", _RULE_MODULES)
 def test_rule_module_does_not_import_from_sibling(module_name: str) -> None:
-    """No ``rules/<rule>.py`` may import from another ``rules/<sibling>.py``.
+    """No rule module may import from another rule module.
 
     Catches both Python import forms:
 
-    - ``from chaos_librarian.validation.rules.<sibling> import X`` (``ast.ImportFrom``)
-    - ``import chaos_librarian.validation.rules.<sibling>`` (``ast.Import``)
+    - ``from chaos_librarian.validation.rules.<family>.<sibling> import X``
+      (``ast.ImportFrom``)
+    - ``import chaos_librarian.validation.rules.<family>.<sibling>``
+      (``ast.Import``)
 
     Aliased forms (``... as foo``) are caught too because the AST's
     ``module``/``names[*].name`` fields carry the original module path.
     """
-    source = (_RULES_DIR / f"{module_name}.py").read_text(encoding="utf-8")
+    source = _RULE_MODULE_PATHS[module_name].read_text(encoding="utf-8")
     tree = ast.parse(source, filename=f"{module_name}.py")
 
     offenders: list[tuple[int, str]] = []
@@ -58,5 +58,5 @@ def test_rule_module_does_not_import_from_sibling(module_name: str) -> None:
 
     assert not offenders, (
         f"{module_name}.py imports from sibling rule module(s) "
-        f"(cross-cutting helpers must live in _common): {offenders!r}"
+        f"(cross-cutting helpers must live in shared helper modules): {offenders!r}"
     )

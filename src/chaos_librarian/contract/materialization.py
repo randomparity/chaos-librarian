@@ -1,4 +1,4 @@
-"""Materialization report schema (v9).
+"""Materialization report schema.
 
 Carries started_at/finished_at, platform, structured ToolchainInfo,
 per-asset MaterializedAsset records, per-failure MaterializationFailure
@@ -12,9 +12,9 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Final, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.patterns import SHA256_URI_PATTERN
@@ -136,6 +136,21 @@ class MaterializationFailure(BaseModel):
     invocation_index: int | None = None
 
 
+CORRUPTION_TIMELINE_ACTIONS: Final[frozenset[TimelineActionName]] = frozenset(
+    {
+        TimelineActionName.CORRUPT_CONTAINER_HEADER,
+        TimelineActionName.TRUNCATE_FILE,
+        TimelineActionName.CORRUPT_PACKET_RANGE,
+        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
+        TimelineActionName.CORRUPT_TAGS,
+    }
+)
+
+CORRUPTION_TIMELINE_ACTION_VALUES: Final[tuple[str, ...]] = tuple(
+    action.value for action in sorted(CORRUPTION_TIMELINE_ACTIONS, key=lambda action: action.value)
+)
+
+
 class FilesystemAction(BaseModel):
     """One phase-B filesystem operation audit record.
 
@@ -189,13 +204,9 @@ class CorruptionAction(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
-    action: Literal[
-        TimelineActionName.CORRUPT_CONTAINER_HEADER,
-        TimelineActionName.TRUNCATE_FILE,
-        TimelineActionName.CORRUPT_PACKET_RANGE,
-        TimelineActionName.WRITE_INVALID_DURATION_METADATA,
-        TimelineActionName.CORRUPT_TAGS,
-    ]
+    action: TimelineActionName = Field(
+        json_schema_extra={"enum": CORRUPTION_TIMELINE_ACTION_VALUES}
+    )
     target_asset_id: str
     input_path: str
     output_path: str
@@ -216,6 +227,14 @@ class CorruptionAction(BaseModel):
     probe_outcome: CorruptionProbeOutcome
     probe_error_tail: str | None = None
     duration_ns: int
+
+    @field_validator("action")
+    @classmethod
+    def _validate_corruption_action(cls, action: TimelineActionName) -> TimelineActionName:
+        if action not in CORRUPTION_TIMELINE_ACTIONS:
+            allowed = ", ".join(CORRUPTION_TIMELINE_ACTION_VALUES)
+            raise ValueError(f"action must be a corruption timeline action: {allowed}")
+        return action
 
 
 class OracleHashAction(BaseModel):

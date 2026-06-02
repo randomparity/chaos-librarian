@@ -6,9 +6,11 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
+from chaos_librarian.cli.commands import clean as clean_cmd
 
 runner = CliRunner()
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
@@ -60,6 +62,29 @@ class TestClean:
         result = runner.invoke(app, ["clean", str(bad)])
         assert result.exit_code == 7
         assert bad.exists()
+
+    def test_delete_failure_uses_error_envelope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        fixture = _make_fixture(tmp_path)
+
+        def fail_delete(_path: Path) -> None:
+            raise OSError("permission denied")
+
+        monkeypatch.setattr(clean_cmd.shutil, "rmtree", fail_delete)
+
+        result = runner.invoke(app, ["clean", str(fixture), "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_CLEAN_FAILED"
+        assert payload["details"]["operation"] == "shutil.rmtree"
+        assert payload["details"]["path"] == str(fixture)
+        assert payload["details"]["exception_type"] == "OSError"
+        assert fixture.exists()
 
 
 class TestCleanFixtureInconsistent:
@@ -114,6 +139,19 @@ class TestCleanFixtureInconsistent:
         result = runner.invoke(app, ["clean", str(fixture)])
         assert result.exit_code == 7
         assert fixture.exists()
+
+    def test_unreadable_replay_json_refused_with_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path)
+        replay_path = fixture / "replay.json"
+        replay_path.unlink()
+        replay_path.mkdir()
+        result = runner.invoke(app, ["clean", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert fixture.exists()
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["bundle_path"].endswith("replay.json")
 
     def test_json_error_payload(self, tmp_path: Path) -> None:
         """--json failure payload distinguishes fixture_inconsistent from sentinel_invalid."""

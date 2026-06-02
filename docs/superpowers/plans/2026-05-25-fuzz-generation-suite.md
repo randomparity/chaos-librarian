@@ -522,7 +522,7 @@ In `tests/test_generation.py`, add:
 
 ```python
 from chaos_librarian.contract.profiles import FuzzLaneName, ProfileName
-from chaos_librarian.generation_lanes import lane_config_for, profiles_for_lane
+from chaos_librarian.generation.lanes import lane_config_for, profiles_for_lane
 ```
 
 Add tests:
@@ -726,7 +726,7 @@ Add this parametrized test to `tests/test_generation.py`:
 ```python
 from ruamel.yaml import YAML
 
-from chaos_librarian.generation_lanes import coverage_for_payload
+from chaos_librarian.generation.lanes import coverage_for_payload
 
 
 def _generated_payload(
@@ -784,7 +784,7 @@ from typing import Any
 
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import SidecarKind
-from chaos_librarian.generation_lanes import LaneConfig
+from chaos_librarian.generation.lanes import LaneConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -1089,7 +1089,7 @@ def _validate_generated_yaml(data: bytes) -> Scenario:
 Add imports:
 
 ```python
-from chaos_librarian.generation_lanes import coverage_for_payload
+from chaos_librarian.generation.lanes import coverage_for_payload
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
 ```
 
@@ -1681,7 +1681,7 @@ from hypothesis import HealthCheck, given, settings, strategies as st
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName
 from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.generation import generate_scenario_yaml
-from chaos_librarian.generation_lanes import coverage_for_payload, lane_config_for
+from chaos_librarian.generation.lanes import coverage_for_payload, lane_config_for
 from chaos_librarian.scenario_io import parse_scenario_bytes
 
 

@@ -5,16 +5,23 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import cast
 
 import pytest
 
 from chaos_librarian.adapter.compare import compare_fixture_to_observed
-from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
+from chaos_librarian.adapter.errors import (
+    E_ADAPTER_RUN_ID_MISMATCH,
+    E_ADAPTER_TOPOLOGY_UNSUPPORTED,
+    AdapterInputError,
+)
 from chaos_librarian.contract.divergence import CompareMode, DivergenceCode
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.manifest import (
     ManifestEpisode,
+    ManifestPodcast,
+    ManifestPodcastEpisode,
     ManifestSeason,
     ManifestSeries,
     ManifestSidecar,
@@ -132,9 +139,48 @@ def _episode_manifest(manifest):
     )
 
 
+def _podcast_manifest(manifest):
+    return manifest.model_copy(
+        update={
+            "movies": [],
+            "podcasts": [
+                ManifestPodcast(
+                    id="podcast-a",
+                    title="Synthetic Daily",
+                    layout="podcast_folder",
+                    episode_naming="date_slug",
+                )
+            ],
+            "podcast_episodes": [
+                ManifestPodcastEpisode(
+                    id="podcast-episode-a",
+                    podcast_id="podcast-a",
+                    title="Pilot",
+                    published_at=datetime(2026, 5, 22, tzinfo=UTC),
+                    slug="pilot",
+                )
+            ],
+            "variants": [
+                ManifestVariant(
+                    id="variant-a",
+                    parent_kind=ParentKind.PODCAST_EPISODE,
+                    parent_id="podcast-episode-a",
+                    label="default",
+                )
+            ],
+        }
+    )
+
+
 def _episode_fixture():
     base = _fixture()
     manifest = _episode_manifest(base.initial_manifest)
+    return replace(base, initial_manifest=manifest, current_manifest=manifest)
+
+
+def _podcast_fixture():
+    base = _fixture()
+    manifest = _podcast_manifest(base.initial_manifest)
     return replace(base, initial_manifest=manifest, current_manifest=manifest)
 
 
@@ -309,6 +355,18 @@ def test_run_id_mismatch_is_input_error_not_divergence() -> None:
     with pytest.raises(AdapterInputError) as exc_info:
         compare_fixture_to_observed(_fixture(), _observed(run_id=uuid.uuid4()))
     assert exc_info.value.error_code == E_ADAPTER_RUN_ID_MISMATCH
+
+
+def test_podcast_topology_is_deliberately_unsupported_not_track_fallthrough() -> None:
+    with pytest.raises(AdapterInputError) as exc_info:
+        compare_fixture_to_observed(_podcast_fixture(), _observed())
+
+    assert exc_info.value.error_code == E_ADAPTER_TOPOLOGY_UNSUPPORTED
+    assert exc_info.value.details == {
+        "side": "oracle",
+        "parent_kind": "podcast_episode",
+        "parent_ref": "podcast-episode-a",
+    }
 
 
 def test_path_mismatch_emits_d_path_mismatch() -> None:

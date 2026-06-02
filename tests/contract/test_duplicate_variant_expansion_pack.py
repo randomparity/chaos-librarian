@@ -12,11 +12,10 @@ from chaos_librarian.adapter.index import (
     OracleIndex,
     TopologyKey,
     format_topology_key,
-    topology_key,
+    movie_topology_key,
 )
-from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import Asset, Scenario
-from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
+from chaos_librarian.materializer.preparation.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes
 from tests.support.adapter import (
@@ -194,11 +193,8 @@ def _asset_recipe(scenario: Scenario, asset_id: str) -> tuple[object, ...]:
 
 
 def _movie_topology_key(title: str, label: str, bundle_member_count: int) -> TopologyKey:
-    key = topology_key(
-        parent_kind=ParentKind.MOVIE,
+    return movie_topology_key(
+        movie_title=title,
         variant_label=label,
         bundle_member_count=bundle_member_count,
-        movie_title=title,
     )
-    assert key is not None
-    return key

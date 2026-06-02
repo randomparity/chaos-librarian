@@ -19,21 +19,27 @@ import typer
 from chaos_librarian.cli._render import render_human
 from chaos_librarian.contract.validation import ValidationIssue
 from chaos_librarian.materializer.errors import MaterializationError
-from chaos_librarian.scenario_io import ScenarioLoadError
 from chaos_librarian.validation import ValidationReport, ValidationSeverity
 from chaos_librarian.validation.codes import E_YAML_PARSE
+from chaos_librarian.validation.scenario_io import ScenarioLoadError
 
 __all__ = [
+    "E_CLEAN_FAILED",
     "E_FIXTURE_INCONSISTENT",
+    "E_GENERATE_FAILED",
     "E_JOURNAL_CORRUPT",
     "E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED",
+    "E_PLAN_WRITE_FAILED",
     "E_REPLAY_BUNDLE_INVALID",
     "E_REPLAY_DIVERGENCE",
+    "E_REPLAY_WRITE_FAILED",
     "E_SCENARIO_TAMPERED",
     "E_SENTINEL_INVALID",
     "E_SENTINEL_IN_PROGRESS",
     "E_STEP_UNSUPPORTED_MODE",
+    "E_STEP_WRITE_FAILED",
     "emit_cli_error",
+    "emit_cli_operation_error",
     "emit_failure",
     "emit_materialize_error",
     "synthesize_yaml_parse_report",
@@ -51,6 +57,11 @@ E_JOURNAL_CORRUPT: Final = "E_JOURNAL_CORRUPT"
 E_REPLAY_BUNDLE_INVALID: Final = "E_REPLAY_BUNDLE_INVALID"
 E_REPLAY_DIVERGENCE: Final = "E_REPLAY_DIVERGENCE"
 E_FIXTURE_INCONSISTENT: Final = "E_FIXTURE_INCONSISTENT"
+E_GENERATE_FAILED: Final = "E_GENERATE_FAILED"
+E_PLAN_WRITE_FAILED: Final = "E_PLAN_WRITE_FAILED"
+E_REPLAY_WRITE_FAILED: Final = "E_REPLAY_WRITE_FAILED"
+E_STEP_WRITE_FAILED: Final = "E_STEP_WRITE_FAILED"
+E_CLEAN_FAILED: Final = "E_CLEAN_FAILED"
 E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED: Final = "E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED"
 E_STEP_UNSUPPORTED_MODE: Final = "E_STEP_UNSUPPORTED_MODE"
 
@@ -127,6 +138,33 @@ def emit_materialize_error(
         field=exc.field,
         extra_top_level=extra,
         details=dict(exc.payload) if exc.payload else None,
+    )
+
+
+def emit_cli_operation_error(
+    *,
+    error_code: str,
+    message: str,
+    json_output: bool,
+    operation: str,
+    path: Path,
+    exc: Exception,
+    extra_details: dict[str, object] | None = None,
+) -> None:
+    """Emit a CLI failure with the filesystem operation and path preserved."""
+    details: dict[str, object] = {
+        "operation": operation,
+        "path": str(path),
+        "exception_type": type(exc).__name__,
+        "error": str(exc),
+    }
+    if extra_details:
+        details.update(extra_details)
+    emit_cli_error(
+        error_code=error_code,
+        message=message,
+        json_output=json_output,
+        details=details,
     )
 
 

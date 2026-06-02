@@ -15,7 +15,7 @@ Relationship lookups go through a ``_ReportIndex`` built once per manifest
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from chaos_librarian.contract import (
@@ -204,6 +204,14 @@ def build_report_set(
     journal_list = list(journal)
     initial_index = _build_index(initial)
     current_index = _build_index(current)
+
+    def sorted_reports[Row, Report](
+        rows: Iterable[Row],
+        builder: Callable[[Row, _ReportIndex], Report],
+        key: Callable[[Report], str],
+    ) -> tuple[Report, ...]:
+        return tuple(sorted((builder(row, current_index) for row in rows), key=key))
+
     assets = tuple(
         sorted(
             (
@@ -213,93 +221,58 @@ def build_report_set(
             key=lambda a: a.asset_id,
         )
     )
-    movies = tuple(
-        sorted(
-            (_build_movie_report(movie, current_index) for movie in current_index.movies.values()),
-            key=lambda report: report.movie_id,
-        )
-    )
-    series = tuple(
-        sorted(
-            (_build_series_report(row, current_index) for row in current_index.series.values()),
-            key=lambda report: report.series_id,
-        )
-    )
-    seasons = tuple(
-        sorted(
-            (
-                _build_season_report(season, current_index)
-                for season in current_index.seasons.values()
-            ),
-            key=lambda report: report.season_id,
-        )
-    )
-    episodes = tuple(
-        sorted(
-            (
-                _build_episode_report(episode, current_index)
-                for episode in current_index.episodes.values()
-            ),
-            key=lambda report: report.episode_id,
-        )
-    )
-    artists = tuple(
-        sorted(
-            (
-                _build_artist_report(artist, current_index)
-                for artist in current_index.artists.values()
-            ),
-            key=lambda report: report.artist_id,
-        )
-    )
-    albums = tuple(
-        sorted(
-            (_build_album_report(album, current_index) for album in current_index.albums.values()),
-            key=lambda report: report.album_id,
-        )
-    )
-    discs = tuple(
-        sorted(
-            (_build_disc_report(disc, current_index) for disc in current_index.discs.values()),
-            key=lambda report: report.disc_id,
-        )
-    )
-    tracks = tuple(
-        sorted(
-            (_build_track_report(track, current_index) for track in current_index.tracks.values()),
-            key=lambda report: report.track_id,
-        )
-    )
-    variants = tuple(
-        sorted(
-            (
-                _build_variant_report(variant, current_index)
-                for variant in current_index.variants.values()
-            ),
-            key=lambda report: report.variant_id,
-        )
-    )
-    bundles = tuple(
-        sorted(
-            (
-                _build_bundle_report(bundle, current_index)
-                for bundle in current_index.bundles.values()
-            ),
-            key=lambda report: report.bundle_id,
-        )
-    )
     return ReportSet(
         assets=assets,
-        movies=movies,
-        series=series,
-        seasons=seasons,
-        episodes=episodes,
-        artists=artists,
-        albums=albums,
-        discs=discs,
-        tracks=tracks,
-        variants=variants,
-        bundles=bundles,
+        movies=sorted_reports(
+            current_index.movies.values(),
+            _build_movie_report,
+            lambda report: report.movie_id,
+        ),
+        series=sorted_reports(
+            current_index.series.values(),
+            _build_series_report,
+            lambda report: report.series_id,
+        ),
+        seasons=sorted_reports(
+            current_index.seasons.values(),
+            _build_season_report,
+            lambda report: report.season_id,
+        ),
+        episodes=sorted_reports(
+            current_index.episodes.values(),
+            _build_episode_report,
+            lambda report: report.episode_id,
+        ),
+        artists=sorted_reports(
+            current_index.artists.values(),
+            _build_artist_report,
+            lambda report: report.artist_id,
+        ),
+        albums=sorted_reports(
+            current_index.albums.values(),
+            _build_album_report,
+            lambda report: report.album_id,
+        ),
+        discs=sorted_reports(
+            current_index.discs.values(),
+            _build_disc_report,
+            lambda report: report.disc_id,
+        ),
+        tracks=sorted_reports(
+            current_index.tracks.values(),
+            _build_track_report,
+            lambda report: report.track_id,
+        ),
+        variants=sorted_reports(
+            current_index.variants.values(),
+            _build_variant_report,
+            lambda report: report.variant_id,
+        ),
+        bundles=sorted_reports(
+            current_index.bundles.values(),
+            _build_bundle_report,
+            lambda report: report.bundle_id,
+        ),
     )
 
 

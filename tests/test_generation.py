@@ -9,7 +9,7 @@ from typing import cast
 import pytest
 from ruamel.yaml import YAML
 
-from chaos_librarian import generation_planner
+from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import (
     CANONICAL_FUZZ_LANES,
     FUZZ_LANES_BY_PROFILE,
@@ -17,31 +17,36 @@ from chaos_librarian.contract.profiles import (
     FuzzProfileName,
     ProfileName,
 )
-from chaos_librarian.contract.scenario import EmbedSubtitleEvent, ExtractSubtitleEvent, Scenario
+from chaos_librarian.contract.scenario import (
+    EmbedSubtitleEvent,
+    ExtractSubtitleEvent,
+    Scenario,
+    TimelineActionName,
+)
 from chaos_librarian.engine import run_plan
 from chaos_librarian.generation import (
-    BatchItem,
     GeneratedScenarioCoverageError,
     GeneratedScenarioValidationError,
+    GenerationBatchItem,
     generate_scenario,
     generate_scenario_yaml,
     plan_generation_batch,
     scenario_id_for,
     write_generated_scenario,
 )
-from chaos_librarian.generation_lanes import coverage_for_payload
-from chaos_librarian.generation_planner import lane_config_for
-from chaos_librarian.materializer.preflight import preflight_asset, preflight_timeline
-from chaos_librarian.scenario_io import parse_scenario_bytes
+from chaos_librarian.generation import planner as generation_planner
+from chaos_librarian.generation.lanes import coverage_for_payload
+from chaos_librarian.generation.planner import lane_config_for
+from chaos_librarian.materializer.preparation.preflight import preflight_asset, preflight_timeline
 from chaos_librarian.topology import iter_asset_contexts
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
-from chaos_librarian.validation.rules.profile_opt_in import REQUIRED_PROFILES_BY_ACTION
+from chaos_librarian.validation.scenario_io import parse_scenario_bytes
 
 VALID_SEED_MANIFEST_GATES = frozenset({"validate", "plan", "replay", "materialize", "run"})
 
 
-def _parse_generated(data: bytes) -> Scenario:
-    raw, _ = parse_scenario_bytes(data, source=Path("<generated>"))
+def _parse_generated(yaml_bytes: bytes) -> Scenario:
+    raw, _ = parse_scenario_bytes(yaml_bytes, source=Path("<generated>"))
     return Scenario.model_validate(raw)
 
 
@@ -51,8 +56,8 @@ def _generated_payload(
     seed: int,
 ) -> dict[str, object]:
     yaml = YAML(typ="safe")
-    data = generate_scenario_yaml(profile=profile, lane=lane, seed=seed)
-    payload = yaml.load(data.decode())
+    yaml_bytes = generate_scenario_yaml(profile=profile, lane=lane, seed=seed)
+    payload = yaml.load(yaml_bytes.decode())
     assert isinstance(payload, dict)
     return payload
 
@@ -107,25 +112,25 @@ def test_lane_configs_cover_allowed_lane_contract() -> None:
 
 
 def test_lane_profiles_cover_every_profile_gated_action_they_emit() -> None:
-    """WHY: validation owns action->required-profile; generation must not drift.
+    """WHY: the contract owns action->required-profile; generation must not drift.
 
     Every profile-gated action a lane emits (its action coverage cells) must
-    have its required profile declared, derived from validation's single source
-    of truth. If validation gates an action a lane already covers, this fails
+    have its required profile declared, derived from the contract's single source
+    of truth. If the contract gates an action a lane already covers, this fails
     until the lane's derived profiles pick it up.
     """
     for (profile, lane), config in generation_planner.LANE_CONFIGS.items():
-        declared = {p.value for p in config.profiles}
+        declared = set(config.profiles)
         for cell in config.required_cells:
             action = cell.removeprefix("action:")
             if cell == action:
                 continue
-            required = REQUIRED_PROFILES_BY_ACTION.get(action)
+            required = REQUIRED_PROFILES_BY_ACTION.get(TimelineActionName(action))
             if required is None:
                 continue
             assert required in declared, (
                 f"{profile.value}/{lane.value} emits gated action {action!r} "
-                f"but does not declare required profile {required!r}"
+                f"but does not declare required profile {required.value!r}"
             )
 
 
@@ -144,7 +149,7 @@ def test_lane_required_event_builder_satisfies_required_action_cells() -> None:
             assets=generation_planner._planned_assets(config=config),
         )
         config.required_events(planner)
-        emitted = {str(event["action"]) for event in planner.events}
+        emitted = {event.action.value for event in planner.events}
         required_actions = {
             cell.removeprefix("action:")
             for cell in config.required_cells
@@ -314,12 +319,12 @@ def test_music_topology_reencode_targets_materializable_audio_asset() -> None:
 
 
 def test_tv_topology_move_episode_crosses_season_folders() -> None:
-    data = generate_scenario_yaml(
+    yaml_bytes = generate_scenario_yaml(
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.TV_TOPOLOGY,
         seed=463,
     )
-    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
     validation_report = run_validation(run_input)
     assert validation_report.ok
     artifacts = run_plan(run_input=run_input, validation_report=validation_report)
@@ -400,12 +405,12 @@ def test_sidecar_subtitle_lane_embeds_before_extracting() -> None:
 
 def test_sidecar_subtitle_lane_updates_final_manifest_sidecars() -> None:
     """WHY: materialize update_sidecar resolves sidecar metadata from final manifest rows."""
-    data = generate_scenario_yaml(
+    yaml_bytes = generate_scenario_yaml(
         profile=FuzzProfileName.FUZZ_REGRESSION,
         lane=FuzzLaneName.SIDECAR_SUBTITLE,
         seed=458,
     )
-    run_input = prepare_run_input_from_bytes(raw_bytes=data, source_label="<generated>")
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
     validation_report = run_validation(run_input)
     assert validation_report.ok
     artifacts = run_plan(run_input=run_input, validation_report=validation_report)
@@ -574,9 +579,9 @@ def test_scenario_id_for_matches_generated_scenario_id() -> None:
         seed=456,
     )
     assert generated.scenario.scenario_id == scenario_id_for(
-        FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.CORE_FS, 456
+        FuzzProfileName.FUZZ_REGRESSION, 456, FuzzLaneName.CORE_FS
     )
-    assert scenario_id_for(FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE, 7) == (
+    assert scenario_id_for(FuzzProfileName.FUZZ_SMOKE, 7, FuzzLaneName.SMOKE) == (
         "fuzz-smoke-smoke-seed-7"
     )
 
@@ -584,14 +589,14 @@ def test_scenario_id_for_matches_generated_scenario_id() -> None:
 def test_plan_batch_fixed_lane_increments_seed() -> None:
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=FuzzLaneName.CORE_FS,
         seed=99,
         count=3,
+        lane=FuzzLaneName.CORE_FS,
     )
     assert items == (
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=100),
-        BatchItem(lane=FuzzLaneName.CORE_FS, seed=101),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=99),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=100),
+        GenerationBatchItem(lane=FuzzLaneName.CORE_FS, seed=101),
     )
 
 
@@ -600,9 +605,9 @@ def test_plan_batch_cycles_lanes_when_lane_is_none() -> None:
     n = len(order)
     items = plan_generation_batch(
         profile=FuzzProfileName.FUZZ_REGRESSION,
-        lane=None,
         seed=42,
         count=n + 2,
+        lane=None,
     )
     assert len(items) == n + 2
     assert [it.lane for it in items[:n]] == list(order)
@@ -612,20 +617,26 @@ def test_plan_batch_cycles_lanes_when_lane_is_none() -> None:
 
 
 def test_plan_batch_smoke_uses_smoke_lane() -> None:
-    items = plan_generation_batch(profile=FuzzProfileName.FUZZ_SMOKE, lane=None, seed=5, count=4)
+    items = plan_generation_batch(profile=FuzzProfileName.FUZZ_SMOKE, seed=5, count=4)
     assert all(it.lane == FuzzLaneName.SMOKE for it in items)
     assert [it.seed for it in items] == [5, 6, 7, 8]
 
 
 def test_plan_batch_count_one_returns_single_item() -> None:
     items = plan_generation_batch(
-        profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=1
+        profile=FuzzProfileName.FUZZ_SMOKE,
+        seed=1,
+        count=1,
+        lane=FuzzLaneName.SMOKE,
     )
-    assert items == (BatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
+    assert items == (GenerationBatchItem(lane=FuzzLaneName.SMOKE, seed=1),)
 
 
 def test_plan_batch_rejects_non_positive_count() -> None:
     with pytest.raises(ValueError, match="count must be >= 1"):
         plan_generation_batch(
-            profile=FuzzProfileName.FUZZ_SMOKE, lane=FuzzLaneName.SMOKE, seed=1, count=0
+            profile=FuzzProfileName.FUZZ_SMOKE,
+            seed=1,
+            count=0,
+            lane=FuzzLaneName.SMOKE,
         )

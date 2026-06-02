@@ -2,23 +2,22 @@
 
 from __future__ import annotations
 
+from chaos_librarian.contract.materialization import CORRUPTION_TIMELINE_ACTIONS
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer.actions import (
-    _CORRUPTION_ACTIONS,
-    _FILESYSTEM_ARTIFACT_ACTIONS,
-    _HIERARCHY_ACTIONS,
-    _MEDIA_ACTIONS,
-    _ORACLE_HASH_ACTIONS,
-    _STDLIB_ACTIONS,
-    PODCAST_ACTIONS,
-    SUPPORTED_S6_ACTIONS,
-    SUPPORTED_S7_ACTIONS,
-    SUPPORTED_S10_ACTIONS,
-)
 from chaos_librarian.materializer.phase_b.filesystem import supports_filesystem_action
+from chaos_librarian.materializer.preparation.actions import (
+    BASE_FILESYSTEM_ACTIONS,
+    FILESYSTEM_ARTIFACT_ACTIONS,
+    HIERARCHY_PHASE_B_ACTIONS,
+    MATERIALIZE_SUPPORTED_ACTIONS,
+    MEDIA_PHASE_B_ACTIONS,
+    ORACLE_HASH_PHASE_B_ACTIONS,
+    PODCAST_ACTIONS,
+    STDLIB_PHASE_B_ACTIONS,
+)
 
 
-def test_supported_s6_actions_match_sprint_6_materializer_surface() -> None:
+def test_base_filesystem_actions_match_materializer_file_surface() -> None:
     assert (
         frozenset(
             {
@@ -33,11 +32,11 @@ def test_supported_s6_actions_match_sprint_6_materializer_surface() -> None:
                 TimelineActionName.MOVE_BETWEEN_ROOTS,
             }
         )
-        == SUPPORTED_S6_ACTIONS
+        == BASE_FILESYSTEM_ACTIONS
     )
 
 
-def test_supported_s7_actions_partition_stdlib_and_media_actions() -> None:
+def test_core_phase_b_actions_partition_stdlib_and_media_handlers() -> None:
     assert (
         frozenset(
             {
@@ -51,15 +50,15 @@ def test_supported_s7_actions_partition_stdlib_and_media_actions() -> None:
                 TimelineActionName.CREATE_SIDECAR,
             }
         )
-        == _MEDIA_ACTIONS
+        == MEDIA_PHASE_B_ACTIONS
     )
-    assert (SUPPORTED_S6_ACTIONS - {TimelineActionName.CREATE_SIDECAR}) | frozenset(
+    assert (BASE_FILESYSTEM_ACTIONS - {TimelineActionName.CREATE_SIDECAR}) | frozenset(
         {TimelineActionName.REMOVE_SIDECAR}
-    ) == _STDLIB_ACTIONS
-    assert SUPPORTED_S7_ACTIONS == _STDLIB_ACTIONS | _MEDIA_ACTIONS
+    ) == STDLIB_PHASE_B_ACTIONS
+    assert STDLIB_PHASE_B_ACTIONS | MEDIA_PHASE_B_ACTIONS <= MATERIALIZE_SUPPORTED_ACTIONS
 
 
-def test_supported_s10_actions_includes_corruption_actions() -> None:
+def test_materialize_supported_actions_include_corruption_actions() -> None:
     assert (
         frozenset(
             {
@@ -70,22 +69,22 @@ def test_supported_s10_actions_includes_corruption_actions() -> None:
                 TimelineActionName.CORRUPT_TAGS,
             }
         )
-        == _CORRUPTION_ACTIONS
+        == CORRUPTION_TIMELINE_ACTIONS
     )
-    assert frozenset({TimelineActionName.TOUCH_MTIME}) == _FILESYSTEM_ARTIFACT_ACTIONS
-    assert frozenset({TimelineActionName.WRONG_ORACLE_HASH}) == _ORACLE_HASH_ACTIONS
-    assert SUPPORTED_S10_ACTIONS == (
-        _STDLIB_ACTIONS
-        | _MEDIA_ACTIONS
-        | _CORRUPTION_ACTIONS
-        | _ORACLE_HASH_ACTIONS
-        | _FILESYSTEM_ARTIFACT_ACTIONS
-        | _HIERARCHY_ACTIONS
+    assert frozenset({TimelineActionName.TOUCH_MTIME}) == FILESYSTEM_ARTIFACT_ACTIONS
+    assert frozenset({TimelineActionName.WRONG_ORACLE_HASH}) == ORACLE_HASH_PHASE_B_ACTIONS
+    assert MATERIALIZE_SUPPORTED_ACTIONS == (
+        STDLIB_PHASE_B_ACTIONS
+        | MEDIA_PHASE_B_ACTIONS
+        | CORRUPTION_TIMELINE_ACTIONS
+        | ORACLE_HASH_PHASE_B_ACTIONS
+        | FILESYSTEM_ARTIFACT_ACTIONS
+        | HIERARCHY_PHASE_B_ACTIONS
         | PODCAST_ACTIONS
     )
 
 
-def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
+def test_materialize_supported_actions_include_hierarchy_filesystem_actions() -> None:
     expected = frozenset(
         {
             TimelineActionName.RENUMBER_EPISODE,
@@ -99,13 +98,13 @@ def test_supported_s10_actions_include_hierarchy_filesystem_actions() -> None:
             TimelineActionName.REPUBLISH_EPISODE,
         }
     )
-    assert expected == _HIERARCHY_ACTIONS
-    assert expected <= SUPPORTED_S10_ACTIONS
-    assert all(supports_filesystem_action(action) for action in _HIERARCHY_ACTIONS)
+    assert expected == HIERARCHY_PHASE_B_ACTIONS
+    assert expected <= MATERIALIZE_SUPPORTED_ACTIONS
+    assert all(supports_filesystem_action(action) for action in HIERARCHY_PHASE_B_ACTIONS)
 
 
 def test_mark_episode_stale_is_supported_without_filesystem_effect() -> None:
     assert frozenset({TimelineActionName.MARK_EPISODE_STALE}) == PODCAST_ACTIONS
-    assert TimelineActionName.MARK_EPISODE_STALE in SUPPORTED_S10_ACTIONS
+    assert TimelineActionName.MARK_EPISODE_STALE in MATERIALIZE_SUPPORTED_ACTIONS
     # No on-disk change: the file lingers, so there is no filesystem handler.
     assert not supports_filesystem_action(TimelineActionName.MARK_EPISODE_STALE)

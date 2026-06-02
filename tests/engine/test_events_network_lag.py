@@ -32,7 +32,7 @@ def _scenario_state():
     return scenario, build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
 
-def _apply_rename_source(state) -> None:
+def _apply_rename_source(state, ctx) -> None:
     event = RenameFileEvent(
         id="rename_001",
         at="10s",
@@ -43,7 +43,7 @@ def _apply_rename_source(state) -> None:
         state=state,
         resolved=ResolvedEvent(at_ns=10_000_000_000, declared_index=0, event=event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
@@ -60,13 +60,14 @@ def _lag_start() -> NetworkLagStartEvent:
 
 def test_network_lag_start_emits_started_entry_with_path_timing_evidence() -> None:
     _scenario, state = _scenario_state()
-    _apply_rename_source(state)
+    ctx = _engine_event_context()
+    _apply_rename_source(state, ctx)
 
     entries = apply_event(
         state=state,
         resolved=ResolvedEvent(at_ns=10_000_000_000, declared_index=1, event=_lag_start()),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
     assert len(entries) == 1
@@ -90,12 +91,13 @@ def test_network_lag_start_emits_started_entry_with_path_timing_evidence() -> No
 
 def test_network_lag_commit_emits_committed_entry_with_matching_evidence() -> None:
     _scenario, state = _scenario_state()
-    _apply_rename_source(state)
+    ctx = _engine_event_context()
+    _apply_rename_source(state, ctx)
     apply_event(
         state=state,
         resolved=ResolvedEvent(at_ns=10_000_000_000, declared_index=1, event=_lag_start()),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
     commit = NetworkLagCommitEvent(
         id="lag_commit_001",
@@ -107,7 +109,7 @@ def test_network_lag_commit_emits_committed_entry_with_matching_evidence() -> No
         state=state,
         resolved=ResolvedEvent(at_ns=12_000_000_000, declared_index=2, event=commit),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
     assert len(entries) == 1
@@ -124,7 +126,8 @@ def test_network_lag_commit_emits_committed_entry_with_matching_evidence() -> No
 
 def test_network_lag_start_requires_after_event_to_be_previous_event() -> None:
     _scenario, state = _scenario_state()
-    _apply_rename_source(state)
+    ctx = _engine_event_context()
+    _apply_rename_source(state, ctx)
     apply_event(
         state=state,
         resolved=ResolvedEvent(
@@ -138,7 +141,7 @@ def test_network_lag_start_requires_after_event_to_be_previous_event() -> None:
             ),
         ),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
     with pytest.raises(ChaosLibrarianValueError, match="must immediately follow"):
@@ -146,5 +149,5 @@ def test_network_lag_start_requires_after_event_to_be_previous_event() -> None:
             state=state,
             resolved=ResolvedEvent(at_ns=12_000_000_000, declared_index=2, event=_lag_start()),
             ids=IdAllocator(TraceRecorder()),
-            ctx=_engine_event_context(),
+            ctx=ctx,
         )

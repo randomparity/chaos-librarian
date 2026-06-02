@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from chaos_librarian.materializer.scheduler import (
+from chaos_librarian.materializer.runtime.scheduler import (
     SpeedParseError,
     due_event_count,
     logical_now_ns,

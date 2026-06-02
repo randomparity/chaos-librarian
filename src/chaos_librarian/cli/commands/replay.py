@@ -13,8 +13,13 @@ from chaos_librarian.cli._envelope import (
     E_MATERIALIZE_REPLAY_NOT_IMPLEMENTED,
     E_REPLAY_BUNDLE_INVALID,
     E_REPLAY_DIVERGENCE,
+    E_REPLAY_WRITE_FAILED,
     emit_cli_error,
-    emit_materialize_error,
+    emit_cli_operation_error,
+)
+from chaos_librarian.cli._materialization_errors import (
+    exit_materialization_error,
+    replay_command_report_dir,
 )
 from chaos_librarian.cli._render import validate_new_out_path
 from chaos_librarian.cli._replay_io import REPLAY_BUNDLE_ADAPTER, infer_original
@@ -29,18 +34,10 @@ from chaos_librarian.engine import (
     write_fixture,
 )
 from chaos_librarian.materializer.errors import (
-    CapabilityGateError,
-    ContainmentViolationError,
-    CorruptionActionError,
-    FilesystemActionError,
-    MediaActionError,
-    ProbeParseError,
-    ScenarioValidationError,
-    TimelineUnsupportedError,
-    ToolFailedError,
-    UnsupportedMaterializationError,
+    MaterializationError,
 )
 from chaos_librarian.materializer.replay import replay_run_bundle
+from chaos_librarian.validation import prepare_replay_input_from_bytes
 
 
 @app.command()
@@ -78,7 +75,11 @@ def replay(
         return
     parsed_bundle = parsed_any
     try:
-        artifacts = replay_plan_bundle(parsed_bundle)
+        prepared_input = prepare_replay_input_from_bytes(
+            scenario_bytes=parsed_bundle.scenario.encode("utf-8"),
+            source_label=f"replay:{parsed_bundle.run_id}",
+        )
+        artifacts = replay_plan_bundle(parsed_bundle, prepared_input)
     except ReplayIntegrityError as exc:
         emit_cli_error(
             error_code=E_REPLAY_DIVERGENCE,
@@ -88,7 +89,18 @@ def replay(
         )
         raise typer.Exit(code=6) from exc
 
-    write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
+    try:
+        write_fixture(out, artifacts, parsed_bundle.scenario.encode("utf-8"))
+    except OSError as exc:
+        emit_cli_operation_error(
+            error_code=E_REPLAY_WRITE_FAILED,
+            message=f"replay failed to write fixture {out}: {exc}",
+            json_output=json_output,
+            operation="write_fixture",
+            path=out,
+            exc=exc,
+        )
+        raise typer.Exit(code=1) from exc
 
     target = against or infer_original(bundle, parsed_bundle.run_id, parsed_bundle.applied_events)
     if target is not None:
@@ -137,26 +149,12 @@ def _replay_materialize_bundle(
             details={"kind": "integrity", "recorded_run_id": str(bundle.run_id)},
         )
         raise typer.Exit(code=6) from exc
-    except CapabilityGateError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=4) from exc
-    except ScenarioValidationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=3) from exc
-    except (
-        TimelineUnsupportedError,
-        UnsupportedMaterializationError,
-        ToolFailedError,
-        ProbeParseError,
-        FilesystemActionError,
-        MediaActionError,
-        CorruptionActionError,
-    ) as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=out)
-        raise typer.Exit(code=5) from exc
-    except ContainmentViolationError as exc:
-        emit_materialize_error(exc, json_output=json_output, run_dir=None)
-        raise typer.Exit(code=7) from exc
+    except MaterializationError as exc:
+        exit_materialization_error(
+            exc,
+            json_output=json_output,
+            run_dir=replay_command_report_dir(exc, out),
+        )
     if against is not None:
         diff = compare_run_replay(against, out)
         if not diff.is_clean():

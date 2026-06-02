@@ -13,11 +13,10 @@ from chaos_librarian.contract.journal import AtomicJournalEntry, JournalPhase
 from chaos_librarian.contract.manifest import ProbedMedia
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.materializer.errors import CorruptionActionError
+from chaos_librarian.materializer.hash_policy import collided_hash_for, false_hash_for
 from chaos_librarian.materializer.phase_b.oracle_hash import (
     OracleHashPhaseBContext,
     apply_wrong_oracle_hash,
-    collided_hash_for,
-    false_hash_for,
 )
 
 _SHA256_URI = re.compile(r"^sha256:[0-9a-f]{64}$")

@@ -20,7 +20,7 @@ from chaos_librarian.contract.manifest import (
     ManifestVariant,
 )
 from chaos_librarian.contract.scenario import SidecarKind
-from chaos_librarian.materializer.manifest_build import find_sidecar_for
+from chaos_librarian.materializer.content.manifest_build import find_sidecar_for
 
 
 def _manifest_with_sidecars(*sidecars: ManifestSidecar) -> Manifest:

@@ -9,7 +9,6 @@ from __future__ import annotations
 import platform
 import re
 import shutil
-import subprocess
 from typing import Final
 
 from packaging.version import InvalidVersion, Version
@@ -20,8 +19,11 @@ from chaos_librarian.contract.capabilities import (
     ReadyFor,
     ToolStatus,
 )
-from chaos_librarian.materializer.content_sources import collect_content_source_capabilities
+from chaos_librarian.materializer.content.source_capabilities import (
+    collect_content_source_capabilities,
+)
 from chaos_librarian.materializer.errors import CapabilityGateError
+from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 
 MIN_VERSIONS: Final[dict[str, Version]] = {
     "ffmpeg": Version("7.0"),
@@ -39,6 +41,11 @@ _REGEX_TO_MIN_KEY: Final[dict[str, str]] = {
     "ffmpeg": "ffmpeg",
     "ffprobe": "ffprobe",
     "mkvmerge": "mkvtoolnix",
+}
+_VERSION_ARGS: Final[dict[str, tuple[str, ...]]] = {
+    "ffmpeg": ("-version",),
+    "ffprobe": ("-version",),
+    "mkvmerge": ("--version",),
 }
 
 # Indirection so tests can monkeypatch shutil.which at the module boundary.
@@ -67,17 +74,10 @@ def _probe_one(name: str, *, regex_key: str) -> ToolStatus:
     path = shutil_which(name)
     if path is None:
         return ToolStatus(found=False, version=None, path=None, meets_minimum=False)
-    try:
-        result = subprocess.run(
-            [path, "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
+    stdout = _capability_stdout([path, *_VERSION_ARGS[regex_key]], tool=name)
+    if stdout is None:
         return ToolStatus(found=True, version=None, path=path, meets_minimum=False)
-    first_line = (result.stdout or "").splitlines()[0] if result.stdout else ""
+    first_line = stdout.splitlines()[0] if stdout else ""
     pattern = _VERSION_RE[regex_key]
     match = pattern.match(first_line)
     if not match:
@@ -99,40 +99,30 @@ def _ffmpeg_encoder_available(ffmpeg: ToolStatus, encoder: str) -> bool:
     """Return whether the minimum-passing FFmpeg binary advertises ``encoder``."""
     if not ffmpeg.meets_minimum or ffmpeg.path is None:
         return False
-    try:
-        result = subprocess.run(
-            [ffmpeg.path, "-hide_banner", "-encoders"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    if result.returncode != 0:
+    stdout = _capability_stdout(
+        [ffmpeg.path, "-hide_banner", "-encoders"],
+        tool="ffmpeg",
+        version=ffmpeg.version or "",
+    )
+    if stdout is None:
         return False
     pattern = re.compile(rf"(^|\s){re.escape(encoder)}(\s|$)")
-    return pattern.search(result.stdout or "") is not None
+    return pattern.search(stdout) is not None
 
 
 def _ffmpeg_filter_available(ffmpeg: ToolStatus, filter_name: str) -> bool:
     """Return whether the minimum-passing FFmpeg binary advertises ``filter_name``."""
     if not ffmpeg.meets_minimum or ffmpeg.path is None:
         return False
-    try:
-        result = subprocess.run(
-            [ffmpeg.path, "-hide_banner", "-filters"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    if result.returncode != 0:
+    stdout = _capability_stdout(
+        [ffmpeg.path, "-hide_banner", "-filters"],
+        tool="ffmpeg",
+        version=ffmpeg.version or "",
+    )
+    if stdout is None:
         return False
     pattern = re.compile(rf"(^|\s){re.escape(filter_name)}(\s|$)")
-    return pattern.search(result.stdout or "") is not None
+    return pattern.search(stdout) is not None
 
 
 def _ffmpeg_encoder_supports_pixel_format(
@@ -144,20 +134,29 @@ def _ffmpeg_encoder_supports_pixel_format(
     """Return whether FFmpeg encoder help advertises ``pixel_format``."""
     if not ffmpeg.meets_minimum or ffmpeg.path is None:
         return False
-    try:
-        result = subprocess.run(
-            [ffmpeg.path, "-hide_banner", "-h", f"encoder={encoder}"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (subprocess.TimeoutExpired, OSError):
-        return False
-    if result.returncode != 0:
+    stdout = _capability_stdout(
+        [ffmpeg.path, "-hide_banner", "-h", f"encoder={encoder}"],
+        tool="ffmpeg",
+        version=ffmpeg.version or "",
+    )
+    if stdout is None:
         return False
     pattern = re.compile(rf"(^|\s){re.escape(pixel_format)}(\s|$)")
-    return pattern.search(result.stdout or "") is not None
+    return pattern.search(stdout) is not None
+
+
+def _capability_stdout(argv: list[str], *, tool: str, version: str = "") -> str | None:
+    result = run_recorded_tool(
+        argv,
+        tool=tool,
+        version=version,
+        timeout_s=5.0,
+        stdout_mode="pipe",
+        text=True,
+    )
+    if result.failure_kind is not None or result.invocation.exit_code != 0:
+        return None
+    return result.stdout_text()
 
 
 def _ffmpeg_hdr_signaling_available(

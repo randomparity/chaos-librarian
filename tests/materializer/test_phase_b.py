@@ -26,18 +26,18 @@ from chaos_librarian.contract.materialization import (
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import Scenario, SidecarKind, TimelineActionName
 from chaos_librarian.errors import ChaosLibrarianValueError
-from chaos_librarian.materializer import phase_b
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MediaActionError,
 )
-from chaos_librarian.materializer.phase_b.corruption import CorruptionPhaseBContext
+from chaos_librarian.materializer.phase_b import dispatch as phase_b
+from chaos_librarian.materializer.phase_b.corruption.handler import CorruptionPhaseBContext
 from chaos_librarian.materializer.phase_b.filesystem import (
     FilesystemPhaseBContext,
     _slow_copy_commit,
 )
-from chaos_librarian.materializer.phase_b.media import MediaPhaseBContext
+from chaos_librarian.materializer.phase_b.media.handler import MediaPhaseBContext
 from chaos_librarian.materializer.phase_b.oracle_hash import OracleHashPhaseBContext
 
 RUN_ID = uuid.UUID("11111111-1111-4111-8111-111111111111")
@@ -272,14 +272,16 @@ def test_make_phase_b_state_oracle_lookup_uses_current_phase_b_probe_order(
         ],
     )
     state = phase_b.make_phase_b_state(
-        library_root=tmp_path,
-        scenario=_scenario(),
-        resolved_seed=7,
-        ffmpeg_version="ffmpeg-test",
-        ffprobe_version="ffprobe-test",
-        invocations=[],
-        manifest=manifest,
-        initial_manifest=manifest,
+        phase_b.PhaseBStateInputs(
+            library_root=tmp_path,
+            scenario=_scenario(),
+            resolved_seed=7,
+            ffmpeg_version="ffmpeg-test",
+            ffprobe_version="ffprobe-test",
+            invocations=[],
+            manifest=manifest,
+            initial_manifest=manifest,
+        )
     )
     state.media_ctx.post_phase_b_versions["version_media"] = (HASH_A, media_probe)
     state.corruption_ctx.post_phase_b_versions["version_media"] = (HASH_B, corruption_probe)

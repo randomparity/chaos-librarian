@@ -2,13 +2,13 @@
 
 ``same_content_as`` / ``hash_collision_with`` / ``hardlinked_to`` correctness
 depends on the validator's declaration-order check
-(``validation.rules._common.iter_asset_contexts``, a raw-dict walk) and the
-materializer's actual copy/link/stamp order (``topology.iter_asset_contexts``, a
-model walk) yielding assets in the *same* order. They are independent
-implementations; this test fails loudly if a future reorder of either walker
-diverges, rather than silently corrupting a duplicate, collision, or hardlink
-scenario at materialize time (the ``hardlinked_to`` referent must already exist on
-disk for ``os.link`` to resolve).
+(``validation.rules.hierarchy.walkers.iter_asset_contexts``, a raw-dict walk)
+and the materializer's actual copy/link/stamp order
+(``topology.iter_asset_contexts``, a model walk) yielding assets in the *same*
+order. They are independent implementations; this test fails loudly if a future
+reorder of either walker diverges, rather than silently corrupting a duplicate,
+collision, or hardlink scenario at materialize time (the ``hardlinked_to``
+referent must already exist on disk for ``os.link`` to resolve).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.topology import iter_asset_contexts as topology_iter_asset_contexts
-from chaos_librarian.validation.rules._common import (
+from chaos_librarian.validation.rules.hierarchy.walkers import (
     iter_asset_contexts as validation_iter_asset_contexts,
 )
 

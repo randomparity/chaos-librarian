@@ -39,16 +39,17 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.engine import run_plan
 from chaos_librarian.engine.plan import PlanArtifacts
-from chaos_librarian.materializer import synthesis as synthesis_mod
-from chaos_librarian.materializer.errors import (
-    SymlinkTargetMissingError,
-    UnsupportedMaterializationError,
-)
-from chaos_librarian.materializer.synthesis import (
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
+from chaos_librarian.materializer.content.synthesis import (
     MaterializeAssetResult,
+    PhaseAInputs,
     PhaseAResult,
     materialize_assets_phase_a,
     materialize_one_asset,
+)
+from chaos_librarian.materializer.errors import (
+    SymlinkTargetMissingError,
+    UnsupportedMaterializationError,
 )
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -151,11 +152,13 @@ timeline: []
     monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
 
     expected_assets = ["a_hd_main", "a_1080_main", "a_sd_main"]
@@ -223,11 +226,13 @@ timeline: []
     monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
 
     assert [item.location_path for item in phase_a.materialized_assets] == [
@@ -798,11 +803,13 @@ timeline: []
     )
 
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path / "run",
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path / "run",
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
 
     assert len(phase_a.invocations) == 3
@@ -1159,11 +1166,13 @@ def test_same_content_as_copies_referent_bytes(
     monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
 
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
 
     by_id = {m.asset_id: m for m in phase_a.materialized_assets}
@@ -1247,11 +1256,13 @@ def _run_phase_a(
     monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
     monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
     by_id = {m.asset_id: m for m in phase_a.materialized_assets}
     return phase_a, by_id, artifacts
@@ -1420,11 +1431,13 @@ def test_hardlinked_to_unset_skips_os_link(
     monkeypatch.setattr(synthesis_mod.os, "link", _fail_link)
     # _SAME_CONTENT_SCENARIO sets same_content_as but no hardlinked_to → no os.link.
     materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
 
 
@@ -1548,11 +1561,13 @@ def test_symlink_to_asset_resolves_after_tree_relocation(
     monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _file_writing_fake)
     monkeypatch.setattr(synthesis_mod, "probe_file", _probe_real_file)
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=out_dir,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=out_dir,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
     by_id = {m.asset_id: m for m in phase_a.materialized_assets}
     link_rel = by_id["a_link"].location_path
@@ -1583,11 +1598,13 @@ def test_symlink_to_run_dir_path_materializes_escaping_link(
     target.write_bytes(b"escaping-target-bytes")
 
     phase_a = materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )
     by_id = {m.asset_id: m for m in phase_a.materialized_assets}
     link_file = tmp_path / by_id["a_link"].location_path
@@ -1613,11 +1630,13 @@ def test_symlink_missing_target_fails_loud(
     # target file intentionally NOT created → fail loud, not silent / unhandled
     with pytest.raises(SymlinkTargetMissingError) as exc_info:
         materialize_assets_phase_a(
-            scenario=run_input.scenario,
-            out_dir=tmp_path,
-            artifacts=artifacts,
-            caps=_caps(),
-            stamp_manifest=True,
+            PhaseAInputs(
+                scenario=run_input.scenario,
+                out_dir=tmp_path,
+                artifacts=artifacts,
+                caps=_caps(),
+                stamp_manifest=True,
+            )
         )
     assert exc_info.value.error_code == "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
 
@@ -1706,9 +1725,11 @@ def test_symlink_unset_skips_os_symlink(
 
     monkeypatch.setattr(synthesis_mod.os, "symlink", _fail_symlink)
     materialize_assets_phase_a(
-        scenario=run_input.scenario,
-        out_dir=tmp_path,
-        artifacts=artifacts,
-        caps=_caps(),
-        stamp_manifest=True,
+        PhaseAInputs(
+            scenario=run_input.scenario,
+            out_dir=tmp_path,
+            artifacts=artifacts,
+            caps=_caps(),
+            stamp_manifest=True,
+        )
     )

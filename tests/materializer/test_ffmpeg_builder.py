@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Literal, cast
 
@@ -22,11 +23,13 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
+from chaos_librarian.materializer.tooling import _subprocess as tool_subprocess
 from chaos_librarian.materializer.tooling.ffmpeg import (
     BITEXACT_FLAGS,
     build_command,
     build_resolution_switch_concat_command,
     build_resolution_switch_segment_command,
+    run_ffmpeg,
 )
 from chaos_librarian.materializer.tooling.recipes import (
     FFmpegInput,
@@ -77,6 +80,37 @@ def _audio(
 
 def _arg_value(argv: list[str], flag: str) -> str:
     return argv[argv.index(flag) + 1]
+
+
+def test_run_ffmpeg_returns_failed_invocation_for_launch_oserror(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise OSError("ffmpeg missing")
+
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
+
+    invocation, stderr_tail = run_ffmpeg(["ffmpeg", "-version"], ffmpeg_version="unknown")
+
+    assert invocation.tool == "ffmpeg"
+    assert invocation.exit_code != 0
+    assert "ffmpeg launch failed" in stderr_tail
+    assert "ffmpeg missing" in stderr_tail
+
+
+def test_run_ffmpeg_returns_failed_invocation_for_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[bytes]:
+        raise subprocess.TimeoutExpired(cmd=["ffmpeg"], timeout=1.0, stderr=b"partial")
+
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
+
+    invocation, stderr_tail = run_ffmpeg(["ffmpeg", "-version"], ffmpeg_version="unknown")
+
+    assert invocation.exit_code != 0
+    assert "ffmpeg timeout after 60.0s" in stderr_tail
+    assert "partial" in stderr_tail
 
 
 @pytest.mark.parametrize("container", ["mkv", "mp4"])

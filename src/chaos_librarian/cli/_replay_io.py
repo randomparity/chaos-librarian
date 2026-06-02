@@ -20,7 +20,7 @@ from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
 __all__ = [
     "REPLAY_BUNDLE_ADAPTER",
     "infer_original",
-    "load_replay_bundle",
+    "load_plan_only_replay_bundle",
     "load_sentinel",
 ]
 
@@ -41,7 +41,7 @@ def infer_original(bundle_path: Path, run_id: uuid.UUID, applied_events: int) ->
     sentinel = load_sentinel(parent / SENTINEL_FILENAME)
     if sentinel is None or sentinel.run_id != run_id:
         return None
-    parent_bundle = load_replay_bundle(parent / "replay.json")
+    parent_bundle = load_plan_only_replay_bundle(parent / "replay.json")
     if parent_bundle is None or parent_bundle.applied_events != applied_events:
         return None
     return parent
@@ -53,15 +53,15 @@ def load_sentinel(path: Path) -> RunSentinel | None:
         return None
     try:
         return RunSentinel.model_validate_json(path.read_text())
-    except ValidationError:
+    except (OSError, ValidationError):
         return None
 
 
-def load_replay_bundle(path: Path) -> PlanOnlyReplayBundle | None:
+def load_plan_only_replay_bundle(path: Path) -> PlanOnlyReplayBundle | None:
     """Parse a plan-only replay bundle, returning ``None`` when absent or malformed."""
     if not path.exists():
         return None
     try:
         return PlanOnlyReplayBundle.model_validate_json(path.read_text())
-    except ValidationError:
+    except (OSError, ValidationError):
         return None

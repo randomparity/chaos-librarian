@@ -35,12 +35,14 @@ def _scenario_state():
     return scenario, build_initial_state(scenario, IdAllocator(TraceRecorder()))
 
 
-def _apply(state, event, at_ns: int, declared_index: int):
+def _apply(state, event, at_ns: int, declared_index: int, ctx=None):
+    if ctx is None:
+        ctx = _engine_event_context()
     return apply_event(
         state=state,
         resolved=ResolvedEvent(at_ns=at_ns, declared_index=declared_index, event=event),
         ids=IdAllocator(TraceRecorder()),
-        ctx=_engine_event_context(),
+        ctx=ctx,
     )
 
 
@@ -104,44 +106,46 @@ def test_change_permissions_subtree_path_target_has_no_asset_id() -> None:
 
 def test_acquire_release_lock_lifecycle() -> None:
     _scenario, state = _scenario_state()
+    ctx = _engine_event_context()
     acquire = AcquireLockEvent(
         id="acq_1", at="1s", target="asset_hd_main", lock_type=LockType.EXCLUSIVE
     )
 
-    (open_entry,) = _apply(state, acquire, 1_000_000_000, 0)
+    (open_entry,) = _apply(state, acquire, 1_000_000_000, 0, ctx)
 
     assert isinstance(open_entry, StartedJournalEntry)
     assert open_entry.action == TimelineActionName.ACQUIRE_LOCK
     assert open_entry.state_delta["lock_type"] == "exclusive"
-    assert "acq_1" in state.pending_locks
+    assert "acq_1" in ctx.pending_locks
 
     release = ReleaseLockEvent.model_validate(
         {"id": "rel_1", "at": "2s", "action": "release_lock", "for": "acq_1"}
     )
-    (close_entry,) = _apply(state, release, 2_000_000_000, 1)
+    (close_entry,) = _apply(state, release, 2_000_000_000, 1, ctx)
 
     assert isinstance(close_entry, CommittedJournalEntry)
     assert close_entry.action == TimelineActionName.RELEASE_LOCK
     assert close_entry.related_event_id == "acq_1"
     assert close_entry.target_ids == ["asset_hd_main"]
-    assert "acq_1" not in state.pending_locks
+    assert "acq_1" not in ctx.pending_locks
 
 
 def test_unmount_remount_lifecycle() -> None:
     _scenario, state = _scenario_state()
+    ctx = _engine_event_context()
     unmount = UnmountPathEvent(id="um_1", at="1s", target="asset_hd_main")
 
-    (open_entry,) = _apply(state, unmount, 1_000_000_000, 0)
+    (open_entry,) = _apply(state, unmount, 1_000_000_000, 0, ctx)
 
     assert isinstance(open_entry, StartedJournalEntry)
     assert open_entry.state_delta["condition"] == "unavailable"
-    assert "um_1" in state.pending_unmounts
+    assert "um_1" in ctx.pending_unmounts
 
     remount = RemountPathEvent.model_validate(
         {"id": "rm_1", "at": "2s", "action": "remount_path", "for": "um_1"}
     )
-    (close_entry,) = _apply(state, remount, 2_000_000_000, 1)
+    (close_entry,) = _apply(state, remount, 2_000_000_000, 1, ctx)
 
     assert isinstance(close_entry, CommittedJournalEntry)
     assert close_entry.related_event_id == "um_1"
-    assert "um_1" not in state.pending_unmounts
+    assert "um_1" not in ctx.pending_unmounts

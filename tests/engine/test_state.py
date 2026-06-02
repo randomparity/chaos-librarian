@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
@@ -516,6 +520,32 @@ def test_world_state_root_path_for_returns_declared_path() -> None:
 
     assert state.root_path_for("movies-hd") == "library/movies-hd"
     assert state.root_path_for("staging") == "library/staging"
+
+
+def test_world_state_renderable_context_uses_defaults_and_shared_tail() -> None:
+    source = inspect.getsource(WorldState.renderable_context_for_asset)
+    tree = ast.parse(textwrap.dedent(source))
+    calls = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "RenderableAssetContext"
+    ]
+    assert len(calls) == 4
+    for call in calls:
+        explicit_none_fields = [
+            keyword.arg
+            for keyword in call.keywords
+            if isinstance(keyword.value, ast.Constant) and keyword.value.value is None
+        ]
+        assert explicit_none_fields == []
+        assert any(
+            keyword.arg is None
+            and isinstance(keyword.value, ast.Name)
+            and keyword.value.id == "base_fields"
+            for keyword in call.keywords
+        )
 
 
 def test_world_state_archive_path_for_default_root() -> None:

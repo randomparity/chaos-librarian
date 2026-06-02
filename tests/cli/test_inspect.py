@@ -13,9 +13,9 @@ from chaos_librarian.cli.app import app
 from chaos_librarian.contract.materialization import ToolchainInfo
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
 from chaos_librarian.contract.run_sentinel import RunSentinel, RunSentinelState
-from chaos_librarian.engine import run_materializer_plan
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
-from chaos_librarian.engine.writer import canonical_json
+from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
+from chaos_librarian.persistence.atomic import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
 
 runner = CliRunner()
@@ -61,6 +61,36 @@ class TestInspect:
         (fixture / ".chaos-librarian-run").unlink()
         result = runner.invoke(app, ["inspect", str(fixture)])
         assert result.exit_code == 7
+
+    def test_malformed_replay_json_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "replay.json").write_text("{not json\n", encoding="utf-8")
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 1
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_REPLAY_BUNDLE_INVALID"
+        assert payload["bundle_path"].endswith("replay.json")
+
+    def test_malformed_manifest_current_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "manifest.current.json").write_text("{not json\n", encoding="utf-8")
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["manifest_path"].endswith("manifest.current.json")
+
+    def test_missing_journal_emits_envelope(self, tmp_path: Path) -> None:
+        fixture = _make_fixture(tmp_path, steps=None)
+        (fixture / "journal.jsonl").unlink()
+        result = runner.invoke(app, ["inspect", str(fixture), "--json"])
+        assert result.exit_code == 7
+        assert "Traceback" not in result.stderr
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_FIXTURE_INCONSISTENT"
+        assert payload["journal_path"].endswith("journal.jsonl")
 
     def test_inspect_reports_complete_state(self, tmp_path: Path) -> None:
         """WHY: every plan-only run-dir reports state=complete; agents read
@@ -136,10 +166,12 @@ class TestInspect:
         run_input = prepare_run_input(FIXTURE_DIR / "identity-move-rename.yaml")
         report = run_validation(run_input)
         live_artifacts = run_materializer_plan(
-            run_input=run_input,
-            validation_report=report,
-            run_id_override=bundle.run_id,
-            applied_events_override=2,
+            PlanExecutionRequest(
+                run_input=run_input,
+                validation_report=report,
+                run_id_override=bundle.run_id,
+                applied_events_override=2,
+            )
         )
         run_bundle = MaterializeReplayBundle(
             schema_version=bundle.schema_version,

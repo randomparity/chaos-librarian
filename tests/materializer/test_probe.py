@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from chaos_librarian.materializer.errors import ProbeParseError
-from chaos_librarian.materializer.tooling import probe as probe_mod
+from chaos_librarian.materializer.tooling import _subprocess as tool_subprocess
 from chaos_librarian.materializer.tooling.probe import probe_file
 
 _GOOD_PROBE = json.dumps(
@@ -52,7 +52,7 @@ def _patch_run(
             args=["ffprobe"], returncode=returncode, stdout=stdout, stderr=""
         )
 
-    monkeypatch.setattr(probe_mod.subprocess, "run", stub)
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", stub)
 
 
 def test_probe_file_parses_video_and_audio_streams(
@@ -175,6 +175,22 @@ def test_probe_file_raises_on_non_zero_exit(
         probe_file(tmp_path / "broken.mkv")
 
 
+def test_probe_file_wraps_launch_oserror(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def fail_run(*_args: object, **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise OSError("ffprobe missing")
+
+    monkeypatch.setattr(tool_subprocess.subprocess, "run", fail_run)
+
+    with pytest.raises(ProbeParseError) as exc_info:
+        probe_file(tmp_path / "broken.mkv")
+
+    assert "ffprobe launch failed" in str(exc_info.value)
+    assert exc_info.value.payload["path"] == str(tmp_path / "broken.mkv")
+    stderr = exc_info.value.payload["stderr"]
+    assert isinstance(stderr, str)
+    assert "ffprobe missing" in stderr
+
+
 def test_probe_file_raises_on_unparseable_json(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -183,15 +199,27 @@ def test_probe_file_raises_on_unparseable_json(
         probe_file(tmp_path / "broken.mkv")
 
 
-def test_probe_file_ignores_subtitle_streams(
+def test_probe_file_parses_embedded_subtitle_streams(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Sprint 5 explicitly does NOT add subtitle streams to
-    asset.probed.streams[] — sidecar SRTs are separate files and
-    embedded subtitles arrive in Sprint 7. If a future ffprobe reports
-    one in a Sprint 5 fixture, we drop it silently here."""
+    """WHY: embedded subtitle streams must be visible in asset.probed so
+    observed-state comparisons can catch language/default/forced drift."""
     probe = json.loads(_GOOD_PROBE)
-    probe["streams"].append({"codec_type": "subtitle", "codec_name": "srt"})
+    probe["streams"].append(
+        {
+            "codec_type": "subtitle",
+            "codec_name": "subrip",
+            "tags": {"language": "eng", "title": "English SDH"},
+            "disposition": {"default": 1, "forced": 0},
+        }
+    )
     _patch_run(monkeypatch, json.dumps(probe))
+
     media = probe_file(tmp_path / "fake.mkv")
-    assert all(s.kind != "subtitle" for s in media.streams)
+
+    subtitle = next(s for s in media.streams if s.kind == "subtitle")
+    assert subtitle.codec == "subrip"
+    assert subtitle.language == "eng"
+    assert subtitle.title == "English SDH"
+    assert subtitle.default is True
+    assert subtitle.forced is False

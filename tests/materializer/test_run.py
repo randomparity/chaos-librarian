@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import chaos_librarian.materializer.preparation.run_setup as prep_mod
 from chaos_librarian.contract import CAPABILITIES_SCHEMA_VERSION
 from chaos_librarian.contract.capabilities import (
     Capabilities,
@@ -24,11 +25,11 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import run as run_mod
-from chaos_librarian.materializer import synthesis as synthesis_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
     FilesystemActionError,
+    MaterializationWriteError,
     ScenarioValidationError,
     ToolFailedError,
 )
@@ -114,7 +115,7 @@ timeline: []
 def _patch_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
     """All Layer 3 tests assume capabilities pass; only behavior we care
     about is the orchestrator's own logic."""
-    monkeypatch.setattr(run_mod, "detect_capabilities", _capabilities)
+    monkeypatch.setattr(prep_mod, "detect_capabilities", _capabilities)
 
 
 def _capabilities(
@@ -184,7 +185,7 @@ def test_materialize_refuses_audio_noise_when_capability_missing(
     tmp_path: Path,
 ) -> None:
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_audio_recipes=False),
     )
@@ -203,6 +204,19 @@ def test_materialize_refuses_audio_noise_when_capability_missing(
     assert exc.value.field == "ready_for.materialize_audio_recipes"
     assert exc.value.asset_id == "asset_noise"
     assert not out.exists()
+
+
+def test_materialize_existing_out_dir_raises_write_error(tmp_path: Path) -> None:
+    out = tmp_path / "run-001"
+    out.mkdir()
+
+    with pytest.raises(MaterializationWriteError) as exc_info:
+        materialize_scenario(FIXTURE_DIR / "static-library.yaml", out)
+
+    err = exc_info.value
+    assert err.operation == "begin_materialize_run"
+    assert err.path == out
+    assert err.payload["exception_type"] == "FileExistsError"
 
 
 @pytest.mark.parametrize(
@@ -231,7 +245,7 @@ def test_materialize_refuses_muxing_profile_capability_regressions(
     asset_id: str,
 ) -> None:
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(**{capability_kwarg: False}),
     )
@@ -421,7 +435,7 @@ def test_orchestrator_refuses_hevc_when_encoder_capability_missing(
     """WHY: HEVC scenarios require libx265. The refusal must happen before
     run-dir allocation so callers do not get a half-created fixture."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_hevc_video=False),
     )
@@ -440,7 +454,7 @@ def test_orchestrator_refuses_hdr_when_capability_missing(
     """WHY: HDR scenarios require libx265 10-bit + setparams. The refusal
     must happen before run-dir allocation."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_hevc_video=True, materialize_hdr_video=False),
     )
@@ -465,7 +479,7 @@ def test_orchestrator_refuses_resolution_switch_when_capability_missing(
     """WHY: sd_to_hd MPEG-TS requires libx264 support. The refusal must
     happen before run-dir allocation so callers do not get partial files."""
     monkeypatch.setattr(
-        run_mod,
+        prep_mod,
         "detect_capabilities",
         lambda: _capabilities(materialize_resolution_switch_video=False),
     )

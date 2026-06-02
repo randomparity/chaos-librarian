@@ -6,9 +6,11 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
 from typer.testing import CliRunner
 
 from chaos_librarian.cli.app import app
+from chaos_librarian.cli.commands import step as step_cmd
 from chaos_librarian.contract.materialization import ToolchainInfo
 from chaos_librarian.contract.replay_bundle import (
     ExecutionMode,
@@ -86,6 +88,28 @@ class TestStepHappyPath:
         assert payload["steps_applied"] == 1
         assert payload["done"] is False
         assert "run_id" in payload
+
+    def test_publish_failure_uses_error_envelope(
+        self,
+        tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        paused = _make_paused(tmp_path)
+
+        def fail_append(*_args: object, **_kwargs: object) -> None:
+            raise OSError("journal locked")
+
+        monkeypatch.setattr(step_cmd, "append_step", fail_append)
+
+        result = runner.invoke(app, ["step", str(paused), "--next", "1", "--json"])
+
+        assert result.exit_code == 1
+        assert result.stdout == ""
+        payload = json.loads(result.stderr)
+        assert payload["error_code"] == "E_STEP_WRITE_FAILED"
+        assert payload["details"]["operation"] == "append_step"
+        assert payload["details"]["path"] == str(paused)
+        assert payload["details"]["exception_type"] == "OSError"
 
 
 class TestStepErrors:

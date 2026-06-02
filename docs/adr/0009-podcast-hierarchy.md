@@ -15,9 +15,10 @@ season/episode number; and a podcast has a chaos mode the other types lack — a
 lingers in the library.
 
 The established pattern (`scenario.py`, `topology.py`, `path_rendering.py`,
-`validation/rules/_common.py`) models each work-type as a **parallel top-level
-tuple** (`movies` / `series` / `artists`), each a nested hierarchy ending in
-`variants → bundle → assets`, with a per-asset `ParentKind`
+`validation/rules/hierarchy_walkers.py`, and
+`validation/rules/hierarchy_projection.py`) models each work-type as a
+**parallel top-level tuple** (`movies` / `series` / `artists`), each a nested
+hierarchy ending in `variants → bundle → assets`, with a per-asset `ParentKind`
 (`movie` / `episode` / `track`) threaded through the renderer, engine state,
 manifest variants, and the validation projection. Per-axis timeline actions
 (`renumber_episode`, `move_*`, `swap_*`) are gated into

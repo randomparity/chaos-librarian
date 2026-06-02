@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ast
+import inspect
+import textwrap
 import uuid
 
 from chaos_librarian.contract import MANIFEST_SCHEMA_VERSION
@@ -285,6 +288,37 @@ class TestBuildReportSet:
         assert len(rs.assets) == 1
         assert rs.assets[0].history == []
         assert rs.assets[0].current == rs.assets[0].initial
+
+    def test_non_asset_report_categories_use_sorted_report_helper(self) -> None:
+        source = inspect.getsource(build_report_set)
+        tree = ast.parse(textwrap.dedent(source))
+        helper_names = {node.name for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)}
+        assert "sorted_reports" in helper_names
+        report_set_call = next(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ReportSet"
+        )
+        report_arguments = {keyword.arg: keyword.value for keyword in report_set_call.keywords}
+        assert isinstance(report_arguments["assets"], ast.Name)
+        for report_name in (
+            "movies",
+            "series",
+            "seasons",
+            "episodes",
+            "artists",
+            "albums",
+            "discs",
+            "tracks",
+            "variants",
+            "bundles",
+        ):
+            argument = report_arguments[report_name]
+            assert isinstance(argument, ast.Call)
+            assert isinstance(argument.func, ast.Name)
+            assert argument.func.id == "sorted_reports"
 
     def test_asset_report_includes_initial_topology(self) -> None:
         m = _manifest_with_one_asset()

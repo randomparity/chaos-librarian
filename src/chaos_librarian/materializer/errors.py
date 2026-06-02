@@ -3,10 +3,12 @@
 Every concrete subclass carries an ``error_code`` class attribute matching
 the spec's error model. The CLI handler dispatches on subclass identity
 and reads ``error_code`` / ``asset_id`` / ``field`` / ``payload`` into the
-stdout JSON.
+shared stderr error envelope.
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from chaos_librarian.contract.content_sources import ContentSourceEvidence
 from chaos_librarian.contract.materialization import ToolInvocation
@@ -41,13 +43,13 @@ class MaterializationError(ChaosLibrarianError):
 
 
 class TimelineUnsupportedError(MaterializationError):
-    """Scenario has a non-empty timeline."""
+    """Timeline contains an action unsupported by the current materializer mode."""
 
     error_code: str = "E_MATERIALIZE_TIMELINE_UNSUPPORTED"
 
 
 class UnsupportedMaterializationError(MaterializationError):
-    """Container/codec/resolution/channels combination outside the supported matrix."""
+    """Scenario selects media, sidecar, source, or muxing settings outside support."""
 
     error_code: str = "E_MATERIALIZE_UNSUPPORTED"
 
@@ -63,8 +65,40 @@ class SymlinkTargetMissingError(MaterializationError):
     error_code: str = "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
 
 
+class MaterializationWriteError(MaterializationError):
+    """A lifecycle mkdir, metadata write, publish, or cleanup operation failed."""
+
+    error_code: str = "E_MATERIALIZE_WRITE_FAILED"
+
+    def __init__(
+        self,
+        *,
+        operation: str,
+        path: Path,
+        cause: OSError,
+    ) -> None:
+        super().__init__(
+            f"{operation} failed for {path}: {cause}",
+            payload={
+                "operation": operation,
+                "path": str(path),
+                "errno": cause.errno,
+                "exception_type": type(cause).__name__,
+                "error": str(cause),
+            },
+        )
+        self.operation = operation
+        self.path = path
+        self.cause = cause
+
+
 class ToolFailedError(MaterializationError):
-    """ffmpeg subprocess exited non-zero."""
+    """An audited synthesis/finalization tool invocation failed.
+
+    Static materialization raises this for ffmpeg or mkvmerge failures, including
+    non-zero exits, launch failures, and timeouts reported through the captured
+    ``ToolInvocation``.
+    """
 
     error_code: str = "E_MATERIALIZE_TOOL_FAILED"
 
@@ -197,13 +231,17 @@ class CorruptionActionError(MaterializationError):
 
 
 class ContainmentViolationError(MaterializationError):
-    """A scenario path resolved outside ``<run-dir>/library/``."""
+    """Validation or materialization resolved a path outside ``<run-dir>/library/``."""
 
     error_code: str = "E_PATH_CONTAINMENT"
 
 
 class CapabilityGateError(MaterializationError):
-    """ffmpeg or ffprobe missing or below minimum at materialize startup."""
+    """Required toolchain capability is missing for the selected materializer work.
+
+    The static and wall-clock gates always require ffmpeg and ffprobe; selected
+    media options can also require mkvmerge or codec/filter support.
+    """
 
     error_code: str = "E_MATERIALIZE_CAPABILITY_GATE"
 

@@ -368,6 +368,7 @@ def _variant_parent_refs_by_kind(state: ObservedState) -> dict[ParentKind, set[s
         ParentKind.MOVIE: {movie.observed_ref for movie in state.movies},
         ParentKind.EPISODE: {episode.observed_ref for episode in state.episodes},
         ParentKind.TRACK: {track.observed_ref for track in state.tracks},
+        ParentKind.PODCAST_EPISODE: set(),
     }
 
 

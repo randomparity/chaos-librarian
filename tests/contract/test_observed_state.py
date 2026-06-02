@@ -513,6 +513,26 @@ def test_observed_state_rejects_variant_parent_ref_with_wrong_kind() -> None:
     _assert_invalid(payload)
 
 
+def test_observed_state_rejects_podcast_variant_until_podcast_rows_exist() -> None:
+    payload = _topology_payload()
+    payload["variants"] = [
+        {
+            "observed_ref": "variant-1",
+            "parent_kind": "podcast_episode",
+            "parent_ref": "podcast-episode-1",
+            "label": "default",
+        }
+    ]
+
+    with pytest.raises(ValidationError) as exc_info:
+        ObservedState.model_validate(payload)
+
+    assert any(
+        "invalid variant parent_ref: podcast-episode-1" in error["msg"]
+        for error in exc_info.value.errors()
+    )
+
+
 def test_observed_state_rejects_bundle_variant_contradiction() -> None:
     payload = _topology_payload()
     _first_asset(payload)["variant_ref"] = "variant-2"

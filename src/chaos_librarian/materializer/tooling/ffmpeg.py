@@ -11,8 +11,6 @@ stdin.
 
 from __future__ import annotations
 
-import subprocess
-import time
 from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Final
@@ -30,7 +28,7 @@ from chaos_librarian.contract.scenario import (
     VideoTrack,
 )
 from chaos_librarian.materializer.errors import UnsupportedMaterializationError
-from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
+from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
     AUDIO_ENCODER_BY_CODEC,
@@ -551,23 +549,12 @@ def run_ffmpeg(
 
     ``stderr_tail`` is the last 2 KB of stderr decoded UTF-8 lossy.
     """
-    start = time.monotonic_ns()
-    completed = subprocess.run(
+    result = run_recorded_tool(
         argv,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        timeout=timeout_s,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    duration_ns = time.monotonic_ns() - start
-    stderr_bytes = completed.stderr or b""
-    stderr_tail = stderr_bytes[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
-    invocation = ToolInvocation(
         tool="ffmpeg",
         version=ffmpeg_version,
-        command=list(argv),
-        exit_code=completed.returncode,
-        duration_ns=duration_ns,
+        timeout_s=timeout_s,
+        stdout_mode="devnull",
+        text=False,
     )
-    return invocation, stderr_tail
+    return result.invocation, result.stderr_tail

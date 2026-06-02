@@ -23,7 +23,7 @@ from chaos_librarian.validation.codes import E_FIELD_SHAPE, PYDANTIC_TO_CODE
 
 if TYPE_CHECKING:
     from chaos_librarian.validation.input import RunInput
-    from chaos_librarian.validation.pipeline import IssueCollector
+    from chaos_librarian.validation.reporting import IssueCollector
 
 __all__ = ["run_shape_pass"]
 

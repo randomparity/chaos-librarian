@@ -39,8 +39,112 @@ jobs:
         run: uv run ty check src tests
 
       - name: Pytest
-        run: uv run pytest
+        run: uv run pytest --ignore-glob="tests/integration/*_real.py"
 
       - name: Verify exported JSON Schemas are up-to-date
         run: |
           uv run python -m chaos_librarian.schema_export --check
+
+  real-tool-integration:
+    runs-on: ubuntu-latest
+    container: ubuntu:26.04
+    steps:
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            software-properties-common
+          add-apt-repository -y universe
+          apt-get update
+          apt-get install -y --no-install-recommends \
+            ffmpeg \
+            mkvtoolnix
+
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b  # v8.1.0
+        with:
+          version: "0.11.14"
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.13
+
+      - name: Install dependencies
+        run: uv sync --all-extras --dev
+
+      - name: Verify real-tool capabilities
+        run: |
+          uv run chaos-librarian capabilities --json
+          uv run python - <<'PY'
+          from chaos_librarian.materializer.tooling.capabilities import detect_capabilities
+
+          caps = detect_capabilities()
+          required = {
+              "ffmpeg >= 7.0": caps.ffmpeg.meets_minimum,
+              "ffprobe >= 7.0": caps.ffprobe.meets_minimum,
+              "mkvmerge >= 80": caps.mkvtoolnix.meets_minimum,
+              "ready_for.materialize_static": caps.ready_for.materialize_static,
+              "ready_for.materialize_media_mutations": (
+                  caps.ready_for.materialize_media_mutations
+              ),
+              "ready_for.materialize_hevc_video": caps.ready_for.materialize_hevc_video,
+              "ready_for.materialize_hdr_video": caps.ready_for.materialize_hdr_video,
+              "ready_for.materialize_resolution_switch_video": (
+                  caps.ready_for.materialize_resolution_switch_video
+              ),
+              "ready_for.materialize_audio_recipes": (
+                  caps.ready_for.materialize_audio_recipes
+              ),
+              "ready_for.materialize_matroska_muxing_profiles": (
+                  caps.ready_for.materialize_matroska_muxing_profiles
+              ),
+              "ready_for.materialize_webm_video": caps.ready_for.materialize_webm_video,
+          }
+          missing = [name for name, available in required.items() if not available]
+          if missing:
+              raise SystemExit(
+                  "Real-tool CI runner is missing required capabilities: "
+                  + ", ".join(missing)
+              )
+          PY
+
+      - name: Run real-tool integration tests
+        run: |
+          mkdir -p test-results
+          uv run pytest tests/integration/*_real.py \
+            -q \
+            --no-cov \
+            -ra \
+            --junitxml=test-results/real-tools.xml
+
+      - name: Fail if real-tool tests skipped
+        run: |
+          uv run python - <<'PY'
+          from pathlib import Path
+          from xml.etree import ElementTree
+
+          report_path = Path("test-results/real-tools.xml")
+          root = ElementTree.parse(report_path).getroot()
+          skipped = []
+          for case in root.iter("testcase"):
+              skip = case.find("skipped")
+              if skip is None:
+                  continue
+              class_name = case.attrib.get("classname", "<unknown class>")
+              test_name = case.attrib.get("name", "<unknown test>")
+              message = skip.attrib.get("message", "no skip reason")
+              skipped.append(f"{class_name}.{test_name}: {message}")
+
+          if skipped:
+              print("Real-tool tests skipped on an equipped CI runner:")
+              for item in skipped:
+                  print(f"- {item}")
+              raise SystemExit(f"{len(skipped)} real-tool test(s) skipped")
+          PY

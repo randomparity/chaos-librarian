@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from chaos_librarian.contract.scenario import SidecarKind
-from chaos_librarian.materializer.phase_b.sidecar_bytes import (
+from chaos_librarian.contract.scenario import PosterImageFormat, SidecarMediaType
+from chaos_librarian.materializer.phase_b.media.sidecar_bytes import (
     cue_payload,
     encode_subtitle_body,
     perturbed_seed_for_update,
     poster_ffmpeg_argv,
-    regenerate_sidecar,
+    regenerate_cue_sidecar_bytes,
+    regenerate_nfo_sidecar_bytes,
+    regenerate_subtitle_sidecar_bytes,
     render_nfo,
 )
 
@@ -35,8 +37,7 @@ def test_encode_subtitle_iso_8859_1():
 
 
 def test_regenerate_subtitle_applies_encoding():
-    bytes_, _ = regenerate_sidecar(
-        kind=SidecarKind.SUBTITLE,
+    bytes_ = regenerate_subtitle_sidecar_bytes(
         language="eng",
         sidecar_id="sidecar_0001",
         resolved_seed=42,
@@ -50,41 +51,31 @@ def test_regenerate_subtitle_applies_encoding():
 
 
 def test_regenerate_nfo_uses_authored_body():
-    bytes_, _ = regenerate_sidecar(
-        kind=SidecarKind.NFO,
-        language=None,
+    bytes_ = regenerate_nfo_sidecar_bytes(
         sidecar_id="sidecar_0001",
-        resolved_seed=42,
-        event_id="ev_us_001",
-        duration_s=1.0,
         body="<movie>AUTHORED</movie>",
     )
     assert bytes_ == b"<movie>AUTHORED</movie>"
 
 
 def test_regenerate_poster_video_media_type_changes_argv():
-    _, image_argv = regenerate_sidecar(
-        kind=SidecarKind.POSTER,
-        language=None,
+    update_seed = perturbed_seed_for_update(
         sidecar_id="s0",
         resolved_seed=42,
         event_id="ev",
-        duration_s=1.0,
-        output_path=Path("/tmp/x.mkv"),
-        media_type="image",
     )
-    _, video_argv = regenerate_sidecar(
-        kind=SidecarKind.POSTER,
-        language=None,
+    image_argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/x.mkv"),
+        resolved_seed=update_seed,
         sidecar_id="s0",
-        resolved_seed=42,
-        event_id="ev",
-        duration_s=1.0,
-        output_path=Path("/tmp/x.mkv"),
-        media_type="video",
+        media_type=SidecarMediaType.IMAGE,
     )
-    assert image_argv is not None
-    assert video_argv is not None
+    video_argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/x.mkv"),
+        resolved_seed=update_seed,
+        sidecar_id="s0",
+        media_type=SidecarMediaType.VIDEO,
+    )
     assert image_argv != video_argv
 
 
@@ -126,7 +117,7 @@ def test_poster_argv_selects_webp_encoder():
         output_path=Path("/tmp/cover.webp"),
         resolved_seed=1,
         sidecar_id="sc-1",
-        image_format="webp",
+        image_format=PosterImageFormat.WEBP,
     )
     assert "libwebp" in argv
 
@@ -136,7 +127,7 @@ def test_poster_argv_selects_mjpeg_encoder():
         output_path=Path("/tmp/cover.jpg"),
         resolved_seed=1,
         sidecar_id="sc-1",
-        image_format="jpeg",
+        image_format=PosterImageFormat.JPEG,
     )
     assert "mjpeg" in argv
 
@@ -152,7 +143,7 @@ def test_poster_argv_default_image_omits_explicit_encoder():
     assert "mjpeg" not in argv
 
 
-def test_regenerate_sidecar_subtitle_returns_srt_bytes():
+def test_regenerate_subtitle_sidecar_returns_srt_bytes():
     """WHY: the SRT body must come from recipes.srt_payload with a
     perturbed sub-seed that incorporates sidecar_id+event_id (spec #7),
     so the rendered bytes must contain ``seed=<perturbed_seed>`` — not
@@ -163,23 +154,19 @@ def test_regenerate_sidecar_subtitle_returns_srt_bytes():
         event_id="ev_us_001",
         resolved_seed=42,
     )
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.SUBTITLE,
+    bytes_ = regenerate_subtitle_sidecar_bytes(
         language="eng",
         sidecar_id="sidecar_0001",
         resolved_seed=42,
         event_id="ev_us_001",
         duration_s=1.0,
     )
-    assert argv is None
-    assert bytes_ is not None
     assert b"00:00:00,000" in bytes_  # SRT timestamp marker
     assert f"seed={expected_seed}".encode() in bytes_  # perturbed seed in body
 
 
-def test_regenerate_sidecar_subtitle_remains_default_utf8_srt() -> None:
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.SUBTITLE,
+def test_regenerate_subtitle_sidecar_remains_default_utf8_srt() -> None:
+    bytes_ = regenerate_subtitle_sidecar_bytes(
         language="eng",
         sidecar_id="sidecar_0001",
         resolved_seed=42,
@@ -187,23 +174,19 @@ def test_regenerate_sidecar_subtitle_remains_default_utf8_srt() -> None:
         duration_s=1.0,
     )
 
-    assert argv is None
-    assert bytes_ is not None
     assert bytes_.startswith(b"1\n")
     assert b"[Script Info]" not in bytes_
 
 
-def test_regenerate_sidecar_subtitle_distinct_per_event_id():
-    a_bytes, _ = regenerate_sidecar(
-        kind=SidecarKind.SUBTITLE,
+def test_regenerate_subtitle_sidecar_distinct_per_event_id():
+    a_bytes = regenerate_subtitle_sidecar_bytes(
         language="eng",
         sidecar_id="sidecar_0001",
         resolved_seed=42,
         event_id="ev_a",
         duration_s=1.0,
     )
-    b_bytes, _ = regenerate_sidecar(
-        kind=SidecarKind.SUBTITLE,
+    b_bytes = regenerate_subtitle_sidecar_bytes(
         language="eng",
         sidecar_id="sidecar_0001",
         resolved_seed=42,
@@ -213,32 +196,24 @@ def test_regenerate_sidecar_subtitle_distinct_per_event_id():
     assert a_bytes != b_bytes  # event_id is in the perturbed seed
 
 
-def test_regenerate_sidecar_nfo_returns_xml_bytes():
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.NFO,
-        language=None,
+def test_regenerate_nfo_sidecar_returns_xml_bytes():
+    bytes_ = regenerate_nfo_sidecar_bytes(
         sidecar_id="sidecar_0001",
-        resolved_seed=42,
-        event_id="ev_us_001",
-        duration_s=1.0,
     )
-    assert argv is None
-    assert bytes_ is not None
     assert bytes_.startswith(b"<?xml")
 
 
-def test_regenerate_sidecar_poster_returns_argv():
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.POSTER,
-        language=None,
+def test_update_poster_seed_returns_argv():
+    update_seed = perturbed_seed_for_update(
         sidecar_id="sidecar_0001",
         resolved_seed=42,
         event_id="ev_us_001",
-        duration_s=1.0,
-        output_path=Path("/tmp/x.png"),
     )
-    assert bytes_ is None
-    assert argv is not None
+    argv = poster_ffmpeg_argv(
+        output_path=Path("/tmp/x.png"),
+        resolved_seed=update_seed,
+        sidecar_id="sidecar_0001",
+    )
     assert argv[0] == "ffmpeg"
 
 
@@ -255,29 +230,16 @@ def test_cue_payload_default_is_deterministic_and_nonempty():
     assert b"TRACK 01 AUDIO" in a
 
 
-def test_regenerate_sidecar_cue_uses_authored_body():
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.CUE,
-        language=None,
+def test_regenerate_cue_sidecar_uses_authored_body():
+    bytes_ = regenerate_cue_sidecar_bytes(
         sidecar_id="sc-1",
-        resolved_seed=42,
-        event_id="ev_us_001",
-        duration_s=1.0,
         body='FILE "x.flac" WAVE\n  TRACK 01 AUDIO',
     )
-    assert argv is None
     assert bytes_ == b'FILE "x.flac" WAVE\n  TRACK 01 AUDIO'
 
 
-def test_regenerate_sidecar_cue_default_when_no_body():
-    bytes_, argv = regenerate_sidecar(
-        kind=SidecarKind.CUE,
-        language=None,
+def test_regenerate_cue_sidecar_default_when_no_body():
+    bytes_ = regenerate_cue_sidecar_bytes(
         sidecar_id="sc-1",
-        resolved_seed=42,
-        event_id="ev_us_001",
-        duration_s=1.0,
     )
-    assert argv is None
-    assert bytes_ is not None
     assert bytes_.startswith(b"PERFORMER ")

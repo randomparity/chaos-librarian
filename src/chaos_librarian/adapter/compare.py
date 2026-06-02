@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from chaos_librarian.adapter.errors import E_ADAPTER_RUN_ID_MISMATCH, AdapterInputError
+from chaos_librarian.adapter.errors import (
+    E_ADAPTER_RUN_ID_MISMATCH,
+    E_ADAPTER_TOPOLOGY_UNSUPPORTED,
+    AdapterInputError,
+)
 from chaos_librarian.adapter.fixture import OracleFixture
 from chaos_librarian.adapter.history import compare_identity_history
 from chaos_librarian.adapter.index import (
@@ -10,11 +14,15 @@ from chaos_librarian.adapter.index import (
     ObservedIndex,
     OracleAssetView,
     OracleIndex,
-    format_topology_key,
-    topology_key_for_view,
 )
 from chaos_librarian.adapter.matching import AssetMatch, match_assets
 from chaos_librarian.adapter.probe import compare_probed_media
+from chaos_librarian.adapter.topology import (
+    UnsupportedTopologyParentKindError,
+    format_topology_key,
+    observed_topology_key,
+    oracle_topology_key,
+)
 from chaos_librarian.contract.divergence import (
     CompareMode,
     DivergenceCode,
@@ -45,8 +53,15 @@ def compare_fixture_to_observed(
             },
         )
 
-    oracle_index = OracleIndex.from_fixture(fixture)
-    observed_index = ObservedIndex.from_state(observed)
+    try:
+        oracle_index = OracleIndex.from_fixture(fixture)
+        observed_index = ObservedIndex.from_state(observed)
+    except UnsupportedTopologyParentKindError as exc:
+        raise AdapterInputError(
+            error_code=E_ADAPTER_TOPOLOGY_UNSUPPORTED,
+            message=str(exc),
+            details=exc.details,
+        ) from exc
     match_result = match_assets(oracle_index, observed_index)
     findings = list(match_result.findings)
     for match in match_result.matches:
@@ -190,12 +205,8 @@ def _compare_topology(
     observed_topology = observed_index.topology.get(match.observed_ref)
     if oracle_topology is None or observed_topology is None:
         return []
-    oracle_key = topology_key_for_view(
-        oracle_topology, bundle_member_count=len(oracle_topology.bundle_asset_ids)
-    )
-    observed_key = topology_key_for_view(
-        observed_topology, bundle_member_count=len(observed_topology.bundle_asset_refs)
-    )
+    oracle_key = oracle_topology_key(oracle_topology)
+    observed_key = observed_topology_key(observed_topology)
     if oracle_key is None or observed_key is None or oracle_key == observed_key:
         return []
     oracle_domain_key = format_topology_key(oracle_key)

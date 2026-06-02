@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import subprocess
-import time
 from pathlib import Path
 
 from chaos_librarian.contract.materialization import ToolInvocation
 from chaos_librarian.contract.scenario import MatroskaMuxingProfile
-from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
+from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 
 
 def build_mkvmerge_command(
@@ -67,23 +65,12 @@ def run_mkvmerge(
     Returns:
         A `(ToolInvocation, stderr_tail)` tuple regardless of exit code.
     """
-    start = time.monotonic_ns()
-    completed = subprocess.run(
+    result = run_recorded_tool(
         argv,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.PIPE,
-        timeout=timeout_s,
-        check=False,
-        stdin=subprocess.DEVNULL,
-    )
-    duration_ns = time.monotonic_ns() - start
-    stderr_bytes = completed.stderr or b""
-    stderr_tail = stderr_bytes[-STDERR_TAIL_BYTES:].decode("utf-8", errors="replace")
-    invocation = ToolInvocation(
         tool="mkvmerge",
         version=mkvmerge_version,
-        command=list(argv),
-        exit_code=completed.returncode,
-        duration_ns=duration_ns,
+        timeout_s=timeout_s,
+        stdout_mode="devnull",
+        text=False,
     )
-    return invocation, stderr_tail
+    return result.invocation, result.stderr_tail
