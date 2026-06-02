@@ -58,12 +58,12 @@ def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
     """Return ``value`` as ``dict[str, object]`` if every key is a string."""
     if not isinstance(value, dict):
         return None
-    blob: dict[str, object] = {}
+    payload: dict[str, object] = {}
     for key, item in value.items():
         if not isinstance(key, str):
             return None
-        blob[key] = item
-    return blob
+        payload[key] = item
+    return payload
 
 
 def _optional_sidecar_media_type(value: object) -> SidecarMediaType | None:
