@@ -32,7 +32,7 @@ uv run pytest tests/visualize tests/scripts -q
 
 **Create (package logic):**
 - `src/chaos_librarian/visualize/__init__.py` — public surface: `build_payload`, `render_html`, error types.
-- `src/chaos_librarian/visualize/errors.py` — `MissingArtifactError`, `JournalDivergenceError`, `JournalCorruptLineError` (subclasses of `ChaosLibrarianError`).
+- `src/chaos_librarian/visualize/errors.py` — `MissingArtifactError`, `JournalDivergenceError`, `JournalCorruptLineError`, `ScenarioRevalidationError` (subclasses of `ChaosLibrarianError`).
 - `src/chaos_librarian/visualize/replay.py` — `replay_with_snapshots(run_dir)` → per-entry snapshots + events + live/planned boundary + torn-write flag, with the positional journal cross-check.
 - `src/chaos_librarian/visualize/diff.py` — `build_diffs(snapshots)` → per-step added/removed/changed entity ids + paths (locations, versions, sidecars).
 - `src/chaos_librarian/visualize/payload.py` — `build_payload(run_dir)` → the JSON-serializable dict embedded into the HTML.
@@ -51,7 +51,8 @@ uv run pytest tests/visualize tests/scripts -q
 - `tests/fixtures/scenarios/active-library-churn.yaml` — `move_asset` + slow-copy pair (drives prefix, in-flight temp_path, divergence tests).
 - `tests/fixtures/scenarios/tv-season-folders.yaml` — `renumber_episode` + `move_episode_to_season` (proves indirect hierarchy-driven path re-render appears in the per-file timeline — spec finding 2). `rename_season` is in no fixture; `renumber_episode` is the spec's accepted alternative and is corpus-backed.
 - `tests/fixtures/scenarios/embed-extract-roundtrip.yaml` — `embed_subtitle` (track/sidecar-level change).
-- All three are confirmed `status: OK` under `chaos-librarian validate`.
+- `tests/fixtures/scenarios/static-library.yaml` — `timeline: []` (the empty-timeline edge: 0 journal lines, `total_events == 0`).
+- All four are confirmed `status: OK` under `chaos-librarian validate` / `plan`.
 
 **Do not modify:** any `src/chaos_librarian/contract/` model, `schemas/`, or `src/chaos_librarian/cli/`.
 
@@ -91,7 +92,16 @@ from chaos_librarian.visualize.errors import (
     JournalCorruptLineError,
     JournalDivergenceError,
     MissingArtifactError,
+    ScenarioRevalidationError,
 )
+
+
+def test_revalidation_error_names_codes_and_contract_hint() -> None:
+    err = ScenarioRevalidationError(codes=["E_SCHEMA_VERSION"])
+    assert isinstance(err, ChaosLibrarianError)
+    assert "E_SCHEMA_VERSION" in str(err)
+    assert "contract" in str(err).lower()
+    assert err.codes == ["E_SCHEMA_VERSION"]
 
 
 def test_missing_artifact_names_artifact_and_producer() -> None:
@@ -166,12 +176,29 @@ class JournalCorruptLineError(ChaosLibrarianError):
         super().__init__(f"journal.jsonl line {line} is unparseable: {detail}")
         self.line = line
         self.detail = detail
+
+
+class ScenarioRevalidationError(ChaosLibrarianError):
+    """The run dir's embedded scenario fails re-validation against this contract.
+
+    Mirrors the guard ``replay_plan_bundle`` applies: an older run dir can
+    embed a scenario that no longer validates against the current contract
+    version. Raised as a ``ChaosLibrarianError`` so the script entry point
+    reports it cleanly instead of leaking a Pydantic ``ValidationError``.
+    """
+
+    def __init__(self, *, codes: list[str]) -> None:
+        super().__init__(
+            f"embedded scenario failed re-validation ({codes}); the run dir "
+            "likely predates the current contract version — re-run it on this build"
+        )
+        self.codes = codes
 ```
 
 - [ ] **Step 5: Run test to verify it passes**
 
 Run: `uv run pytest tests/visualize/test_errors.py -q`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 6: Lint, type-check, commit**
 
@@ -406,6 +433,44 @@ def test_divergent_journal_is_hard_error(tmp_path: Path) -> None:
         replay_with_snapshots(run_dir)
     assert exc.value.disk_event_id == "TAMPERED"
     assert exc.value.position == 0
+
+
+def test_journal_longer_than_timeline_is_divergence(tmp_path: Path) -> None:
+    import json
+
+    run_dir = _plan_run_dir(tmp_path)
+    journal = run_dir / "journal.jsonl"
+    lines = journal.read_text().splitlines()
+    # Append a synthetic extra entry past the resolved timeline's end (valid
+    # JSON, fresh event_id) to trigger the len(disk) > len(replayed) branch.
+    extra = json.loads(lines[-1])
+    extra["event_id"] = "EXTRA_PAST_END"
+    lines.append(json.dumps(extra))
+    journal.write_text("\n".join(lines) + "\n")
+    with pytest.raises(JournalDivergenceError) as exc:
+        replay_with_snapshots(run_dir)
+    assert exc.value.position == len(lines) - 1
+    assert exc.value.disk_event_id == "EXTRA_PAST_END"
+    assert "end of timeline" in exc.value.replay_event_id
+
+
+def test_unrevalidatable_scenario_is_clean_error(tmp_path: Path) -> None:
+    import json
+
+    from chaos_librarian.visualize.errors import ScenarioRevalidationError
+
+    run_dir = _plan_run_dir(tmp_path)
+    bundle_path = run_dir / "replay.json"
+    bundle = json.loads(bundle_path.read_text())
+    # Inject an unknown top-level key into the embedded scenario YAML so it
+    # fails re-validation (every contract model is extra="forbid"). The .ok
+    # guard fires before any run_id/digest check, so this is a clean error,
+    # not a bare pydantic ValidationError.
+    bundle["scenario"] = bundle["scenario"] + "\nnot_a_real_scenario_key: true\n"
+    bundle_path.write_text(json.dumps(bundle))
+    with pytest.raises(ScenarioRevalidationError) as exc:
+        replay_with_snapshots(run_dir)
+    assert exc.value.codes  # non-empty list of error codes
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -426,8 +491,12 @@ from chaos_librarian.engine.context import EngineEventContext
 from chaos_librarian.engine.events import apply_event
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.engine.state import build_initial_state
-from chaos_librarian.validation import prepare_replay_input_from_bytes
-from chaos_librarian.visualize.errors import JournalDivergenceError, MissingArtifactError
+from chaos_librarian.validation import ValidationSeverity, prepare_replay_input_from_bytes
+from chaos_librarian.visualize.errors import (
+    JournalDivergenceError,
+    MissingArtifactError,
+    ScenarioRevalidationError,
+)
 
 _REPLAY_BUNDLE_ADAPTER: TypeAdapter[ReplayBundle] = TypeAdapter(ReplayBundle)
 ```
@@ -440,13 +509,16 @@ class ReplayResult:
     """Per-entry snapshots plus live/planned boundary metadata.
 
     Attributes:
-        snapshots: ``model_dump(mode="json")`` of the manifest after each
-            journal entry; ``snapshots[0]`` is the seeded initial state, so
-            ``len(snapshots) == total_events + 1``.
-        events: Every replayed journal entry (live + planned), in order.
-        live_count: Number of entries actually present on disk (the prefix
-            that was executed). Entries at indices ``>= live_count`` are
-            planned-but-not-executed.
+        snapshots: ``model_dump(mode="json", exclude_none=True)`` of the
+            manifest after each *executed* journal entry; ``snapshots[0]`` is
+            the seeded initial state, so ``len(snapshots) == live_count + 1``.
+            Planned-but-unexecuted steps get no snapshot — the viewer cannot
+            scrub into them, so embedding their full library state would only
+            inflate the payload (spec's named size risk).
+        events: Every replayed journal entry (live + planned), in order — the
+            full list drives the ghosted planned ticks on the strip.
+        live_count: Number of entries actually present on disk (the executed
+            prefix). Entries at indices ``>= live_count`` are planned.
         total_events: ``len(events)`` — the full resolved timeline.
         ended_mid_write: The on-disk journal's final line was a torn write.
         scenario_id / run_id / execution_mode: header metadata.
@@ -520,6 +592,17 @@ def replay_with_snapshots(run_dir: Path) -> ReplayResult:
         scenario_bytes=bundle.scenario.encode("utf-8"),
         source_label=f"visualize:{bundle.run_id}",
     )
+    if not prepared.validation_report.ok:
+        # Same guard replay_plan_bundle applies: an older run dir can embed a
+        # scenario that no longer validates against the current contract. Fail
+        # with a clean ChaosLibrarianError before touching run_input.scenario
+        # (a cached_property that would otherwise raise a bare ValidationError).
+        codes = [
+            issue.code
+            for issue in prepared.validation_report.issues
+            if issue.severity == ValidationSeverity.ERROR
+        ]
+        raise ScenarioRevalidationError(codes=codes)
     scenario = prepared.run_input.scenario
 
     recorder = TraceRecorder()
@@ -531,20 +614,27 @@ def replay_with_snapshots(run_dir: Path) -> ReplayResult:
         resolved_seed=bundle.resolved_seed,
     )
 
-    snapshots: list[dict[str, object]] = [state.to_manifest().model_dump(mode="json")]
+    parsed = parse_journal_text(journal_path.read_text())
+    live_count = len(parsed.entries)
+
+    snapshots: list[dict[str, object]] = [
+        state.to_manifest().model_dump(mode="json", exclude_none=True)
+    ]
     events: list[JournalEntry] = []
     for resolved in resolve_timeline(scenario):
         for entry in apply_event(state, resolved, ids, ctx):
             events.append(entry)
-            snapshots.append(state.to_manifest().model_dump(mode="json"))
+            # Snapshot only the executed prefix; planned steps are unscrubbable
+            # in the viewer, so their snapshots would be dead payload weight.
+            if len(events) <= live_count:
+                snapshots.append(state.to_manifest().model_dump(mode="json", exclude_none=True))
 
-    parsed = parse_journal_text(journal_path.read_text())
     _cross_check(parsed.entries, events)
 
     return ReplayResult(
         snapshots=snapshots,
         events=events,
-        live_count=len(parsed.entries),
+        live_count=live_count,
         total_events=len(events),
         ended_mid_write=parsed.ended_mid_write,
         scenario_id=scenario.scenario_id,
@@ -553,7 +643,9 @@ def replay_with_snapshots(run_dir: Path) -> ReplayResult:
     )
 ```
 
-> Snapshot-per-entry note: snapshotting *inside* the inner loop means a resolved event that emits N entries yields N identical post-state snapshots (each entry observes the same committed state). This keeps `len(snapshots) == total_events + 1` exact regardless of multi-entry events.
+> Two invariants this loop holds: (1) snapshotting *inside* the inner loop means a resolved event emitting N entries yields N identical post-state snapshots, so snapshot indices stay aligned 1:1 with executed journal entries regardless of multi-entry events; (2) `len(snapshots) == live_count + 1` — for a full run `live_count == total_events`, so a full run still snapshots every step.
+
+> Runtime note: export time scales with `live_count × library size` (one `to_manifest()` + `model_dump` per executed entry). On a 1–2k-event fuzz run this is thousands of full-manifest serializations — the same scale the spec flagged for payload *size*, now for export *time*. Not optimized until a real run is slow (matches the spec's YAGNI stance on size); the prefix-only snapshotting above already avoids paying it for planned steps.
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -641,10 +733,23 @@ Expected: FAIL — `ModuleNotFoundError`.
 
 Diffs are computed at the location / version / sidecar level. Because
 ``to_manifest`` re-renders every location's ``path`` from current hierarchy
-state, an indirect change (e.g. ``rename_season`` re-rendering a file's path)
-surfaces here as a location ``path`` change even though its journal entry
+state, an indirect change (e.g. a ``renumber_episode`` that moves an episode
+file) surfaces here as a location ``path`` change even though its journal entry
 targets a hierarchy entity — this is what lets the viewer's per-file Timeline
 include indirect changes (spec finding 2).
+
+Scope note (deliberate v1 boundary, matches the spec's Tab-2 definition):
+the per-file Timeline is keyed to changes that alter a file's **path, content
+hash, or sidecars** — the location/version/sidecar collections. A pure
+metadata/numbering change that does NOT move the file (e.g. a renumber under a
+layout that doesn't embed the number in the filename, or ``mark_episode_stale``
+flipping a ``podcast_episodes`` flag) produces a journal entry but no
+diff-tracked change, so it is intentionally absent from that file's Timeline.
+Such events remain visible globally as strip ticks and in the header's action
+label when scrubbed to. Surfacing metadata-only lineage changes per-file (by
+falling back to the journal entry's ``target_ids`` lineage) is a documented
+follow-up, not v1 — file it as a GitHub issue per AGENTS.md Rule 13 during
+implementation.
 """
 
 from __future__ import annotations
@@ -751,6 +856,7 @@ from chaos_librarian.visualize import build_payload
 _FIXTURE = "tests/fixtures/scenarios/active-library-churn.yaml"
 _TV_FIXTURE = "tests/fixtures/scenarios/tv-season-folders.yaml"
 _SUB_FIXTURE = "tests/fixtures/scenarios/embed-extract-roundtrip.yaml"
+_STATIC_FIXTURE = "tests/fixtures/scenarios/static-library.yaml"  # timeline: [] (empty)
 
 
 def _plan_fixture(tmp_path: Path, fixture: str) -> Path:
@@ -803,12 +909,66 @@ def test_plan_only_has_no_probed_final(tmp_path: Path) -> None:
     assert payload["probed_final"] is None
 
 
+def test_empty_timeline_renders_step_zero(tmp_path: Path) -> None:
+    # Spec edge case: empty timeline → step 0 with an empty strip. static-library.yaml
+    # has `timeline: []` (a genuine empty timeline — confirmed 0 journal lines), so
+    # resolve_timeline() is empty: events/diffs are empty and the only snapshot is the
+    # seeded initial state. NOTE: this is NOT the same as `--steps 0` on a scenario that
+    # HAS a timeline — that leaves total_events at the full count with every event planned;
+    # only an empty `timeline:` drives total_events to 0.
+    payload = build_payload(_plan_fixture(tmp_path, _STATIC_FIXTURE))
+    assert payload["events"] == []
+    assert payload["diffs"] == []
+    assert len(payload["snapshots"]) == 1
+    assert payload["meta"]["live_count"] == 0
+    assert payload["meta"]["total_events"] == 0
+
+
+def test_probed_for_unknown_asset_is_dropped_with_warning(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    # Spec behavior: probed entries whose asset_id is absent from the final
+    # replayed snapshot are dropped with a warning. Inject a probed version for
+    # a ghost asset into manifest.current.json (kept a valid Manifest) and
+    # assert it is excluded — and that a warning naming the asset is logged.
+    import json
+
+    run_dir = _plan(tmp_path)
+    current_path = run_dir / "manifest.current.json"
+    current = json.loads(current_path.read_text())
+    current["versions"].append(
+        {
+            "id": "ghost_v",
+            "asset_id": "ghost_asset_not_in_run",
+            "index": 0,
+            "probed": {
+                "container": "mkv",
+                "duration_seconds": 1.0,
+                "size_bytes": 1,
+                "streams": [],
+            },
+        }
+    )
+    current_path.write_text(json.dumps(current))
+    with caplog.at_level("WARNING"):
+        payload = build_payload(run_dir)
+    # The only probed entry was for the ghost asset, so it is dropped entirely.
+    assert payload["probed_final"] is None
+    assert "ghost_asset_not_in_run" in caplog.text
+
+
 def test_hierarchy_event_surfaces_as_location_path_change(tmp_path: Path) -> None:
     # Spec finding 2: a renumber_episode / move_episode_to_season re-renders
-    # episode file paths. to_manifest() re-renders locations[].path, so the
-    # indirect change MUST appear as a location "path" change in some diff —
+    # episode file paths (verified: tv-season-folders's renumber AND move both
+    # emit path_moves on location_0001). to_manifest() re-renders locations[].path,
+    # so the indirect change MUST appear as a location "path" change in some diff —
     # this is what lets the viewer's per-file Timeline include it.
     payload = build_payload(_plan_fixture(tmp_path, _TV_FIXTURE))
+    actions = {e["action"] for e in payload["events"]}
+    # Non-vacuous witness guard: if the fixture stops containing the
+    # path-moving hierarchy events, fail loudly rather than passing on some
+    # unrelated path change.
+    assert {"renumber_episode", "move_episode_to_season"} & actions
     assert _changed_field_appears(payload, "locations", "path")
 
 
@@ -822,18 +982,24 @@ def test_embed_subtitle_surfaces_as_version_or_sidecar_change(tmp_path: Path) ->
     assert touched
 
 
-@pytest.mark.skipif(
-    subprocess.run(
-        ["uv", "run", "chaos-librarian", "capabilities"], capture_output=True
-    ).returncode
-    != 0,
-    reason="media toolchain unavailable",
-)
+def _media_toolchain_available() -> bool:
+    # Runtime probe (NOT a module-level skipif) so the subprocess is paid only
+    # when this test actually runs, not on every collection of this module.
+    return (
+        subprocess.run(
+            ["uv", "run", "chaos-librarian", "capabilities"], capture_output=True, check=False
+        ).returncode
+        == 0
+    )
+
+
 def test_materialize_run_dir_passes_cross_check(tmp_path: Path) -> None:
     # Spec prerequisite: plan-path replay must be journal-equivalent for a
     # materialize bundle. If this raises JournalDivergenceError the
     # equivalence assumption is broken and the comparison contract must be
     # renegotiated (blocking design revision, not a runtime fallback).
+    if not _media_toolchain_available():
+        pytest.skip("media toolchain unavailable")
     out = tmp_path / "mrun"
     subprocess.run(
         ["uv", "run", "chaos-librarian", "materialize", _FIXTURE, "--out", str(out)],
@@ -859,19 +1025,22 @@ Expected: FAIL — `ImportError: cannot import name 'build_payload'`.
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.visualize.diff import build_diffs
 from chaos_librarian.visualize.replay import ReplayResult, replay_with_snapshots
 
+_LOGGER = logging.getLogger(__name__)
+
 
 def _probed_final(run_dir: Path, final_snapshot: dict[str, object]) -> dict[str, object] | None:
     """Map asset_id → probed media from manifest.current.json, if present.
 
     Probed entries whose asset_id is absent from the final replayed snapshot
-    are dropped (they indicate a manifest from a different run). Returns None
-    when manifest.current.json is absent or carries no probed data.
+    are dropped with a warning (they indicate a manifest from a different run).
+    Returns None when manifest.current.json is absent or carries no probed data.
     """
     current_path = run_dir / "manifest.current.json"
     if not current_path.exists():
@@ -880,15 +1049,23 @@ def _probed_final(run_dir: Path, final_snapshot: dict[str, object]) -> dict[str,
     final_assets = {str(a["id"]) for a in final_snapshot.get("assets", [])}  # type: ignore[union-attr]
     probed: dict[str, object] = {}
     for version in current.versions:
-        if version.probed is not None and version.asset_id in final_assets:
-            probed[version.asset_id] = version.probed.model_dump(mode="json")
+        if version.probed is None:
+            continue
+        if version.asset_id not in final_assets:
+            _LOGGER.warning(
+                "dropping probed data for asset_id %r: not in the final replayed "
+                "snapshot (manifest.current.json may be from a different run)",
+                version.asset_id,
+            )
+            continue
+        probed[version.asset_id] = version.probed.model_dump(mode="json", exclude_none=True)
     return probed or None
 
 
 def _events_payload(result: ReplayResult) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for index, entry in enumerate(result.events):
-        dumped = entry.model_dump(mode="json")
+        dumped = entry.model_dump(mode="json", exclude_none=True)
         dumped["executed"] = index < result.live_count
         out.append(dumped)
     return out
@@ -1337,13 +1514,13 @@ def test_hostile_string_does_not_break_island() -> None:
         "snapshots": [], "events": [], "diffs": [],
     }
     html = render_html(payload)
-    # The literal sequence "</script>" must not appear inside the island —
-    # only the original closing tag of the island itself.
-    assert html.count("</script>") == html.count("<script") - 0  # one real closer per opener
     start = html.index('id="cl-payload">') + len('id="cl-payload">')
     end = html.index("</script>", start)
     island = html[start:end]
-    assert "<" not in island  # all '<' escaped to <
+    # The real guarantee: no '<' survives inside the island, so no payload
+    # string can terminate the <script> tag or inject markup.
+    assert "</script>" not in island
+    assert "<" not in island
     assert json.loads(island)["meta"]["scenario_id"] == "</script><img onerror=alert(1)>"
 
 
@@ -1435,7 +1612,7 @@ __all__ = [
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `uv run pytest tests/visualize/test_render.py -q`
-Expected: PASS (3 passed). If `test_hostile_string_does_not_break_island`'s `</script>` count assertion is brittle, simplify it to: `assert "</script><img" not in html` and keep the `"<" not in island` check as the real guarantee.
+Expected: PASS (3 passed).
 
 - [ ] **Step 5: Lint, type-check, commit**
 
@@ -1632,6 +1809,10 @@ open /tmp/cl-vis-tv/visualize.html
 
 Confirm in the browser: scrubber moves the tree; the slow-copy temp file renders ghosted at the in-flight step (churn run); clicking a file opens the drawer; in the TV run, the Timeline tab of an episode file shows the `renumber_episode` / `move_episode_to_season` step in its history even though that event targets a hierarchy entity (the indirect-change requirement); planned ticks (re-run with `--steps`) are ghosted and unscrubbable. Note any gaps as follow-up issues per AGENTS.md Rule 13.
 
+- [ ] **Step 2b: File the metadata-only timeline follow-up**
+
+Per the Task 4 scope note, file a GitHub issue (AGENTS.md Rule 13): "Per-file Timeline omits metadata-only hierarchy changes that don't move the file." 2-3 sentences: the diff tracks location/version/sidecar collections only, so a hierarchy/numbering change that re-renders no path (or flips a `podcast_episodes` flag) is absent from the affected file's Timeline; consider a fallback that maps the journal entry's `target_ids` lineage to the selected file. Reference `src/chaos_librarian/visualize/diff.py` and the sprint/PR that surfaced it.
+
 - [ ] **Step 3: Add a docs pointer**
 
 Add one line under an appropriate heading in `README.md`:
@@ -1656,7 +1837,7 @@ git commit -m "docs: document the run visualizer script"
 |---|---|
 | Scroll forwards/backwards through timeline | 6 (strip + scrubber + keys) |
 | Click file → layout @ step (container/tracks/languages/hash/variant/bundle/sidecars) | 6 (Layout tab) |
-| Full per-file change timeline, one-click switch | 6 (Timeline tab, diff-derived) |
+| Full per-file change timeline, one-click switch | 6 (Timeline tab, diff-derived; v1 scope = path/hash/sidecar changes — see Task 4 scope note for the metadata-only follow-up) |
 | Post-hoc, no live tailing | 1–8 (exporter model) |
 | Self-contained, double-click, no server | 6–7 (embedded island, `file://`) |
 | Engine replay, viewer render-only | 3, 6 |
@@ -1669,7 +1850,10 @@ git commit -m "docs: document the run visualizer script"
 | Selection by location id; sidecar Tab 1 + timeline | 6 |
 | JSON-island escaping + textContent rendering | 6, 7 |
 | Payload size warning | 7 |
-| Empty timeline → step 0 | 3, 6 (loop handles zero events) |
-| Tests: snapshot count, diff correctness, hierarchy indirect, divergence, prefix, torn-line, materialize, missing-artifact, hostile-string, island parse | 2–8 |
+| Empty timeline → step 0 | 3, 6 (loop handles zero events); tested in Task 5 via `static-library.yaml` (`timeline: []`) |
+| Stale-contract embedded scenario → clean error (not a raw traceback) | 1, 3 (`ScenarioRevalidationError` + guard) |
+| Probed-asset mismatch → dropped + warning logged | 5 (`test_probed_for_unknown_asset_is_dropped_with_warning`) |
+| Journal longer than timeline → divergence | 3 (`test_journal_longer_than_timeline_is_divergence`) |
+| Tests: snapshot count, diff correctness, hierarchy indirect, divergence (position + over-length), prefix, torn-line, materialize, missing-artifact, stale-contract, empty-timeline, probed-drop, hostile-string, island parse | 1–8 |
 
 All spec sections map to a task.
