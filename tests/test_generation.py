@@ -183,6 +183,7 @@ def test_lane_config_rejects_profile_mismatch() -> None:
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_LAG, 462),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY, 463),
         (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.MUSIC_TOPOLOGY, 464),
+        (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_FS_CHAOS, 465),
     ],
 )
 def test_generated_lane_meets_required_coverage(
@@ -204,6 +205,7 @@ def test_generated_lane_meets_required_coverage(
         (FuzzLaneName.NEGATIVE_ORACLE, ("fuzz-regression", "negative-oracle")),
         (FuzzLaneName.FILESYSTEM_ARTIFACT, ("fuzz-regression", "filesystem-artifacts")),
         (FuzzLaneName.NETWORK_LAG, ("fuzz-regression", "network-fs-lag")),
+        (FuzzLaneName.NETWORK_FS_CHAOS, ("fuzz-regression", "network-fs-chaos")),
     ],
 )
 def test_generated_gated_lanes_include_required_profiles(
@@ -233,6 +235,62 @@ def test_malformed_lane_emits_corrupt_tags() -> None:
 
     assert event["target"] == "asset_005"
     assert event["flavor"] == "null_bytes"
+
+
+def test_network_fs_chaos_lane_emits_all_required_actions_and_pairs() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.NETWORK_FS_CHAOS,
+        seed=465,
+    )
+
+    timeline = cast(list[dict[str, object]], payload["timeline"])
+    actions = [str(event["action"]) for event in timeline]
+
+    assert {
+        "change_permissions",
+        "simulate_quota_exceeded",
+        "toggle_readonly",
+        "simulate_stale_handle",
+        "unmount_path",
+        "remount_path",
+        "acquire_lock",
+        "release_lock",
+    } <= set(actions)
+    unmount_index = actions.index("unmount_path")
+    remount_event = timeline[unmount_index + 1]
+    acquire_index = actions.index("acquire_lock")
+    release_event = timeline[acquire_index + 1]
+
+    assert remount_event["action"] == "remount_path"
+    assert remount_event["for"] == timeline[unmount_index]["id"]
+    assert release_event["action"] == "release_lock"
+    assert release_event["for"] == timeline[acquire_index]["id"]
+
+
+def test_network_fs_chaos_lane_plans_generated_actions() -> None:
+    yaml_bytes = generate_scenario_yaml(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.NETWORK_FS_CHAOS,
+        seed=465,
+    )
+    run_input = prepare_run_input_from_bytes(raw_bytes=yaml_bytes, source_label="<generated>")
+    validation_report = run_validation(run_input)
+    assert validation_report.ok
+
+    artifacts = run_plan(run_input=run_input, validation_report=validation_report)
+    actions = {entry.action for entry in artifacts.journal}
+
+    assert {
+        "change_permissions",
+        "simulate_quota_exceeded",
+        "toggle_readonly",
+        "simulate_stale_handle",
+        "unmount_path",
+        "remount_path",
+        "acquire_lock",
+        "release_lock",
+    } <= actions
 
 
 def test_tv_topology_lane_emits_explicit_series_hierarchy() -> None:
