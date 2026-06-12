@@ -21,6 +21,7 @@ documented follow-up, not v1.
 
 from __future__ import annotations
 
+from itertools import pairwise
 from typing import cast
 
 _COLLECTIONS = ("locations", "versions", "sidecars")
@@ -46,6 +47,7 @@ def _diff_collection(
     prev_rows: list[dict[str, object]],
     curr_rows: list[dict[str, object]],
 ) -> dict[str, object]:
+    """Compute added/removed/changed ids between two indexed collections."""
     prev, curr = _index(prev_rows), _index(curr_rows)
     added = sorted(curr.keys() - prev.keys())
     removed = sorted(prev.keys() - curr.keys())
@@ -61,7 +63,9 @@ def _diff_collection(
     return {"added": added, "removed": removed, "changed": changed}
 
 
-def diff_snapshots(prev: dict[str, object], curr: dict[str, object]) -> dict[str, object]:
+def diff_snapshots(
+    prev: dict[str, object], curr: dict[str, object]
+) -> dict[str, dict[str, object]]:
     """Diff two manifest snapshots at the location/version/sidecar level.
 
     Args:
@@ -72,13 +76,13 @@ def diff_snapshots(prev: dict[str, object], curr: dict[str, object]) -> dict[str
         A dict keyed by collection name, each holding ``added``/``removed``
         (sorted id lists) and ``changed`` (id + differing fields + from/to).
     """
-    result: dict[str, object] = {}
+    result: dict[str, dict[str, object]] = {}
     for name in _COLLECTIONS:
         result[name] = _diff_collection(_rows(prev, name), _rows(curr, name))
     return result
 
 
-def build_diffs(snapshots: list[dict[str, object]]) -> list[dict[str, object]]:
+def build_diffs(snapshots: list[dict[str, object]]) -> list[dict[str, dict[str, object]]]:
     """Return one diff per snapshot transition (``len(snapshots) - 1`` entries).
 
     Args:
@@ -88,4 +92,4 @@ def build_diffs(snapshots: list[dict[str, object]]) -> list[dict[str, object]]:
         A list of per-step diffs; ``diffs[i]`` describes the change from
         ``snapshots[i]`` to ``snapshots[i + 1]``.
     """
-    return [diff_snapshots(snapshots[i], snapshots[i + 1]) for i in range(len(snapshots) - 1)]
+    return [diff_snapshots(prev, curr) for prev, curr in pairwise(snapshots)]
