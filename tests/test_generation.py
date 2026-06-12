@@ -221,6 +221,20 @@ def test_generated_gated_lanes_include_required_profiles(
     assert tuple(profiles) == required_profiles
 
 
+def test_malformed_lane_emits_corrupt_tags() -> None:
+    payload = _generated_payload(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.MALFORMED,
+        seed=459,
+    )
+
+    timeline = cast(list[dict[str, object]], payload["timeline"])
+    event = next(item for item in timeline if item["action"] == "corrupt_tags")
+
+    assert event["target"] == "asset_005"
+    assert event["flavor"] == "null_bytes"
+
+
 def test_tv_topology_lane_emits_explicit_series_hierarchy() -> None:
     payload = _generated_payload(
         profile=FuzzProfileName.FUZZ_REGRESSION,
@@ -444,7 +458,7 @@ def test_malformed_lane_skips_media_fill_when_all_assets_corrupted(
     monkeypatch.setitem(
         generation_planner.LANE_CONFIGS,
         key,
-        replace(config, movies=4, timeline_events=8),
+        replace(config, movies=5, timeline_events=9),
     )
 
     payload = _generated_payload(
@@ -487,6 +501,7 @@ def _assert_no_media_rewrite_after_corruption(timeline: object) -> None:
         "truncate_file",
         "corrupt_packet_range",
         "write_invalid_duration_metadata",
+        "corrupt_tags",
     }
     media_rewrite_actions = {
         "reencode_video",

@@ -31,9 +31,9 @@ from chaos_librarian.generation.lanes import (
     derive_required_profiles,
 )
 
-# Header bytes to overwrite for a corrupt-container-header event; within
-# CorruptContainerHeaderEvent's 1..4096 range.
-CORRUPT_HEADER_BYTES: Final = 64
+# Shared byte count for malformed corruption events; within the 1..4096 range
+# used by corrupt-container-header and corrupt-tags contracts.
+MALFORMED_CORRUPTION_BYTES: Final = 64
 # Bytes retained when truncating a file for a truncate-file event.
 TRUNCATE_KEEP_BYTES: Final = 4096
 
@@ -498,6 +498,7 @@ def _emit_malformed_required_events(planner: TimelinePlanner) -> None:
     _truncate_file(planner, assets[1])
     _corrupt_packet_range(planner, assets[2])
     _write_invalid_duration_metadata(planner, assets[3])
+    _corrupt_tags(planner, assets[4])
 
 
 def _emit_network_lag_required_events(planner: TimelinePlanner) -> None:
@@ -777,7 +778,7 @@ def _corrupt_container_header(planner: TimelinePlanner, asset: PlannedAsset) -> 
             id=planner.event_id("corrupt_header"),
             at=planner.at(),
             target=asset.asset_id,
-            bytes=CORRUPT_HEADER_BYTES,
+            bytes=MALFORMED_CORRUPTION_BYTES,
         )
     )
     planner.media_unstable_assets.add(asset.asset_id)
@@ -816,6 +817,19 @@ def _write_invalid_duration_metadata(planner: TimelinePlanner, asset: PlannedAss
             at=planner.at(),
             target=asset.asset_id,
             value="not-a-duration",
+        )
+    )
+    planner.media_unstable_assets.add(asset.asset_id)
+
+
+def _corrupt_tags(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.append_event(
+        scenario_contract.CorruptTagsEvent(
+            id=planner.event_id("corrupt_tags"),
+            at=planner.at(),
+            target=asset.asset_id,
+            flavor=scenario_contract.TagCorruptionFlavor.NULL_BYTES,
+            bytes=MALFORMED_CORRUPTION_BYTES,
         )
     )
     planner.media_unstable_assets.add(asset.asset_id)
@@ -1117,6 +1131,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
                 action_cell(TimelineActionName.TRUNCATE_FILE),
                 action_cell(TimelineActionName.CORRUPT_PACKET_RANGE),
                 action_cell(TimelineActionName.WRITE_INVALID_DURATION_METADATA),
+                action_cell(TimelineActionName.CORRUPT_TAGS),
             }
         ),
         required_events=_emit_malformed_required_events,
