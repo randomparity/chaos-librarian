@@ -1,10 +1,4 @@
-"""Shared subtitle recipe matrices for the declared and timeline paths.
-
-The declared-subtitle path (``materialize_media_matrix``) accepts srt/ass/ssa;
-the timeline ``create_sidecar`` path (``create_sidecar_content``) is SRT-only in
-v1 because ``_apply_create_sidecar`` does not synthesize ASS bodies. Both share
-the SRT encoding set so a future encoding addition flows to both.
-"""
+"""Shared subtitle recipe matrices for the declared and timeline paths."""
 
 from __future__ import annotations
 
@@ -38,6 +32,4 @@ SUBTITLE_RECIPE_MATRIX: Final[
 
 CREATE_SIDECAR_SUBTITLE_MATRIX: Final[
     dict[tuple[SubtitleCodec, SubtitleSource], frozenset[SubtitleEncoding]]
-] = {
-    (SubtitleCodec.SRT, SubtitleSource.GENERATED_SRT): SRT_SUBTITLE_ENCODINGS,
-}
+] = SUBTITLE_RECIPE_MATRIX

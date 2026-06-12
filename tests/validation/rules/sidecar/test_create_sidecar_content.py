@@ -1,9 +1,4 @@
-"""Per-rule tests for ``rule_create_sidecar_content`` (E_MATERIALIZE_UNSUPPORTED).
-
-The timeline ``create_sidecar`` subtitle path is SRT-only in v1; an ass/ssa codec
-or an out-of-set encoding is rejected with the same code the declared-subtitle
-path raises.
-"""
+"""Per-rule tests for ``rule_create_sidecar_content`` (E_MATERIALIZE_UNSUPPORTED)."""
 
 from __future__ import annotations
 
@@ -41,14 +36,25 @@ def test_srt_utf16_accepted(minimal_scenario, empty_index) -> None:
     assert _materialize_codes(raw, empty_index) == []
 
 
-def test_ass_codec_rejected(minimal_scenario, empty_index) -> None:
+def test_ass_unsupported_encoding_rejected(minimal_scenario, empty_index) -> None:
     raw = minimal_scenario(timeline=[_create_sidecar({"codec": "ass", "encoding": "utf16_le"})])
     assert _materialize_codes(raw, empty_index) == [codes.E_MATERIALIZE_UNSUPPORTED]
 
 
-def test_ass_codec_with_utf8_still_rejected(minimal_scenario, empty_index) -> None:
-    raw = minimal_scenario(timeline=[_create_sidecar({"codec": "ass"})])
-    assert _materialize_codes(raw, empty_index) == [codes.E_MATERIALIZE_UNSUPPORTED]
+def test_ass_styled_ass_utf8_accepted(minimal_scenario, empty_index) -> None:
+    raw = minimal_scenario(
+        timeline=[
+            _create_sidecar(
+                {
+                    "to": "r/a.eng.ass",
+                    "codec": "ass",
+                    "source": "styled_ass",
+                    "encoding": "utf8",
+                }
+            )
+        ]
+    )
+    assert _materialize_codes(raw, empty_index) == []
 
 
 def test_non_subtitle_kind_ignored(minimal_scenario, empty_index) -> None:
