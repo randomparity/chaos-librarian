@@ -34,8 +34,43 @@ def _chaos_event(
     return event
 
 
+def _rename_event(*, at: str = "1s") -> dict[str, object]:
+    return {
+        "id": "rename_0",
+        "at": at,
+        "action": "rename_file",
+        "target": "a",
+        "to": "r/a-renamed.mkv",
+    }
+
+
+def _lag_start(*, at: str = "1s", duration: str = "2s") -> dict[str, object]:
+    return {
+        "id": "lag_start_0",
+        "at": at,
+        "action": "network_lag_start",
+        "effect": "delayed_rename",
+        "target": "a",
+        "after": "rename_0",
+        "duration": duration,
+    }
+
+
+def _lag_commit(*, at: str = "3s") -> dict[str, object]:
+    return {
+        "id": "lag_commit_0",
+        "at": at,
+        "action": "network_lag_commit",
+        "for": "lag_start_0",
+    }
+
+
 def _codes(collector: IssueCollector) -> set[str]:
     return {issue.code for issue in collector.issues}
+
+
+def _messages(collector: IssueCollector) -> list[str]:
+    return [issue.message for issue in collector.issues]
 
 
 # --- single source of truth -------------------------------------------------
@@ -172,6 +207,71 @@ def test_path_or_asset_action_escaping_path_emits_e_path_containment(
     collector = IssueCollector()
     run_semantic_pass(raw, empty_index, collector)
     assert codes.E_PATH_CONTAINMENT in _codes(collector)
+
+
+# --- cross-family window overlap ---------------------------------------------
+
+
+def test_path_unmount_during_network_lag_emits_e_lifecycle_invalid(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=[_CHAOS_PROFILE, ProfileName.NETWORK_FS_LAG.value],
+        timeline=[
+            _rename_event(at="1s"),
+            _lag_start(at="1s", duration="3s"),
+            _chaos_event("unmount_path", idx=0, fields={"at": "2s", "target": "r"}),
+            _chaos_event("remount_path", idx=1, fields={"at": "3s", "for": "unmount_path_0"}),
+            _lag_commit(at="4s"),
+        ],
+    )
+
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert codes.E_LIFECYCLE_INVALID in _codes(collector)
+    assert any("overlaps network_lag_start" in message for message in _messages(collector))
+
+
+def test_network_lag_during_path_unmount_emits_e_lifecycle_invalid(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=[_CHAOS_PROFILE, ProfileName.NETWORK_FS_LAG.value],
+        timeline=[
+            _chaos_event("unmount_path", idx=0, fields={"at": "1s", "target": "r"}),
+            _rename_event(at="2s"),
+            _lag_start(at="2s", duration="1s"),
+            _lag_commit(at="3s"),
+            _chaos_event("remount_path", idx=1, fields={"at": "4s", "for": "unmount_path_0"}),
+        ],
+    )
+
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert codes.E_LIFECYCLE_INVALID in _codes(collector)
+    assert any("overlaps unmount_path" in message for message in _messages(collector))
+
+
+def test_network_lag_allows_unmount_path_for_disjoint_subtree(
+    minimal_scenario, empty_index
+) -> None:
+    raw = minimal_scenario(
+        profiles=[_CHAOS_PROFILE, ProfileName.NETWORK_FS_LAG.value],
+        timeline=[
+            _rename_event(at="1s"),
+            _lag_start(at="1s", duration="3s"),
+            _chaos_event("unmount_path", idx=0, fields={"at": "2s", "target": "r/other"}),
+            _chaos_event("remount_path", idx=1, fields={"at": "3s", "for": "unmount_path_0"}),
+            _lag_commit(at="4s"),
+        ],
+    )
+
+    collector = IssueCollector()
+    run_semantic_pass(raw, empty_index, collector)
+
+    assert not any("overlaps network_lag_start" in message for message in _messages(collector))
 
 
 def _path_action_fields(action: str) -> dict[str, object]:
