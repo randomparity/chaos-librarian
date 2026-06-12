@@ -69,6 +69,7 @@ The plan command writes a self-contained fixture directory with
 | Inspect a run directory | `uv run chaos-librarian inspect run-dir --json` |
 | Compare consumer output | `uv run chaos-librarian compare run-dir observed-state.json --mode final-state --json` |
 | Remove a run directory | `uv run chaos-librarian clean run-dir --json` |
+| Visualize a run over time | `uv run python scripts/visualize_run.py run-dir` (writes a self-contained `visualize.html`) |
 
 ## Documentation
 
