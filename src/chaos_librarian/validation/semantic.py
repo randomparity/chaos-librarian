@@ -37,6 +37,7 @@ from chaos_librarian.validation.rules.network.network_fs_chaos import (
     rule_network_fs_chaos_target,
 )
 from chaos_librarian.validation.rules.network.network_lag import rule_network_lag
+from chaos_librarian.validation.rules.network.window_overlap import rule_network_window_overlap
 from chaos_librarian.validation.rules.paths.asset_path_safety import (
     rule_asset_id_container_safe,
     rule_remux_container_safe,
@@ -84,6 +85,7 @@ _RULES: list[Rule] = [
     rule_network_lag,
     rule_network_fs_chaos_target,
     rule_network_fs_chaos_pairing,
+    rule_network_window_overlap,
     rule_path_containment,
     rule_timeline_order,
     rule_timeline_lifecycle,
