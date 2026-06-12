@@ -123,6 +123,19 @@ def test_probed_for_unknown_asset_is_dropped_with_warning(
     assert "ghost_asset_not_in_run" in caplog.text
 
 
+def test_malformed_current_manifest_is_ignored(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    run_dir = _plan(tmp_path)
+    (run_dir / "manifest.current.json").write_text("{ this is not valid json")
+    with caplog.at_level("WARNING"):
+        payload = build_payload(run_dir)
+    # Core timeline still builds; only the optional probed section is dropped.
+    assert payload["probed_final"] is None
+    assert "malformed manifest.current.json" in caplog.text
+    assert payload["events"]  # the rest of the payload is intact
+
+
 def test_hierarchy_event_surfaces_as_location_path_change(tmp_path: Path) -> None:
     # Spec finding 2: renumber_episode / move_episode_to_season re-render episode
     # file paths (verified: tv-season-folders emits path_moves). to_manifest()

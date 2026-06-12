@@ -6,6 +6,8 @@ import logging
 from pathlib import Path
 from typing import cast
 
+from pydantic import ValidationError
+
 from chaos_librarian.contract.manifest import Manifest
 from chaos_librarian.visualize.diff import build_diffs
 from chaos_librarian.visualize.replay import ReplayResult, replay_with_snapshots
@@ -46,7 +48,14 @@ def _probed_final(run_dir: Path, final_snapshot: dict[str, object]) -> dict[str,
     current_path = run_dir / "manifest.current.json"
     if not current_path.exists():
         return None
-    current = Manifest.model_validate_json(current_path.read_text())
+    try:
+        current = Manifest.model_validate_json(current_path.read_text())
+    except ValidationError:
+        _LOGGER.warning(
+            "ignoring malformed manifest.current.json in %s; probed-final section omitted",
+            run_dir,
+        )
+        return None
     final_assets = {str(asset["id"]) for asset in _rows(final_snapshot, "assets")}
     probed: dict[str, object] = {}
     for version in current.versions:
