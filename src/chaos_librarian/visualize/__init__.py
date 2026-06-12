@@ -9,6 +9,7 @@ from chaos_librarian.visualize.errors import (
     ScenarioRevalidationError,
 )
 from chaos_librarian.visualize.payload import build_payload
+from chaos_librarian.visualize.render import render_html
 
 __all__ = [
     "JournalCorruptLineError",
@@ -16,4 +17,5 @@ __all__ = [
     "MissingArtifactError",
     "ScenarioRevalidationError",
     "build_payload",
+    "render_html",
 ]
