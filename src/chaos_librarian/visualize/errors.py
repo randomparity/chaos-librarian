@@ -1,5 +1,8 @@
-"""Visualizer error types, all subclasses of ``ChaosLibrarianError`` so the
-thin script entry point can catch one base and exit with an actionable message."""
+"""Visualizer error types.
+
+All subclasses of ``ChaosLibrarianError`` so the script entry point can
+catch one base class and exit with an actionable message.
+"""
 
 from __future__ import annotations
 
@@ -52,3 +55,11 @@ class ScenarioRevalidationError(ChaosLibrarianError):
             "likely predates the current contract version — re-run it on this build"
         )
         self.codes = codes
+
+
+__all__ = [
+    "JournalCorruptLineError",
+    "JournalDivergenceError",
+    "MissingArtifactError",
+    "ScenarioRevalidationError",
+]

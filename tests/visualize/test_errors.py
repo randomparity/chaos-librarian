@@ -40,3 +40,4 @@ def test_corrupt_line_cites_line_number() -> None:
     assert isinstance(err, ChaosLibrarianError)
     assert "7" in str(err)
     assert err.line == 7
+    assert err.detail == "expecting value"
