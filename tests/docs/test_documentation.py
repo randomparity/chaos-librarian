@@ -177,6 +177,32 @@ def test_contract_docs_do_not_preserve_known_stale_guidance() -> None:
     assert "readers MUST reject unknown versions with exit code `3`" not in schema_reference
 
 
+def test_active_docs_reference_current_schema_versions() -> None:
+    recipe_readme = _read(ROOT / "recipes" / "README.md")
+    observed_state = _read(DOCS / "contract" / "observed-state.md")
+    integration_recipes = _read(DOCS / "contract" / "integration-recipes.md")
+    scenario_authoring = _read(DOCS / "user" / "scenario-authoring.md")
+    design = _read(DOCS / "specs" / "chaos-librarian-design.md")
+    scenario_docs = {
+        "contract/integration-recipes.md": integration_recipes,
+        "user/scenario-authoring.md": scenario_authoring,
+        "specs/chaos-librarian-design.md": design,
+    }
+
+    assert "schema_version:" not in recipe_readme
+    assert "current `SCENARIO_SCHEMA_VERSION`" in recipe_readme
+
+    assert f"`schema_version`: `{OBSERVED_STATE_SCHEMA_VERSION}`" in observed_state
+    assert f'"schema_version": {OBSERVED_STATE_SCHEMA_VERSION}' in observed_state
+    assert '"schema_version": 2' not in observed_state
+    assert "Observed-state v2" not in observed_state
+
+    for path, text in scenario_docs.items():
+        assert f"schema_version: {SCENARIO_SCHEMA_VERSION}" in text, path
+        assert "schema_version: 12" not in text, path
+        assert '"schema_version": 12' not in text, path
+
+
 def test_validation_pipeline_docs_name_current_helper_modules() -> None:
     validation_pipeline = _read(DOCS / "developer" / "validation-pipeline.md")
 
@@ -208,6 +234,14 @@ def test_observed_state_docs_cover_language_and_sidecar_normalization() -> None:
         "JSON `null`, omitted language, and `und` are equivalent",
         "Subtitle streams remain strict",
         "Consumers should export the facts they observed",
+        "Only `language` has this unknown-equivalence rule",
+        "Read ffprobe tag keys case-insensitively",
+        "set `title` from `tags.title`, falling back to",
+        "`tags.handler_name`",
+        "`channel_layout`,",
+        "`title`, `role`, `attached_pic`, `default`, and `forced` are strict",
+        "Export `attached_pic` only when ffprobe marks the stream",
+        "Export `default` and `forced` only for subtitle streams",
         '"sidecars"',
         '"content_hash"',
         "library-relative POSIX path",

@@ -2,13 +2,13 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 12`.
+`schema_version: 32`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 12`
+- `schema_version: 32`
 - `scenario_id`
 - `seed`
 - `duration_scale`
@@ -33,7 +33,7 @@ that escape that directory after normalization or symlink resolution.
 
 ## Media Hierarchy
 
-Scenario v12 models movies, TV, and music as first-class branches.
+The scenario contract models movies, TV, and music as first-class branches.
 
 Movie topology:
 
@@ -90,7 +90,7 @@ Subtitle source values:
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 12
+schema_version: 32
 scenario_id: static-library
 seed: 1
 duration_scale: short

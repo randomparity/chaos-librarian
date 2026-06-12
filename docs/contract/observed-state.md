@@ -9,7 +9,7 @@ Chaos Librarian policy expectations.
 
 Required fields:
 
-- `schema_version`: `2`
+- `schema_version`: `4`
 - `consumer`: `{name, version?}`
 - `run_id`: the fixture run id being compared
 - `observed_at`: when the consumer snapshot was exported
@@ -34,7 +34,7 @@ Scanner-only minimal asset:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
@@ -101,10 +101,26 @@ Unknown stream language can appear differently across containers and ffprobe
 snapshots.
 
 During `compare`, JSON `null`, omitted language, and `und` are equivalent for
-audio and video streams.
+audio and video streams. Only `language` has this unknown-equivalence rule; all
+other compared stream fields are strict when the oracle records them.
 
 Consumers should export the facts they observed rather than synthesizing
 container-specific language guesses.
+
+Consumer probe exports should follow the oracle's ffprobe normalization:
+
+- Read ffprobe tag keys case-insensitively. Matroska can surface tags such as
+  `ROLE`.
+- For audio streams, set `title` from `tags.title`, falling back to
+  `tags.handler_name`. MP4 stores audio stream titles in the handler name that
+  ffprobe reports as `handler_name`.
+- Export optional stream facts whenever ffprobe reports them. `channel_layout`,
+  `title`, `role`, `attached_pic`, `default`, and `forced` are strict if the
+  oracle records them; omitted values do not compare equal to recorded values.
+  Export `attached_pic` only when ffprobe marks the stream as an attached
+  picture; the oracle omits false and missing attached-picture dispositions.
+  Export `default` and `forced` only for subtitle streams because the oracle
+  records those disposition flags only for subtitles.
 
 Subtitle streams remain strict because subtitle language is assertion data. A
 subtitle stream with missing language does not compare equal to `und`, `eng`, or
@@ -141,7 +157,7 @@ sidecar language is represented by the path convention when applicable.
 ## Topology
 
 Topology refs are consumer-owned and only need to be stable inside the payload.
-Observed-state v2 has these domain row families:
+Observed-state payloads have these domain row families:
 
 - `movies`
 - `series`
@@ -168,7 +184,7 @@ Movie topology:
 
 ```json
 {
-  "schema_version": 2,
+  "schema_version": 4,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
