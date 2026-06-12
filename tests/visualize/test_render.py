@@ -35,6 +35,6 @@ def test_hostile_string_does_not_break_island() -> None:
     assert json.loads(island)["meta"]["scenario_id"] == "</script><img onerror=alert(1)>"
 
 
-def test_token_replaced_exactly_once() -> None:
+def test_token_replaced() -> None:
     html = render_html({"meta": {}, "snapshots": [], "events": [], "diffs": []})
     assert "__CL_PAYLOAD__" not in html

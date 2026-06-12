@@ -8,7 +8,9 @@ from collections.abc import Mapping
 from pathlib import Path
 
 _LOGGER = logging.getLogger(__name__)
-_TEMPLATE = Path(__file__).resolve().parents[3] / "scripts" / "visualize_template.html"
+# parents: [0]=visualize/ [1]=chaos_librarian/ [2]=src/ [3]=repo root
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+_TEMPLATE = _REPO_ROOT / "scripts" / "visualize_template.html"
 _TOKEN = "__CL_PAYLOAD__"  # payload injection marker, not a secret
 _SIZE_WARN_BYTES = 50 * 1024 * 1024
 
