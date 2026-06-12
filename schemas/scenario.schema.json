@@ -1101,6 +1101,7 @@
         "negative-oracle",
         "filesystem-artifact",
         "network-lag",
+        "network-fs-chaos",
         "tv-topology",
         "music-topology"
       ],

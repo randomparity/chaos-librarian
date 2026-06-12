@@ -24,6 +24,9 @@ fuzz_regression:
   - lane: network-lag
     seed: 462
     gates: [validate, plan, replay, run]
+  - lane: network-fs-chaos
+    seed: 465
+    gates: [validate, plan, replay, run]
   - lane: tv-topology
     seed: 463
     gates: [validate, plan, replay, materialize]

@@ -508,6 +508,16 @@ def _emit_network_lag_required_events(planner: TimelinePlanner) -> None:
     _network_lag_pair(planner, assets[2], NetworkLagEffect.HELD_HANDLE)
 
 
+def _emit_network_fs_chaos_required_events(planner: TimelinePlanner) -> None:
+    assets = planner.assets
+    _change_permissions(planner, assets[0])
+    _simulate_quota_exceeded(planner, assets[1])
+    _toggle_readonly(planner, assets[2])
+    _simulate_stale_handle(planner, assets[3])
+    _unmount_pair(planner, assets[4])
+    _lock_pair(planner, assets[5])
+
+
 def _emit_tv_topology_required_events(planner: TimelinePlanner) -> None:
     assets = planner.assets
     _renumber_episode(planner, target="episode_001", episode_number=2)
@@ -886,6 +896,85 @@ def _network_lag_pair(
     )
 
 
+def _change_permissions(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.append_event(
+        scenario_contract.ChangePermissionsEvent(
+            id=planner.event_id("change_permissions"),
+            at=planner.at(),
+            target=asset.asset_id,
+            mode="444",
+        )
+    )
+
+
+def _simulate_quota_exceeded(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.append_event(
+        scenario_contract.SimulateQuotaExceededEvent(
+            id=planner.event_id("quota"),
+            at=planner.at(),
+            target=asset.asset_id,
+        )
+    )
+
+
+def _toggle_readonly(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.append_event(
+        scenario_contract.ToggleReadonlyEvent(
+            id=planner.event_id("readonly"),
+            at=planner.at(),
+            target=asset.asset_id,
+            mode=scenario_contract.ReadonlyState.READONLY,
+        )
+    )
+
+
+def _simulate_stale_handle(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    planner.append_event(
+        scenario_contract.SimulateStaleHandleEvent(
+            id=planner.event_id("stale_handle"),
+            at=planner.at(),
+            target=asset.asset_id,
+        )
+    )
+
+
+def _unmount_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    start_id = planner.event_id("unmount_path")
+    planner.append_event(
+        scenario_contract.UnmountPathEvent(
+            id=start_id,
+            at=planner.at(),
+            target=asset.asset_id,
+        )
+    )
+    planner.append_event(
+        scenario_contract.RemountPathEvent(
+            id=planner.event_id("remount_path"),
+            at=planner.at(),
+            for_=start_id,
+        )
+    )
+
+
+def _lock_pair(planner: TimelinePlanner, asset: PlannedAsset) -> None:
+    start_id = planner.event_id("acquire_lock")
+    planner.append_event(
+        scenario_contract.AcquireLockEvent(
+            id=start_id,
+            at=planner.at(),
+            target=asset.asset_id,
+            lock_type=scenario_contract.LockType.EXCLUSIVE,
+        )
+    )
+    planner.append_event(
+        scenario_contract.ReleaseLockEvent(
+            id=planner.event_id("release_lock"),
+            at=planner.at(),
+            for_=start_id,
+        )
+    )
+
+
 def _one_ns_after(at: str) -> str:
     if not at.endswith("ns"):
         raise ValueError(f"expected ns timestamp, got {at!r}")
@@ -1167,6 +1256,25 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
             }
         ),
         required_events=_emit_network_lag_required_events,
+    ),
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.NETWORK_FS_CHAOS): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.NETWORK_FS_CHAOS,
+        movies=8,
+        timeline_events=20,
+        required_cells=frozenset(
+            {
+                action_cell(TimelineActionName.CHANGE_PERMISSIONS),
+                action_cell(TimelineActionName.SIMULATE_QUOTA_EXCEEDED),
+                action_cell(TimelineActionName.TOGGLE_READONLY),
+                action_cell(TimelineActionName.SIMULATE_STALE_HANDLE),
+                action_cell(TimelineActionName.UNMOUNT_PATH),
+                action_cell(TimelineActionName.REMOUNT_PATH),
+                action_cell(TimelineActionName.ACQUIRE_LOCK),
+                action_cell(TimelineActionName.RELEASE_LOCK),
+            }
+        ),
+        required_events=_emit_network_fs_chaos_required_events,
     ),
     (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.TV_TOPOLOGY): _lane_config(
         profile=FuzzProfileName.FUZZ_REGRESSION,
