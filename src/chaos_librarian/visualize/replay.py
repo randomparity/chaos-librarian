@@ -92,7 +92,9 @@ class ReplayResult:
             full list drives the ghosted planned ticks on the strip.
         live_count: Number of entries actually present on disk (the executed
             prefix). Entries at indices ``>= live_count`` are planned.
-        total_events: ``len(events)`` — the full resolved timeline.
+        total_events: ``len(events)`` — total journal entries emitted across
+            the full timeline (may exceed the number of resolved events when
+            an action emits more than one entry).
         ended_mid_write: The on-disk journal's final line was a torn write.
         scenario_id / run_id / execution_mode: header metadata.
     """
@@ -157,9 +159,10 @@ def replay_with_snapshots(run_dir: Path) -> ReplayResult:
         JournalCorruptLineError: a non-final journal line is unparseable.
         JournalDivergenceError: the on-disk journal disagrees with replay.
     """
-    bundle_path = _require(run_dir, "replay.json", "chaos-librarian plan")
-    _require(run_dir, "scenario.yaml", "chaos-librarian plan")
-    journal_path = _require(run_dir, "journal.jsonl", "chaos-librarian plan")
+    bundle_path = _require(run_dir, "replay.json", "chaos-librarian plan/run")
+    # existence guard; bytes come from bundle.scenario
+    _require(run_dir, "scenario.yaml", "chaos-librarian plan/run")
+    journal_path = _require(run_dir, "journal.jsonl", "chaos-librarian plan/run")
 
     bundle = _REPLAY_BUNDLE_ADAPTER.validate_json(bundle_path.read_bytes())
     prepared = prepare_replay_input_from_bytes(

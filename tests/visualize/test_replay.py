@@ -85,6 +85,8 @@ def test_initial_snapshot_is_seeded_state(tmp_path: Path) -> None:
     run_dir = _plan_run_dir(tmp_path)
     result = replay_with_snapshots(run_dir)
     assert "locations" in result.snapshots[0]
+    # The seeded state must differ from the final executed snapshot.
+    assert result.snapshots[0] != result.snapshots[-1]
 
 
 def test_prefix_run_marks_planned_tail(tmp_path: Path) -> None:
