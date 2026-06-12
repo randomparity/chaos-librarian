@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chaos-librarian run visualizer</title>
+<style>
+  :root { --bg:#0f1117; --panel:#1a1d27; --line:#2a2f3d; --txt:#d8dbe6; --muted:#8b90a3;
+          --add:#2fbf71; --del:#e0556e; --mod:#e0a13a; --plan:#454b5e; --play:#4f8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:var(--bg); color:var(--txt); }
+  header { padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line);
+           display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  header b { color:#fff; }
+  #banner { background:#3a2a12; color:#e0a13a; padding:4px 12px; display:none; }
+  #main { display:flex; height:calc(100vh - 120px); }
+  #canvas { flex:1; overflow:auto; padding:10px 14px; }
+  #drawer { width:0; transition:width .12s; overflow:hidden; background:var(--panel);
+            border-left:1px solid var(--line); }
+  #drawer.open { width:42%; }
+  #drawer .body { padding:10px 14px; }
+  .tabs { display:flex; gap:6px; border-bottom:1px solid var(--line); padding:6px 14px 0; }
+  .tab { padding:4px 10px; cursor:pointer; border:1px solid var(--line); border-bottom:none;
+         border-radius:4px 4px 0 0; color:var(--muted); }
+  .tab.on { color:#fff; background:var(--bg); }
+  .node { cursor:pointer; padding:1px 0; white-space:pre; }
+  .node:hover { background:#222633; }
+  .node.sel { background:#2b3350; }
+  .dir { color:var(--muted); }
+  .touched-add { color:var(--add); } .touched-del { color:var(--del); }
+  .touched-mod { color:var(--mod); } .ghost { color:var(--muted); font-style:italic; }
+  .badge { font-size:11px; padding:0 5px; border-radius:3px; background:#333; margin-left:6px; }
+  #strip { display:flex; height:34px; align-items:stretch; padding:6px 12px; gap:1px;
+           background:var(--panel); border-top:1px solid var(--line); overflow-x:auto; }
+  .tick { flex:1 0 4px; min-width:4px; border-radius:1px; cursor:pointer; }
+  .tick.play { outline:2px solid var(--play); outline-offset:-2px; }
+  .tick.planned { opacity:.35; cursor:not-allowed; }
+  #scrub { padding:6px 12px; display:flex; gap:10px; align-items:center; background:var(--panel); }
+  #scrub input { flex:1; }
+  table { border-collapse:collapse; width:100%; margin:6px 0; }
+  th,td { text-align:left; border-bottom:1px solid var(--line); padding:2px 6px; }
+  .tl-row { padding:4px 6px; border-left:3px solid var(--line); cursor:pointer; margin:2px 0; }
+  .tl-row.now { border-left-color:var(--play); background:#1d2436; }
+  a.assetlink { color:var(--play); cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <span>run: <b id="h-scenario"></b></span>
+  <span id="h-run" class="ghost"></span>
+  <span>mode: <b id="h-mode"></b></span>
+  <span>step <b id="h-step"></b> / <b id="h-total"></b></span>
+  <span id="h-action" class="ghost"></span>
+</header>
+<div id="banner"></div>
+<div id="main">
+  <div id="canvas"></div>
+  <div id="drawer">
+    <div class="tabs">
+      <div class="tab on" data-tab="layout" id="tab-layout">Layout</div>
+      <div class="tab" data-tab="timeline" id="tab-timeline">Timeline</div>
+    </div>
+    <div class="body" id="drawer-body"></div>
+  </div>
+</div>
+<div id="strip"></div>
+<div id="scrub">
+  <button id="btn-start">⏮</button><button id="btn-prev">◀</button>
+  <input type="range" id="range" min="0" value="0">
+  <button id="btn-next">▶</button><button id="btn-end">⏭</button>
+  <span id="scrub-label" class="ghost"></span>
+</div>
+
+<script type="application/json" id="cl-payload">__CL_PAYLOAD__</script>
+<script>
+"use strict";
+const PAYLOAD = JSON.parse(document.getElementById("cl-payload").textContent);
+const { meta, snapshots, events, diffs, probed_final } = PAYLOAD;
+let t = 0;                 // current step index into snapshots (0..total_events)
+let sel = null;            // {kind:"location"|"sidecar", id}
+let tab = "layout";
+const liveMax = Math.max(0, meta.live_count); // last scrubbable snapshot index
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text; // text-only: hostile strings stay inert
+  return n;
+}
+function rowsById(snap, key) {
+  const m = new Map();
+  (snap[key] || []).forEach(r => m.set(r.id, r));
+  return m;
+}
+function eventCategory(action) {
+  const A = action || "";
+  if (/(reencode|remux|edit_metadata|corrupt_tags)/.test(A)) return "var(--mod)";
+  if (/(move|rename|archive|move_between_roots)/.test(A)) return "var(--mod)";
+  if (/(sidecar|subtitle)/.test(A)) return "var(--add)";
+  if (/(slow_copy|network_lag|network_fs)/.test(A)) return "var(--play)";
+  if (/(corrupt|truncate|wrong_oracle)/.test(A)) return "var(--del)";
+  return "#7a8094"; // neutral fallback for unknown/new actions
+}
+
+function diffTouchesLocation(diff, locId, assetId, snap) {
+  const hit = (coll, id) => coll.added.includes(id) || coll.removed.includes(id)
+    || coll.changed.some(c => c.id === id);
+  if (hit(diff.locations, locId)) return true;
+  // owning asset's other locations (path re-renders from hierarchy events)
+  for (const l of (snap.locations || [])) {
+    if (l.asset_id === assetId && hit(diff.locations, l.id)) return true;
+  }
+  for (const v of (snap.versions || [])) {
+    if (v.asset_id === assetId && hit(diff.versions, v.id)) return true;
+  }
+  for (const s of (snap.sidecars || [])) {
+    if (s.asset_id === assetId && hit(diff.sidecars, s.id)) return true;
+  }
+  return false;
+}
+
+function renderHeader() {
+  document.getElementById("h-scenario").textContent = meta.scenario_id;
+  document.getElementById("h-run").textContent = meta.run_id;
+  document.getElementById("h-mode").textContent = meta.execution_mode;
+  document.getElementById("h-step").textContent = t;
+  document.getElementById("h-total").textContent = meta.total_events;
+  const ev = t > 0 ? events[t - 1] : null;
+  document.getElementById("h-action").textContent =
+    ev ? `${ev.action} (${ev.event_id})` : "initial state";
+  const banner = document.getElementById("banner");
+  if (meta.ended_mid_write && t >= liveMax) {
+    banner.style.display = "block";
+    banner.textContent = "journal ended mid-write — steps beyond here are planned, not executed";
+  } else { banner.style.display = "none"; }
+}
+
+function renderStrip() {
+  const strip = document.getElementById("strip");
+  strip.replaceChildren();
+  events.forEach((ev, i) => {
+    const tick = el("div", "tick");
+    tick.style.background = eventCategory(ev.action);
+    if (!ev.executed) tick.classList.add("planned");
+    if (i + 1 === t) tick.classList.add("play");
+    tick.title = `${ev.event_id} · ${ev.action} · ${(ev.target_ids || []).join(",")}`;
+    tick.onclick = () => { if (ev.executed) setStep(i + 1); };
+    strip.appendChild(tick);
+  });
+}
+
+function renderTree() {
+  const snap = snapshots[t];
+  const prevDiff = t > 0 ? diffs[t - 1] : null;
+  const canvas = document.getElementById("canvas");
+  canvas.replaceChildren();
+  const entries = [];
+  (snap.locations || []).forEach(l => entries.push({ kind: "location", id: l.id,
+    path: l.temp_path || l.path, asset_id: l.asset_id, ghost: !!l.temp_path }));
+  (snap.sidecars || []).forEach(s => entries.push({ kind: "sidecar", id: s.id,
+    path: s.path, asset_id: s.asset_id, ghost: false }));
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  for (const e of entries) {
+    const node = el("div", "node");
+    let cls = "";
+    if (prevDiff) {
+      const coll = e.kind === "location" ? prevDiff.locations : prevDiff.sidecars;
+      if (coll.added.includes(e.id)) cls = "touched-add";
+      else if (coll.changed.some(c => c.id === e.id)) cls = "touched-mod";
+    }
+    if (cls) node.classList.add(cls);
+    if (e.ghost) node.classList.add("ghost");
+    if (sel && sel.id === e.id) node.classList.add("sel");
+    node.textContent = e.path + (e.ghost ? "  (in flight)" : "");
+    node.onclick = () => selectFile(e.kind, e.id);
+    canvas.appendChild(node);
+  }
+}
+
+function ownerAsset(snap, selObj) {
+  const coll = selObj.kind === "location" ? snap.locations : snap.sidecars;
+  const row = (coll || []).find(r => r.id === selObj.id);
+  return row ? row.asset_id : null;
+}
+
+function renderDrawer() {
+  const drawer = document.getElementById("drawer");
+  const body = document.getElementById("drawer-body");
+  body.replaceChildren();
+  if (!sel) { drawer.classList.remove("open"); return; }
+  drawer.classList.add("open");
+  document.getElementById("tab-layout").classList.toggle("on", tab === "layout");
+  document.getElementById("tab-timeline").classList.toggle("on", tab === "timeline");
+  if (tab === "layout") renderLayoutTab(body);
+  else renderTimelineTab(body);
+}
+
+function renderLayoutTab(body) {
+  const snap = snapshots[t];
+  const assetId = ownerAsset(snap, sel);
+  if (sel.kind === "sidecar") {
+    const sc = (snap.sidecars || []).find(s => s.id === sel.id);
+    if (!sc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
+    body.appendChild(el("h3", null, sc.path));
+    body.appendChild(el("div", null, `kind: ${sc.kind}  lang: ${sc.language || "—"}`));
+    body.appendChild(el("div", "ghost", `hash: ${sc.content_hash || "—"}`));
+    const link = el("a", "assetlink", `owning asset: ${sc.asset_id}`);
+    link.onclick = () => openAssetPrimary(sc.asset_id);
+    body.appendChild(link);
+    return;
+  }
+  const loc = (snap.locations || []).find(l => l.id === sel.id);
+  if (!loc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
+  body.appendChild(el("h3", null, loc.temp_path || loc.path));
+  const asset = (snap.assets || []).find(a => a.id === assetId);
+  if (asset) body.appendChild(el("div", null,
+    `role: ${asset.role}  container: ${asset.container}  dur: ${asset.duration_seconds}s`));
+  const version = (snap.versions || []).filter(v => v.asset_id === assetId).slice(-1)[0];
+  if (version) {
+    body.appendChild(el("div", "ghost", `v${version.index}  hash: ${version.content_hash || "—"}`));
+    if (version.probed) appendStreams(body, "tracks (model)", version.probed.streams || []);
+    if (version.corruption) body.appendChild(el("div", "touched-del",
+      `corruption: ${JSON.stringify(version.corruption)}`));
+  }
+  if (probed_final && probed_final[assetId]) {
+    appendStreams(body, "probed (final, ffprobe)", probed_final[assetId].streams || []);
+  }
+}
+
+function appendStreams(body, label, streams) {
+  body.appendChild(el("div", "ghost", label));
+  const table = el("table");
+  const head = el("tr");
+  ["kind", "codec", "language", "default", "forced"].forEach(h => head.appendChild(el("th", null, h)));
+  table.appendChild(head);
+  streams.forEach(s => {
+    const tr = el("tr");
+    [s.kind, s.codec, s.language || "—", String(s.default ?? ""), String(s.forced ?? "")]
+      .forEach(v => tr.appendChild(el("td", null, v)));
+    table.appendChild(tr);
+  });
+  body.appendChild(table);
+}
+
+function renderTimelineTab(body) {
+  const snap = snapshots[t];
+  const assetId = ownerAsset(snap, sel);
+  for (let i = 0; i < diffs.length; i++) {
+    const useSnap = snapshots[i + 1];
+    if (!diffTouchesLocation(diffs[i], sel.id, assetId, useSnap)) continue;
+    const ev = events[i];
+    const row = el("div", "tl-row");
+    if (i + 1 === t) row.classList.add("now");
+    row.textContent = `@${ev.logical_time_ns}  ${ev.action}  ${describeDelta(ev)}`;
+    row.onclick = () => { if (ev.executed) setStep(i + 1); };
+    body.appendChild(row);
+  }
+}
+
+function describeDelta(ev) {
+  const d = ev.state_delta || {};
+  if (d.from_path && d.to_path) return `${d.from_path} → ${d.to_path}`;
+  if (d.final_path) return d.final_path;
+  return "";
+}
+
+function selectFile(kind, id) { sel = { kind, id }; tab = "layout"; render(); }
+function openAssetPrimary(assetId) {
+  const snap = snapshots[t];
+  const loc = (snap.locations || []).find(l => l.asset_id === assetId);
+  if (loc) selectFile("location", loc.id);
+}
+function setStep(n) { t = Math.max(0, Math.min(liveMax, n)); render(); }
+
+function render() {
+  document.getElementById("range").max = String(liveMax);
+  document.getElementById("range").value = String(t);
+  document.getElementById("scrub-label").textContent = `t=${t} / ${meta.total_events}`;
+  renderHeader(); renderStrip(); renderTree(); renderDrawer();
+}
+
+document.getElementById("btn-start").onclick = () => setStep(0);
+document.getElementById("btn-end").onclick = () => setStep(liveMax);
+document.getElementById("btn-prev").onclick = () => setStep(t - 1);
+document.getElementById("btn-next").onclick = () => setStep(t + 1);
+document.getElementById("range").oninput = (e) => setStep(parseInt(e.target.value, 10));
+document.getElementById("tab-layout").onclick = () => { tab = "layout"; renderDrawer(); };
+document.getElementById("tab-timeline").onclick = () => { tab = "timeline"; renderDrawer(); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") setStep(t - 1);
+  else if (e.key === "ArrowRight") setStep(t + 1);
+  else if (e.key === "Home") setStep(0);
+  else if (e.key === "End") setStep(liveMax);
+});
+render();
+</script>
+</body>
+</html>
