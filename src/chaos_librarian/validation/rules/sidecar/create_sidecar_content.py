@@ -1,10 +1,11 @@
 """Rule: create_sidecar authored content must be synthesizable.
 
-Subtitle ``create_sidecar`` events are SRT-only in v1; an ass/ssa codec or an
-out-of-set encoding raises E_MATERIALIZE_UNSUPPORTED — the same code the
-declared-subtitle path (``materialize_media_matrix``) raises for the analogous
-combo. NFO ``body`` (any non-empty UTF-8 string) and poster ``media_type`` (a
-closed enum) are always synthesizable, so they need no materialize check here.
+Subtitle ``create_sidecar`` events use the shared subtitle recipe matrix; an
+out-of-set codec/source/encoding raises E_MATERIALIZE_UNSUPPORTED — the same
+code the declared-subtitle path (``materialize_media_matrix``) raises for the
+analogous combo. NFO ``body`` (any non-empty UTF-8 string) and poster
+``media_type`` (a closed enum) are always synthesizable, so they need no
+materialize check here.
 
 A poster ``image_format`` (#118) selects the synthesized image format; the ``to:``
 extension must agree with it (png→.png, jpeg→.jpg/.jpeg, webp→.webp) so the
@@ -72,7 +73,7 @@ def rule_create_sidecar_content(
                 code=E_MATERIALIZE_UNSUPPORTED,
                 message=(
                     f"create_sidecar subtitle codec/source ({codec.value!r}, {source.value!r}) "
-                    "is not synthesizable by the timeline event (SRT only)"
+                    "is not synthesizable by the timeline event"
                 ),
                 loc=("timeline", index, "codec"),
             )

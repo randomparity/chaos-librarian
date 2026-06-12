@@ -1455,6 +1455,56 @@ class TestApplyCreateSidecar:
         assert on_disk != utf8
         assert on_disk.decode("utf-16-le") == utf8.decode("utf-8")
 
+    def test_subtitle_ass_styled_ass_writes_ass_bytes(self, tmp_path):
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_ass",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.jpn.ass",
+                "sidecar_id": "sidecar_ass",
+                "language": "jpn",
+                "kind": "subtitle",
+                "codec": "ass",
+                "source": "styled_ass",
+                "encoding": "utf8",
+            },
+        )
+        apply_media_action(ctx, entry)
+
+        on_disk = (tmp_path / "a0.jpn.ass").read_text()
+        assert "[V4+ Styles]" in on_disk
+        assert "Dialogue:" in on_disk
+        assert "-->" not in on_disk
+        sidecar = ctx.live_sidecars["sidecar_ass"]
+        assert isinstance(sidecar, LiveSubtitleSidecar)
+        assert sidecar.encoding == "utf8"
+
+    def test_subtitle_ssa_styled_ass_writes_utf8_bom_ssa_bytes(self, tmp_path):
+        ctx = self._ctx(tmp_path)
+        entry = _atomic_entry(
+            event_id="ev_cs_ssa",
+            action=TimelineActionName.CREATE_SIDECAR,
+            target="a0",
+            state_delta={
+                "sidecar_path": "a0.spa.ssa",
+                "sidecar_id": "sidecar_ssa",
+                "language": "spa",
+                "kind": "subtitle",
+                "codec": "ssa",
+                "source": "styled_ass",
+                "encoding": "utf8_bom",
+            },
+        )
+        apply_media_action(ctx, entry)
+
+        on_disk = (tmp_path / "a0.spa.ssa").read_bytes()
+        assert on_disk.startswith(b"\xef\xbb\xbf")
+        decoded = on_disk.decode("utf-8-sig")
+        assert "[V4 Styles]" in decoded
+        assert "Marked=0" in decoded
+
     def test_nfo_body_written_verbatim(self, tmp_path):
         ctx = self._ctx(tmp_path)
         entry = _atomic_entry(

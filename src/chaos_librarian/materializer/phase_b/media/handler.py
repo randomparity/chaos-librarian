@@ -30,6 +30,10 @@ from chaos_librarian.contract.scenario import (
     PosterImageFormat,
     SidecarKind,
     SidecarMediaType,
+    SubtitleCodec,
+    SubtitleEncoding,
+    SubtitleSource,
+    SubtitleTimingProfile,
     TimelineActionName,
 )
 from chaos_librarian.materializer.errors import MediaActionError
@@ -51,6 +55,7 @@ from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 from chaos_librarian.materializer.tooling.ffmpeg import BITEXACT_FLAGS, run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import srt_payload
+from chaos_librarian.materializer.tooling.subtitles import subtitle_payload_bytes
 from chaos_librarian.media_matrix import AUDIO_ENCODER_BY_CODEC
 
 
@@ -80,6 +85,30 @@ def _optional_poster_image_format(value: object) -> PosterImageFormat | None:
     if isinstance(value, str):
         return PosterImageFormat(value)
     raise ValueError(f"image_format must be a string or null, got {type(value).__name__}")
+
+
+def _optional_subtitle_codec(value: object) -> SubtitleCodec | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return SubtitleCodec(value)
+    raise ValueError(f"codec must be a string or null, got {type(value).__name__}")
+
+
+def _optional_subtitle_source(value: object) -> SubtitleSource | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return SubtitleSource(value)
+    raise ValueError(f"source must be a string or null, got {type(value).__name__}")
+
+
+def _optional_subtitle_encoding(value: object) -> SubtitleEncoding | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return SubtitleEncoding(value)
+    raise ValueError(f"encoding must be a string or null, got {type(value).__name__}")
 
 
 __all__ = [
@@ -150,7 +179,9 @@ class _CreateSidecarRequest:
     temp_output: Path
     kind: SidecarKind
     language: str | None
-    encoding: str | None
+    codec: SubtitleCodec | None
+    source: SubtitleSource | None
+    encoding: SubtitleEncoding | None
     body_text: str | None
     media_type: SidecarMediaType | None
     image_format: PosterImageFormat | None
@@ -1019,9 +1050,9 @@ def _write_updated_poster_sidecar(
 def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> MediaAction:
     """Create a sidecar file with bytes appropriate to ``state_delta['kind']``.
 
-    Subtitle → ``srt_payload`` (pure Python). NFO → ``render_nfo`` (pure
-    Python). Poster → ``poster_ffmpeg_argv`` (lavfi color source via
-    ffmpeg). All three kinds use the standard atomic-rename via
+    Subtitle → pure Python subtitle recipe bytes. NFO → ``render_nfo`` (pure
+    Python). Poster → ``poster_ffmpeg_argv`` (lavfi color source via ffmpeg).
+    All three kinds use the standard atomic-rename via
     ``temp_sibling`` and stash ``(content_hash, path)`` on
     ``ctx.post_phase_b_sidecars`` so ``augment_updated_sidecars`` can
     stamp the engine-allocated ``ManifestSidecar`` row.
@@ -1034,8 +1065,6 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
     asset_id = entry.target_ids[0]
     raw_language = delta.get("language")
     language = str(raw_language) if isinstance(raw_language, str) else None
-    encoding = delta.get("encoding")
-    encoding = str(encoding) if isinstance(encoding, str) else None
     raw_body = delta.get("body")
     body_text = str(raw_body) if isinstance(raw_body, str) else None
     sidecar_path_str = str(delta["sidecar_path"])
@@ -1049,7 +1078,9 @@ def _apply_create_sidecar(ctx: MediaPhaseBContext, entry: JournalEntry) -> Media
         temp_output=temp_output,
         kind=SidecarKind(str(delta["kind"])),
         language=language,
-        encoding=encoding,
+        codec=_optional_subtitle_codec(delta.get("codec")),
+        source=_optional_subtitle_source(delta.get("source")),
+        encoding=_optional_subtitle_encoding(delta.get("encoding")),
         body_text=body_text,
         media_type=_optional_sidecar_media_type(delta.get("media_type")),
         image_format=_optional_poster_image_format(delta.get("image_format")),
@@ -1126,18 +1157,36 @@ def _write_subtitle_sidecar(
             cause=ValueError("language is None"),
             asset_id=request.asset_id,
         )
-    text = srt_payload(
-        language=request.language,
-        duration_s=request.asset.duration_seconds,
-        seed=ctx.resolved_seed,
-    )
-    request.temp_output.write_bytes(encode_subtitle_body(text, request.encoding))
+    codec = request.codec or SubtitleCodec.SRT
+    source = request.source or SubtitleSource.GENERATED_SRT
+    encoding = request.encoding or SubtitleEncoding.UTF8
+    if codec is SubtitleCodec.SRT:
+        text = srt_payload(
+            language=request.language,
+            duration_s=request.asset.duration_seconds,
+            seed=ctx.resolved_seed,
+        )
+        body = encode_subtitle_body(
+            text,
+            request.encoding.value if request.encoding is not None else None,
+        )
+    else:
+        body = subtitle_payload_bytes(
+            codec=codec,
+            source=source,
+            encoding=encoding,
+            timing_profile=SubtitleTimingProfile.NORMAL,
+            language=request.language,
+            duration_s=request.asset.duration_seconds,
+            seed=ctx.resolved_seed,
+        )
+    request.temp_output.write_bytes(body)
     return _CreateSidecarWriteResult(
         tool_invocation_index=None,
         live_sidecar=LiveSubtitleSidecar(
             asset_id=request.asset_id,
             language=request.language,
-            encoding=request.encoding,
+            encoding=request.encoding.value if request.encoding is not None else None,
         ),
     )
 
