@@ -27,6 +27,13 @@ def test_torn_final_line_is_dropped_with_flag() -> None:
     assert result.ended_mid_write is True
 
 
+def test_single_torn_line_yields_empty_prefix() -> None:
+    # A run that crashed after its very first (incomplete) write.
+    result = parse_journal_text('{"schema_version":1,"event')
+    assert result.entries == []
+    assert result.ended_mid_write is True
+
+
 def test_corrupt_nonfinal_line_is_hard_error() -> None:
     with pytest.raises(JournalCorruptLineError) as exc:
         parse_journal_text('{"broken":true}\n' + _GOOD + "\n")
