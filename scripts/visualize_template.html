@@ -129,7 +129,7 @@ function renderHeader() {
   document.getElementById("h-action").textContent =
     ev ? `${ev.action} (${ev.event_id})` : "initial state";
   const banner = document.getElementById("banner");
-  if (meta.ended_mid_write && t >= liveMax) {
+  if (meta.ended_mid_write) {
     banner.style.display = "block";
     banner.textContent = "journal ended mid-write — steps beyond here are planned, not executed";
   } else { banner.style.display = "none"; }
@@ -159,10 +159,36 @@ function renderTree() {
     path: l.temp_path || l.path, asset_id: l.asset_id, ghost: !!l.temp_path }));
   (snap.sidecars || []).forEach(s => entries.push({ kind: "sidecar", id: s.id,
     path: s.path, asset_id: s.asset_id, ghost: false }));
+  // I-4: append ghost nodes for items deleted at this step
+  if (prevDiff && t > 0) {
+    const prevSnap = snapshots[t - 1];
+    for (const removedId of (prevDiff.locations.removed || [])) {
+      const prevLoc = (prevSnap.locations || []).find(l => l.id === removedId);
+      if (prevLoc) {
+        entries.push({ kind: "location", id: removedId,
+          path: prevLoc.temp_path || prevLoc.path, asset_id: prevLoc.asset_id,
+          ghost: false, deleted: true });
+      }
+    }
+    for (const removedId of (prevDiff.sidecars.removed || [])) {
+      const prevSc = (prevSnap.sidecars || []).find(s => s.id === removedId);
+      if (prevSc) {
+        entries.push({ kind: "sidecar", id: removedId,
+          path: prevSc.path, asset_id: prevSc.asset_id,
+          ghost: false, deleted: true });
+      }
+    }
+  }
   entries.sort((a, b) => a.path.localeCompare(b.path));
   for (const e of entries) {
     const node = el("div", "node");
     let cls = "";
+    if (e.deleted) {
+      node.classList.add("touched-del");
+      node.textContent = e.path + "  (deleted)";
+      canvas.appendChild(node);
+      continue;
+    }
     if (prevDiff) {
       const coll = e.kind === "location" ? prevDiff.locations : prevDiff.sidecars;
       if (coll.added.includes(e.id)) cls = "touched-add";
@@ -195,6 +221,55 @@ function renderDrawer() {
   else renderTimelineTab(body);
 }
 
+// I-2: resolve human-readable work context for an asset
+function workContext(snap, assetId) {
+  const asset = (snap.assets || []).find(a => a.id === assetId);
+  if (!asset) return null;
+  const bundle = (snap.bundles || []).find(b => b.id === asset.bundle_id);
+  if (!bundle) return null;
+  const variant = (snap.variants || []).find(v => v.id === bundle.variant_id);
+  if (!variant) return null;
+
+  const pk = variant.parent_kind;
+  const pid = variant.parent_id;
+  let workTitle = null;
+
+  if (pk === "movie") {
+    const movie = (snap.movies || []).find(m => m.id === pid);
+    workTitle = movie ? movie.title : null;
+  } else if (pk === "episode") {
+    const episode = (snap.episodes || []).find(e => e.id === pid);
+    if (episode) {
+      const season = (snap.seasons || []).find(s => s.id === episode.season_id);
+      if (season) {
+        const series = (snap.series || []).find(sr => sr.id === season.series_id);
+        if (series) {
+          workTitle = `${series.title} – S${season.season_number}E${episode.episode_number} ${episode.title}`;
+        }
+      }
+    }
+  } else if (pk === "track") {
+    const track = (snap.tracks || []).find(tr => tr.id === pid);
+    if (track) {
+      const disc = (snap.discs || []).find(d => d.id === track.disc_id);
+      if (disc) {
+        const album = (snap.albums || []).find(al => al.id === disc.album_id);
+        if (album) {
+          const artist = (snap.artists || []).find(ar => ar.id === album.artist_id);
+          if (artist) {
+            workTitle = `${artist.name} – ${album.title} – ${track.title}`;
+          }
+        }
+      }
+    }
+  } else {
+    workTitle = `${pk}:${pid}`;
+  }
+
+  if (workTitle == null) workTitle = `${pk}:${pid}`;
+  return `variant: ${variant.label}  bundle: ${asset.bundle_id}  work: ${workTitle}`;
+}
+
 function renderLayoutTab(body) {
   const snap = snapshots[t];
   const assetId = ownerAsset(snap, sel);
@@ -202,7 +277,7 @@ function renderLayoutTab(body) {
     const sc = (snap.sidecars || []).find(s => s.id === sel.id);
     if (!sc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
     body.appendChild(el("h3", null, sc.path));
-    body.appendChild(el("div", null, `kind: ${sc.kind}  lang: ${sc.language || "—"}`));
+    body.appendChild(el("div", null, `kind: ${sc.kind}  language: ${sc.language || "—"}`));
     body.appendChild(el("div", "ghost", `hash: ${sc.content_hash || "—"}`));
     const link = el("a", "assetlink", `owning asset: ${sc.asset_id}`);
     link.onclick = () => openAssetPrimary(sc.asset_id);
@@ -213,8 +288,13 @@ function renderLayoutTab(body) {
   if (!loc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
   body.appendChild(el("h3", null, loc.temp_path || loc.path));
   const asset = (snap.assets || []).find(a => a.id === assetId);
-  if (asset) body.appendChild(el("div", null,
-    `role: ${asset.role}  container: ${asset.container}  dur: ${asset.duration_seconds}s`));
+  if (asset) {
+    body.appendChild(el("div", null,
+      `role: ${asset.role}  container: ${asset.container}  dur: ${asset.duration_seconds}s`));
+    // I-2: variant / bundle / work context
+    const ctx = workContext(snap, assetId);
+    if (ctx) body.appendChild(el("div", "ghost", ctx));
+  }
   const version = (snap.versions || []).filter(v => v.asset_id === assetId).slice(-1)[0];
   if (version) {
     body.appendChild(el("div", "ghost", `v${version.index}  hash: ${version.content_hash || "—"}`));
@@ -224,6 +304,18 @@ function renderLayoutTab(body) {
   }
   if (probed_final && probed_final[assetId]) {
     appendStreams(body, "probed (final, ffprobe)", probed_final[assetId].streams || []);
+  }
+  // I-1: asset's sidecars
+  const ownSidecars = (snap.sidecars || []).filter(s => s.asset_id === assetId);
+  if (ownSidecars.length > 0) {
+    body.appendChild(el("div", "ghost", "sidecars"));
+    for (const sc of ownSidecars) {
+      const row = el("div", null, `${sc.kind}  language: ${sc.language || "—"}  ${sc.path}`);
+      row.style.cursor = "pointer";
+      row.classList.add("assetlink");
+      row.onclick = () => selectFile("sidecar", sc.id);
+      body.appendChild(row);
+    }
   }
 }
 
