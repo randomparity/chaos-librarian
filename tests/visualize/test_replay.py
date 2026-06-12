@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -127,6 +128,34 @@ def test_journal_longer_than_timeline_is_divergence(tmp_path: Path) -> None:
     assert exc.value.position == len(lines) - 1
     assert exc.value.disk_event_id == "EXTRA_PAST_END"
     assert "end of timeline" in exc.value.replay_event_id
+
+
+def _snap_locs(snap: dict[str, object]) -> list[dict[str, object]]:
+    return cast("list[dict[str, object]]", snap.get("locations", []))
+
+
+def test_slow_copy_in_flight_temp_path_is_snapshotted(tmp_path: Path) -> None:
+    # active-library-churn emits slow_copy_start then slow_copy_commit.
+    # The snapshot after slow_copy_start must carry a temp_path on the location
+    # (the in-flight staging state); the snapshot after slow_copy_commit must
+    # not — temp_path is excluded from the dump when None (exclude_none=True).
+    result = replay_with_snapshots(_plan_run_dir(tmp_path))
+    # At least one snapshot must have a location with temp_path set (in-flight).
+    has_in_flight = any(
+        any(loc.get("temp_path") for loc in _snap_locs(snap)) for snap in result.snapshots
+    )
+    assert has_in_flight, "expected at least one snapshot with a location carrying temp_path"
+    # The snapshot immediately after the in-flight one (slow_copy_commit) must
+    # have that location without temp_path — committed state is clean.
+    in_flight_snap_idx = next(
+        i
+        for i, snap in enumerate(result.snapshots)
+        if any(loc.get("temp_path") for loc in _snap_locs(snap))
+    )
+    committed_snap = result.snapshots[in_flight_snap_idx + 1]
+    assert not any(loc.get("temp_path") for loc in _snap_locs(committed_snap)), (
+        "expected temp_path to be cleared in the post-commit snapshot"
+    )
 
 
 def test_unrevalidatable_scenario_is_clean_error(tmp_path: Path) -> None:

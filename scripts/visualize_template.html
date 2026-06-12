@@ -156,7 +156,8 @@ function renderTree() {
   canvas.replaceChildren();
   const entries = [];
   (snap.locations || []).forEach(l => entries.push({ kind: "location", id: l.id,
-    path: l.temp_path || l.path, asset_id: l.asset_id, ghost: !!l.temp_path }));
+    path: l.temp_path || l.path, asset_id: l.asset_id, ghost: !!l.temp_path,
+    bytes_written: l.temp_path ? (l.bytes_written ?? null) : null }));
   (snap.sidecars || []).forEach(s => entries.push({ kind: "sidecar", id: s.id,
     path: s.path, asset_id: s.asset_id, ghost: false }));
   // I-4: append ghost nodes for items deleted at this step
@@ -197,7 +198,16 @@ function renderTree() {
     if (cls) node.classList.add(cls);
     if (e.ghost) node.classList.add("ghost");
     if (sel && sel.id === e.id) node.classList.add("sel");
-    node.textContent = e.path + (e.ghost ? "  (in flight)" : "");
+    let label = e.path + (e.ghost
+      ? "  (in flight" + (e.bytes_written != null ? ", " + e.bytes_written + " bytes" : "") + ")"
+      : "");
+    if (e.kind === "location") {
+      const hasCorruption = (snap.versions || []).some(
+        v => v.asset_id === e.asset_id && v.corruption != null
+      );
+      if (hasCorruption) label += "  ⚠";
+    }
+    node.textContent = label;
     node.onclick = () => selectFile(e.kind, e.id);
     canvas.appendChild(node);
   }
@@ -335,11 +345,10 @@ function appendStreams(body, label, streams) {
 }
 
 function renderTimelineTab(body) {
-  const snap = snapshots[t];
-  const assetId = ownerAsset(snap, sel);
   for (let i = 0; i < diffs.length; i++) {
     const useSnap = snapshots[i + 1];
-    if (!diffTouchesLocation(diffs[i], sel.id, assetId, useSnap)) continue;
+    const assetIdAtStep = ownerAsset(useSnap, sel);
+    if (!diffTouchesLocation(diffs[i], sel.id, assetIdAtStep, useSnap)) continue;
     const ev = events[i];
     const row = el("div", "tl-row");
     if (i + 1 === t) row.classList.add("now");

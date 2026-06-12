@@ -192,3 +192,32 @@ def test_materialize_run_dir_passes_cross_check(tmp_path: Path) -> None:
     snapshots = cast("list[object]", payload["snapshots"])
     events = cast("list[object]", payload["events"])
     assert len(snapshots) == len(events) + 1
+
+
+def test_diff_ids_reference_adjacent_snapshots(tmp_path: Path) -> None:
+    # Spec contract: every id referenced by a diff must be present in its
+    # adjacent snapshots — added/changed ids in snaps[i+1], removed ids in snaps[i].
+    payload = build_payload(_plan(tmp_path))
+    snaps = cast("list[dict[str, object]]", payload["snapshots"])
+    diffs = cast("list[dict[str, object]]", payload["diffs"])
+    for i, diff in enumerate(diffs):
+        for coll in ("locations", "versions", "sidecars"):
+            prev_ids = {r["id"] for r in cast("list[dict[str, object]]", snaps[i][coll])}
+            curr_ids = {r["id"] for r in cast("list[dict[str, object]]", snaps[i + 1][coll])}
+            diff_coll = cast("dict[str, object]", diff[coll])
+            for cid in cast("list[str]", diff_coll["added"]):
+                assert cid in curr_ids, (
+                    f"diff[{i}].{coll}.added id {cid!r} missing from snapshots[{i + 1}]"
+                )
+            for cid in cast("list[str]", diff_coll["removed"]):
+                assert cid in prev_ids, (
+                    f"diff[{i}].{coll}.removed id {cid!r} missing from snapshots[{i}]"
+                )
+            for ch in cast("list[dict[str, object]]", diff_coll["changed"]):
+                chid = cast("str", ch["id"])
+                assert chid in curr_ids, (
+                    f"diff[{i}].{coll}.changed id {chid!r} missing from snapshots[{i + 1}]"
+                )
+                assert chid in prev_ids, (
+                    f"diff[{i}].{coll}.changed id {chid!r} missing from snapshots[{i}]"
+                )
