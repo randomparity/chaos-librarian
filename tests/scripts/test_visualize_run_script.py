@@ -51,6 +51,7 @@ def test_script_honors_output_flag(tmp_path: Path) -> None:
         capture_output=True,
     )
     assert out.exists()
+    assert '<script type="application/json" id="cl-payload">' in out.read_text()
 
 
 def test_missing_artifact_is_actionable_error(tmp_path: Path) -> None:
@@ -64,3 +65,15 @@ def test_missing_artifact_is_actionable_error(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "replay.json" in result.stderr
+
+
+def test_not_a_directory_is_actionable_error(tmp_path: Path) -> None:
+    missing = tmp_path / "does-not-exist"
+    result = subprocess.run(
+        ["uv", "run", "python", str(SCRIPT), str(missing)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 1
+    assert "not a directory" in result.stderr
