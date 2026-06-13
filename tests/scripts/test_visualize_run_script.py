@@ -25,6 +25,20 @@ def test_template_renders_merged_track_table() -> None:
     assert "appendStreams" not in text
 
 
+def test_template_track_table_avoids_false_deltas() -> None:
+    text = TEMPLATE.read_text()
+    # Cover art (attached_pic) and sidecar subtitles are declared out-of-band,
+    # so the probe legitimately differs — they must not flag as anomalies.
+    assert "attached_pic" in text
+    assert "cover art" in text
+    assert 'declared.detail === "sidecar"' in text
+    # Resolution / channel layout are rendered, not just codec + language.
+    assert "probeDetail" in text
+    # Probed column is scoped to the final step and labelled as such.
+    assert "t === liveMax" in text
+    assert "declared → probed, final" in text
+
+
 def _plan(tmp_path: Path) -> Path:
     out = tmp_path / "run"
     out.parent.mkdir(parents=True, exist_ok=True)

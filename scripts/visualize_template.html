@@ -312,9 +312,12 @@ function renderLayoutTab(body) {
       `corruption: ${JSON.stringify(version.corruption)}`));
   }
   // Declared (scenario) tracks are present in every mode; probed streams exist
-  // only for a materialized run (probed_final). Merge them into one table.
+  // only for a materialized run, and probed_final describes end-of-run reality
+  // only — so the probed column is shown solely at the final step to avoid
+  // implying it reflects an intermediate scrub position.
   const declared = (declared_tracks && declared_tracks[assetId]) || [];
-  const probedStreams = (probed_final && probed_final[assetId])
+  const atFinal = t === liveMax;
+  const probedStreams = (atFinal && probed_final && probed_final[assetId])
     ? (probed_final[assetId].streams || []) : null;
   if (declared.length || probedStreams) appendTrackTable(body, declared, probedStreams);
   // I-1: asset's sidecars
@@ -331,13 +334,30 @@ function renderLayoutTab(body) {
   }
 }
 
-function trackCell(t) {
-  if (!t) return "—";
-  return t.language ? `${t.codec}  ${t.language}` : t.codec;
+function probeDetail(s) {
+  // Render the type-appropriate layout fact a probed stream carries.
+  if (s.kind === "video" && s.width && s.height) return `${s.width}x${s.height}`;
+  if (s.kind === "audio") return s.channel_layout || (s.channels ? `${s.channels}ch` : "");
+  return "";
+}
+
+function trackCell(track, isProbed) {
+  if (!track) return "—";
+  // Declared rows carry a normalized `detail` (resolution / channels / mode);
+  // probed streams carry raw ffprobe fields, so derive an equivalent.
+  const detail = isProbed ? probeDetail(track) : (track.detail || "");
+  return [track.codec, detail, track.language].filter(Boolean).join("  ");
 }
 
 function trackDelta(declared, probed) {
-  if (!declared) return { text: "⚠ extra", cls: "touched-add" };
+  if (!declared) {
+    // Cover art is materialized as an attached_pic video stream (ffmpeg
+    // -disposition:v:N attached_pic). It is declared via embedded_cover_art,
+    // not as a video track, so the probe carrying it is expected, not extra.
+    if (probed && probed.kind === "video" && probed.attached_pic)
+      return { text: "cover art", cls: "ghost" };
+    return { text: "⚠ extra", cls: "touched-add" };
+  }
   if (!probed) {
     // A sidecar subtitle is an external file, never an embedded container
     // stream, so its absence from the probe is expected — not a finding.
@@ -355,13 +375,16 @@ function trackDelta(declared, probed) {
 
 function appendTrackTable(body, declared, probedStreams) {
   const hasProbed = Array.isArray(probedStreams);
-  body.appendChild(el("div", "ghost", hasProbed ? "tracks (declared → probed)" : "tracks (declared)"));
+  body.appendChild(el("div", "ghost",
+    hasProbed ? "tracks (declared → probed, final)" : "tracks (declared)"));
   const table = el("table");
   const head = el("tr");
   const cols = hasProbed ? ["kind", "declared", "probed", "Δ"] : ["kind", "declared"];
   cols.forEach(h => head.appendChild(el("th", null, h)));
   table.appendChild(head);
   for (const kind of ["video", "audio", "subtitle"]) {
+    // Pair positionally within a kind: ffmpeg maps audio in declared order and
+    // ffprobe reports streams in container order, so index i lines up.
     const decl = declared.filter(d => d.kind === kind);
     const prob = hasProbed ? probedStreams.filter(s => s.kind === kind) : [];
     const rows = Math.max(decl.length, prob.length);
@@ -370,15 +393,17 @@ function appendTrackTable(body, declared, probedStreams) {
     }
   }
   body.appendChild(table);
+  if (hasProbed) body.appendChild(el("div", "ghost",
+    "Δ: final probe vs initial declaration — re-encodes/remuxes differ by design"));
 }
 
 function appendTrackRow(table, kind, declared, probed, hasProbed) {
   const tr = el("tr");
   tr.appendChild(el("td", null, kind));
-  tr.appendChild(el("td", null, trackCell(declared)));
+  tr.appendChild(el("td", null, trackCell(declared, false)));
   if (hasProbed) {
     const delta = trackDelta(declared, probed);
-    tr.appendChild(el("td", null, trackCell(probed)));
+    tr.appendChild(el("td", null, trackCell(probed, true)));
     tr.appendChild(el("td", delta.cls, delta.text));
   }
   table.appendChild(tr);
