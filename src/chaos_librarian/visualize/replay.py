@@ -27,6 +27,7 @@ from chaos_librarian.visualize.errors import (
     MissingArtifactError,
     ScenarioRevalidationError,
 )
+from chaos_librarian.visualize.tracks import declared_tracks_by_asset
 
 _JOURNAL_ADAPTER: TypeAdapter[JournalEntry] = TypeAdapter(JournalEntry)
 _REPLAY_BUNDLE_ADAPTER: TypeAdapter[ReplayBundle] = TypeAdapter(ReplayBundle)
@@ -97,6 +98,8 @@ class ReplayResult:
             an action emits more than one entry).
         ended_mid_write: The on-disk journal's final line was a torn write.
         scenario_id / run_id / execution_mode: header metadata.
+        declared_tracks: asset_id -> declared track rows from the scenario
+            (available in every mode; assets with no declared tracks omitted).
     """
 
     snapshots: list[dict[str, object]]
@@ -107,6 +110,7 @@ class ReplayResult:
     scenario_id: str
     run_id: str
     execution_mode: str
+    declared_tracks: dict[str, list[dict[str, object]]]
 
 
 def _require(run_dir: Path, name: str, produced_by: str) -> Path:
@@ -217,4 +221,5 @@ def replay_with_snapshots(run_dir: Path) -> ReplayResult:
         scenario_id=scenario.scenario_id,
         run_id=str(bundle.run_id),
         execution_mode=bundle.execution_mode.value,
+        declared_tracks=declared_tracks_by_asset(scenario),
     )

@@ -16,6 +16,15 @@ def test_template_uses_textcontent_not_innerhtml() -> None:
     assert 'id="cl-payload"' in text
 
 
+def test_template_renders_merged_track_table() -> None:
+    text = TEMPLATE.read_text()
+    # Declared tracks are consumed and the merged renderer is wired in; the old
+    # probed-only renderer is gone (replaced, not left as dead code).
+    assert "declared_tracks" in text
+    assert "appendTrackTable" in text
+    assert "appendStreams" not in text
+
+
 def _plan(tmp_path: Path) -> Path:
     out = tmp_path / "run"
     out.parent.mkdir(parents=True, exist_ok=True)

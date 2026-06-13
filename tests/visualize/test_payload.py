@@ -80,6 +80,21 @@ def test_plan_only_has_no_probed_final(tmp_path: Path) -> None:
     assert payload["probed_final"] is None
 
 
+def test_declared_tracks_present_in_plan_only(tmp_path: Path) -> None:
+    # static-library declares video+audio+subtitle on a_sd_main; the declared
+    # layout must reach the payload even though plan-only has no probed data.
+    payload = build_payload(_plan_fixture(tmp_path, _STATIC_FIXTURE))
+    assert payload["probed_final"] is None
+    declared = cast("dict[str, list[dict[str, object]]]", payload["declared_tracks"])
+    rows = declared["a_sd_main"]
+    assert [r["kind"] for r in rows] == ["video", "audio", "subtitle"]
+    audio = next(r for r in rows if r["kind"] == "audio")
+    assert audio["codec"] == "aac"
+    assert audio["language"] == "eng"
+    subtitle = next(r for r in rows if r["kind"] == "subtitle")
+    assert subtitle["codec"] == "srt"
+
+
 def test_empty_timeline_renders_step_zero(tmp_path: Path) -> None:
     # static-library.yaml has `timeline: []` (a genuine empty timeline — 0 journal
     # lines), so resolve_timeline() is empty: events/diffs empty, only the seeded

@@ -97,7 +97,7 @@ def build_payload(run_dir: Path) -> dict[str, object]:
 
     Returns:
         A JSON-serializable dict with ``meta``, ``snapshots``, ``events``,
-        ``diffs``, and ``probed_final``.
+        ``diffs``, ``declared_tracks``, and ``probed_final``.
 
     Raises:
         MissingArtifactError: a required artifact is absent.
@@ -123,5 +123,6 @@ def build_payload(run_dir: Path) -> dict[str, object]:
         "snapshots": result.snapshots,
         "events": _events_payload(result),
         "diffs": diffs,
+        "declared_tracks": result.declared_tracks,
         "probed_final": _probed_final(run_dir, result.snapshots[-1]),
     }

@@ -75,7 +75,7 @@
 <script>
 "use strict";
 const PAYLOAD = JSON.parse(document.getElementById("cl-payload").textContent);
-const { meta, snapshots, events, diffs, probed_final } = PAYLOAD;
+const { meta, snapshots, events, diffs, declared_tracks, probed_final } = PAYLOAD;
 let t = 0;                 // current step index into snapshots (0..total_events)
 let sel = null;            // {kind:"location"|"sidecar", id}
 let tab = "layout";
@@ -308,13 +308,15 @@ function renderLayoutTab(body) {
   const version = (snap.versions || []).filter(v => v.asset_id === assetId).slice(-1)[0];
   if (version) {
     body.appendChild(el("div", "ghost", `v${version.index}  hash: ${version.content_hash || "—"}`));
-    if (version.probed) appendStreams(body, "tracks (model)", version.probed.streams || []);
     if (version.corruption) body.appendChild(el("div", "touched-del",
       `corruption: ${JSON.stringify(version.corruption)}`));
   }
-  if (probed_final && probed_final[assetId]) {
-    appendStreams(body, "probed (final, ffprobe)", probed_final[assetId].streams || []);
-  }
+  // Declared (scenario) tracks are present in every mode; probed streams exist
+  // only for a materialized run (probed_final). Merge them into one table.
+  const declared = (declared_tracks && declared_tracks[assetId]) || [];
+  const probedStreams = (probed_final && probed_final[assetId])
+    ? (probed_final[assetId].streams || []) : null;
+  if (declared.length || probedStreams) appendTrackTable(body, declared, probedStreams);
   // I-1: asset's sidecars
   const ownSidecars = (snap.sidecars || []).filter(s => s.asset_id === assetId);
   if (ownSidecars.length > 0) {
@@ -329,19 +331,57 @@ function renderLayoutTab(body) {
   }
 }
 
-function appendStreams(body, label, streams) {
-  body.appendChild(el("div", "ghost", label));
+function trackCell(t) {
+  if (!t) return "—";
+  return t.language ? `${t.codec}  ${t.language}` : t.codec;
+}
+
+function trackDelta(declared, probed) {
+  if (!declared) return { text: "⚠ extra", cls: "touched-add" };
+  if (!probed) {
+    // A sidecar subtitle is an external file, never an embedded container
+    // stream, so its absence from the probe is expected — not a finding.
+    if (declared.kind === "subtitle" && declared.detail === "sidecar")
+      return { text: "sidecar", cls: "ghost" };
+    return { text: "⚠ missing", cls: "touched-del" };
+  }
+  const issues = [];
+  if (declared.codec !== probed.codec) issues.push("codec");
+  if ((declared.language || null) !== (probed.language || null)) issues.push("lang");
+  return issues.length
+    ? { text: "⚠ " + issues.join(","), cls: "touched-mod" }
+    : { text: "—", cls: null };
+}
+
+function appendTrackTable(body, declared, probedStreams) {
+  const hasProbed = Array.isArray(probedStreams);
+  body.appendChild(el("div", "ghost", hasProbed ? "tracks (declared → probed)" : "tracks (declared)"));
   const table = el("table");
   const head = el("tr");
-  ["kind", "codec", "language", "default", "forced"].forEach(h => head.appendChild(el("th", null, h)));
+  const cols = hasProbed ? ["kind", "declared", "probed", "Δ"] : ["kind", "declared"];
+  cols.forEach(h => head.appendChild(el("th", null, h)));
   table.appendChild(head);
-  streams.forEach(s => {
-    const tr = el("tr");
-    [s.kind, s.codec, s.language || "—", String(s.default ?? ""), String(s.forced ?? "")]
-      .forEach(v => tr.appendChild(el("td", null, v)));
-    table.appendChild(tr);
-  });
+  for (const kind of ["video", "audio", "subtitle"]) {
+    const decl = declared.filter(d => d.kind === kind);
+    const prob = hasProbed ? probedStreams.filter(s => s.kind === kind) : [];
+    const rows = Math.max(decl.length, prob.length);
+    for (let i = 0; i < rows; i++) {
+      appendTrackRow(table, kind, decl[i] || null, prob[i] || null, hasProbed);
+    }
+  }
   body.appendChild(table);
+}
+
+function appendTrackRow(table, kind, declared, probed, hasProbed) {
+  const tr = el("tr");
+  tr.appendChild(el("td", null, kind));
+  tr.appendChild(el("td", null, trackCell(declared)));
+  if (hasProbed) {
+    const delta = trackDelta(declared, probed);
+    tr.appendChild(el("td", null, trackCell(probed)));
+    tr.appendChild(el("td", delta.cls, delta.text));
+  }
+  table.appendChild(tr);
 }
 
 function renderTimelineTab(body) {
