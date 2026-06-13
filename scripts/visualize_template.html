@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>chaos-librarian run visualizer</title>
+<style>
+  :root { --bg:#0f1117; --panel:#1a1d27; --line:#2a2f3d; --txt:#d8dbe6; --muted:#8b90a3;
+          --add:#2fbf71; --del:#e0556e; --mod:#e0a13a; --plan:#454b5e; --play:#4f8cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;
+         background:var(--bg); color:var(--txt); }
+  header { padding:8px 12px; background:var(--panel); border-bottom:1px solid var(--line);
+           display:flex; gap:16px; flex-wrap:wrap; align-items:center; }
+  header b { color:#fff; }
+  #banner { background:#3a2a12; color:#e0a13a; padding:4px 12px; display:none; }
+  #main { display:flex; height:calc(100vh - 120px); }
+  #canvas { flex:1; overflow:auto; padding:10px 14px; }
+  #drawer { width:0; transition:width .12s; overflow:hidden; background:var(--panel);
+            border-left:1px solid var(--line); }
+  #drawer.open { width:42%; }
+  #drawer .body { padding:10px 14px; }
+  .tabs { display:flex; gap:6px; border-bottom:1px solid var(--line); padding:6px 14px 0; }
+  .tab { padding:4px 10px; cursor:pointer; border:1px solid var(--line); border-bottom:none;
+         border-radius:4px 4px 0 0; color:var(--muted); }
+  .tab.on { color:#fff; background:var(--bg); }
+  .node { cursor:pointer; padding:1px 0; white-space:pre; }
+  .node:hover { background:#222633; }
+  .node.sel { background:#2b3350; }
+  .dir { color:var(--muted); }
+  .touched-add { color:var(--add); } .touched-del { color:var(--del); }
+  .touched-mod { color:var(--mod); } .ghost { color:var(--muted); font-style:italic; }
+  .badge { font-size:11px; padding:0 5px; border-radius:3px; background:#333; margin-left:6px; }
+  #strip { display:flex; height:34px; align-items:stretch; padding:6px 12px; gap:1px;
+           background:var(--panel); border-top:1px solid var(--line); overflow-x:auto; }
+  .tick { flex:1 0 4px; min-width:4px; border-radius:1px; cursor:pointer; }
+  .tick.play { outline:2px solid var(--play); outline-offset:-2px; }
+  .tick.planned { opacity:.35; cursor:not-allowed; }
+  #scrub { padding:6px 12px; display:flex; gap:10px; align-items:center; background:var(--panel); }
+  #scrub input { flex:1; }
+  table { border-collapse:collapse; width:100%; margin:6px 0; }
+  th,td { text-align:left; border-bottom:1px solid var(--line); padding:2px 6px; }
+  .tl-row { padding:4px 6px; border-left:3px solid var(--line); cursor:pointer; margin:2px 0; }
+  .tl-row.now { border-left-color:var(--play); background:#1d2436; }
+  a.assetlink { color:var(--play); cursor:pointer; }
+</style>
+</head>
+<body>
+<header>
+  <span>run: <b id="h-scenario"></b></span>
+  <span id="h-run" class="ghost"></span>
+  <span>mode: <b id="h-mode"></b></span>
+  <span>step <b id="h-step"></b> / <b id="h-total"></b></span>
+  <span id="h-action" class="ghost"></span>
+</header>
+<div id="banner"></div>
+<div id="main">
+  <div id="canvas"></div>
+  <div id="drawer">
+    <div class="tabs">
+      <div class="tab on" data-tab="layout" id="tab-layout">Layout</div>
+      <div class="tab" data-tab="timeline" id="tab-timeline">Timeline</div>
+    </div>
+    <div class="body" id="drawer-body"></div>
+  </div>
+</div>
+<div id="strip"></div>
+<div id="scrub">
+  <button id="btn-start">⏮</button><button id="btn-prev">◀</button>
+  <input type="range" id="range" min="0" value="0">
+  <button id="btn-next">▶</button><button id="btn-end">⏭</button>
+  <span id="scrub-label" class="ghost"></span>
+</div>
+
+<script type="application/json" id="cl-payload">__CL_PAYLOAD__</script>
+<script>
+"use strict";
+const PAYLOAD = JSON.parse(document.getElementById("cl-payload").textContent);
+const { meta, snapshots, events, diffs, declared_tracks, probed_final } = PAYLOAD;
+let t = 0;                 // current step index into snapshots (0..total_events)
+let sel = null;            // {kind:"location"|"sidecar", id}
+let tab = "layout";
+const liveMax = Math.max(0, meta.live_count); // last scrubbable snapshot index
+
+function el(tag, cls, text) {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text != null) n.textContent = text; // text-only: hostile strings stay inert
+  return n;
+}
+function rowsById(snap, key) {
+  const m = new Map();
+  (snap[key] || []).forEach(r => m.set(r.id, r));
+  return m;
+}
+function eventCategory(action) {
+  const A = action || "";
+  if (/(reencode|remux|edit_metadata|corrupt_tags)/.test(A)) return "var(--mod)";
+  if (/(move|rename|archive|move_between_roots)/.test(A)) return "var(--mod)";
+  if (/(sidecar|subtitle)/.test(A)) return "var(--add)";
+  if (/(slow_copy|network_lag|network_fs)/.test(A)) return "var(--play)";
+  if (/(corrupt|truncate|wrong_oracle)/.test(A)) return "var(--del)";
+  return "#7a8094"; // neutral fallback for unknown/new actions
+}
+
+function diffTouchesLocation(diff, locId, assetId, snap) {
+  const hit = (coll, id) => coll.added.includes(id) || coll.removed.includes(id)
+    || coll.changed.some(c => c.id === id);
+  if (hit(diff.locations, locId)) return true;
+  // owning asset's other locations (path re-renders from hierarchy events)
+  for (const l of (snap.locations || [])) {
+    if (l.asset_id === assetId && hit(diff.locations, l.id)) return true;
+  }
+  for (const v of (snap.versions || [])) {
+    if (v.asset_id === assetId && hit(diff.versions, v.id)) return true;
+  }
+  for (const s of (snap.sidecars || [])) {
+    if (s.asset_id === assetId && hit(diff.sidecars, s.id)) return true;
+  }
+  return false;
+}
+
+function renderHeader() {
+  document.getElementById("h-scenario").textContent = meta.scenario_id;
+  document.getElementById("h-run").textContent = meta.run_id;
+  document.getElementById("h-mode").textContent = meta.execution_mode;
+  document.getElementById("h-step").textContent = t;
+  document.getElementById("h-total").textContent = meta.total_events;
+  const ev = t > 0 ? events[t - 1] : null;
+  document.getElementById("h-action").textContent =
+    ev ? `${ev.action} (${ev.event_id})` : "initial state";
+  const banner = document.getElementById("banner");
+  if (meta.ended_mid_write) {
+    banner.style.display = "block";
+    banner.textContent = "journal ended mid-write — steps beyond here are planned, not executed";
+  } else { banner.style.display = "none"; }
+}
+
+function renderStrip() {
+  const strip = document.getElementById("strip");
+  strip.replaceChildren();
+  events.forEach((ev, i) => {
+    const tick = el("div", "tick");
+    tick.style.background = eventCategory(ev.action);
+    if (!ev.executed) tick.classList.add("planned");
+    if (i + 1 === t) tick.classList.add("play");
+    tick.title = `${ev.event_id} · ${ev.action} · ${(ev.target_ids || []).join(",")}`;
+    tick.onclick = () => { if (ev.executed) setStep(i + 1); };
+    strip.appendChild(tick);
+  });
+}
+
+function renderTree() {
+  const snap = snapshots[t];
+  const prevDiff = t > 0 ? diffs[t - 1] : null;
+  const canvas = document.getElementById("canvas");
+  canvas.replaceChildren();
+  const entries = [];
+  (snap.locations || []).forEach(l => entries.push({ kind: "location", id: l.id,
+    path: l.temp_path || l.path, asset_id: l.asset_id, ghost: !!l.temp_path,
+    bytes_written: l.temp_path ? (l.bytes_written ?? null) : null }));
+  (snap.sidecars || []).forEach(s => entries.push({ kind: "sidecar", id: s.id,
+    path: s.path, asset_id: s.asset_id, ghost: false }));
+  // I-4: append ghost nodes for items deleted at this step
+  if (prevDiff && t > 0) {
+    const prevSnap = snapshots[t - 1];
+    for (const removedId of (prevDiff.locations.removed || [])) {
+      const prevLoc = (prevSnap.locations || []).find(l => l.id === removedId);
+      if (prevLoc) {
+        entries.push({ kind: "location", id: removedId,
+          path: prevLoc.temp_path || prevLoc.path, asset_id: prevLoc.asset_id,
+          ghost: false, deleted: true });
+      }
+    }
+    for (const removedId of (prevDiff.sidecars.removed || [])) {
+      const prevSc = (prevSnap.sidecars || []).find(s => s.id === removedId);
+      if (prevSc) {
+        entries.push({ kind: "sidecar", id: removedId,
+          path: prevSc.path, asset_id: prevSc.asset_id,
+          ghost: false, deleted: true });
+      }
+    }
+  }
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  for (const e of entries) {
+    const node = el("div", "node");
+    let cls = "";
+    if (e.deleted) {
+      node.classList.add("touched-del");
+      node.textContent = e.path + "  (deleted)";
+      canvas.appendChild(node);
+      continue;
+    }
+    if (prevDiff) {
+      const coll = e.kind === "location" ? prevDiff.locations : prevDiff.sidecars;
+      if (coll.added.includes(e.id)) cls = "touched-add";
+      else if (coll.changed.some(c => c.id === e.id)) cls = "touched-mod";
+    }
+    if (cls) node.classList.add(cls);
+    if (e.ghost) node.classList.add("ghost");
+    if (sel && sel.id === e.id) node.classList.add("sel");
+    let label = e.path + (e.ghost
+      ? "  (in flight" + (e.bytes_written != null ? ", " + e.bytes_written + " bytes" : "") + ")"
+      : "");
+    if (e.kind === "location") {
+      const hasCorruption = (snap.versions || []).some(
+        v => v.asset_id === e.asset_id && v.corruption != null
+      );
+      if (hasCorruption) label += "  ⚠";
+    }
+    node.textContent = label;
+    node.onclick = () => selectFile(e.kind, e.id);
+    canvas.appendChild(node);
+  }
+}
+
+function ownerAsset(snap, selObj) {
+  const coll = selObj.kind === "location" ? snap.locations : snap.sidecars;
+  const row = (coll || []).find(r => r.id === selObj.id);
+  return row ? row.asset_id : null;
+}
+
+function renderDrawer() {
+  const drawer = document.getElementById("drawer");
+  const body = document.getElementById("drawer-body");
+  body.replaceChildren();
+  if (!sel) { drawer.classList.remove("open"); return; }
+  drawer.classList.add("open");
+  document.getElementById("tab-layout").classList.toggle("on", tab === "layout");
+  document.getElementById("tab-timeline").classList.toggle("on", tab === "timeline");
+  if (tab === "layout") renderLayoutTab(body);
+  else renderTimelineTab(body);
+}
+
+// I-2: resolve human-readable work context for an asset
+function workContext(snap, assetId) {
+  const asset = (snap.assets || []).find(a => a.id === assetId);
+  if (!asset) return null;
+  const bundle = (snap.bundles || []).find(b => b.id === asset.bundle_id);
+  if (!bundle) return null;
+  const variant = (snap.variants || []).find(v => v.id === bundle.variant_id);
+  if (!variant) return null;
+
+  const pk = variant.parent_kind;
+  const pid = variant.parent_id;
+  let workTitle = null;
+
+  if (pk === "movie") {
+    const movie = (snap.movies || []).find(m => m.id === pid);
+    workTitle = movie ? movie.title : null;
+  } else if (pk === "episode") {
+    const episode = (snap.episodes || []).find(e => e.id === pid);
+    if (episode) {
+      const season = (snap.seasons || []).find(s => s.id === episode.season_id);
+      if (season) {
+        const series = (snap.series || []).find(sr => sr.id === season.series_id);
+        if (series) {
+          workTitle = `${series.title} – S${season.season_number}E${episode.episode_number} ${episode.title}`;
+        }
+      }
+    }
+  } else if (pk === "track") {
+    const track = (snap.tracks || []).find(tr => tr.id === pid);
+    if (track) {
+      const disc = (snap.discs || []).find(d => d.id === track.disc_id);
+      if (disc) {
+        const album = (snap.albums || []).find(al => al.id === disc.album_id);
+        if (album) {
+          const artist = (snap.artists || []).find(ar => ar.id === album.artist_id);
+          if (artist) {
+            workTitle = `${artist.name} – ${album.title} – ${track.title}`;
+          }
+        }
+      }
+    }
+  } else {
+    workTitle = `${pk}:${pid}`;
+  }
+
+  if (workTitle == null) workTitle = `${pk}:${pid}`;
+  return `variant: ${variant.label}  bundle: ${asset.bundle_id}  work: ${workTitle}`;
+}
+
+function renderLayoutTab(body) {
+  const snap = snapshots[t];
+  const assetId = ownerAsset(snap, sel);
+  if (sel.kind === "sidecar") {
+    const sc = (snap.sidecars || []).find(s => s.id === sel.id);
+    if (!sc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
+    body.appendChild(el("h3", null, sc.path));
+    body.appendChild(el("div", null, `kind: ${sc.kind}  language: ${sc.language || "—"}`));
+    body.appendChild(el("div", "ghost", `hash: ${sc.content_hash || "—"}`));
+    const link = el("a", "assetlink", `owning asset: ${sc.asset_id}`);
+    link.onclick = () => openAssetPrimary(sc.asset_id);
+    body.appendChild(link);
+    return;
+  }
+  const loc = (snap.locations || []).find(l => l.id === sel.id);
+  if (!loc) { body.appendChild(el("p", "ghost", "not present at step " + t)); return; }
+  body.appendChild(el("h3", null, loc.temp_path || loc.path));
+  const asset = (snap.assets || []).find(a => a.id === assetId);
+  if (asset) {
+    body.appendChild(el("div", null,
+      `role: ${asset.role}  container: ${asset.container}  dur: ${asset.duration_seconds}s`));
+    // I-2: variant / bundle / work context
+    const ctx = workContext(snap, assetId);
+    if (ctx) body.appendChild(el("div", "ghost", ctx));
+  }
+  const version = (snap.versions || []).filter(v => v.asset_id === assetId).slice(-1)[0];
+  if (version) {
+    body.appendChild(el("div", "ghost", `v${version.index}  hash: ${version.content_hash || "—"}`));
+    if (version.corruption) body.appendChild(el("div", "touched-del",
+      `corruption: ${JSON.stringify(version.corruption)}`));
+  }
+  // Declared (scenario) tracks are present in every mode; probed streams exist
+  // only for a materialized run, and probed_final describes end-of-run reality
+  // only — so the probed column is shown solely at the final step to avoid
+  // implying it reflects an intermediate scrub position.
+  const declared = (declared_tracks && declared_tracks[assetId]) || [];
+  const atFinal = t === liveMax;
+  const probedStreams = (atFinal && probed_final && probed_final[assetId])
+    ? (probed_final[assetId].streams || []) : null;
+  if (declared.length || probedStreams) appendTrackTable(body, declared, probedStreams);
+  // I-1: asset's sidecars
+  const ownSidecars = (snap.sidecars || []).filter(s => s.asset_id === assetId);
+  if (ownSidecars.length > 0) {
+    body.appendChild(el("div", "ghost", "sidecars"));
+    for (const sc of ownSidecars) {
+      const row = el("div", null, `${sc.kind}  language: ${sc.language || "—"}  ${sc.path}`);
+      row.style.cursor = "pointer";
+      row.classList.add("assetlink");
+      row.onclick = () => selectFile("sidecar", sc.id);
+      body.appendChild(row);
+    }
+  }
+}
+
+function probeDetail(s) {
+  // Render the type-appropriate layout fact a probed stream carries.
+  if (s.kind === "video" && s.width && s.height) return `${s.width}x${s.height}`;
+  if (s.kind === "audio") return s.channel_layout || (s.channels ? `${s.channels}ch` : "");
+  return "";
+}
+
+function trackCell(track, isProbed) {
+  if (!track) return "—";
+  // Declared rows carry a normalized `detail` (resolution / channels / mode);
+  // probed streams carry raw ffprobe fields, so derive an equivalent.
+  const detail = isProbed ? probeDetail(track) : (track.detail || "");
+  return [track.codec, detail, track.language].filter(Boolean).join("  ");
+}
+
+function trackDelta(declared, probed) {
+  if (!declared) {
+    // Cover art is materialized as an attached_pic video stream (ffmpeg
+    // -disposition:v:N attached_pic). It is declared via embedded_cover_art,
+    // not as a video track, so the probe carrying it is expected, not extra.
+    if (probed && probed.kind === "video" && probed.attached_pic)
+      return { text: "cover art", cls: "ghost" };
+    return { text: "⚠ extra", cls: "touched-add" };
+  }
+  if (!probed) {
+    // A sidecar subtitle is an external file, never an embedded container
+    // stream, so its absence from the probe is expected — not a finding.
+    if (declared.kind === "subtitle" && declared.detail === "sidecar")
+      return { text: "sidecar", cls: "ghost" };
+    return { text: "⚠ missing", cls: "touched-del" };
+  }
+  const issues = [];
+  if (declared.codec !== probed.codec) issues.push("codec");
+  if ((declared.language || null) !== (probed.language || null)) issues.push("lang");
+  return issues.length
+    ? { text: "⚠ " + issues.join(","), cls: "touched-mod" }
+    : { text: "—", cls: null };
+}
+
+function appendTrackTable(body, declared, probedStreams) {
+  const hasProbed = Array.isArray(probedStreams);
+  body.appendChild(el("div", "ghost",
+    hasProbed ? "tracks (declared → probed, final)" : "tracks (declared)"));
+  const table = el("table");
+  const head = el("tr");
+  const cols = hasProbed ? ["kind", "declared", "probed", "Δ"] : ["kind", "declared"];
+  cols.forEach(h => head.appendChild(el("th", null, h)));
+  table.appendChild(head);
+  for (const kind of ["video", "audio", "subtitle"]) {
+    // Pair positionally within a kind: ffmpeg maps audio in declared order and
+    // ffprobe reports streams in container order, so index i lines up.
+    const decl = declared.filter(d => d.kind === kind);
+    const prob = hasProbed ? probedStreams.filter(s => s.kind === kind) : [];
+    const rows = Math.max(decl.length, prob.length);
+    for (let i = 0; i < rows; i++) {
+      appendTrackRow(table, kind, decl[i] || null, prob[i] || null, hasProbed);
+    }
+  }
+  body.appendChild(table);
+  if (hasProbed) body.appendChild(el("div", "ghost",
+    "Δ: final probe vs initial declaration — re-encodes/remuxes differ by design"));
+}
+
+function appendTrackRow(table, kind, declared, probed, hasProbed) {
+  const tr = el("tr");
+  tr.appendChild(el("td", null, kind));
+  tr.appendChild(el("td", null, trackCell(declared, false)));
+  if (hasProbed) {
+    const delta = trackDelta(declared, probed);
+    tr.appendChild(el("td", null, trackCell(probed, true)));
+    tr.appendChild(el("td", delta.cls, delta.text));
+  }
+  table.appendChild(tr);
+}
+
+function renderTimelineTab(body) {
+  for (let i = 0; i < diffs.length; i++) {
+    const useSnap = snapshots[i + 1];
+    const assetIdAtStep = ownerAsset(useSnap, sel);
+    if (!diffTouchesLocation(diffs[i], sel.id, assetIdAtStep, useSnap)) continue;
+    const ev = events[i];
+    const row = el("div", "tl-row");
+    if (i + 1 === t) row.classList.add("now");
+    row.textContent = `@${ev.logical_time_ns}  ${ev.action}  ${describeDelta(ev)}`;
+    row.onclick = () => { if (ev.executed) setStep(i + 1); };
+    body.appendChild(row);
+  }
+}
+
+function describeDelta(ev) {
+  const d = ev.state_delta || {};
+  if (d.from_path && d.to_path) return `${d.from_path} → ${d.to_path}`;
+  if (d.final_path) return d.final_path;
+  return "";
+}
+
+function selectFile(kind, id) { sel = { kind, id }; tab = "layout"; render(); }
+function openAssetPrimary(assetId) {
+  const snap = snapshots[t];
+  const loc = (snap.locations || []).find(l => l.asset_id === assetId);
+  if (loc) selectFile("location", loc.id);
+}
+function setStep(n) { t = Math.max(0, Math.min(liveMax, n)); render(); }
+
+function render() {
+  document.getElementById("range").max = String(liveMax);
+  document.getElementById("range").value = String(t);
+  document.getElementById("scrub-label").textContent = `t=${t} / ${meta.total_events}`;
+  renderHeader(); renderStrip(); renderTree(); renderDrawer();
+}
+
+document.getElementById("btn-start").onclick = () => setStep(0);
+document.getElementById("btn-end").onclick = () => setStep(liveMax);
+document.getElementById("btn-prev").onclick = () => setStep(t - 1);
+document.getElementById("btn-next").onclick = () => setStep(t + 1);
+document.getElementById("range").oninput = (e) => setStep(parseInt(e.target.value, 10));
+document.getElementById("tab-layout").onclick = () => { tab = "layout"; renderDrawer(); };
+document.getElementById("tab-timeline").onclick = () => { tab = "timeline"; renderDrawer(); };
+document.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowLeft") setStep(t - 1);
+  else if (e.key === "ArrowRight") setStep(t + 1);
+  else if (e.key === "Home") setStep(0);
+  else if (e.key === "End") setStep(liveMax);
+});
+render();
+</script>
+</body>
+</html>
