@@ -28,7 +28,7 @@ from chaos_librarian.contract.materialization import (
     ToolInvocation,
 )
 from chaos_librarian.contract.scenario import TimelineActionName
-from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.materializer.replay import replay_run_bundle
@@ -118,7 +118,7 @@ def _fake_runtime(monkeypatch: pytest.MonkeyPatch) -> _FakeClock:
         "assert_capable_for_static_materialize",
         lambda _caps: None,
     )
-    monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
     return clock
 
 
@@ -344,7 +344,7 @@ def test_no_chaos_actions_leaves_empty_record_list(tmp_path: Path) -> None:
 
 
 def test_replay_reproduces_chaos_records(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
     monkeypatch.setattr(preparation_mod, "detect_capabilities", _capabilities)
 
     timeline = dedent(

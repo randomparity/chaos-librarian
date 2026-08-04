@@ -32,7 +32,6 @@ from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.content.synthesis import (
     PhaseAInputs,
     materialize_assets_phase_a,
-    materialize_one_asset,
 )
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
@@ -207,7 +206,6 @@ def _materialize_verified_run_prefix(
             artifacts=prefix_artifacts,
             caps=prepared.caps,
             stamp_manifest=True,
-            materialize_asset=materialize_one_asset,
         )
     )
     state = _make_run_replay_phase_b_state(

@@ -39,7 +39,7 @@ from chaos_librarian.engine import (
 )
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
-from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
@@ -427,7 +427,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("HDR gate should run before synthesis"),
     )
@@ -465,7 +465,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("resolution-switch gate should run first"),
     )
@@ -503,7 +503,7 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
     )
@@ -566,7 +566,7 @@ def test_run_replay_refuses_muxing_profile_capability_regressions(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
     )
@@ -844,7 +844,7 @@ def _patch_replay_materializer(
         ),
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
     if patch_corruption:
         _patch_successful_corruption(monkeypatch)
 

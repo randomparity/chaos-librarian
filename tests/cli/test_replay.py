@@ -45,7 +45,7 @@ from chaos_librarian.engine import (
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.engine.resolution import resolve_timeline
-from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import FilesystemActionError
 from chaos_librarian.persistence.atomic import canonical_json
@@ -160,7 +160,7 @@ def _patch_run_replay_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
         ),
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
 
 def _fake_materialize_one_asset(

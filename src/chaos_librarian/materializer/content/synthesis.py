@@ -12,7 +12,6 @@ import hashlib
 import os
 import shutil
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -109,9 +108,6 @@ class PhaseAResult:
     sidecar_hashes_by_asset: dict[str, dict[tuple[str, str], str]] = field(default_factory=dict)
 
 
-MaterializeAsset = Callable[..., MaterializeAssetResult]
-
-
 @dataclass(slots=True)
 class PhaseAInputs:
     """Run facts required to synthesize declared assets in phase A."""
@@ -122,7 +118,6 @@ class PhaseAInputs:
     caps: Capabilities
     stamp_manifest: bool
     phase_a_accumulator: PhaseAResult | None = None
-    materialize_asset: MaterializeAsset | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,9 +145,6 @@ class _MediaInvocationResult:
 def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
     """Synthesize every declared asset and collect Phase-A metadata."""
     phase_a = PhaseAResult() if inputs.phase_a_accumulator is None else inputs.phase_a_accumulator
-    materialize = (
-        materialize_one_asset if inputs.materialize_asset is None else inputs.materialize_asset
-    )
     primary_root_path = inputs.scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(inputs.scenario)
     rel_path_by_asset: dict[str, str] = {}
@@ -194,7 +186,7 @@ def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
                 invocation_index=invocation_index,
             )
         else:
-            asset_result = materialize(
+            asset_result = materialize_one_asset(
                 asset,
                 inputs.artifacts.replay_bundle.resolved_seed,
                 inputs.out_dir,
