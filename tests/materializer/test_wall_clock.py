@@ -45,6 +45,7 @@ from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianValueError
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
 from chaos_librarian.materializer.errors import (
     CapabilityGateError,
@@ -235,7 +236,7 @@ def fake_static_materializer(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(prep_mod, "assert_capable_for_static_materialize", lambda _caps: None)
-    monkeypatch.setattr(wall_clock, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
 
 
 def test_wall_clock_refuses_hdr_when_capability_missing(
@@ -367,7 +368,7 @@ def test_wall_clock_refuses_muxing_profile_capability_regressions(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        wall_clock,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
     )
@@ -410,7 +411,7 @@ def test_wall_clock_refuses_audio_noise_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        wall_clock,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
     )

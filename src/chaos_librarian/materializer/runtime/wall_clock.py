@@ -36,7 +36,6 @@ from chaos_librarian.materializer.content.synthesis import (
     PhaseAInputs,
     PhaseAResult,
     materialize_assets_phase_a,
-    materialize_one_asset,
     stamp_phase_a_manifest,
 )
 from chaos_librarian.materializer.errors import (
@@ -247,7 +246,6 @@ def run_wall_clock_scenario(
             artifacts=baseline_artifacts,
             caps=prepared.caps,
             stamp_manifest=True,
-            materialize_asset=materialize_one_asset,
         )
     )
     _publish_baseline(

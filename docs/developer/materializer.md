@@ -10,7 +10,9 @@ startup gate. Current phase-B handlers use ffmpeg, ffprobe, and Python
 filesystem operations.
 
 `materializer/content/*` owns phase-A content-source resolution and synthesis.
-`content_sources.py` maps scenario source names to deterministic providers.
+`media_sources.py`, `metadata_sources.py`, and `muxing_sources.py` map scenario
+source names to deterministic providers; `source_capabilities.py` reports their
+host capability surface.
 ffmpeg recipe helpers turn `mandelbrot`, `color_bars`,
 `solid_color`, `sine`, `silence`, and `channel_tones` into repeatable media
 inputs. `noise` validates but is not materialize-ready.

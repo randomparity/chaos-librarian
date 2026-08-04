@@ -31,21 +31,24 @@ from chaos_librarian.engine.plan import (
 from chaos_librarian.engine.resolution import resolve_timeline, step_boundaries
 from chaos_librarian.materializer.content.synthesis import (
     PhaseAInputs,
+    PhaseAResult,
     materialize_assets_phase_a,
-    materialize_one_asset,
 )
 from chaos_librarian.materializer.errors import (
     CorruptionActionError,
     FilesystemActionError,
     MaterializationWriteError,
     MediaActionError,
+    ProbeParseError,
     ScenarioValidationError,
+    ToolFailedError,
 )
 from chaos_librarian.materializer.persistence._context import (
     MaterializeArtifacts,
     RunContext,
 )
 from chaos_librarian.materializer.persistence.finalize import (
+    finalize_run_replay_phase_a_failure,
     finalize_run_replay_phase_b_failure,
     finalize_run_replay_success,
 )
@@ -200,16 +203,31 @@ def _materialize_verified_run_prefix(
         caps=prepared.caps,
         plan_artifacts=prefix_artifacts,
     )
-    phase_a = materialize_assets_phase_a(
-        PhaseAInputs(
-            scenario=scenario,
-            out_dir=out_dir,
-            artifacts=prefix_artifacts,
-            caps=prepared.caps,
-            stamp_manifest=True,
-            materialize_asset=materialize_one_asset,
+    phase_a = PhaseAResult()
+    try:
+        materialize_assets_phase_a(
+            PhaseAInputs(
+                scenario=scenario,
+                out_dir=out_dir,
+                artifacts=prefix_artifacts,
+                caps=prepared.caps,
+                stamp_manifest=True,
+                phase_a_accumulator=phase_a,
+            )
         )
-    )
+    except (ToolFailedError, ProbeParseError) as exc:
+        if isinstance(exc, ToolFailedError):
+            phase_a.invocations.append(exc.invocation)
+        phase_a.content_sources.extend(exc.content_sources)
+        finalize_run_replay_phase_a_failure(
+            ctx,
+            source_bundle,
+            exc,
+            phase_a.invocations,
+            phase_a.materialized_assets,
+            content_sources=phase_a.content_sources,
+        )
+        raise
     state = _make_run_replay_phase_b_state(
         scenario=scenario,
         out_dir=out_dir,
@@ -221,7 +239,22 @@ def _materialize_verified_run_prefix(
     except (FilesystemActionError, MediaActionError, CorruptionActionError) as exc:
         augment_phase_b_outputs(prefix_artifacts.current_manifest, state.phase_b)
         chaos_actions = _replay_chaos_actions(state)
-        _restore_replay_chaos(state)
+        try:
+            _restore_replay_chaos(state)
+        except FilesystemActionError as restore_exc:
+            finalize_run_replay_phase_b_failure(
+                ctx,
+                source_bundle,
+                restore_exc,
+                phase_a.invocations,
+                phase_a.materialized_assets,
+                actions=report_actions_from_phase_b(
+                    state.phase_b,
+                    network_fs_chaos_actions=chaos_actions,
+                ),
+                content_sources=phase_a.content_sources,
+            )
+            raise
         finalize_run_replay_phase_b_failure(
             ctx,
             source_bundle,
@@ -236,7 +269,22 @@ def _materialize_verified_run_prefix(
         )
         raise
     chaos_actions = _replay_chaos_actions(state)
-    _restore_replay_chaos(state)
+    try:
+        _restore_replay_chaos(state)
+    except FilesystemActionError as exc:
+        finalize_run_replay_phase_b_failure(
+            ctx,
+            source_bundle,
+            exc,
+            phase_a.invocations,
+            phase_a.materialized_assets,
+            actions=report_actions_from_phase_b(
+                state.phase_b,
+                network_fs_chaos_actions=chaos_actions,
+            ),
+            content_sources=phase_a.content_sources,
+        )
+        raise
     return finalize_run_replay_success(
         ctx,
         source_bundle,
@@ -384,7 +432,24 @@ def _replay_chaos_actions(state: _RunReplayDispatchState) -> list[NetworkFsChaos
 
 
 def _restore_replay_chaos(state: _RunReplayDispatchState) -> None:
-    restore_chaos_modes(state.chaos)
+    if not state.chaos.captured_modes:
+        return
+    action = next((item for item in reversed(state.chaos.actions) if item.enforced), None)
+    if action is None:
+        raise ReplayIntegrityError("network-fs-chaos restore has no enforced action")
+    try:
+        restore_chaos_modes(state.chaos)
+    except OSError as exc:
+        state.chaos.captured_modes.clear()
+        raise FilesystemActionError(
+            "network-fs-chaos restoration failed",
+            event_id=action.event_id,
+            action=action.action,
+            asset_id=action.target_ref
+            if action.target_ref in state.phase_b.fs_ctx.scenario_assets
+            else None,
+            cause=exc,
+        ) from exc
 
 
 def _run_replay_network_lag_action(

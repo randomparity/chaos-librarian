@@ -33,6 +33,7 @@ from chaos_librarian.contract.materialization import (
 )
 from chaos_librarian.contract.profiles import CorruptionProbeOutcome
 from chaos_librarian.contract.replay_bundle import ExecutionMode, MaterializeReplayBundle
+from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME
 from chaos_librarian.contract.scenario import TimelineActionName
 from chaos_librarian.engine import (
     ReplayIntegrityError,
@@ -40,8 +41,15 @@ from chaos_librarian.engine import (
 from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_plan
 from chaos_librarian.materializer import replay as replay_mod
+from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
-from chaos_librarian.materializer.errors import CapabilityGateError, CorruptionActionError
+from chaos_librarian.materializer.errors import (
+    CapabilityGateError,
+    CorruptionActionError,
+    FilesystemActionError,
+    ProbeParseError,
+    ToolFailedError,
+)
 from chaos_librarian.materializer.phase_b import dispatch as dispatch_mod
 from chaos_librarian.materializer.replay import replay_run_bundle
 from chaos_librarian.validation import prepare_run_input_from_bytes, run_validation
@@ -374,6 +382,19 @@ _NETWORK_FS_LOCK_SCENARIO = _scenario_bytes(
 """,
 )
 
+_NETWORK_FS_RESTORE_SCENARIO = _scenario_bytes(
+    scenario_id="run-replay-network-fs-restore-test",
+    profiles=("network-fs-chaos",),
+    title="Network FS Restore Replay",
+    timeline="""\
+  - id: chmod_001
+    at: 0ns
+    action: change_permissions
+    target: asset_main
+    mode: "000"
+""",
+)
+
 
 def test_run_replay_reproduces_corruption_action_evidence(
     monkeypatch: pytest.MonkeyPatch,
@@ -427,7 +448,7 @@ def test_run_replay_refuses_hdr_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("HDR gate should run before synthesis"),
     )
@@ -465,7 +486,7 @@ def test_run_replay_refuses_resolution_switch_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("resolution-switch gate should run first"),
     )
@@ -503,7 +524,7 @@ def test_run_replay_refuses_audio_noise_when_capability_missing(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("audio recipe gate should run before synthesis"),
     )
@@ -566,7 +587,7 @@ def test_run_replay_refuses_muxing_profile_capability_regressions(
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
     monkeypatch.setattr(
-        replay_mod,
+        synthesis_mod,
         "materialize_one_asset",
         lambda *_args, **_kwargs: pytest.fail("muxing profile gate should run first"),
     )
@@ -782,6 +803,108 @@ def test_run_replay_corruption_failure_writes_corruption_failed_report(
     assert not (out / "library").exists()
 
 
+def test_run_replay_phase_a_tool_failure_writes_complete_run_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_replay_materializer(monkeypatch)
+    out = tmp_path / "replay"
+    invocation = ToolInvocation(
+        tool="ffmpeg",
+        version="7.1.1",
+        command=["ffmpeg", "-failing"],
+        exit_code=1,
+        duration_ns=1,
+    )
+
+    def fail_phase_a(*_args, **_kwargs) -> None:
+        raise ToolFailedError(
+            "synthesis failed",
+            invocation=invocation,
+            asset_id="asset_main",
+            payload={"stderr_tail": "ffmpeg failed"},
+        )
+
+    monkeypatch.setattr(replay_mod, "materialize_assets_phase_a", fail_phase_a)
+
+    with pytest.raises(ToolFailedError, match="synthesis failed"):
+        replay_run_bundle(_run_bundle(), out)
+
+    report = json.loads((out / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == Outcome.TOOL_FAILED.value
+    assert report["execution_mode"] == "run"
+    assert report["failures"] == [
+        {
+            "asset_id": "asset_main",
+            "exit_code": 1,
+            "invocation_index": 0,
+            "stage": FailureStage.FFMPEG.value,
+            "stderr_tail": "ffmpeg failed",
+        }
+    ]
+    replay = json.loads((out / "replay.json").read_text(encoding="utf-8"))
+    assert replay["execution_mode"] == "run"
+    assert json.loads((out / SENTINEL_FILENAME).read_text(encoding="utf-8"))["state"] == "complete"
+    assert list((out / "library").iterdir()) == []
+
+
+def test_run_replay_phase_a_probe_failure_writes_complete_run_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_replay_materializer(monkeypatch)
+    out = tmp_path / "replay"
+
+    def fail_phase_a(*_args, **_kwargs) -> None:
+        raise ProbeParseError(
+            "probe failed",
+            asset_id="asset_main",
+            payload={"stderr_tail": "invalid ffprobe JSON"},
+        )
+
+    monkeypatch.setattr(replay_mod, "materialize_assets_phase_a", fail_phase_a)
+
+    with pytest.raises(ProbeParseError, match="probe failed"):
+        replay_run_bundle(_run_bundle(), out)
+
+    report = json.loads((out / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == Outcome.TOOL_FAILED.value
+    assert report["execution_mode"] == "run"
+    assert report["failures"] == [
+        {
+            "asset_id": "asset_main",
+            "stage": FailureStage.FFPROBE.value,
+            "stderr_tail": "invalid ffprobe JSON",
+        }
+    ]
+    assert json.loads((out / SENTINEL_FILENAME).read_text(encoding="utf-8"))["state"] == "complete"
+    assert list((out / "library").iterdir()) == []
+
+
+def test_run_replay_restoration_failure_writes_filesystem_failure_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _patch_replay_materializer(monkeypatch)
+    out = tmp_path / "replay"
+
+    def fail_restore(_state) -> None:
+        raise OSError("chmod restore failed")
+
+    monkeypatch.setattr(replay_mod, "restore_chaos_modes", fail_restore)
+
+    with pytest.raises(FilesystemActionError, match="restoration failed") as exc_info:
+        replay_run_bundle(_run_bundle_for(_NETWORK_FS_RESTORE_SCENARIO), out)
+
+    report = json.loads((out / "materialization.json").read_text(encoding="utf-8"))
+    assert report["outcome"] == Outcome.FS_FAILED.value
+    assert report["execution_mode"] == "run"
+    assert report["failures"][0]["stage"] == FailureStage.FILESYSTEM.value
+    assert exc_info.value.event_id == "chmod_001"
+    assert json.loads((out / SENTINEL_FILENAME).read_text(encoding="utf-8"))["state"] == "complete"
+    assert not (out / "library").exists()
+
+
 def _run_bundle() -> MaterializeReplayBundle:
     return _run_bundle_for(_SCENARIO)
 
@@ -844,7 +967,7 @@ def _patch_replay_materializer(
         ),
     )
     monkeypatch.setattr(prep_mod, "detect_capabilities", lambda: caps)
-    monkeypatch.setattr(replay_mod, "materialize_one_asset", _fake_materialize_one_asset)
+    monkeypatch.setattr(synthesis_mod, "materialize_one_asset", _fake_materialize_one_asset)
     if patch_corruption:
         _patch_successful_corruption(monkeypatch)
 

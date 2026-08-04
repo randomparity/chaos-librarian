@@ -29,6 +29,7 @@ from chaos_librarian.materializer.errors import (
     MaterializationError,
     MaterializationWriteError,
     ProbeParseError,
+    ToolFailedError,
 )
 from chaos_librarian.materializer.persistence._context import (
     MaterializeArtifacts,
@@ -61,6 +62,7 @@ __all__ = [
     "build_sentinel",
     "finalize_failure",
     "finalize_failure_phase_b",
+    "finalize_run_replay_phase_a_failure",
     "finalize_run_replay_phase_b_failure",
     "finalize_run_replay_success",
     "finalize_success",
@@ -315,6 +317,51 @@ def finalize_run_replay_phase_b_failure(
         replay_bundle=replay_bundle,
         writer=_write_phase_b_failure_outputs,
         writer_operation="cleanup_failed_phase_b_run",
+        include_reports=False,
+    )
+
+
+def finalize_run_replay_phase_a_failure(
+    ctx: RunContext,
+    source_bundle: MaterializeReplayBundle,
+    exc: ToolFailedError | ProbeParseError,
+    invocations: list[ToolInvocation],
+    materialized: list[MaterializedAsset],
+    *,
+    content_sources: list[ContentSourceEvidence],
+) -> None:
+    """Run-replay phase-A failure path: preserve run-mode metadata before cleanup."""
+    report_inputs = _base_report_inputs(
+        invocations,
+        materialized,
+        actions=None,
+        content_sources=content_sources,
+    )
+    invocation = getattr(exc, "invocation", None)
+    failure = MaterializationFailure(
+        asset_id=getattr(exc, "asset_id", None),
+        stage=FailureStage.FFPROBE if isinstance(exc, ProbeParseError) else FailureStage.FFMPEG,
+        exit_code=invocation.exit_code if invocation is not None else None,
+        stderr_tail=str(exc.payload.get("stderr_tail", "")),
+        invocation_index=(len(report_inputs.invocations) - 1)
+        if report_inputs.invocations
+        else None,
+    )
+    report = _build_materialization_report(
+        ctx,
+        report_inputs,
+        outcome=Outcome.TOOL_FAILED,
+        failures=[failure],
+        execution_mode=MaterializationExecutionMode.RUN,
+    )
+    replay_bundle = _build_run_replay_bundle(ctx, source_bundle, report_inputs)
+    _finalize_outputs(
+        ctx,
+        plan_artifacts=ctx.plan_artifacts,
+        materialization_report=report,
+        replay_bundle=replay_bundle,
+        writer=_write_failure_outputs,
+        writer_operation="cleanup_failed_run_replay_phase_a",
         include_reports=False,
     )
 
