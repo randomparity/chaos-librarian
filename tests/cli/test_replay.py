@@ -47,7 +47,7 @@ from chaos_librarian.engine.plan import PlanExecutionRequest, run_materializer_p
 from chaos_librarian.engine.resolution import resolve_timeline
 from chaos_librarian.materializer.content import synthesis as synthesis_mod
 from chaos_librarian.materializer.content.synthesis import MaterializeAssetResult
-from chaos_librarian.materializer.errors import FilesystemActionError
+from chaos_librarian.materializer.errors import FilesystemActionError, ToolFailedError
 from chaos_librarian.persistence.atomic import canonical_json
 from chaos_librarian.validation import prepare_run_input, run_validation
 
@@ -654,6 +654,44 @@ class TestReplayRunBundles:
         assert payload["error_code"] == "E_MATERIALIZE_FS_FAILED"
         assert payload["asset_id"] == "asset_hd_main"
         assert payload["materialization_report_path"] == str(out / "materialization.json")
+
+    def test_replay_phase_a_failure_envelope_points_to_written_report(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        run_dir = _make_wall_clock_fixture(tmp_path, applied_events=1)
+        _patch_run_replay_materializer(monkeypatch)
+        invocation = ToolInvocation(
+            tool="ffmpeg",
+            version="7.1.1",
+            command=["ffmpeg", "-failing"],
+            exit_code=1,
+            duration_ns=1,
+        )
+
+        def fail_synthesis(*_args, **_kwargs) -> MaterializeAssetResult:
+            raise ToolFailedError(
+                "synthesis failed",
+                invocation=invocation,
+                asset_id="asset_hd_main",
+                payload={"stderr_tail": "ffmpeg failed"},
+            )
+
+        monkeypatch.setattr(synthesis_mod, "materialize_one_asset", fail_synthesis)
+        out = tmp_path / "replay"
+
+        result = runner.invoke(
+            app,
+            ["replay", str(run_dir / "replay.json"), "--out", str(out), "--json"],
+        )
+
+        assert result.exit_code == 5
+        payload = json.loads(result.stderr)
+        report_path = out / "materialization.json"
+        assert payload["error_code"] == "E_MATERIALIZE_TOOL_FAILED"
+        assert payload["materialization_report_path"] == str(report_path)
+        assert report_path.is_file()
 
 
 def test_compare_run_replay_compares_materialization_corruption_fields(tmp_path: Path) -> None:
