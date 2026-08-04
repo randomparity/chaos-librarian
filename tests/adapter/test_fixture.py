@@ -10,12 +10,14 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, TypeAdapter
 
+from chaos_librarian.adapter import fixture as fixture_module
 from chaos_librarian.adapter.errors import E_ADAPTER_FIXTURE_INVALID, AdapterInputError
 from chaos_librarian.adapter.fixture import load_fixture
 from chaos_librarian.contract.journal import JournalEntry
 from chaos_librarian.contract.replay_bundle import ReplayBundle
 from chaos_librarian.contract.reports import AssetReport
 from chaos_librarian.contract.run_sentinel import RunSentinel
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianError
 from tests.support.adapter import scenario_bytes as _scenario_bytes
 from tests.support.adapter import write_plan_fixture as _write_plan_fixture
@@ -49,15 +51,7 @@ def _journal(run_dir: Path) -> list[JournalEntry]:
 
 
 def _write_journal(run_dir: Path, entries: list[JournalEntry]) -> None:
-    (run_dir / "journal.jsonl").write_bytes(_serialize_journal_bytes(entries))
-
-
-def _serialize_journal_bytes(entries: list[JournalEntry]) -> bytes:
-    chunks: list[bytes] = []
-    for entry in entries:
-        chunks.append(entry.model_dump_json(by_alias=True, exclude_none=True).encode())
-        chunks.append(b"\n")
-    return b"".join(chunks)
+    (run_dir / "journal.jsonl").write_bytes(serialize_journal_bytes(entries))
 
 
 def _fixture_invalid_error(run_dir: Path) -> AdapterInputError:
@@ -179,6 +173,23 @@ def test_load_fixture_rejects_journal_digest_mismatch(tmp_path: Path) -> None:
     _assert_fixture_invalid(run_dir)
 
 
+def test_load_fixture_uses_canonical_journal_serializer_for_digest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = _write_plan_fixture(tmp_path)
+    replay = _load_replay(run_dir)
+    canonical_bytes = b"canonical-journal-bytes\n"
+    monkeypatch.setattr(fixture_module, "serialize_journal_bytes", lambda _: canonical_bytes)
+    _write_replay(
+        run_dir,
+        replay.model_copy(update={"journal_digest": hashlib.sha256(canonical_bytes).hexdigest()}),
+    )
+
+    fixture = load_fixture(run_dir)
+
+    assert fixture.replay_bundle.journal_digest == hashlib.sha256(canonical_bytes).hexdigest()
+
+
 def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path: Path) -> None:
     run_dir = _write_plan_fixture(tmp_path)
     entries = [
@@ -188,7 +199,7 @@ def test_load_fixture_accepts_run_mode_wall_clock_digest_normalization(tmp_path:
     _write_journal(run_dir, entries)
     replay = _load_replay(run_dir)
     digest_entries = [entry.model_copy(update={"wall_clock_time": None}) for entry in entries]
-    digest = hashlib.sha256(_serialize_journal_bytes(digest_entries)).hexdigest()
+    digest = hashlib.sha256(serialize_journal_bytes(digest_entries)).hexdigest()
     replay_payload = replay.model_dump(mode="json")
     replay_payload.update(
         {

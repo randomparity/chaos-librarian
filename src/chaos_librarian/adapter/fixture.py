@@ -34,6 +34,7 @@ from chaos_librarian.contract.reports import (
     VariantReport,
 )
 from chaos_librarian.contract.run_sentinel import SENTINEL_FILENAME, RunSentinel
+from chaos_librarian.engine.journal_io import serialize_journal_bytes
 from chaos_librarian.errors import ChaosLibrarianError
 from chaos_librarian.validation import prepare_run_input_from_bytes
 
@@ -235,7 +236,7 @@ def _validate_journal_digest(
         entries = tuple(entry.model_copy(update={"wall_clock_time": None}) for entry in journal)
     else:
         entries = journal
-    digest = hashlib.sha256(_serialize_journal_bytes(entries)).hexdigest()
+    digest = hashlib.sha256(serialize_journal_bytes(entries)).hexdigest()
     if digest != replay_bundle.journal_digest:
         _fixture_invalid("journal_digest does not match journal.jsonl", path=run_dir)
 
@@ -248,14 +249,6 @@ def _verify_sentinel(run_dir: Path) -> RunSentinel:
         return RunSentinel.model_validate_json(target.read_text())
     except (OSError, ValidationError, ValueError) as exc:
         raise SentinelInvalidError(f"sentinel unparseable: {exc}") from exc
-
-
-def _serialize_journal_bytes(entries: tuple[JournalEntry, ...]) -> bytes:
-    chunks: list[bytes] = []
-    for entry in entries:
-        chunks.append(entry.model_dump_json(by_alias=True, exclude_none=True).encode("utf-8"))
-        chunks.append(b"\n")
-    return b"".join(chunks)
 
 
 def _load_present_reports(reports_dir: Path, initial_manifest: Manifest) -> OracleReports:
