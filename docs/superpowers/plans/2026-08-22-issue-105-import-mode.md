@@ -241,8 +241,10 @@ green; `ty` clean.
    `rule_import_source(raw, line_index, collector)` directly, asserting
    `E_IMPORT_SOURCE_INVALID` issues for: absolute path (`"/etc/passwd"`),
    empty string (`""`), dot-only (`"."`), `..` escape
-   (`"media/../../x.mkv"`), separator in a component (`"a/b\n c".replace` —
-   use `"bad\\slash.mkv"`), control character (`"bad\x01.mkv"`). A valid
+   (`"media/../../x.mkv"`), separator in a component
+   (`"bad\\slash.mkv"` — `PurePosixPath` keeps it one part whose
+   backslash `is_safe_path_component` rejects), control character
+   (`"bad\x01.mkv"`). A valid
    relative path produces no issue. Build `line_index` the way existing rule
    unit tests do (reuse the helper from
    `tests/validation/rules/conftest.py` if present; otherwise
@@ -427,12 +429,12 @@ registered; matrix rule skips import assets; subtitle body events validate.
 `tests/materializer/content/test_import_copy.py` (new),
 `tests/materializer/phase_b/test_subtitle_body_sidecar.py` (new).
 
-**Interfaces consumed:** `PhaseAInputs` (gains `scenario_dir: Path`),
-`_copy_same_content_asset` as the structural template, `ContentSourceEvidence`
-(all fields required: `asset_id`, `track_kind`, `recipe_digest`,
-`cache_disposition`), `probe_file`, `MaterializeAssetResult`.
-
-### Steps
+**Interfaces consumed:** `_copy_same_content_asset` as the structural
+template, `ContentSourceEvidence` (SIX fields required: asset_id,
+track_kind, source, provider, recipe_digest, cache_disposition;
+`content_hash`/`origin_uri` optional but set by the copy path),
+`probe_file`, `MaterializeAssetResult`, `PhaseAInputs` (gains optional
+`scenario_dir`).
 
 1. **`media_matrix.py`** — add shared constant (materializer and importer
    both need it; media_matrix is the existing shared home):
@@ -457,8 +459,14 @@ registered; matrix rule skips import assets; subtitle body events validate.
    points at a real temp file inside the scenario dir; call
    `materialize_assets_phase_a` with a hand-built `PhaseAInputs`
    (`scenario_dir=tmp_path`, minimal `artifacts`/`caps` — reuse existing
-   phase-A test fixtures in `tests/materializer/content/` for how
-   `PlanArtifacts`/`Capabilities` stubs are built). Assert:
+   phase-A tests for how `PlanArtifacts`/`Capabilities` stubs are built:
+   `tests/materializer/` is FLAT (no subdirectories) — copy the patterns
+   from `test_synthesis.py:150-161` (`PlanArtifacts` via `run_plan`) and
+   `:965-985` (`_caps` helper); capability-gate stubs live in
+   `tests/materializer/test_capability_gates.py:220-235`. New test files
+   may use new subdirectories under `tests/materializer/` — a first, so
+   note it in the commit message.
+   built). Assert:
    output file bytes equal source bytes; `probed.duration_seconds` equals
    ffprobe of source (real ffprobe — mark the module like neighboring
    real-tool tests or stub `probe_file` via monkeypatch, matching existing
@@ -475,7 +483,9 @@ registered; matrix rule skips import assets; subtitle body events validate.
    Threading prerequisites (implemented in this task before the tests can
    pass):
    - `PhaseAInputs` gains an OPTIONAL `scenario_dir: Path | None = None`
-     (after `out_dir`) — optional so existing construction sites keep
+     appended AFTER `stamp_manifest` (a defaulted field before
+     `phase_a_accumulator` would break dataclass default ordering; the
+     field goes last) — optional so existing construction sites keep
      compiling unchanged.
    - `PhaseAInputs` is constructed inside `_run_synthesis`
      (`materializer/run.py:117-125`), which receives only
@@ -637,21 +647,23 @@ registered; matrix rule skips import assets; subtitle body events validate.
    phase-B sidecar test's entry-construction helper), run
    `_apply_create_sidecar`, assert the file bytes equal the encoded body —
    NOT `srt_payload` output.
-   Deliberate deviation from the design's "both write paths" wording: only
-   the phase-B handler gains a body branch. Phase-A `write_sidecars` renders
-   *declared* subtitle tracks, which carry no body field, and import assets
-   forbid subtitles entirely — so phase A can never receive a body. This
-   change amends the spec's Contract-changes item 3 accordingly.
+   No deviation from the design's Contract-changes item 3 is needed — it
+   already specifies a phase-B-only body branch and notes phase-A
+   declared-sidecar rendering never sees a body. The spec's *Testing*
+   bullet ("both phase-A and phase-B") is the contradictory text; this
+   change amends that bullet to name only the phase-B path.
 
 
 
 6. **Capabilities provider** in `source_capabilities.py`: append a second
-   `ContentSourceProviderCapability(name="import-file", available=True,
-   requires_network=False, requires_cache=False, required_tool=None,
+   `ContentSourceProviderCapability(name="import-file", ...,
+   requires_network=False, requires_cache=False, required_tool="ffprobe",
    sources=("video:file_ref", "audio:file_ref"))` to the returned
-   `ContentSourceCapabilities.providers`, mirroring the existing entry's
-   construction. Update `tests/` asserting provider counts (grep
-   `collect_content_source_capabilities`).
+   `ContentSourceCapabilities.providers`. Wire availability like the
+   builtin entry: derive it from detected ffprobe status (available iff
+   ffprobe present, per the spec), and populate `reason` when unavailable —
+   NOT hardcoded `available=True`. Update `tests/` asserting provider
+   counts (grep `collect_content_source_capabilities`).
 
 7. **Verify:** `uv run pytest tests/materializer -q`; guardrails; commit:
    `feat(materializer): copy-path materialization for import assets`.
@@ -753,6 +765,11 @@ Implementation notes for `build_topology` (the only subtle logic):
   and a control character surviving to materialization would crash
   `render_asset_path` with an opaque ValueError; the inline sanitizer
   guarantees its precondition holds.
+- Apply the same inline sanitizer to EVERY name-derived surface — movie/
+  series/artist/album display names, the library-root dirname, and sidecar
+  `to` stems, not just episode titles. A name whose sanitized form is
+  empty causes its file to be skipped with reason `topology:no_anchor`
+  (control characters are legal on ext4 but crash downstream renderers).
 - Movie variants: group videos by parent dir; variant labels
   `v1..vN` in sorted order; layout `movie_folder` if the dir is not the
   scan root else `movie_flat`.
@@ -784,6 +801,13 @@ def emit_import_bundle(
     scenario.yaml and exactly the staged bundle names.
     """
 ```
+
+NFO detection: `NFO_EXTENSIONS = frozenset({".nfo"})` joins scan.py's
+constant block (`ScannedFile.kind == "nfo"`). Emitted event paths: subtitle
+`to` = `<stem>.<lang>.<ext-lowercase>`; NFO `to` = `<stem>.nfo`; poster
+`to` = `<poster-stem>.<ext-lowercase>` (verify each against
+`rule_sidecar_target`'s expectations before emitting — the re-validation
+gate enforces them). Emit tests cover all three kinds.
 Staging ownership: a pure function in this module,
 `plan_staging(probed, skips, works, *, mode, max_works, max_variants,
 max_duration_s) -> tuple[list[ProbedInput], list[SkipRecord],

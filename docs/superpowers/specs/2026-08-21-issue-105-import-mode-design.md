@@ -296,7 +296,7 @@ attempted. Disk-exhaustion via huge bundles is bounded only by the CLI caps
   Symlink-escape and missing-bundle cases are materializer-level tests.
 - **Materializer**: `_copy_import_asset` copies bytes, records evidence,
   probes output; missing bundle file → `E_IMPORT_SOURCE_MISSING`; the
-  subtitle-body write path in both phase-A and phase-B; skip/cap reason
+  subtitle-body write path in phase-B; skip/cap reason
   taxonomy (`mode:duplicate`, `cap:max_variants`, `orphaned_sidecar`).
 - **Importer unit tests**: fixture trees (movie folder, season folders,
   artist/album, flat, sidecars, unrecognized files, unprobesable file) scanned
