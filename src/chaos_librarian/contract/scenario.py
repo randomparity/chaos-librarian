@@ -503,6 +503,19 @@ class SymlinkTarget(BaseModel):
         return self
 
 
+class ImportSource(BaseModel):
+    """Scenario-bundled original backing an imported asset (ADR 0012, v33).
+
+    ``path`` is relative to the scenario file's directory with safe
+    components only; validation enforces the shape lexically
+    (``rule_import_source``) and the materializer re-resolves it against
+    the real filesystem before copying the bytes into the library.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    path: str
+
+
 class Asset(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     id: str
@@ -533,6 +546,10 @@ class Asset(BaseModel):
     collision_prefix_len: int | None = Field(default=None, ge=1, le=63)
     hardlinked_to: str | None = None
     symlink: SymlinkTarget | None = None
+    # Imported-asset source (v33, issue #105 / ADR 0012): references a file
+    # inside the scenario bundle; materialization copies those bytes
+    # verbatim, so an import asset declares no synthesis tracks or knobs.
+    import_source: ImportSource | None = None
 
     @model_validator(mode="after")
     def _check_content_dedup_fields(self) -> Asset:
@@ -543,6 +560,7 @@ class Asset(BaseModel):
                 ("hash_collision_with", self.hash_collision_with),
                 ("hardlinked_to", self.hardlinked_to),
                 ("symlink", self.symlink),
+                ("import_source", self.import_source),
             )
             if value is not None
         ]
@@ -555,6 +573,29 @@ class Asset(BaseModel):
         subtitle_exclusive_links = (self.same_content_as, self.hardlinked_to, self.symlink)
         if self.subtitles and any(value is not None for value in subtitle_exclusive_links):
             raise ValueError("content link fields forbid declaring the asset's own subtitles")
+        return self
+
+    @model_validator(mode="after")
+    def _check_import_asset_shape(self) -> Asset:
+        if self.import_source is None:
+            return self
+        forbidden = [
+            name
+            for name, value in (
+                ("video", self.video),
+                ("mp4_moov_placement", self.mp4_moov_placement),
+                ("matroska_muxing_profile", self.matroska_muxing_profile),
+                ("embedded_chapters", self.embedded_chapters),
+                ("embedded_cover_art", self.embedded_cover_art),
+            )
+            if value is not None
+        ]
+        if self.audio:
+            forbidden.append("audio")
+        if self.subtitles:
+            forbidden.append("subtitles")
+        if forbidden:
+            raise ValueError(f"import_source asset forbids: {', '.join(forbidden)}")
         return self
 
 
@@ -778,7 +819,9 @@ class CreateSidecarEvent(_TimelineEventBase):
     # model_validator forbids cross-kind misuse. None selects the kind's
     # current default (srt/generated_srt/utf8 subtitle, template NFO, image poster,
     # default CUE). ``image_format`` (v32, #118) is poster-only and selects the
-    # synthesized poster image format (png/jpeg/webp); ``body`` also serves cue.
+    # synthesized poster image format (png/jpeg/webp); ``body`` also serves cue;
+    # widened in v33 (#105) to subtitle so imported sidecar text survives
+    # byte-exact.
     codec: SubtitleCodec | None = None
     source: SubtitleSource | None = None
     encoding: SubtitleEncoding | None = None
@@ -800,8 +843,8 @@ class CreateSidecarEvent(_TimelineEventBase):
             ):
                 if value is not None:
                     raise ValueError(f"{name} is only valid for subtitle sidecars")
-        if self.kind not in {SidecarKind.NFO, SidecarKind.CUE} and self.body is not None:
-            raise ValueError("body is only valid for nfo and cue sidecars")
+        if self.kind == SidecarKind.POSTER and self.body is not None:
+            raise ValueError("body is only valid for subtitle, nfo and cue sidecars")
         if self.kind != SidecarKind.POSTER and self.media_type is not None:
             raise ValueError("media_type is only valid for poster sidecars")
         if self.kind != SidecarKind.POSTER and self.image_format is not None:
@@ -1235,7 +1278,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[32]
+    schema_version: Literal[33]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

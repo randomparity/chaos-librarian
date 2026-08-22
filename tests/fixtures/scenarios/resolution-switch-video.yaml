@@ -1,4 +1,4 @@
-schema_version: 32
+schema_version: 33
 scenario_id: resolution-switch-video
 seed: 133
 duration_scale: short

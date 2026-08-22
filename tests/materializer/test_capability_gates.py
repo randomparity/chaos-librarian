@@ -184,7 +184,7 @@ def test_resolution_switch_gate_reports_required_encoder_and_sequence() -> None:
 
 def _scenario_with_asset(asset: dict[str, object]) -> Scenario:
     raw: dict[str, object] = {
-        "schema_version": 32,
+        "schema_version": 33,
         "scenario_id": "capability-gate-test",
         "seed": 1,
         "duration_scale": "short",

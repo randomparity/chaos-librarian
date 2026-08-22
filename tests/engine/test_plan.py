@@ -52,7 +52,7 @@ def _replay_plan_bundle(bundle: PlanOnlyReplayBundle) -> PlanArtifacts:
 
 def _corruption_input_and_report(seed: str = "42") -> tuple[RunInput, ValidationReport]:
     scenario = f"""
-schema_version: 32
+schema_version: 33
 scenario_id: corruption-plan-test
 seed: {seed}
 duration_scale: short

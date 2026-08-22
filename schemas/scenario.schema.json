@@ -263,6 +263,17 @@
           "title": "Id",
           "type": "string"
         },
+        "import_source": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ImportSource"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
         "matroska_muxing_profile": {
           "anyOf": [
             {
@@ -1201,6 +1212,21 @@
         "timeline_events"
       ],
       "title": "GenerationBudget",
+      "type": "object"
+    },
+    "ImportSource": {
+      "additionalProperties": false,
+      "description": "Scenario-bundled original backing an imported asset (ADR 0012, v33).\n\n``path`` is relative to the scenario file's directory with safe\ncomponents only; validation enforces the shape lexically\n(``rule_import_source``) and the materializer re-resolves it against\nthe real filesystem before copying the bytes into the library.",
+      "properties": {
+        "path": {
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "ImportSource",
       "type": "object"
     },
     "Library": {
@@ -3179,7 +3205,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 32,
+      "const": 33,
       "title": "Schema Version",
       "type": "integer"
     },
