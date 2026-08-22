@@ -43,9 +43,12 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   lexicographically first matching video in sorted-path order.
 - Exit codes follow `docs/contract/cli-reference.md`: `--out` handling
   reuses `validate_new_out_path` (existing `--out` or bad parent →
-  `typer.BadParameter`, exit 2, same as `generate`); import-specific input
-  failures use the `emit_cli_error(E_IMPORT_FAILED, ...)` envelope with
-  exit 3; `--json` prints a structured import report on success.
+  `typer.BadParameter`, exit 2, same as `generate`); import-specific
+  operational failures (no media found, staging/write/rollback errors,
+  re-validation invariant) use `emit_cli_error(E_IMPORT_FAILED, ...)`
+  with exit 1; ffprobe missing or too old exits 4 (the documented
+  external-tool code); `--json` prints a structured import report on
+  success.
 
 ## Contract changes (scenario schema v32 → v33)
 
@@ -99,15 +102,14 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   vocabulary; on a declaration-free asset they are unvalidated territory.
   This is a closed classification — all other events operate on existing
   bytes without consulting track declarations and remain allowed.
+  After the early-return, no remaining matrix check applies to import assets
+  (there is nothing declared to check).
   Preflight capability gates get the same treatment:
   `assert_capable_for_webm_video` gates on `container == "webm"` alone today,
   so it must skip import assets (a copied .webm needs no libvpx-vp9).
-  No existing rule rejects import scenarios otherwise: empty-of-tracks assets
-  pass the matrix rule (nothing declared to check), and no rule requires a
+  No existing rule rejects import scenarios otherwise, and no rule requires a
   non-empty timeline. `rule_hierarchy_invariants` and
   `rule_rendered_path_collisions` apply unchanged.
-
-## Materializer changes
 
 - `materialize_assets_phase_a` dispatch order: `symlink` → `hardlinked_to` →
   `same_content_as` → `import_source` → full synthesis. New
@@ -155,7 +157,9 @@ New package, four focused units:
     filename (`season_folders` layout, `sxxexx_title` naming). A filename
     with no parseable `SxxEyy` is skipped with reason `topology:no_anchor`;
     a second file with the same `SxxEyy` in one season is skipped with
-    reason `topology:duplicate_episode`.
+    reason `topology:duplicate_episode`. A `Season NN` directory directly
+    at the scan root has no grandparent to anchor a series name, so its
+    files are also skipped with reason `topology:no_anchor`.
   - Any other video file → movie: multiple video files in one directory
     become variants of one movie (`movie_folder`); lone videos at the scan
     root become `movie_flat` movies titled from the filename stem.
@@ -190,6 +194,12 @@ New package, four focused units:
   sidecars, writes YAML via the same ruamel dump style, then runs the emitted
   YAML through `Scenario.model_validate` before reporting success (an import
   that cannot re-validate is a hard error).
+  Emitted timeline events are fully determined: each `create_sidecar` id is
+  `sidecar-<asset-id>-<n>` (per-asset counter in sorted sidecar order);
+  every event carries `at: "0s"` — imported sidecars exist from the start of
+  the run, so no clock or seed participates; a per-directory poster targets
+  that directory's lexicographically first imported asset (sorted variant
+  order).
 
 Asset IDs: `imp-<sha256[:12]>` plus `-<k>` suffix when the same content
 appears as multiple assets (full mode duplicates). Deterministic for a given
