@@ -299,6 +299,33 @@ green; `ty` clean.
            _check_shape(path_value, (*context.asset_loc, "import_source", "path"), reporter)
 
 
+   def _check_shape(path_value: str, loc, reporter: Reporter) -> None:
+       if (
+           not path_value
+           or PurePosixPath(path_value).is_absolute()
+           or path_value.startswith(("/", "\\"))
+       ):
+           reporter.error(code=E_IMPORT_SOURCE_INVALID,
+                          message="import_source.path must be relative and non-empty",
+                          loc=loc)
+           return
+       parts = PurePosixPath(path_value).parts
+       if not parts or ".." in parts:
+           # PurePosixPath('.') and PurePosixPath('').parts are both () —
+           # reject the empty-parts case explicitly, mirroring
+           # resolve_under_library's up-front filter.
+           reporter.error(code=E_IMPORT_SOURCE_INVALID,
+                          message="import_source.path must be non-empty and contain no '..'",
+                          loc=loc)
+           return
+       for part in parts:
+           if not is_safe_path_component(part):
+               reporter.error(code=E_IMPORT_SOURCE_INVALID,
+                              message=f"import_source.path has unsafe component {part!r}",
+                              loc=loc)
+               return
+
+
    def _check_shape(path_value: str, loc: tuple, reporter: Reporter) -> None:
        if not path_value or PurePosixPath(path_value).is_absolute() or path_value.startswith(("/", "\\")):
            reporter.error(code=E_IMPORT_SOURCE_INVALID,
@@ -469,8 +496,7 @@ track_kind, source, provider, recipe_digest, cache_disposition;
    `:965-985` (`_caps` helper); capability-gate stubs live in
    `tests/materializer/test_capability_gates.py:220-235`. New test files
    may use new subdirectories under `tests/materializer/` — a first, so
-   note it in the commit message.
-   built). Assert:
+   note it in the commit message. Assert:
    output file bytes equal source bytes; `probed.duration_seconds` equals
    ffprobe of source (real ffprobe — mark the module like neighboring
    real-tool tests or stub `probe_file` via monkeypatch, matching existing
@@ -485,10 +511,10 @@ track_kind, source, provider, recipe_digest, cache_disposition;
    `ImportSourceMissingError` with `error_code == "E_IMPORT_SOURCE_MISSING"`.
 
    Threading prerequisites (implemented in this task before the tests can
-   pass):
    - `PhaseAInputs` gains an OPTIONAL `scenario_dir: Path | None = None`
-     appended after `stamp_manifest` (last field — a defaulted field
-     earlier in the dataclass would break default ordering).
+     appended after `phase_a_accumulator` (the current LAST field, already
+     defaulted — a defaulted field before a required one would break
+     dataclass ordering).
    - `PhaseAInputs` is constructed inside `_run_synthesis`
      (`materializer/run.py:117-125`), which receives only
      `(ctx, scenario)`; `RunContext`
@@ -501,13 +527,15 @@ track_kind, source, provider, recipe_digest, cache_disposition;
      `runtime/wall_clock.py:262` and `:344`; a required field would break
      all three with TypeError), and
      `_run_synthesis` passes `ctx.scenario_dir` into `PhaseAInputs`.
-     The wall-clock site has a real scenario path
+   - The wall-clock site has a real scenario path
      (`run_wall_clock_scenario` builds `PhaseAInputs` directly at
      `runtime/wall_clock.py:243`): thread
      `scenario_dir=scenario_path.resolve().parent` there too, so
      `chaos-librarian run <import-scenario>` materializes import assets.
-     Only `materializer/replay.py:209` passes `None` (a replayed bundle
-     genuinely has no on-disk scenario dir); `_copy_import_asset` raises
+     Only the replay path passes `None`: its `PhaseAInputs` construction
+     (`materializer/replay.py:198-217`, six explicit kwargs) gains
+     `scenario_dir=None` (a replayed bundle genuinely has no on-disk
+     scenario dir); `_copy_import_asset` raises
      `ImportSourceMissingError("import asset in a run without a scenario
      directory")` when `scenario_dir is None`.
 
@@ -779,13 +807,13 @@ Implementation notes for `build_topology` (the only subtle logic):
 - Movie variants: group videos by parent dir; variant labels
   `v1..vN` in sorted order; layout `movie_folder` if the dir is not the
   scan root else `movie_flat`.
+- Suffix normalization: scan compares `Path.suffix.lower()` (dotted) —
+  define ALL scan-side extension sets DOTTED (`VIDEO_SUFFIXES = frozenset(
+  "." + c for c in IMPORT_VIDEO_CONTAINERS)`, `AUDIO_SUFFIXES` likewise;
+  subtitle/poster sets above are already dotted). The bare
+  `IMPORT_VIDEO_CONTAINERS` stays bare: it feeds `Asset.container` values.
 - Asset ids: `imp-{sha256[:12]}` plus `-<k>` when the same content appears
   as multiple assets (k counts occurrences in sorted order).
-- Sidecar language: filename `<stem>.<lang>.<ext>` where `<lang>` matches
-  `[A-Za-z]{2,3}(-[A-Za-z0-9]+)?` and `<lang>` != a codec word; else
-  default `"en"`.
-- `duration_seconds` on each asset payload = `probed.duration_seconds`;
-  `container` = the file's extension (lowercased, no dot).
 
 ```python
 # emit.py
@@ -794,17 +822,17 @@ def emit_import_bundle(
     out: Path,
     works: list[ImportedWork],
     skips: list[SkipRecord],
-    staged: list[tuple[Path, Path]],   # (source, bundle-dest) already decided
+    staged: list[tuple[Path, Path]],   # (source, bundle-dest), from plan_staging
 ) -> ImportReport:
     """Stage media/, build the payload dict, dump YAML atomically, re-validate.
 
-    Payload mirrors generation/api.py structure: schema_version
-    SCENARIO_SCHEMA_VERSION, scenario_id f"import-{input_dir.name}-{yyyymmddhhmm}",
-    seed 0, duration_scale "normal", library roots [{id: "main",
-    path: sanitized input-dirname}], movies/series/artists from works,
-    timeline from sidecar events. Re-validation runs prepare_run_input_from_bytes
-    + run_validation (full pipeline). Any post-staging failure removes
-    scenario.yaml and exactly the staged bundle names.
+    ``out`` is the scenario.yaml FILE path (generate single-file
+    precedent); the bundle directory is ``out.parent / "media"``. Rollback
+    wraps BOTH the staging copy loop and everything after it: every file
+    written during staging is tracked, and any failure — a mid-staging
+    I/O error or a post-staging validation failure — removes ``out`` and
+    exactly the tracked names (never a directory sweep; a sibling
+    scenario's bundle may share ``media/``).
     """
 ```
 
@@ -844,7 +872,10 @@ webp→webp), targeting the directory's lexicographically first imported asset.
 dedup mode drops second same-hash file (`mode:duplicate`); caps produce
 `cap:*` reasons. Emit tests: re-validation runs (assert `run_validation`
 called — monkeypatch wrapper), rollback removes exactly staged files on a
-forced validation failure, deterministic ids across two runs.
+forced validation failure AND on a mid-staging I/O failure (monkeypatch
+`shutil.copyfile` to raise on the second file) — both leave no
+`scenario.yaml` and no partial bundle names — and deterministic ids
+across two runs.
 
 **Verify:** `uv run pytest tests/importer -q`; guardrails; commit:
 `feat(importer): scan, probe, topology, and scenario-bundle emission`.
