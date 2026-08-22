@@ -17,7 +17,7 @@ with exact probed properties (ADR 0012 snapshot semantics).
 ```
 chaos-librarian import INPUT_DIR --out SCENARIO.yaml
     [--mode full|sample|dedup]   # default: full
-    [--max-works N]              # cap total works (movies+series+artists+podcasts); no default cap
+    [--max-works N]              # cap total works (movies+series+artists); no default cap
     [--max-variants N]           # cap variants per work; default 4
     [--max-duration-s SECONDS]   # skip files longer than N seconds; no default cap
     [--json]
