@@ -29,9 +29,18 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   files per category in addition to the global work cap.
 - `dedup` skips files whose sha256 was already imported (bundle is
   content-addressed, so dedup is a bundle-lookup, not a re-copy).
-- Exit codes follow `docs/contract/cli-reference.md` conventions: 0 success,
-  3 usage/input errors via `emit_cli_error(E_IMPORT_FAILED, ...)` envelope;
-  `--json` prints a structured import report on success.
+- Skip/cap semantics are deterministic and observable: candidates are
+  processed in sorted-path order; anything dropped by a mode, a cap
+  (`--max-works`, `--max-variants`), or dedup lands in `files_skipped`
+  with a distinct reason (`mode:duplicate`, `mode:capped`, `cap:max_works`,
+  `cap:max_variants`); partial series/artists are emitted as-is; sidecars
+  attach only to imported videos — a sidecar whose video was skipped is
+  itself skipped with reason `orphaned_sidecar`.
+- Exit codes follow `docs/contract/cli-reference.md`: `--out` handling
+  reuses `validate_new_out_path` (existing `--out` or bad parent →
+  `typer.BadParameter`, exit 2, same as `generate`); import-specific input
+  failures use the `emit_cli_error(E_IMPORT_FAILED, ...)` envelope with
+  exit 3; `--json` prints a structured import report on success.
 
 ## Contract changes (scenario schema v32 → v33)
 
@@ -49,17 +58,32 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
    bundle extension and are recorded metadata only; materialization and
    oracle comparison read the actual copied bytes.
 3. `CreateSidecarEvent.body` is allowed for `kind=subtitle` (byte-exact
-   imported `.srt`/`.ass` text); validator `_check_fields_match_kind`
+   imported subtitle text); validator `_check_fields_match_kind`
    widens accordingly. NFO/CUE unchanged; posters stay synthesized.
+   Imported subtitle events carry `codec` mapped from the detected
+   extension (`.srt`→`srt`, `.ass`→`ass`, `.ssa`→`ssa`) so the rendered
+   sidecar extension matches the body; `encoding` stays default utf-8;
+   `source` stays default. `rule_create_sidecar_content` skips its
+   codec×source matrix check when `body` is present (the body is
+   authoritative). The materializer gains a body branch in BOTH subtitle
+   write paths — phase-A `write_sidecars`
+   (`materializer/content/synthesis.py`) and phase-B
+   `_write_subtitle_sidecar` (`materializer/phase_b/media/handler.py`) —
+   writing `body` bytes verbatim instead of calling
+   `subtitle_payload_bytes` when `body` is set.
 4. `SCENARIO_SCHEMA_VERSION = 33`; `Scenario.schema_version: Literal[33]`;
    regenerate `schemas/scenario.schema.json`.
 
 ## Validation changes
 
 - New rule `rule_import_source` (`E_IMPORT_SOURCE_INVALID`, new code):
-  - `import_source.path` shape: relative, safe components, no `..`,
-    resolves strictly under the scenario file's directory, symlink-resolved
-    (reject escapes through symlinks).
+  - `import_source.path` shape, enforced LEXICALLY at validate time
+    (validation rules never touch the filesystem): must be relative, every
+    component passes `is_safe_path_component`, no `..` — which together
+    prove resolution strictly under the scenario file's directory without
+    FS access. Existence and symlink-escape are re-checked at materialize
+    time only, where the scenario directory is real (a replay-bundle
+    RunInput has no on-disk directory; validate stays shape-only there too).
 - `rule_materialize_media_matrix` early-returns for import assets (skipping
   its must-declare-video and audio-cardinality checks, which would otherwise
   reject a track-less asset) and additionally rejects timeline events
@@ -101,13 +125,19 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
 New package, four focused units:
 
 - `scan.py` — walk `INPUT_DIR` (skipping symlinks to dirs and hidden dirs),
-  classify files by extension against `SUPPORTED_CONTAINERS` plus subtitle
-  (`.srt`, `.ass`, `.ssa`), NFO (`.nfo`), CUE (`.cue`), and poster extensions
-  (`.jpg`, `.jpeg`, `.png`, `.webp` with poster-ish names: `poster*`,
-  `folder*`, `cover*`). Unrecognized files are reported as skipped.
+  classify files by extension against a real-library media vocabulary —
+  video `{mkv, mp4, webm, avi, mov, ts, m4v, wmv, mpg, mpeg}`, audio
+  `{flac, mp3, m4a, wav, ogg, opus}` (a deliberate widening beyond
+  `SUPPORTED_CONTAINERS`: import exists for files the synthesis matrix
+  cannot represent; `Asset.container` is free-form and import assets skip
+  the matrix rule) — plus subtitle (`.srt`, `.ass`, `.ssa`), NFO (`.nfo`),
+  CUE (`.cue`), and poster extensions (`.jpg`, `.jpeg`, `.png`, `.webp`
+  with poster-ish names: `poster*`, `folder*`, `cover*`). Extension
+  matching is case-insensitive. Files with unrecognized extensions are
+  reported as skipped (`unrecognized`); media-extension files that fail
+  ffprobe are skipped with reason `probe_failed` and never abort the run.
 - `probe_input.py` — wraps `materializer.tooling.probe.probe_file` for input
-  files; computes sha256 for bundle naming/dedup. Files that fail probing are
-  reported as skipped with the probe error, never abort the whole import.
+  files; computes sha256 for bundle naming/dedup.
 - `topology.py` — maps probed files onto the scenario hierarchy:
   - Video file directly under a `Season NN` directory (case-insensitive) →
     series episode; series name = grandparent dir; `SxxEyy` parsed from the
@@ -168,7 +198,7 @@ INPUT_DIR ──scan──▶ candidates ──ffprobe+sha256──▶ probed fi
 | Failure | Behavior |
 |---|---|
 | `INPUT_DIR` missing/not a dir | Typer `exists=True` argument error |
-| `--out` exists | `E_IMPORT_FAILED` (path taken), exit 3 |
+| `--out` exists / bad parent | `typer.BadParameter` via `validate_new_out_path`, exit 2 (same as `generate`) |
 | No media files found | `E_IMPORT_FAILED` ("no importable media found"), exit 3 |
 | Individual file unprobesable | skipped, reported, import continues |
 | Bundle copy fails (I/O) | `E_IMPORT_FAILED` with path, exit 3; partial bundle files removed |
@@ -192,11 +222,12 @@ rights.
 - `import_source.path` must be relative with per-component
   `is_safe_path_component` validation (no separators, no `..`, no control
   chars) — same primitive `paths.py` uses for library paths.
-- The resolved path must be a strict subpath of the scenario file's own
-  directory, checked with symlink resolution (`Path.resolve()`), so a YAML
-  cannot escape its bundle via symlinks — mirroring `resolve_under_library`'s
-  symlink handling. Enforced at validate time AND re-checked at materialize
-  time.
+- At validate time the path is checked lexically only (relative, safe
+  components, no `..` — which proves containment under the scenario dir
+  without filesystem access). At materialize time the resolved real path is
+  re-checked with symlink resolution (`Path.resolve()`), so a YAML cannot
+  escape its bundle via symlinks — mirroring `resolve_under_library`'s
+  symlink handling.
 - Absolute paths and home-relative shortcuts are rejected by the relative-path
   rule; the worst case is reading a file the author already shipped alongside
   the YAML.
@@ -214,8 +245,14 @@ attempted. Disk-exhaustion via huge bundles is bounded only by the CLI caps
 - **Contract**: import-asset validators (exclusivity, no-tracks, knob ban);
   `body` on subtitle sidecars; schema export drift (regenerate + `--check`).
 - **Validation**: `rule_import_source` — escape (`../`), absolute, control
-  chars, symlink escape, mutation-event rejection; corpus fixtures under
+  chars, mutation-event rejection (lexical shape tests only — rules never
+  touch the filesystem); corpus fixtures under
   `tests/fixtures/scenarios/invalid/` with `# expected: E_...` markers.
+  Symlink-escape and missing-bundle cases are materializer-level tests.
+- **Materializer**: `_copy_import_asset` copies bytes, records evidence,
+  probes output; missing bundle file → `E_IMPORT_SOURCE_MISSING`; the
+  subtitle-body write path in both phase-A and phase-B; skip/cap reason
+  taxonomy (`mode:duplicate`, `cap:max_variants`, `orphaned_sidecar`).
 - **Importer unit tests**: fixture trees (movie folder, season folders,
   artist/album, flat, sidecars, unrecognized files, unprobesable file) scanned
   with a stub prober (no ffprobe dependency in unit tests); mode/cap behavior;
