@@ -93,6 +93,8 @@ def materialize_scenario(scenario_path: Path, out_dir: Path) -> MaterializeArtif
         started_at=started_at,
         caps=prepared.caps,
         plan_artifacts=prepared.plan_artifacts,
+        # Import-bundle root for ADR 0012 copy-path assets.
+        scenario_dir=scenario_path.resolve().parent,
     )
     _begin_materialize_run(ctx)
     return _run_synthesis(ctx, scenario)
@@ -122,6 +124,7 @@ def _run_synthesis(ctx: RunContext, scenario: Scenario) -> MaterializeArtifacts:
                 caps=ctx.caps,
                 phase_a_accumulator=phase_a,
                 stamp_manifest=True,
+                scenario_dir=ctx.scenario_dir,
             )
         )
         phase_b_state = make_phase_b_state(

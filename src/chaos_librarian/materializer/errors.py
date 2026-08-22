@@ -65,6 +65,18 @@ class SymlinkTargetMissingError(MaterializationError):
     error_code: str = "E_MATERIALIZE_SYMLINK_TARGET_MISSING"
 
 
+class ImportSourceMissingError(MaterializationError):
+    """An import asset's scenario-bundled source is missing, escaping, or
+    unavailable (no scenario directory in this run mode).
+
+    Import assets materialize by copying ``import_source.path`` from the
+    scenario bundle (ADR 0012); fail loud rather than synthesize a
+    substitute.
+    """
+
+    error_code: str = "E_IMPORT_SOURCE_MISSING"
+
+
 class MaterializationWriteError(MaterializationError):
     """A lifecycle mkdir, metadata write, publish, or cleanup operation failed."""
 

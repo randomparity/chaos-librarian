@@ -13,11 +13,15 @@ import os
 import shutil
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
 from chaos_librarian.contract.capabilities import Capabilities
-from chaos_librarian.contract.content_sources import ContentSourceEvidence
+from chaos_librarian.contract.content_sources import (
+    CacheDisposition,
+    ContentSourceEvidence,
+    ContentTrackKind,
+)
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
 from chaos_librarian.contract.scenario import Asset, Scenario
@@ -45,6 +49,7 @@ from chaos_librarian.materializer.content.muxing_sources import (
     resolve_muxing_source,
 )
 from chaos_librarian.materializer.errors import (
+    ImportSourceMissingError,
     ProbeParseError,
     SymlinkTargetMissingError,
     ToolFailedError,
@@ -66,6 +71,7 @@ from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.materializer.tooling.subtitles import subtitle_payload_bytes
 from chaos_librarian.media_matrix import (
+    IMPORT_VIDEO_CONTAINERS,
     RESOLUTION_SWITCH_VIDEO_CODEC,
     RESOLUTION_SWITCH_VIDEO_CONTAINER,
     RESOLUTION_SWITCH_VIDEO_RESOLUTION,
@@ -117,6 +123,10 @@ class PhaseAInputs:
     artifacts: PlanArtifacts
     caps: Capabilities
     stamp_manifest: bool
+    # Scenario-bundle root for import assets (ADR 0012). None in run modes
+    # without an on-disk scenario directory (bundle replay); import assets
+    # then fail loud instead of guessing a source.
+    scenario_dir: Path | None = None
     phase_a_accumulator: PhaseAResult | None = None
 
 
@@ -183,6 +193,14 @@ def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
                 out_dir=inputs.out_dir,
                 rendered_relative_path=rendered_relative_path,
                 referent_rel_path=rel_path_by_asset[asset.same_content_as],
+                invocation_index=invocation_index,
+            )
+        elif asset.import_source is not None:
+            asset_result = _copy_import_asset(
+                asset=asset,
+                out_dir=inputs.out_dir,
+                rendered_relative_path=rendered_relative_path,
+                scenario_dir=inputs.scenario_dir,
                 invocation_index=invocation_index,
             )
         else:
@@ -267,6 +285,123 @@ def _copy_same_content_asset(
         probed=probed,
         sidecar_hashes={},
         content_sources=(),
+        prelude_invocations=(),
+    )
+
+
+def _resolve_bundle_path(scenario_dir: Path | None, rel: str, asset_id: str) -> Path:
+    """Resolve an import_source path against the real scenario directory.
+
+    Re-checks the lexical contract on the live filesystem: the resolved path
+    must stay strictly inside ``scenario_dir`` even through symlinks, and
+    must exist as a regular file (ADR 0012).
+    """
+    if scenario_dir is None:
+        raise ImportSourceMissingError(
+            "import asset in a run without a scenario directory "
+            "(bundle replay has no on-disk scenario dir)",
+            asset_id=asset_id,
+        )
+    if not rel or PurePosixPath(rel).is_absolute() or rel.startswith(("/", "\\")):
+        raise ImportSourceMissingError(
+            f"import_source path {rel!r} is not a safe relative path",
+            asset_id=asset_id,
+        )
+    parts = PurePosixPath(rel).parts
+    if not parts or ".." in parts:
+        raise ImportSourceMissingError(
+            f"import_source path {rel!r} is not a safe relative path",
+            asset_id=asset_id,
+        )
+    try:
+        root = scenario_dir.resolve(strict=True)
+    except OSError as exc:
+        raise ImportSourceMissingError(
+            f"scenario directory not found: {scenario_dir}",
+            asset_id=asset_id,
+        ) from exc
+    resolved = (root / rel).resolve(strict=False)
+    if root not in resolved.parents:
+        raise ImportSourceMissingError(
+            f"import_source path {rel!r} escapes the scenario directory",
+            asset_id=asset_id,
+        )
+    if not resolved.is_file():
+        raise ImportSourceMissingError(
+            f"import_source file not found: {rel!r} (scenario dir {scenario_dir})",
+            asset_id=asset_id,
+        )
+    return resolved
+
+
+def _copy_import_asset(
+    *,
+    asset: Asset,
+    out_dir: Path,
+    rendered_relative_path: str,
+    scenario_dir: Path | None,
+    invocation_index: int,
+) -> MaterializeAssetResult:
+    """Copy the scenario-bundled original into the library (ADR 0012).
+
+    The materialized bytes ARE the original bytes: no synthesis, no media
+    matrix. Evidence records the copy as provider ``import-file`` with the
+    content digest as ``recipe_digest`` — it identifies the exact content
+    the copy produced. Mirrors ``_copy_same_content_asset``'s per-asset
+    contributions: one synthetic ``import_copy`` ToolInvocation, a fresh
+    probe of the copied file, empty ``sidecar_hashes``.
+    """
+    assert asset.import_source is not None
+    source_path = _resolve_bundle_path(scenario_dir, asset.import_source.path, asset.id)
+    library_dir = out_dir / "library"
+    output_path = library_dir / rendered_relative_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    started = time.monotonic_ns()
+    shutil.copyfile(source_path, output_path)
+    duration_ns = time.monotonic_ns() - started
+    with output_path.open("rb") as fh:
+        content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
+    probed = probe_file(output_path)
+    invocation = ToolInvocation(
+        tool="import_copy",
+        version="n/a",
+        command=[
+            "copyfile",
+            str(source_path),
+            str(output_path.relative_to(out_dir)),
+        ],
+        exit_code=0,
+        duration_ns=duration_ns,
+    )
+    track_kind = (
+        ContentTrackKind.VIDEO
+        if asset.container in IMPORT_VIDEO_CONTAINERS
+        else ContentTrackKind.AUDIO
+    )
+    evidence = ContentSourceEvidence(
+        asset_id=asset.id,
+        track_kind=track_kind,
+        source="import",
+        provider="import-file",
+        recipe_digest=content_hash,
+        origin_uri=asset.import_source.path,
+        content_hash=content_hash,
+        cache_disposition=CacheDisposition.NOT_CACHEABLE,
+    )
+    materialized_asset = MaterializedAsset(
+        asset_id=asset.id,
+        location_path=str(output_path.relative_to(out_dir)),
+        content_hash=content_hash,
+        size_bytes=probed.size_bytes,
+        duration_seconds=probed.duration_seconds,
+        invocation_index=invocation_index,
+    )
+    return MaterializeAssetResult(
+        invocation=invocation,
+        materialized_asset=materialized_asset,
+        probed=probed,
+        sidecar_hashes={},
+        content_sources=(evidence,),
         prelude_invocations=(),
     )
 

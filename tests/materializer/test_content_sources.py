@@ -454,7 +454,10 @@ def test_collect_content_source_capabilities_reports_builtin_provider() -> None:
         resolution_sequence_available=True,
     )
 
-    assert [provider.name for provider in capabilities.providers] == ["builtin-lavfi"]
+    assert [provider.name for provider in capabilities.providers] == [
+        "builtin-lavfi",
+        "import-file",
+    ]
     provider = capabilities.providers[0]
     assert provider.available is True
     assert "video:color_bars" in provider.sources
@@ -515,7 +518,7 @@ def test_collect_content_source_capabilities_reports_registered_source_union() -
         audio_recipes_available=True,
     )
 
-    assert len(capabilities.providers) == 1
+    assert len(capabilities.providers) == 2
     provider = capabilities.providers[0]
     assert provider.name == "builtin-lavfi"
     assert provider.sources == (

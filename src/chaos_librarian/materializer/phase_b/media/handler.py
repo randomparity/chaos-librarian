@@ -1157,6 +1157,22 @@ def _write_subtitle_sidecar(
             cause=ValueError("language is None"),
             asset_id=request.asset_id,
         )
+    if request.body_text is not None:
+        # v33 (#105 / ADR 0012): authored/imported body is authoritative —
+        # write it verbatim instead of synthesizing recipe bytes.
+        body = encode_subtitle_body(
+            request.body_text,
+            request.encoding.value if request.encoding is not None else None,
+        )
+        request.temp_output.write_bytes(body)
+        return _CreateSidecarWriteResult(
+            tool_invocation_index=None,
+            live_sidecar=LiveSubtitleSidecar(
+                asset_id=request.asset_id,
+                language=request.language,
+                encoding=request.encoding.value if request.encoding is not None else None,
+            ),
+        )
     codec = request.codec or SubtitleCodec.SRT
     source = request.source or SubtitleSource.GENERATED_SRT
     encoding = request.encoding or SubtitleEncoding.UTF8

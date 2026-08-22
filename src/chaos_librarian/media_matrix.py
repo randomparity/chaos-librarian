@@ -61,3 +61,11 @@ RESOLUTION_SWITCH_VIDEO_CODEC: Final = "h264"
 RESOLUTION_SWITCH_VIDEO_SOURCE: Final = "color_bars"
 RESOLUTION_SWITCH_VIDEO_RESOLUTION: Final = "sd"
 RESOLUTION_SWITCH_VIDEO_SEQUENCE: Final = "sd_to_hd"
+
+# Real-library container vocabulary for the importer (issue #105 / ADR 0012).
+# Deliberately wider than SUPPORTED_VIDEO_CONTAINERS: imported assets
+# materialize as byte copies, so no synthesis matrix applies. Bare
+# extension tokens; they feed Asset.container values directly.
+IMPORT_VIDEO_CONTAINERS: Final[frozenset[str]] = frozenset(
+    {"mkv", "mp4", "webm", "avi", "mov", "ts", "m4v", "wmv", "mpg", "mpeg"}
+)
