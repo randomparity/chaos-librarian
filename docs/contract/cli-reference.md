@@ -5,6 +5,7 @@ chaos-librarian validate scenario.yaml --json
 chaos-librarian generate --profile fuzz-smoke --seed 123 --out scenario.yaml --json
 chaos-librarian generate --profile fuzz-regression --lane core-fs --seed 456 --out scenario.yaml --json
 chaos-librarian generate --profile fuzz-regression --count 9 --seed 42 --out ./generated/
+chaos-librarian import ./media-library --out imported/scenario.yaml --json
 chaos-librarian plan scenario.yaml --out fixtures/run-001 --steps 3 --json
 chaos-librarian materialize scenario.yaml --out fixtures/run-001 --json
 chaos-librarian run scenario.yaml --out fixtures/run-001 --duration 90s --speed 10x --json
@@ -44,6 +45,19 @@ written as `<scenario_id>.yaml`, with seeds `seed .. seed+N-1` and (for
 `fuzz-regression` without `--lane`) lanes cycling the canonical order. A failed
 batch removes the files it wrote (exit `1`); a usage error such as a target-name
 collision exits `2` before writing.
+
+`import` turns an existing media library into a self-contained scenario
+bundle: it scans the input directory, probes video/audio files with ffprobe,
+classifies works (series episodes under `Season NN` directories, movies,
+music), attaches subtitle/NFO/poster sidecars, and copies accepted media into
+a content-addressed `media/` bundle beside a new scenario YAML. `--mode`
+accepts `full` (default), `sample` (first work per kind), or `dedup`
+(deduplicate by content hash). `--max-works`, `--max-variants`, and
+`--max-duration-s` cap what gets imported; trimmed items are recorded as
+skips with reasons. Exit codes: `0` success, `1` operational failure
+(`E_IMPORT_FAILED`, including an empty import or missing ffprobe output),
+`2` usage error (bad `--mode` or unusable `--out`), `4` ffprobe missing or
+below minimum.
 
 `plan` writes an oracle-only fixture. `--steps N` applies a prefix of
 user-visible step units.
