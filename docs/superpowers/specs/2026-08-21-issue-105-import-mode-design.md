@@ -79,12 +79,12 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
    sidecar extension matches the body; `encoding` stays default utf-8;
    `source` stays default. `rule_create_sidecar_content` skips its
    codec×source matrix check when `body` is present (the body is
-   authoritative). The materializer gains a body branch in BOTH subtitle
-   write paths — phase-A `write_sidecars`
-   (`materializer/content/synthesis.py`) and phase-B
-   `_write_subtitle_sidecar` (`materializer/phase_b/media/handler.py`) —
-   writing `body` bytes verbatim instead of calling
-   `subtitle_payload_bytes` when `body` is set.
+   authoritative). The materializer gains a body branch in the phase-B
+   subtitle write path (`_write_subtitle_sidecar`,
+   `materializer/phase_b/media/handler.py`), writing `body` bytes verbatim
+   instead of calling `subtitle_payload_bytes` when `body` is set. Phase-A
+   declared-sidecar rendering never sees a body: declared subtitle tracks
+   carry no body field and import assets forbid subtitles.
 4. `SCENARIO_SCHEMA_VERSION = 33`; `Scenario.schema_version: Literal[33]`;
    regenerate `schemas/scenario.schema.json`.
 

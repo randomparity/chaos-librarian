@@ -88,13 +88,18 @@ under `tests/`).
        assert asset.import_source == ImportSource(path="media/abc.mkv")
 
 
-   @pytest.mark.parametrize("field", ["video", "mp4_moov_placement",
-                                      "matroska_muxing_profile",
-                                      "embedded_chapters",
-                                      "embedded_cover_art"])
-   def test_import_asset_forbids_synthesis_knobs(field):
-       value = {"video": {"source": "mandelbrot", "codec": "h264", "resolution": "sd"}}
-       payload = _import_asset_payload(**{field: value[field]})
+   @pytest.mark.parametrize(
+       ("field", "value"),
+       [
+           ("video", {"source": "mandelbrot", "codec": "h264", "resolution": "sd"}),
+           ("mp4_moov_placement", "start"),
+           ("matroska_muxing_profile", "default"),
+           ("embedded_chapters", {"count": 3}),
+           ("embedded_cover_art", {"codec": "png"}),
+       ],
+   )
+   def test_import_asset_forbids_synthesis_knobs(field, value):
+       payload = _import_asset_payload(**{field: value})
        with pytest.raises(ValidationError, match="import_source asset forbids"):
            Asset.model_validate(payload)
 
@@ -198,11 +203,16 @@ under `tests/`).
    --write`. `git diff schemas/` must show only the scenario schema gaining
    `ImportSource`/`import_source` and enum/comment changes.
 
-5. **Verify:** `uv run pytest tests/contract -q` (expect all green),
-   `uv run python -m chaos_librarian.schema_export --check` (exit 0),
+5. **Docs pin:** update `docs/contract/schema-reference.md`'s scenario row
+   to `| scenario | 33 |` NOW — `tests/docs/test_documentation.py` pins the
+   live imported constant against that table, so Task 1's full-suite
+   guardrail fails until the row matches. (`cli-reference.md` is untouched
+   until Task 6.)
+
+6. **Verify:** `uv run pytest tests/contract tests/docs -q` (expect all
+   green), `uv run python -m chaos_librarian.schema_export --check` (exit 0),
    `uv run ty check src tests`, `uv run ruff check . && uv run ruff format .`.
    Commit: `feat(contract): import-source assets and subtitle sidecar body (v33)`.
-
 **Acceptance:** new tests pass; full contract suite green; schema drift gate
 green; `ty` clean.
 
@@ -302,6 +312,16 @@ green; `ty` clean.
                               message=f"import_source.path has unsafe component {part!r}",
                               loc=loc)
                return
+3. **Register the code and the rule** (without this the rule module
+   raises ImportError on `E_IMPORT_SOURCE_INVALID` and, once patched,
+   never runs):
+
+   - `validation/codes.py`: add `E_IMPORT_SOURCE_INVALID =
+     "E_IMPORT_SOURCE_INVALID"` (additions allowed; never rename).
+   - `validation/semantic.py`: import `rule_import_source` from
+     `chaos_librarian.validation.rules.media.import_source` and append it
+     to `_RULES` directly after `rule_materialize_media_matrix`.
+
 4. **Matrix gating** in `rule_materialize_media_matrix`:
 
    - In `_check_asset_context`, first line:
@@ -444,20 +464,33 @@ registered; matrix rule skips import assets; subtitle body events validate.
    real-tool tests or stub `probe_file` via monkeypatch, matching existing
    conventions in that directory); returned `content_sources[0]` has
    `provider="import-file"`, `track_kind=VIDEO`, `recipe_digest ==
-   content_hash`, `cache_disposition=NOT_CACHEABLE`; invocation tool is
+   `content_hash`, `cache_disposition=NOT_CACHEABLE`; invocation tool is
    `"import_copy"`. Second test: `import_source.path = "../escape.mkv"` →
-   raises `ImportSourceMissingError` (or `ContainmentViolationError` — see
-   implementation, assert the exact class you implement). Third: missing
-   file → `ImportSourceMissingError` with `error_code ==
-   "E_IMPORT_SOURCE_MISSING"`.
+   raises the escape error; third: missing file →
+   `ImportSourceMissingError` with `error_code == "E_IMPORT_SOURCE_MISSING"`.
+
+   Threading prerequisites (implemented in this task before the tests can
+   pass):
+   - `PhaseAInputs` gains an OPTIONAL `scenario_dir: Path | None = None`
+     (after `out_dir`) — optional so the ~13 existing construction sites
+     (`materializer/replay.py:209`, `runtime/wall_clock.py:243`, and ten
+     test files) keep compiling unchanged.
+   - Threading: `PhaseAInputs` is constructed inside `_run_synthesis`
+     (`materializer/run.py:117-125`), which receives only
+     `(ctx, scenario)`; `RunContext`
+     (`materializer/persistence/_context.py`) carries no scenario path.
+     Thread it at the source: `materialize_scenario(scenario_path,
+     out_dir)` resolves `scenario_dir=scenario_path.resolve().parent`,
+     stores it on the `RunContext` it builds (new field), and
+     `_run_synthesis` passes `ctx.scenario_dir` into `PhaseAInputs`.
+     Replay/wall-clock construction sites pass `None`; `_copy_import_asset`
+     raises `ImportSourceMissingError("import asset in a run without a
+     scenario directory")` when `scenario_dir is None` (a replayed bundle
+     has no on-disk scenario dir; importing then replaying materialize is
+     not a supported combination this slice — the error says so).
 
 4. **Implement the copy path** in `synthesis.py`:
 
-   - `PhaseAInputs` gains `scenario_dir: Path` (after `out_dir`).
-   - `materialize/run.py` passes
-     `scenario_dir=scenario_path.resolve().parent` when constructing
-     `PhaseAInputs` (find the construction site in
-     `materialize_scenario`; `scenario_path` is already a parameter there).
    - Dispatch in `materialize_assets_phase_a`, after the
      `same_content_as` branch:
 
@@ -598,6 +631,12 @@ registered; matrix rule skips import assets; subtitle body events validate.
    phase-B sidecar test's entry-construction helper), run
    `_apply_create_sidecar`, assert the file bytes equal the encoded body —
    NOT `srt_payload` output.
+   Deliberate deviation from the design's "both write paths" wording: only
+   the phase-B handler gains a body branch. Phase-A `write_sidecars` renders
+   *declared* subtitle tracks, which carry no body field, and import assets
+   forbid subtitles entirely — so phase A can never receive a body. This
+   change amends the spec's Contract-changes item 3 accordingly.
+
 
 6. **Capabilities provider** in `source_capabilities.py`: append a second
    `ContentSourceProviderCapability(name="import-file", available=True,
