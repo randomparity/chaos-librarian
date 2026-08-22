@@ -33,8 +33,9 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   processed in sorted-path order; anything dropped by a mode, a cap
   (`--max-works`, `--max-variants`, `--max-duration-s`), or dedup lands in
   `files_skipped` with a distinct reason (`mode:duplicate`,
-  `cap:max_works` — also used for sample-mode per-category drops,
-  `cap:max_variants`, `cap:max_duration_s`, `topology:no_anchor`);
+  `cap:max_works`, `cap:max_works_sample` (sample-mode per-category drops),
+  `cap:max_variants`, `cap:max_duration_s`, `topology:no_anchor`,
+  `topology:duplicate_episode`, `sidecar_duplicate`);
   partial series/artists are emitted as-is; sidecars attach only to
   imported videos — a sidecar whose video was skipped is itself skipped
   with reason `orphaned_sidecar`. When several imported videos in one
@@ -115,8 +116,13 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
      check the validation rule uses (defense in depth; materializer re-checks).
   2. `shutil.copyfile` to the rendered library path.
   3. sha256, `probe_file`, `MaterializedAsset` with probed size/duration.
-  4. `ContentSourceEvidence(provider="import-file", source="import",
-     origin_uri=<bundle-relative path>, content_hash=sha256:...)`,
+  4. `ContentSourceEvidence` for the copy: `provider="import-file"`,
+     `source="import"`, `asset_id=<the asset's id>`, `track_kind=VIDEO`
+     for video containers / `AUDIO` for audio-only containers,
+     `recipe_digest=sha256:<source file digest>` (the digest of the copied
+     bytes — it identifies the exact content the "recipe" produced),
+     `origin_uri=<bundle-relative path>`,
+     `content_hash=sha256:<materialized bytes digest>`,
      `cache_disposition=NOT_CACHEABLE`.
 - Missing bundle file at materialize time → `MaterializationError` with a new
   `E_IMPORT_SOURCE_MISSING` code routed through the existing materialization
@@ -146,21 +152,34 @@ New package, four focused units:
 - `topology.py` — maps probed files onto the scenario hierarchy:
   - Video file directly under a `Season NN` directory (case-insensitive) →
     series episode; series name = grandparent dir; `SxxEyy` parsed from the
-    filename (`season_folders` layout, `sxxexx_title` naming).
+    filename (`season_folders` layout, `sxxexx_title` naming). A filename
+    with no parseable `SxxEyy` is skipped with reason `topology:no_anchor`;
+    a second file with the same `SxxEyy` in one season is skipped with
+    reason `topology:duplicate_episode`.
   - Any other video file → movie: multiple video files in one directory
     become variants of one movie (`movie_folder`); lone videos at the scan
     root become `movie_flat` movies titled from the filename stem.
   - Audio file under `<Artist>/<Album>[/Disc NN]/` → artist/album(/disc)/track
-    (`artist_album_disc` layout); audio at the scan root is skipped with a
-    reported reason (no convention to anchor it).
+    (`artist_album_disc` layout); audio at the scan root or directly under
+    an artist directory (no album layer) is skipped with reason
+    `topology:no_anchor`.
   - Podcasts are not detected (issue sketch names movies, TV, flat
     collections only).
   - Sidecars attach to the nearest video in the same directory with a
     matching stem (`<stem>.<lang>.srt` → language from suffix, default
     `en`; `<stem>.nfo`; `<stem>.cue`; poster files attach per directory).
-  Undetected sidecar-like files (`.vtt`, `.sub`/`.idx`, `.ttml`,
-  non-poster images) are ignored and reported as skipped; extension
-  matching is case-insensitive.
+    When several imported videos in one directory share a stem, an
+    ambiguous sidecar attaches to the lexicographically first matching
+    video in sorted-path order. Attachments dedupe per
+    (video, kind, language): the first sidecar in sorted-path order wins;
+    later duplicates are skipped with reason `sidecar_duplicate` (so
+    `Movie.srt` + `Movie.en.srt` imports one subtitle event, never a
+    duplicate `(target, language)` pair).
+  - Undetected sidecar-like files (`.vtt`, `.sub`/`.idx`, `.ttml`,
+    non-poster images) are ignored and reported as skipped.
+  - Entity ids never derive from titles alone: each emitted movie/series/
+    artist id is `<slug>` from its directory name plus a `-<n>` suffix when
+    two works would share an id, assigned in sorted-path order.
 - `emit.py` — builds the scenario payload dict (mirroring
   `generation/api.py::_generate_scenario_yaml_unvalidated` structure:
   `schema_version`, `scenario_id` (`import-<input-dirname>-<yyyymmddhhmm>`),
@@ -206,8 +225,7 @@ INPUT_DIR ──scan──▶ candidates ──ffprobe+sha256──▶ probed fi
 | `--out` exists / bad parent | `typer.BadParameter` via `validate_new_out_path`, exit 2 (same as `generate`) |
 | No media files found | `E_IMPORT_FAILED` ("no importable media found"), exit 3 |
 | Individual file unprobesable | skipped, reported, import continues |
-| Bundle copy fails (I/O) | `E_IMPORT_FAILED` with path, exit 3; rollback removes exactly the bundle file names this run staged (tracked list) — never a directory sweep, since `<out-dir>/media/` may hold entries shared with a sibling scenario's bundle |
-| Re-validation of emitted YAML fails | `E_IMPORT_FAILED` (internal invariant), exit 3 |
+| Bundle copy fails, YAML write fails, or re-validation fails | `E_IMPORT_FAILED` with path, exit 3; rollback removes the emitted `scenario.yaml` and exactly the bundle file names this run staged (tracked list) on every post-staging failure — never a directory sweep, since `<out-dir>/media/` may hold entries shared with a sibling scenario's bundle |
 | Bundle file missing at materialize | `E_IMPORT_SOURCE_MISSING` materialization error |
 | ffprobe missing entirely | `E_IMPORT_FAILED` ("ffprobe not available"), exit 3 |
 
