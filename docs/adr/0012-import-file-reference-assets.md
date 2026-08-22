@@ -56,6 +56,10 @@ copies:
   represented as synthesized `create_sidecar(poster)` events (detected and
   represented, not byte-exact). The default timeline therefore contains
   sidecar-creation events only — no media mutations.
+- Undetected sidecar-like files (`.vtt`, `.sub`/`.idx`, `.ttml`, non-poster
+  images) are ignored and reported as skipped in the import report;
+  extension matching is case-insensitive. Completion criterion 4 promises
+  only `.srt`/`.nfo`/posters.
 - Timeline events `reencode_video`, `reencode_audio`, `remux_container`,
   `embed_subtitle`, and `extract_subtitle` are rejected on import assets
   (`E_MATERIALIZE_UNSUPPORTED`). judgment: their handlers and validation
@@ -83,7 +87,11 @@ copies:
 - Import assets need no media-matrix coverage: `rule_materialize_media_matrix`
   early-returns for import assets (skipping its must-declare-video and audio
   cardinality checks, which would otherwise reject a track-less asset), and
-  gains only the declared-track-event rejection above.
+  gains only the declared-track-event rejection above. The same gating
+  applies to preflight capability checks: `assert_capable_for_webm_video`
+  gates on `container == "webm"` alone today, so it must skip import assets
+  (a copied .webm needs no libvpx-vp9), mirroring how the HEVC/HDR gates
+  already consult declared synthesis need.
 - A scenario referencing a moved/deleted bundle fails at materialize time with
   a missing-input error, like any unreadable input.
 - The `import` keyword cannot name a Python module; the CLI command module is
@@ -125,3 +133,7 @@ copies:
   hardlink bundle also cannot be moved between machines, which scenario
   bundles (circulating fixtures) must survive. judgment: copies always work
   at the cost of disk.
+- **A shared cross-scenario content-addressed media store** (the bundle is
+  already sha256-addressed within a scenario). rejected: it trades away
+  scenario-directory self-containedness — the property bundles exist for
+  (replayable fixtures that circulate between machines).

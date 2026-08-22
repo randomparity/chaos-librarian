@@ -62,12 +62,16 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
     (reject escapes through symlinks).
 - `rule_materialize_media_matrix` early-returns for import assets (skipping
   its must-declare-video and audio-cardinality checks, which would otherwise
-  reject a track-less asset) and additionally rejects timeline events whose
-  phase-B handlers require declared tracks (`reencode_video`,
-  `reencode_audio`, `remux_container`, `embed_subtitle`,
-  `extract_subtitle`) targeting an import asset (`E_MATERIALIZE_UNSUPPORTED`).
-  This is a closed classification: all other events operate on existing
+  reject a track-less asset) and additionally rejects timeline events
+  `reencode_video`, `reencode_audio`, `remux_container`, `embed_subtitle`,
+  `extract_subtitle` targeting an import asset (`E_MATERIALIZE_UNSUPPORTED`):
+  their handlers and validation rules assume declared tracks in matrix
+  vocabulary; on a declaration-free asset they are unvalidated territory.
+  This is a closed classification — all other events operate on existing
   bytes without consulting track declarations and remain allowed.
+  Preflight capability gates get the same treatment:
+  `assert_capable_for_webm_video` gates on `container == "webm"` alone today,
+  so it must skip import assets (a copied .webm needs no libvpx-vp9).
   No existing rule rejects import scenarios otherwise: empty-of-tracks assets
   pass the matrix rule (nothing declared to check), and no rule requires a
   non-empty timeline. `rule_hierarchy_invariants` and
@@ -119,6 +123,9 @@ New package, four focused units:
   - Sidecars attach to the nearest video in the same directory with a
     matching stem (`<stem>.<lang>.srt` → language from suffix, default
     `en`; `<stem>.nfo`; `<stem>.cue`; poster files attach per directory).
+  Undetected sidecar-like files (`.vtt`, `.sub`/`.idx`, `.ttml`,
+  non-poster images) are ignored and reported as skipped; extension
+  matching is case-insensitive.
 - `emit.py` — builds the scenario payload dict (mirroring
   `generation/api.py::_generate_scenario_yaml_unvalidated` structure:
   `schema_version`, `scenario_id` (`import-<input-dirname>-<yyyymmddhhmm>`),
