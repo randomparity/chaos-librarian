@@ -203,11 +203,14 @@ under `tests/`).
    --write`. `git diff schemas/` must show only the scenario schema gaining
    `ImportSource`/`import_source` and enum/comment changes.
 
-5. **Docs pin:** update `docs/contract/schema-reference.md`'s scenario row
-   to `| scenario | 33 |` NOW — `tests/docs/test_documentation.py` pins the
-   live imported constant against that table, so Task 1's full-suite
-   guardrail fails until the row matches. (`cli-reference.md` is untouched
-   until Task 6.)
+5. **Docs pins:** `tests/docs/test_documentation.py`
+   (`test_active_docs_reference_current_schema_versions`) requires literal
+   `schema_version: 33` in FOUR files, not one — update
+   `docs/contract/schema-reference.md` (table row), AND the
+   `schema_version:` literals in `docs/contract/integration-recipes.md`,
+   `docs/user/scenario-authoring.md`, and
+   `docs/specs/chaos-librarian-design.md`. Task 1's verify step fails on
+   the version-pin test until all four match.
 
 6. **Verify:** `uv run pytest tests/contract tests/docs -q` (expect all
    green), `uv run python -m chaos_librarian.schema_export --check` (exit 0),
@@ -426,7 +429,8 @@ registered; matrix rule skips import assets; subtitle body events validate.
 `src/chaos_librarian/materializer/content/source_capabilities.py`,
 `src/chaos_librarian/materializer/phase_b/media/handler.py`,
 `src/chaos_librarian/media_matrix.py` (one constant),
-`tests/materializer/content/test_import_copy.py` (new),
+`tests/materializer/content/test_import_copy.py` (new — a NEW
+subdirectory under the currently flat `tests/materializer/`; intentional),
 `tests/materializer/phase_b/test_subtitle_body_sidecar.py` (new).
 
 **Interfaces consumed:** `_copy_same_content_asset` as the structural
@@ -483,17 +487,19 @@ track_kind, source, provider, recipe_digest, cache_disposition;
    Threading prerequisites (implemented in this task before the tests can
    pass):
    - `PhaseAInputs` gains an OPTIONAL `scenario_dir: Path | None = None`
-     appended AFTER `stamp_manifest` (a defaulted field before
-     `phase_a_accumulator` would break dataclass default ordering; the
-     field goes last) — optional so existing construction sites keep
-     compiling unchanged.
+     appended after `stamp_manifest` (last field — a defaulted field
+     earlier in the dataclass would break default ordering).
    - `PhaseAInputs` is constructed inside `_run_synthesis`
      (`materializer/run.py:117-125`), which receives only
      `(ctx, scenario)`; `RunContext`
      (`materializer/persistence/_context.py`) carries no scenario path.
      Thread it at the source: `materialize_scenario(scenario_path,
      out_dir)` resolves `scenario_dir=scenario_path.resolve().parent`,
-     stores it on the `RunContext` it builds (new field), and
+     stores it on the `RunContext` it builds (new field
+     `scenario_dir: Path | None = None` — DEFAULTED, because `RunContext`
+     is also constructed at `materializer/replay.py:198` and
+     `runtime/wall_clock.py:262` and `:344`; a required field would break
+     all three with TypeError), and
      `_run_synthesis` passes `ctx.scenario_dir` into `PhaseAInputs`.
      The wall-clock site has a real scenario path
      (`run_wall_clock_scenario` builds `PhaseAInputs` directly at
@@ -983,5 +989,6 @@ verify command would silently run zero tests; CI's explicit
   `create_sidecar_content.py`; mirror its exact import in Task 2.
 - Known open risk: `MaterializedAsset`/`PlanArtifacts` stub shapes in
   Task 4 tests — implementer should copy the construction pattern from the
-  existing phase-A tests in `tests/materializer/content/` rather than
+  existing phase-A tests in `tests/materializer/` (flat directory:
+  `test_synthesis.py`, `test_capability_gates.py`) rather than
   inventing one.
