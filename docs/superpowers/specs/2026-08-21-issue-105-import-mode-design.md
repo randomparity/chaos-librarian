@@ -25,8 +25,11 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
 
 - `--out` must not exist (mirrors `generate --out`); the `media/` bundle is
   created beside it (`<out-dir>/media/` where `<out-dir>` is `--out`'s parent).
-- `sample` caps imports per category (detected container) at `--max-works`
-  files per category in addition to the global work cap.
+- `sample` caps imports at `--max-works` media files per detected container
+  (counted pre-topology, on the sorted candidate list) in addition to the
+  global work cap; the per-category cap is applied first, so a file dropped
+  by it reports `cap:max_works_sample` even when the global cap is also
+  exhausted.
 - `dedup` skips files whose sha256 was already imported (bundle is
   content-addressed, so dedup is a bundle-lookup, not a re-copy).
 - Skip/cap semantics are deterministic and observable: candidates are
@@ -46,6 +49,8 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   `typer.BadParameter`, exit 2, same as `generate`); import-specific
   operational failures (no media found, staging/write/rollback errors,
   re-validation invariant) use `emit_cli_error(E_IMPORT_FAILED, ...)`
+  (new envelope code declared beside `E_GENERATE_FAILED` in
+  `cli/_envelope.py`)
   with exit 1; ffprobe missing or too old exits 4 (the documented
   external-tool code); `--json` prints a structured import report on
   success.
@@ -87,7 +92,8 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
 
 - New rule `rule_import_source` (`E_IMPORT_SOURCE_INVALID`, new code):
   - `import_source.path` shape, enforced LEXICALLY at validate time
-    (validation rules never touch the filesystem): must be relative, every
+    (rule_import_source never touches the filesystem — validation rules in
+    general resolve against synthetic roots): must be relative, every
     component passes `is_safe_path_component`, no `..` — which together
     prove resolution strictly under the scenario file's directory without
     FS access. Existence and symlink-escape are re-checked at materialize
@@ -144,11 +150,14 @@ New package, four focused units:
   `SUPPORTED_CONTAINERS`: import exists for files the synthesis matrix
   cannot represent; `Asset.container` is free-form and import assets skip
   the matrix rule) — plus subtitle (`.srt`, `.ass`, `.ssa`), NFO (`.nfo`),
-  CUE (`.cue`), and poster extensions (`.jpg`, `.jpeg`, `.png`, `.webp`
-  with poster-ish names: `poster*`, `folder*`, `cover*`). Extension
-  matching is case-insensitive. Files with unrecognized extensions are
-  reported as skipped (`unrecognized`); media-extension files that fail
-  ffprobe are skipped with reason `probe_failed` and never abort the run.
+  and poster extensions (`.jpg`, `.jpeg`, `.png`, `.webp` with poster-ish
+  names: `poster*`, `folder*`, `cover*`). `.cue` sheets are deliberately
+  NOT detected: they accompany audio, and audio topologies have no sidecar
+  attachment path in this slice (a `.cue` file is reported as skipped
+  `unrecognized`). Extension matching is case-insensitive. Files with
+  unrecognized extensions are reported as skipped (`unrecognized`);
+  media-extension files that fail ffprobe are skipped with reason
+  `probe_failed` and never abort the run.
 - `probe_input.py` — wraps `materializer.tooling.probe.probe_file` for input
   files; computes sha256 for bundle naming/dedup.
 - `topology.py` — maps probed files onto the scenario hierarchy:
@@ -171,7 +180,7 @@ New package, four focused units:
     collections only).
   - Sidecars attach to the nearest video in the same directory with a
     matching stem (`<stem>.<lang>.srt` → language from suffix, default
-    `en`; `<stem>.nfo`; `<stem>.cue`; poster files attach per directory).
+    `en`; `<stem>.nfo`; poster files attach per directory).
     When several imported videos in one directory share a stem, an
     ambiguous sidecar attaches to the lexicographically first matching
     video in sorted-path order. Attachments dedupe per
@@ -192,7 +201,9 @@ New package, four focused units:
   stages bundle files (`media/<sha256>.<container>`, copied with
   `shutil.copyfile`), emits timeline `create_sidecar` events for detected
   sidecars, writes YAML via the same ruamel dump style, then runs the emitted
-  YAML through `Scenario.model_validate` before reporting success (an import
+  YAML through the full validation pipeline (`run_validation` — shape plus
+  every semantic rule, so criterion 2 holds at emit time, not just
+  `Scenario.model_validate`) before reporting success (an import
   that cannot re-validate is a hard error).
   Emitted timeline events are fully determined: each `create_sidecar` id is
   `sidecar-<asset-id>-<n>` (per-asset counter in sorted sidecar order);
@@ -213,7 +224,7 @@ scan order (sorted paths).
   "files_scanned": N, "files_imported": N,
   "files_skipped": [{"path": "...", "reason": "..."}],
   "works": {"movies": N, "series": N, "artists": N},
-  "sidecars": {"subtitles": N, "nfo": N, "cue": N, "posters": N},
+  "sidecars": {"subtitles": N, "nfo": N, "posters": N},
   "bundle_bytes": N, "warnings": ["..."]
 }
 ```
@@ -233,11 +244,11 @@ INPUT_DIR ──scan──▶ candidates ──ffprobe+sha256──▶ probed fi
 |---|---|
 | `INPUT_DIR` missing/not a dir | Typer `exists=True` argument error |
 | `--out` exists / bad parent | `typer.BadParameter` via `validate_new_out_path`, exit 2 (same as `generate`) |
-| No media files found | `E_IMPORT_FAILED` ("no importable media found"), exit 3 |
+| No media files found | `E_IMPORT_FAILED` ("no importable media found"), exit 1 |
 | Individual file unprobesable | skipped, reported, import continues |
-| Bundle copy fails, YAML write fails, or re-validation fails | `E_IMPORT_FAILED` with path, exit 3; rollback removes the emitted `scenario.yaml` and exactly the bundle file names this run staged (tracked list) on every post-staging failure — never a directory sweep, since `<out-dir>/media/` may hold entries shared with a sibling scenario's bundle |
+| Bundle copy fails, YAML write fails, or re-validation fails | `E_IMPORT_FAILED` with path, exit 1; rollback removes the emitted `scenario.yaml` and exactly the bundle file names this run staged (tracked list) on every post-staging failure — never a directory sweep, since `<out-dir>/media/` may hold entries shared with a sibling scenario's bundle |
 | Bundle file missing at materialize | `E_IMPORT_SOURCE_MISSING` materialization error |
-| ffprobe missing entirely | `E_IMPORT_FAILED` ("ffprobe not available"), exit 3 |
+| ffprobe missing entirely | capability-style error, exit 4 (documented external-tool code) |
 
 ## Threat model (security-relevant change)
 
