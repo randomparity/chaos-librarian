@@ -60,7 +60,10 @@ def rule_create_sidecar_content(
         if kind == SidecarKind.POSTER.value:
             _check_poster_image_format(event, index, reporter)
             continue
-        if kind != SidecarKind.SUBTITLE.value:
+        if event.get("body") is not None:
+            # Authored/imported body is authoritative (v33, ADR 0012): the
+            # materializer writes these bytes verbatim, so synthesis-matrix
+            # applicability does not apply.
             continue
         codec = _enum(SubtitleCodec, event.get("codec") or SubtitleCodec.SRT.value)
         source = _enum(SubtitleSource, event.get("source") or SubtitleSource.GENERATED_SRT.value)

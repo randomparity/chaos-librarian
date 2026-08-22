@@ -11,6 +11,7 @@ from chaos_librarian.contract.scenario import (
     SubtitleEncoding,
     SubtitleMode,
     SubtitleSource,
+    TimelineActionName,
 )
 from chaos_librarian.media_matrix import (
     AUDIO_SAMPLE_FORMATS_BY_CODEC,
@@ -36,11 +37,13 @@ from chaos_librarian.validation.rules.core.raw_helpers import (
     _as_list,
     _as_mapping,
     _enum,
+    _iter_timeline_events,
     _Loc,
 )
 from chaos_librarian.validation.rules.hierarchy.walkers import (
     RawAssetContext,
     iter_asset_contexts,
+    iter_assets_with_loc,
 )
 from chaos_librarian.validation.rules.media._subtitle_recipe import (
     SUBTITLE_RECIPE_MATRIX as _SUBTITLE_RECIPE_MATRIX,
@@ -90,7 +93,56 @@ def rule_materialize_media_matrix(
     """Reject shape-valid static media declarations unsupported by materialize."""
     reporter = Reporter(collector=collector, line_index=line_index)
     for context in iter_asset_contexts(raw):
+        if isinstance(context.asset.get("import_source"), Mapping):
+            # Import assets materialize as byte copies of the scenario
+            # bundle's original (ADR 0012): no declared tracks to check, so
+            # must-declare-video / audio-cardinality / matrix checks do not
+            # apply.
+            continue
         _check_asset_context(context, reporter)
+    _check_import_asset_timeline_events(raw, reporter)
+
+
+_TRACKED_MEDIA_ACTIONS: Final[frozenset[str]] = frozenset(
+    {
+        TimelineActionName.REENCODE_VIDEO.value,
+        TimelineActionName.REENCODE_AUDIO.value,
+        TimelineActionName.REMUX_CONTAINER.value,
+        TimelineActionName.EMBED_SUBTITLE.value,
+        TimelineActionName.EXTRACT_SUBTITLE.value,
+    }
+)
+
+
+def _check_import_asset_timeline_events(raw: Mapping[str, object], reporter: Reporter) -> None:
+    """Reject declared-track media mutations targeting import assets.
+
+    Those phase-B handlers and their validation rules assume declared tracks
+    in matrix vocabulary; on a declaration-free asset they are unvalidated
+    territory. Closed classification: every other timeline action operates
+    on existing bytes without consulting track declarations (ADR 0012).
+    """
+    import_asset_ids = {
+        asset["id"]
+        for asset, _loc in iter_assets_with_loc(raw)
+        if isinstance(asset.get("import_source"), Mapping) and isinstance(asset.get("id"), str)
+    }
+    if not import_asset_ids:
+        return
+    for index, event in _iter_timeline_events(raw):
+        if event.get("action") not in _TRACKED_MEDIA_ACTIONS:
+            continue
+        target = event.get("target")
+        if isinstance(target, str) and target in import_asset_ids:
+            reporter.error(
+                code=E_MATERIALIZE_UNSUPPORTED,
+                message=(
+                    f"timeline event {event.get('action')!r} targets import asset "
+                    f"{target!r}; import assets materialize as byte copies and "
+                    "declare no tracks"
+                ),
+                loc=("timeline", index, "target"),
+            )
 
 
 def _check_asset_context(context: RawAssetContext, reporter: Reporter) -> None:
