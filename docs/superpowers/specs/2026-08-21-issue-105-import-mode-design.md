@@ -44,7 +44,10 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
 2. An import asset must declare `video is None`, `audio == ()`,
    `subtitles == ()`, and all four synthesis knobs `None`
    (`mp4_moov_placement`, `matroska_muxing_profile`, `embedded_chapters`,
-   `embedded_cover_art`) — model validator on `Asset`.
+   `embedded_cover_art`) — model validator on `Asset`. The required
+   `container`/`duration_seconds` fields are populated from the probe and
+   bundle extension and are recorded metadata only; materialization and
+   oracle comparison read the actual copied bytes.
 3. `CreateSidecarEvent.body` is allowed for `kind=subtitle` (byte-exact
    imported `.srt`/`.ass` text); validator `_check_fields_match_kind`
    widens accordingly. NFO/CUE unchanged; posters stay synthesized.
@@ -57,14 +60,17 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   - `import_source.path` shape: relative, safe components, no `..`,
     resolves strictly under the scenario file's directory, symlink-resolved
     (reject escapes through symlinks).
-  - Timeline media-mutation events (`reencode_video`, `reencode_audio`,
-    `remux_container`, `embed_subtitle`, `extract_subtitle`) targeting an
-    import asset are rejected (`E_MATERIALIZE_UNSUPPORTED` — checked inside
-    `rule_materialize_media_matrix`, which already owns "materialize can't do
-    this").
-- No existing rule rejects import scenarios: empty-of-tracks assets pass
-  `rule_materialize_media_matrix` (nothing declared to check), and no rule
-  requires a non-empty timeline. `rule_hierarchy_invariants` and
+- `rule_materialize_media_matrix` early-returns for import assets (skipping
+  its must-declare-video and audio-cardinality checks, which would otherwise
+  reject a track-less asset) and additionally rejects timeline events whose
+  phase-B handlers require declared tracks (`reencode_video`,
+  `reencode_audio`, `remux_container`, `embed_subtitle`,
+  `extract_subtitle`) targeting an import asset (`E_MATERIALIZE_UNSUPPORTED`).
+  This is a closed classification: all other events operate on existing
+  bytes without consulting track declarations and remain allowed.
+  No existing rule rejects import scenarios otherwise: empty-of-tracks assets
+  pass the matrix rule (nothing declared to check), and no rule requires a
+  non-empty timeline. `rule_hierarchy_invariants` and
   `rule_rendered_path_collisions` apply unchanged.
 
 ## Materializer changes
