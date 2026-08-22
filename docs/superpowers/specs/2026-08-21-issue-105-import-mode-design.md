@@ -31,11 +31,15 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
   content-addressed, so dedup is a bundle-lookup, not a re-copy).
 - Skip/cap semantics are deterministic and observable: candidates are
   processed in sorted-path order; anything dropped by a mode, a cap
-  (`--max-works`, `--max-variants`), or dedup lands in `files_skipped`
-  with a distinct reason (`mode:duplicate`, `mode:capped`, `cap:max_works`,
-  `cap:max_variants`); partial series/artists are emitted as-is; sidecars
-  attach only to imported videos — a sidecar whose video was skipped is
-  itself skipped with reason `orphaned_sidecar`.
+  (`--max-works`, `--max-variants`, `--max-duration-s`), or dedup lands in
+  `files_skipped` with a distinct reason (`mode:duplicate`,
+  `cap:max_works` — also used for sample-mode per-category drops,
+  `cap:max_variants`, `cap:max_duration_s`, `topology:no_anchor`);
+  partial series/artists are emitted as-is; sidecars attach only to
+  imported videos — a sidecar whose video was skipped is itself skipped
+  with reason `orphaned_sidecar`. When several imported videos in one
+  directory share a stem, an ambiguous sidecar attaches to the
+  lexicographically first matching video in sorted-path order.
 - Exit codes follow `docs/contract/cli-reference.md`: `--out` handling
   reuses `validate_new_out_path` (existing `--out` or bad parent →
   `typer.BadParameter`, exit 2, same as `generate`); import-specific input
@@ -45,7 +49,8 @@ chaos-librarian import INPUT_DIR --out SCENARIO.yaml
 ## Contract changes (scenario schema v32 → v33)
 
 1. `Asset.import_source: ImportSource | None = None`, where
-   `ImportSource = {path: str}`. `path` is relative, has safe components
+   `ImportSource = {path: str}`. `path` is relative, non-empty (at least
+   one safe component), has safe components
    (`is_safe_path_component` per component), and resolves to a strict subpath
    of the scenario file's directory. Mutually exclusive with
    `same_content_as`/`hash_collision_with`/`hardlinked_to`/`symlink`
@@ -201,7 +206,7 @@ INPUT_DIR ──scan──▶ candidates ──ffprobe+sha256──▶ probed fi
 | `--out` exists / bad parent | `typer.BadParameter` via `validate_new_out_path`, exit 2 (same as `generate`) |
 | No media files found | `E_IMPORT_FAILED` ("no importable media found"), exit 3 |
 | Individual file unprobesable | skipped, reported, import continues |
-| Bundle copy fails (I/O) | `E_IMPORT_FAILED` with path, exit 3; partial bundle files removed |
+| Bundle copy fails (I/O) | `E_IMPORT_FAILED` with path, exit 3; rollback removes exactly the bundle file names this run staged (tracked list) — never a directory sweep, since `<out-dir>/media/` may hold entries shared with a sibling scenario's bundle |
 | Re-validation of emitted YAML fails | `E_IMPORT_FAILED` (internal invariant), exit 3 |
 | Bundle file missing at materialize | `E_IMPORT_SOURCE_MISSING` materialization error |
 | ffprobe missing entirely | `E_IMPORT_FAILED` ("ffprobe not available"), exit 3 |
@@ -244,7 +249,8 @@ attempted. Disk-exhaustion via huge bundles is bounded only by the CLI caps
 
 - **Contract**: import-asset validators (exclusivity, no-tracks, knob ban);
   `body` on subtitle sidecars; schema export drift (regenerate + `--check`).
-- **Validation**: `rule_import_source` — escape (`../`), absolute, control
+- **Validation**: `rule_import_source` — escape (`../`), absolute, empty
+  path (`import_source: {path: ""}`), control
   chars, mutation-event rejection (lexical shape tests only — rules never
   touch the filesystem); corpus fixtures under
   `tests/fixtures/scenarios/invalid/` with `# expected: E_...` markers.
@@ -257,8 +263,6 @@ attempted. Disk-exhaustion via huge bundles is bounded only by the CLI caps
   artist/album, flat, sidecars, unrecognized files, unprobesable file) scanned
   with a stub prober (no ffprobe dependency in unit tests); mode/cap behavior;
   deterministic IDs; bundle layout.
-- **Materializer**: `_copy_import_asset` copies bytes, records evidence,
-  probes output; missing bundle file → `E_IMPORT_SOURCE_MISSING`.
 - **End-to-end (real-tool, `tests/integration/*_real.py`)**: import a small
   generated-by-ffmpeg fixture library, `validate` the scenario (criterion 2),
   `plan` it (criterion 5), `materialize`, and assert the materialized file's
