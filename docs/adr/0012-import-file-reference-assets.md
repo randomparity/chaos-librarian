@@ -50,28 +50,33 @@ copies:
   `_copy_same_content_asset`: resolve the bundle path (containment-checked
   against the scenario dir), `shutil.copyfile` into the library, sha256,
   `probe_file`, `ContentSourceEvidence(provider="import-file")`.
-- Detected sidecars: `.srt`/`.ass` become `create_sidecar(subtitle)` events
-  carrying the original text in `body` (body is widened to subtitle kind);
-  `.nfo`/`.cue` use the existing `body` support; posters are represented as
-  synthesized `create_sidecar(poster)` events (detected and represented, not
-  byte-exact). The default timeline therefore contains sidecar-creation events
-  only — no media mutations.
-- Timeline events whose phase-B handlers require declared tracks —
-  `reencode_video`, `reencode_audio`, `remux_container`, `embed_subtitle`,
-  `extract_subtitle` — are rejected on import assets
-  (`E_MATERIALIZE_UNSUPPORTED`). This is a closed classification: every other
-  timeline action (file moves/renames/deletes, slow copy, archive,
-  byte-level corruption, tag/duration-metadata edits, sidecar and permission
-  events) operates on existing bytes without consulting track declarations
-  and remains allowed. Widening the rejected set is future work.
+- Detected sidecars: `.srt`/`.ass`/`.ssa` become `create_sidecar(subtitle)`
+  events carrying the original text in `body` (body is widened to subtitle
+  kind); `.nfo`/`.cue` use the existing `body` support; posters are
+  represented as synthesized `create_sidecar(poster)` events (detected and
+  represented, not byte-exact). The default timeline therefore contains
+  sidecar-creation events only — no media mutations.
+- Timeline events `reencode_video`, `reencode_audio`, `remux_container`,
+  `embed_subtitle`, and `extract_subtitle` are rejected on import assets
+  (`E_MATERIALIZE_UNSUPPORTED`). judgment: their handlers and validation
+  rules were built and tested against synthesized assets whose declared
+  tracks speak the matrix vocabulary; import assets declare none, so these
+  events are unvalidated territory (mechanically some handlers would run,
+  but no validation rule grounds them on a declaration-free asset).
+  This is a closed classification: every other timeline action operates on
+  existing bytes without consulting track declarations and remains allowed.
+  Widening the rejected set is future work.
 - `SCENARIO_SCHEMA_VERSION` bumps 32 → 33; `schemas/scenario.schema.json` is
   regenerated; the new `import` command is added to `docs/contract/cli-reference.md`.
 
 ## Consequences
 
-- The bundle duplicates the imported media's bytes; a scenario directory is
-  self-contained and replayable on any machine. `--max-duration-s`,
-  `--max-works`, and `--mode sample|dedup` bound bundle size at import time.
+- Storage: a scenario bundle duplicates the imported bytes, and a
+  materialized run copies the bundle into `<run-dir>/library/`, so an
+  imported corpus exists roughly three times (originals + bundle + library).
+  A scenario directory is self-contained and replayable on any machine;
+  `--max-duration-s`, `--max-works`, and `--mode sample|dedup` bound bundle
+  size at import time.
 - Fidelity is exact, not "within tolerance": duration, codecs, resolution, and
   stream layout match the original bit-for-bit. The existing 0.05 s duration
   tolerance in `adapter/probe.py` still applies to post-materialization probes.
@@ -114,7 +119,9 @@ copies:
   matrix/enum constraint (channel layouts, sample rates, subtitle codecs) the
   snapshot design exists to avoid.
 - **Stage the bundle as hardlinks or symlinks instead of copies** (machinery
-  precedent: `_hardlink_asset`, ADR 0005). judgment: file-level timeline
-  events (corruption, truncate) mutate library bytes in place and would
-  corrupt shared bundle bytes across replays, breaking replay determinism;
-  cross-filesystem runs would break links entirely.
+  precedent: `_hardlink_asset`, ADR 0005). verified: `os.link` fails with
+  `EXDEV` across filesystems (POSIX), and the run dir is chosen at
+  materialize time, so same-filesystem staging cannot be guaranteed; a
+  hardlink bundle also cannot be moved between machines, which scenario
+  bundles (circulating fixtures) must survive. judgment: copies always work
+  at the cost of disk.
