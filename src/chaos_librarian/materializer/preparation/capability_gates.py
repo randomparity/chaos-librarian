@@ -65,7 +65,9 @@ def assert_capable_for_matroska_muxing_profiles(
 def assert_capable_for_webm_video(scenario: Scenario, caps: Capabilities) -> None:
     """Raise before run-dir allocation when WebM needs libvpx-vp9."""
     for asset in iter_assets(scenario):
-        if asset.container != "webm":
+        if asset.container != "webm" or asset.import_source is not None:
+            # Imported assets materialize as byte copies (ADR 0012): no vp9
+            # synthesis, so the encoder gate does not apply.
             continue
         if caps.ready_for.materialize_webm_video:
             return
