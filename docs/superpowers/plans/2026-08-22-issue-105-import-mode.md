@@ -464,18 +464,20 @@ registered; matrix rule skips import assets; subtitle body events validate.
    real-tool tests or stub `probe_file` via monkeypatch, matching existing
    conventions in that directory); returned `content_sources[0]` has
    `provider="import-file"`, `track_kind=VIDEO`, `recipe_digest ==
-   `content_hash`, `cache_disposition=NOT_CACHEABLE`; invocation tool is
-   `"import_copy"`. Second test: `import_source.path = "../escape.mkv"` →
+   content_hash`, `cache_disposition=NOT_CACHEABLE`; invocation tool is
+   `"import_copy"` (`ContentSourceEvidence` requires SIX fields —
+   asset_id, track_kind, source, provider, recipe_digest,
+   cache_disposition; `content_hash`/`origin_uri` are optional but set by
+   the copy path). Second test: `import_source.path = "../escape.mkv"` →
    raises the escape error; third: missing file →
    `ImportSourceMissingError` with `error_code == "E_IMPORT_SOURCE_MISSING"`.
 
    Threading prerequisites (implemented in this task before the tests can
    pass):
    - `PhaseAInputs` gains an OPTIONAL `scenario_dir: Path | None = None`
-     (after `out_dir`) — optional so the ~13 existing construction sites
-     (`materializer/replay.py:209`, `runtime/wall_clock.py:243`, and ten
-     test files) keep compiling unchanged.
-   - Threading: `PhaseAInputs` is constructed inside `_run_synthesis`
+     (after `out_dir`) — optional so existing construction sites keep
+     compiling unchanged.
+   - `PhaseAInputs` is constructed inside `_run_synthesis`
      (`materializer/run.py:117-125`), which receives only
      `(ctx, scenario)`; `RunContext`
      (`materializer/persistence/_context.py`) carries no scenario path.
@@ -483,11 +485,15 @@ registered; matrix rule skips import assets; subtitle body events validate.
      out_dir)` resolves `scenario_dir=scenario_path.resolve().parent`,
      stores it on the `RunContext` it builds (new field), and
      `_run_synthesis` passes `ctx.scenario_dir` into `PhaseAInputs`.
-     Replay/wall-clock construction sites pass `None`; `_copy_import_asset`
-     raises `ImportSourceMissingError("import asset in a run without a
-     scenario directory")` when `scenario_dir is None` (a replayed bundle
-     has no on-disk scenario dir; importing then replaying materialize is
-     not a supported combination this slice — the error says so).
+     The wall-clock site has a real scenario path
+     (`run_wall_clock_scenario` builds `PhaseAInputs` directly at
+     `runtime/wall_clock.py:243`): thread
+     `scenario_dir=scenario_path.resolve().parent` there too, so
+     `chaos-librarian run <import-scenario>` materializes import assets.
+     Only `materializer/replay.py:209` passes `None` (a replayed bundle
+     genuinely has no on-disk scenario dir); `_copy_import_asset` raises
+     `ImportSourceMissingError("import asset in a run without a scenario
+     directory")` when `scenario_dir is None`.
 
 4. **Implement the copy path** in `synthesis.py`:
 
@@ -638,6 +644,7 @@ registered; matrix rule skips import assets; subtitle body events validate.
    change amends the spec's Contract-changes item 3 accordingly.
 
 
+
 6. **Capabilities provider** in `source_capabilities.py`: append a second
    `ContentSourceProviderCapability(name="import-file", available=True,
    requires_network=False, requires_cache=False, required_tool=None,
@@ -739,10 +746,13 @@ Implementation notes for `build_topology` (the only subtle logic):
 
 - Season detection: `re.fullmatch(r"season[ _-]?(\d{1,2})", dir.name, re.I)`.
 - Episode numbering: `re.search(r"[Ss](\d{1,2})[Ee](\d{1,2})", stem)`; title
-  = stem with the SxxEyy token stripped and sanitized via the same
-  `clean_display_component`-style rules used by `path_rendering` (import it
-  if exported; otherwise inline a conservative sanitizer: strip characters
-  outside `[A-Za-z0-9 _'-]`, collapse whitespace, cap length 64).
+  = stem with the SxxEyy token stripped and sanitized by an inline
+  conservative sanitizer (strip characters outside `[A-Za-z0-9 _'-]`,
+  collapse whitespace, cap length 64). Do NOT import
+  `clean_display_component` — it validates (raises) rather than sanitizes,
+  and a control character surviving to materialization would crash
+  `render_asset_path` with an opaque ValueError; the inline sanitizer
+  guarantees its precondition holds.
 - Movie variants: group videos by parent dir; variant labels
   `v1..vN` in sorted order; layout `movie_folder` if the dir is not the
   scan root else `movie_flat`.
@@ -774,6 +784,15 @@ def emit_import_bundle(
     scenario.yaml and exactly the staged bundle names.
     """
 ```
+Staging ownership: a pure function in this module,
+`plan_staging(probed, skips, works, *, mode, max_works, max_variants,
+max_duration_s) -> tuple[list[ProbedInput], list[SkipRecord],
+list[tuple[Path, Path]]]`, applies mode/cap filtering in sorted order
+(dedup via sha256 lookup; sample per-container counts pre-topology;
+duration cap) and returns accepted inputs, the extended skip list, and the
+`(source, bundle-dest)` staging pairs. The CLI calls `plan_staging`
+between topology and `emit_import_bundle`; `emit`'s rollback consumes
+exactly that staged list.
 
 Timeline events: `id=f"sidecar-{asset_id}-{n}"` (per-asset counter in sorted
 sidecar order), `at="0s"`, subtitle events carry `kind="subtitle"`,
@@ -853,11 +872,13 @@ forced validation failure, deterministic ids across two runs.
    ```
 
    Body flow: (1) `caps = detect_capabilities()` — if not
-   `caps.ffprobe.ok`/meets-minimum (mirror `capabilities.py`'s check), emit
-   error envelope and `raise typer.Exit(code=4)`; (2) validate `mode` ∈
-   {full, sample, dedup} else `emit_cli_error(E_IMPORT_FAILED, ...)` exit 2
-   (usage) — actually usage errors are Typer's domain: use
-   `typer.BadParameter` for a bad `--mode` (exit 2); (3) scan → probe →
+   `caps.ffprobe.meets_minimum` (the accessor `ToolStatus` exposes;
+   mirrors `assert_capable_for_static_materialize`), emit the error
+   envelope and `raise typer.Exit(code=4)`. All `emit_cli_error` calls
+   are KEYWORD-ONLY (`emit_cli_error(*, error_code, message,
+   json_output, ...)`) — thread `json_output` into every call site;
+   (2) validate `mode` ∈ {full, sample, dedup} via
+   `typer.BadParameter` for a bad value (exit 2, usage); (3) scan → probe →
    topology → mode/cap filtering (sorted order, reasons per the taxonomy) →
    emit; (4) empty import (no works) → `emit_cli_error(E_IMPORT_FAILED,
    "no importable media found")` + exit 1; (5) success: `--json` prints the
@@ -891,12 +912,14 @@ forced validation failure, deterministic ids across two runs.
 6. **Verify:** `uv run pytest tests/cli tests/docs -q`; full guardrails;
    commit: `feat(cli): import command with scenario-bundle emission`.
 
----
-
 ## Task 7 — End-to-end integration test (real tools)
 
-**Files:** `tests/integration/import_real.py` (new; follows the
-`tests/integration/*_real.py` naming so CI's real-tool job picks it up).
+**Files:** `tests/integration/test_import_real.py` (new; MUST follow the
+`test_*_real.py` naming — pytest's `python_files=test_*.py` default
+collects nothing from a file named `import_real.py`, so the plan's own
+verify command would silently run zero tests; CI's explicit
+`tests/integration/*_real.py` glob only matches by shell luck).
+
 
 1. **Setup:** generate 2–3 tiny fixture media with ffmpeg (e.g.
    `color_bars` 1 s mp4, `sine` 0.5 s mp3) into a temp input dir; add
