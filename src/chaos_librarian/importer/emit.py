@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import json
 import os
 import shutil
 import tempfile
@@ -37,6 +38,7 @@ __all__ = [
     "compute_staging",
     "emit_import_bundle",
     "plan_staging",
+    "validate_mapping_out",
 ]
 
 _BUNDLE_DIR_NAME = "media"
@@ -223,12 +225,33 @@ def compute_staging(
     return staged, seen
 
 
+def validate_mapping_out(input_dir: Path, out: Path, mapping_out: Path | None) -> None:
+    """Refuse mapping destinations that could overwrite input or bundle data."""
+    if mapping_out is None:
+        return
+    if mapping_out.exists() or mapping_out.is_symlink():
+        raise ValueError(f"--mapping-out path already exists: {mapping_out}")
+    if not mapping_out.parent.is_dir():
+        raise ValueError(
+            f"--mapping-out parent must be an existing directory: {mapping_out.parent}"
+        )
+    destination = mapping_out.resolve()
+    if destination == out.resolve():
+        raise ValueError("--mapping-out must differ from --out")
+    if destination.is_relative_to(input_dir.resolve()):
+        raise ValueError("--mapping-out must be outside the input directory")
+    if destination.is_relative_to((out.parent / _BUNDLE_DIR_NAME).resolve()):
+        raise ValueError("--mapping-out must be outside the media bundle directory")
+
+
 def emit_import_bundle(
     input_dir: Path,
     out: Path,
     works: list[ImportedWork],
     staged: list[tuple[Path, Path]],
     skips: list[SkipRecord],
+    *,
+    mapping_out: Path | None = None,
 ) -> ImportReport:
     """Stage ``media/``, write scenario.yaml, re-validate, report.
 
@@ -240,6 +263,7 @@ def emit_import_bundle(
     tracked names (never a directory sweep; a sibling scenario's bundle may
     share ``media/``).
     """
+    validate_mapping_out(input_dir, out, mapping_out)
     out_dir = out.parent
     bundle_dir = out_dir / _BUNDLE_DIR_NAME
     written_bundle_files: list[Path] = []
@@ -277,6 +301,15 @@ def emit_import_bundle(
         _atomic_write(out, yaml_bytes)
         out_written = True
         report = _build_report(out, bundle_dir, works, staged, skips)
+        if mapping_out is not None:
+            mapping = {
+                source.relative_to(input_dir).as_posix(): asset_id
+                for work in works
+                for asset_id, source in work.asset_sources.items()
+            }
+            _atomic_write(
+                mapping_out, (json.dumps(mapping, sort_keys=True, indent=2) + "\n").encode()
+            )
     except Exception:
         for path in written_bundle_files:
             path.unlink(missing_ok=True)

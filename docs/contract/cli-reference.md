@@ -59,6 +59,22 @@ skips with reasons. Exit codes: `0` success, `1` operational failure
 `2` usage error (bad `--mode` or unusable `--out`), `4` ffprobe missing or
 below minimum.
 
+`import --mapping-out sources.json` optionally writes a UTF-8 JSON object mapping
+source media paths relative to the input directory (POSIX separators) to emitted
+asset ID strings. Keys are sorted and JSON-escaped; only media surviving the
+selected mode and caps appears. Distinct sources can share bundled bytes while
+retaining distinct IDs in full mode. Skipped files and sidecar events are omitted.
+The normal report and scenario formats do not change. Filenames may be private;
+the mapping intentionally includes them, but omits the absolute source root.
+
+The mapping parent must already be a directory. Existing destinations (including
+dangling symlinks), the scenario path, and paths inside the input or `media/`
+bundle directory are refused with usage exit `2`, including symlink aliases.
+Mapping publication follows scenario validation and uses atomic no-overwrite
+publication. A publication error exits `1` (`E_IMPORT_FAILED`) and rolls back
+this attempt's new outputs, preserving pre-existing files. As with existing import,
+this is exception rollback, not a cross-file transaction for process/power loss.
+
 `plan` writes an oracle-only fixture. `--steps N` applies a prefix of
 user-visible step units.
 

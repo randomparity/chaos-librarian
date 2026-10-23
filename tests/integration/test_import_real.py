@@ -17,6 +17,8 @@ import pytest
 
 from chaos_librarian.materializer.errors import ProbeParseError
 from chaos_librarian.materializer.tooling.probe import probe_file
+from chaos_librarian.topology import iter_asset_contexts
+from chaos_librarian.validation.input import prepare_run_input_from_bytes
 
 
 def _require(tool: str) -> None:
@@ -112,7 +114,16 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
         return result
 
     # 1. Import produces a scenario bundle.
-    imp = run_cli("import", str(media_input), "--out", str(out_yaml), "--json")
+    mapping_path = out_yaml.parent / "sources.json"
+    imp = run_cli(
+        "import",
+        str(media_input),
+        "--out",
+        str(out_yaml),
+        "--json",
+        "--mapping-out",
+        str(mapping_path),
+    )
     assert imp.returncode == 0, imp.stderr + imp.stdout
     report = json.loads(imp.stdout)
     assert report["files_imported"] == 2
@@ -120,6 +131,13 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
     # Sidecars are attached (and copied) but reported separately from media.
     assert report["sidecars"] == {"subtitles": 1, "nfo": 1, "posters": 1}
     assert report["works"] == {"movies": 1, "series": 0, "artists": 1}
+    mapping = json.loads(mapping_path.read_text())
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=out_yaml.read_bytes(), source_label="<test>"
+    ).scenario
+    assert scenario is not None
+    assert set(mapping.values()) == {c.asset.id for c in iter_asset_contexts(scenario)}
+    assert set(mapping) == {"Sample Movie/Sample Movie.mp4", "Artist/Album/01 Song.flac"}
 
     # 2. The emitted scenario validates (acceptance criterion 2).
     val = run_cli("validate", str(out_yaml), "--json")
