@@ -30,7 +30,7 @@ equipped Linux CI must have zero skips. No promise of Windows support.
 
 ## Success
 Issue #232 Expected is met by a checked-in recipe, deterministic CORE_FS coverage,
-filesystem/replay proofs and documented consumer materialize/replay invocation.
+filesystem/replay proofs and documented consumer run-mode materialization/replay invocation.
 Same-content copies preserve identical hashes while their path cells differ.
 Manifest/journal preserve intended paths; filesystem assertions prove actual link targets.
 Ordinary scenarios and all guardrails remain green.
@@ -39,9 +39,9 @@ Ordinary scenarios and all guardrails remain green.
 - Mode: focused-test. Generator/coverage: tests/generation/test_path_shapes.py;
   red: missing required Unicode/parent/dash cells; green:
   `uv run pytest tests/generation/test_path_shapes.py --no-cov`.
-- Mode: focused-test. Recipe structure/validation: tests/recipes/test_path_shapes.py;
+- Mode: focused-test. Recipe structure/validation: tests/recipes/test_path_shape_recipe.py;
   red: missing recipe or matrix/byte-budget mismatch; green:
-  `uv run pytest tests/recipes/test_path_shapes.py --no-cov`.
+  `uv run pytest tests/recipes/test_path_shape_recipe.py --no-cov`.
 - Mode: focused-test. Materialized entries, equal bytes, links, JSON names and replay:
   tests/integration/test_path_shapes_real.py; red: missing recipe/shape or replay mismatch;
   green: `uv run pytest tests/integration/test_path_shapes_real.py --no-cov -ra`.
