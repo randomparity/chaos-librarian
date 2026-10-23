@@ -44,7 +44,7 @@ def test_path_shapes_materialize_and_replay(tmp_path: Path, request: pytest.Fixt
     request.node.user_properties.append(("actual_path_spellings", json.dumps(sorted(entries))))
     for asset, intended in locations.items():
         assert (library / intended).is_file(), (asset, intended)
-        if asset in {"asset_nfc", "asset_nfd", "asset_original", "asset_link"}:
+        if asset in {"asset_nfc", "asset_nfd", "asset_unicode", "asset_original", "asset_link"}:
             assert any(
                 unicodedata.normalize("NFC", actual) == unicodedata.normalize("NFC", intended)
                 for actual in entries
