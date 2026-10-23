@@ -8,6 +8,7 @@ is stubbed).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -467,7 +468,7 @@ def test_import_mapping_rejects_unsafe_destinations_before_probe(
         app, ["import", str(media_dir), "--out", str(out), "--mapping-out", str(target)]
     )
     assert result.exit_code == 2, result.output
-    assert "--mapping-out" in result.output
+    assert "--mapping-out" in re.sub(r"\x1b\[[0-9;]*m", "", result.output)
     assert not out.exists()
     assert not list(bundle.iterdir())
     if destination == "existing":
