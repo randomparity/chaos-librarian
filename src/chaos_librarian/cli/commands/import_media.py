@@ -41,9 +41,27 @@ def import_media(
     max_variants: Annotated[int, typer.Option("--max-variants")] = 4,
     max_duration_s: Annotated[float | None, typer.Option("--max-duration-s")] = None,
     mapping_out: Annotated[Path | None, typer.Option("--mapping-out")] = None,
+    add_chaos: Annotated[
+        bool, typer.Option("--add-chaos", help="Append deterministic rename/move/mtime events.")
+    ] = False,
+    chaos_seed: Annotated[
+        int | None,
+        typer.Option("--chaos-seed", min=0, help="Chaos seed (default 0; requires --add-chaos)."),
+    ] = None,
+    chaos_events: Annotated[
+        int | None,
+        typer.Option(
+            "--chaos-events",
+            min=1,
+            max=1000,
+            help="Added events (default 12; requires --add-chaos).",
+        ),
+    ] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Scan an existing media library and emit a scenario bundle."""
+    if not add_chaos and (chaos_seed is not None or chaos_events is not None):
+        raise typer.BadParameter("--chaos-seed and --chaos-events require --add-chaos")
     if mode not in _MODES:
         raise typer.BadParameter(f"--mode must be one of {', '.join(_MODES)}")
     try:
@@ -93,7 +111,14 @@ def import_media(
 
         staged, _referenced = compute_staging(accepted, works)
         report = emit_import_bundle(
-            input_dir, out, works, staged, all_skips, mapping_out=mapping_out
+            input_dir,
+            out,
+            works,
+            staged,
+            all_skips,
+            mapping_out=mapping_out,
+            chaos_seed=(0 if chaos_seed is None else chaos_seed) if add_chaos else None,
+            chaos_events=12 if chaos_events is None else chaos_events,
         )
     except typer.Exit:
         raise

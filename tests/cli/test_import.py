@@ -103,6 +103,11 @@ def test_import_help_lists_command() -> None:
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
     assert "import" in result.output
+    help_result = runner.invoke(app, ["import", "--help"])
+    assert help_result.exit_code == 0
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", help_result.output)
+    for option in ("--add-chaos", "--chaos-seed", "--chaos-events"):
+        assert option in plain
 
 
 def test_import_rejects_existing_out(media_dir: Path, tmp_path: Path) -> None:
@@ -475,3 +480,73 @@ def test_import_mapping_rejects_unsafe_destinations_before_probe(
         assert target.read_bytes() == b"preserved"
     elif destination == "dangling":
         assert target.is_symlink()
+
+
+@pytest.mark.parametrize("chaos", [False, True])
+def test_import_chaos_is_opt_in_and_preserves_sidecar_prefix(
+    media_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_probe: None,
+    chaos: bool,
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    (media_dir / "My Film" / "My Film.nfo").write_text("original sidecar")
+    out = tmp_path / "scenario.yaml"
+    args = ["import", str(media_dir), "--out", str(out), "--json"]
+    if chaos:
+        args += ["--add-chaos", "--chaos-seed", "42", "--chaos-events", "3"]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=out.read_bytes(), source_label="test"
+    ).scenario
+    assert scenario is not None
+    assert scenario.seed == (42 if chaos else 0)
+    assert len(scenario.timeline) == (4 if chaos else 1)
+    assert scenario.timeline[0].action == "create_sidecar"
+    if chaos:
+        assert scenario.timeline[1].action == "rename_file"
+    assert json.loads(result.output)["sidecars"]["nfo"] == 1
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        ["--chaos-seed", "0"],
+        ["--chaos-events", "12"],
+        ["--add-chaos", "--chaos-seed", "-1"],
+        ["--add-chaos", "--chaos-events", "0"],
+        ["--add-chaos", "--chaos-events", "1001"],
+    ],
+)
+def test_import_rejects_chaos_options_before_scanning(
+    media_dir: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    options: list[str],
+) -> None:
+    def fail_scan(path: Path) -> None:
+        pytest.fail("invalid options must not scan input")
+
+    monkeypatch.setattr(import_media, "scan_directory", fail_scan)
+    out = tmp_path / "scenario.yaml"
+    result = runner.invoke(app, ["import", str(media_dir), "--out", str(out), *options])
+    assert result.exit_code == 2
+    assert not out.exists()
+    assert not (tmp_path / "media").exists()
+
+
+def test_import_chaos_defaults(
+    media_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    out = tmp_path / "scenario.yaml"
+    result = runner.invoke(app, ["import", str(media_dir), "--out", str(out), "--add-chaos"])
+    assert result.exit_code == 0, result.output
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=out.read_bytes(), source_label="test"
+    ).scenario
+    assert scenario is not None
+    assert scenario.seed == 0
+    assert len(scenario.timeline) == 12

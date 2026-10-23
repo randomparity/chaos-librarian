@@ -75,6 +75,21 @@ publication. A publication error exits `1` (`E_IMPORT_FAILED`) and rolls back
 this attempt's new outputs, preserving pre-existing files. As with existing import,
 this is exception rollback, not a cross-file transaction for process/power loss.
 
+`import --add-chaos` appends a bounded deterministic timeline to the imported
+snapshot: `--chaos-seed` defaults to `0` (nonnegative), and `--chaos-events` defaults
+to `12` (`1..1000`). Tuning options require `--add-chaos`; invalid values or
+combinations exit `2` before scanning. Without opt-in the seed remains `0` and
+the timeline contains only detected sidecar creation.
+
+Added events start after the initial sidecars: a seeded rename first, then seeded
+rename, move or positive-one-second mtime updates on surviving imported media.
+Generated IDs and paths avoid existing entity/sidecar reservations. The emitted
+scenario records the seed and declares the existing `filesystem-artifacts`
+profile when mtime events require it. Fixed final topology, seed and count yield
+the same mutation sequence; the existing scenario ID still contains a timestamp.
+No imported track rewrites are generated. Report and optional mapping semantics
+stay unchanged; validate, plan and materialize use the existing commands.
+
 `plan` writes an oracle-only fixture. `--steps N` applies a prefix of
 user-visible step units.
 

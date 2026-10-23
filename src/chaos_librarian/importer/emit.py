@@ -24,6 +24,7 @@ from ruamel.yaml import YAML
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
 from chaos_librarian.contract.scenario import Scenario
+from chaos_librarian.generation.import_timeline import plan_import_timeline
 from chaos_librarian.importer.probe_input import ProbedInput
 from chaos_librarian.importer.scan import SkipRecord
 from chaos_librarian.importer.topology import ImportedWork, sanitize
@@ -31,6 +32,7 @@ from chaos_librarian.path_rendering import render_asset_path
 from chaos_librarian.topology import iter_asset_contexts, renderable_asset_context
 from chaos_librarian.validation.input import prepare_run_input_from_bytes
 from chaos_librarian.validation.pipeline import run_validation
+from chaos_librarian.validation.rules.hierarchy.walkers import iter_global_namespaces
 
 __all__ = [
     "ImportReport",
@@ -252,6 +254,8 @@ def emit_import_bundle(
     skips: list[SkipRecord],
     *,
     mapping_out: Path | None = None,
+    chaos_seed: int | None = None,
+    chaos_events: int = 12,
 ) -> ImportReport:
     """Stage ``media/``, write scenario.yaml, re-validate, report.
 
@@ -297,6 +301,8 @@ def emit_import_bundle(
         _rewrite_bundle_paths(works, digest_to_name)
         events = [event for w in works for event in w.sidecar_events]
         payload = _build_payload(input_dir, works, events)
+        if chaos_seed is not None:
+            _append_chaos(payload, events, chaos_seed, chaos_events)
         yaml_bytes = _dump_yaml(payload)
         _atomic_write(out, yaml_bytes)
         out_written = True
@@ -367,6 +373,36 @@ def _build_payload(
         used_paths.add(destination)
         event["to"] = destination.as_posix()
     return payload
+
+
+def _append_chaos(
+    payload: dict[str, object],
+    events: list[dict[str, object]],
+    seed: int,
+    count: int,
+) -> None:
+    scenario = Scenario.model_validate(payload)
+    root = scenario.library.roots[0]
+    contexts = list(iter_asset_contexts(scenario))
+    reserved_ids = {value for _, value, _ in iter_global_namespaces(payload)}
+    reserved_ids.update(root.id for root in scenario.library.roots)
+    reserved_ids.update(event.id for event in scenario.timeline)
+    paths = {
+        render_asset_path(renderable_asset_context(context, root.path)) for context in contexts
+    }
+    paths.update(str(event["to"]) for event in events)
+    mutations = plan_import_timeline(
+        assets=[(context.asset.id, context.asset.container) for context in contexts],
+        root_path=root.path,
+        reserved_ids=reserved_ids,
+        reserved_paths=paths,
+        seed=seed,
+        event_count=count,
+    )
+    if any(event["action"] == "touch_mtime" for event in mutations):
+        payload["profiles"] = ["filesystem-artifacts"]
+    payload["seed"] = seed
+    payload["timeline"] = [*_as_mapping_list(payload["timeline"]), *mutations]
 
 
 def _dump_yaml(payload: dict[str, object]) -> bytes:

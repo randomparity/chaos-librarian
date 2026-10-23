@@ -98,7 +98,8 @@ def media_input(tmp_path: Path) -> Path:
     return tmp_path / "input"
 
 
-def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) -> None:
+@pytest.mark.parametrize("chaos", [False, True])
+def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path, chaos: bool) -> None:
     out_yaml = tmp_path / "out" / "scenario.yaml"
     out_yaml.parent.mkdir(parents=True)
 
@@ -123,6 +124,7 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
         "--json",
         "--mapping-out",
         str(mapping_path),
+        *(["--add-chaos", "--chaos-seed", "42", "--chaos-events", "1"] if chaos else []),
     )
     assert imp.returncode == 0, imp.stderr + imp.stdout
     report = json.loads(imp.stdout)
@@ -136,6 +138,9 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
         raw_bytes=out_yaml.read_bytes(), source_label="<test>"
     ).scenario
     assert scenario is not None
+    if chaos:
+        assert len(scenario.timeline) == 4
+        assert scenario.timeline[-1].action == "rename_file"
     assert set(mapping.values()) == {c.asset.id for c in iter_asset_contexts(scenario)}
     assert set(mapping) == {"Sample Movie/Sample Movie.mp4", "Artist/Album/01 Song.flac"}
 
@@ -153,6 +158,9 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
 
     # 4. Materialized media matches the imported original (criterion 3).
     library = mat_dir / "library"
+    if chaos:
+        destination = str(scenario.timeline[-1].model_dump()["to"])
+        assert (library / destination).is_file()
     mp4s = sorted(library.rglob("*.mp4"))
     assert len(mp4s) == 1
     original_movie = media_input / "Sample Movie" / "Sample Movie.mp4"

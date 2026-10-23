@@ -499,3 +499,61 @@ def test_emitter_rejects_mapping_collision_before_staging(tmp_path: Path, stub_p
     with pytest.raises(ValueError, match="mapping"):
         emit_import_bundle(tmp_path / "input", out, works, staged, skips, mapping_out=out)
     assert not (out.parent / "media").exists()
+
+
+def test_emitter_chaos_uses_only_surviving_topology(tmp_path: Path, stub_probe: None) -> None:
+    timelines = []
+    for extra_capped_work in (False, True):
+        root = tmp_path / str(extra_capped_work) / "input"
+        movie = root / "aaa"
+        movie.mkdir(parents=True)
+        (movie / "aaa.mkv").write_bytes(b"first media")
+        (movie / "aaa.nfo").write_text("sidecar")
+        if extra_capped_work:
+            dropped = root / "import-chaos-0001"
+            dropped.mkdir()
+            (dropped / "dropped.mkv").write_bytes(b"different media")
+        scanned, _ = scan_directory(root)
+        probed, _ = _probe_media_files(scanned)
+        works, skips = build_topology(probed, _sidecars_of(scanned), root)
+        apply_work_caps(works, skips, mode="full", max_works=1, max_variants=4)
+        staged, _ = compute_staging(probed, works)
+        out = root.parent / "out" / "scenario.yaml"
+        emit_import_bundle(root, out, works, staged, skips, chaos_seed=42, chaos_events=3)
+        run_input = emit.prepare_run_input_from_bytes(
+            raw_bytes=out.read_bytes(), source_label="test"
+        )
+        assert emit.run_validation(run_input).ok
+        scenario = run_input.scenario
+        assert scenario is not None
+        assert scenario.seed == 42
+        assert len(scenario.timeline) == 4
+        assert scenario.timeline[0].action == "create_sidecar"
+        assert scenario.timeline[1].action == "rename_file"
+        assert scenario.timeline[1].id == "import-chaos-0001"
+        timelines.append([event.model_dump(mode="json") for event in scenario.timeline])
+    assert timelines[0] == timelines[1]
+
+
+def test_emitter_chaos_preserves_mixed_import_topology(tmp_path: Path, stub_probe: None) -> None:
+    root = tmp_path / "input"
+    for name in ("Film/Film.mkv", "Show/Season 01/Show S01E01.mkv", "Artist/Album/01 Song.flac"):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(name.encode())
+    scanned, _ = scan_directory(root)
+    probed, _ = _probe_media_files(scanned)
+    works, skips = build_topology(probed, [], root)
+    staged, _ = compute_staging(probed, works)
+    out = tmp_path / "out" / "scenario.yaml"
+    report = emit_import_bundle(root, out, works, staged, skips, chaos_seed=1, chaos_events=40)
+    assert report.works == {"movies": 1, "series": 1, "artists": 1}
+    run_input = emit.prepare_run_input_from_bytes(raw_bytes=out.read_bytes(), source_label="test")
+    assert emit.run_validation(run_input).ok
+    assert run_input.scenario is not None
+    assert len(run_input.scenario.timeline) == 40
+    assert {event.action for event in run_input.scenario.timeline} == {
+        "rename_file",
+        "move_asset",
+        "touch_mtime",
+    }
