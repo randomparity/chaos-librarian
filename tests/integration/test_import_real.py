@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.materializer.tooling.probe import probe_file
+
 
 def _require(tool: str) -> None:
     if shutil.which(tool) is None:
@@ -68,6 +70,28 @@ def media_input(tmp_path: Path) -> Path:
         check=True,
         timeout=60,
     )
+    (movie_dir / "Sample Movie.nfo").write_text("<movie><title>Original</title></movie>\n")
+    album_dir = tmp_path / "input" / "Artist" / "Album"
+    album_dir.mkdir(parents=True)
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:sample_rate=32000",
+            "-t",
+            "0.5",
+            "-c:a",
+            "flac",
+            str(album_dir / "01 Song.flac"),
+        ],
+        check=True,
+        timeout=60,
+    )
     return tmp_path / "input"
 
 
@@ -90,10 +114,10 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
     imp = run_cli("import", str(media_input), "--out", str(out_yaml), "--json")
     assert imp.returncode == 0, imp.stderr + imp.stdout
     report = json.loads(imp.stdout)
-    assert report["files_imported"] == 1
+    assert report["files_imported"] == 2
     # Sidecars are attached (and copied) but reported separately from media.
-    assert report["sidecars"] == {"subtitles": 1, "nfo": 0, "posters": 1}
-    assert report["works"]["movies"] == 1
+    assert report["sidecars"] == {"subtitles": 1, "nfo": 1, "posters": 1}
+    assert report["works"] == {"movies": 1, "series": 0, "artists": 1}
 
     # 2. The emitted scenario validates (acceptance criterion 2).
     val = run_cli("validate", str(out_yaml), "--json")
@@ -111,50 +135,23 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
     library = mat_dir / "library"
     mp4s = sorted(library.rglob("*.mp4"))
     assert len(mp4s) == 1
-    original_probe = json.loads(
-        subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                str(media_input / "Sample Movie" / "Sample Movie.mp4"),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60,
-        ).stdout
-    )
-    copy_probe = json.loads(
-        subprocess.run(
-            [
-                "ffprobe",
-                "-v",
-                "quiet",
-                "-print_format",
-                "json",
-                "-show_format",
-                str(mp4s[0]),
-            ],
-            capture_output=True,
-            text=True,
-            check=True,
-            timeout=60,
-        ).stdout
-    )
-    assert (
-        abs(float(original_probe["format"]["duration"]) - float(copy_probe["format"]["duration"]))
-        < 0.05
-    )
-    # Imported assets are byte-identical copies of the originals.
-    assert mp4s[0].read_bytes() == (media_input / "Sample Movie" / "Sample Movie.mp4").read_bytes()
+    original_movie = media_input / "Sample Movie" / "Sample Movie.mp4"
+    assert mp4s[0].read_bytes() == original_movie.read_bytes()
+    assert probe_file(mp4s[0]) == probe_file(original_movie)
+    flacs = list(library.rglob("*.flac"))
+    assert len(flacs) == 1
+    original_audio = media_input / "Artist" / "Album" / "01 Song.flac"
+    assert flacs[0].read_bytes() == original_audio.read_bytes()
+    assert probe_file(flacs[0]) == probe_file(original_audio)
 
     # 5. Sidecars land in the library with original content (criterion 4).
     srts = [p for p in library.rglob("*.srt") if p.name.endswith(".en.srt")]
     assert len(srts) == 1
-    assert "Hello from import" in srts[0].read_text()
+    assert (
+        srts[0].read_bytes() == (media_input / "Sample Movie" / "Sample Movie.en.srt").read_bytes()
+    )
+    nfos = list(library.rglob("*.nfo"))
+    assert len(nfos) == 1
+    assert nfos[0].read_bytes() == (media_input / "Sample Movie" / "Sample Movie.nfo").read_bytes()
     posters = list(library.rglob("poster.jpg"))
     assert len(posters) == 1

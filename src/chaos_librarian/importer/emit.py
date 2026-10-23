@@ -9,6 +9,7 @@ and rolls back exactly its own writes on any failure.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import shutil
@@ -89,6 +90,7 @@ def plan_staging(
     all_skips = list(skips)
     accepted: list[ProbedInput] = []
     per_category: dict[str, int] = {}
+    seen: set[str] = set()
 
     for item in sorted(probed, key=lambda i: i.scanned.path):
         container = item.scanned.path.suffix.lstrip(".").lower()
@@ -101,6 +103,10 @@ def plan_staging(
                 all_skips.append(SkipRecord(path=item.scanned.path, reason="cap:max_works_sample"))
                 continue
             per_category[container] = count + 1
+        if mode == "dedup" and item.sha256 in seen:
+            all_skips.append(SkipRecord(path=item.scanned.path, reason="mode:duplicate"))
+            continue
+        seen.add(item.sha256)
         accepted.append(item)
     return accepted, all_skips
 
@@ -121,7 +127,7 @@ def apply_work_caps(
     """
     del mode  # sample's per-file cap already ran in plan_staging
     for work in works:
-        if len(work.asset_payloads) > max_variants:
+        if work.kind == "movie" and len(work.asset_payloads) > max_variants:
             keep = work.asset_payloads[:max_variants]
             dropped = work.asset_payloads[max_variants:]
             _drop_assets(work, dropped, skips, reason="cap:max_variants")
@@ -148,16 +154,6 @@ def _trim_payload_to_assets(work: ImportedWork) -> None:
     keep_ids = {str(a["id"]) for a in work.asset_payloads}
     variants = _variants_list(work.payload)
     work.payload["variants"] = [v for v in variants if _variant_asset_ids(v) & keep_ids]
-    trimmed_seasons: list[dict[str, object]] = []
-    for season in _seasons_list(work.payload):
-        episodes = _episodes_of(season)
-        kept_episodes = [
-            e for e in episodes if any(_variant_asset_ids(v) & keep_ids for v in _variants_of(e))
-        ]
-        season["episodes"] = kept_episodes
-        if kept_episodes:
-            trimmed_seasons.append(season)
-    work.payload["seasons"] = trimmed_seasons
 
 
 def _as_mapping_list(node: object) -> list[dict[str, object]]:
@@ -168,18 +164,6 @@ def _as_mapping_list(node: object) -> list[dict[str, object]]:
 
 def _variants_list(payload: dict[str, object]) -> list[dict[str, object]]:
     return _as_mapping_list(payload.get("variants"))
-
-
-def _seasons_list(payload: dict[str, object]) -> list[dict[str, object]]:
-    return _as_mapping_list(payload.get("seasons"))
-
-
-def _episodes_of(season: dict[str, object]) -> list[dict[str, object]]:
-    return _as_mapping_list(season.get("episodes"))
-
-
-def _variants_of(episode: dict[str, object]) -> list[dict[str, object]]:
-    return _as_mapping_list(episode.get("variants"))
 
 
 def _bundle_assets(variant: dict[str, object]) -> list[dict[str, object]]:
@@ -258,32 +242,39 @@ def emit_import_bundle(
     written_bundle_files: list[Path] = []
     digest_to_name: dict[str, str] = {dst.stem: dst.name for _, dst in staged}
 
-    def rollback() -> None:
-        for path in written_bundle_files:
-            path.unlink(missing_ok=True)
-        out.unlink(missing_ok=True)
-
+    out_written = False
     bundle_dir.mkdir(parents=True, exist_ok=True)
-
     try:
         for source, dest_name in staged:
             dest = bundle_dir / dest_name.name
-            shutil.copyfile(source, dest)
+            try:
+                handle = dest.open("xb")
+            except FileExistsError:
+                if dest.is_symlink() or not dest.is_file():
+                    raise ValueError(f"bundle entry is not a regular file: {dest}") from None
+                with dest.open("rb") as existing:
+                    digest = hashlib.file_digest(existing, "sha256").hexdigest()
+                if digest != dest_name.stem:
+                    raise ValueError(
+                        f"bundle entry does not match its content digest: {dest}"
+                    ) from None
+                continue
             written_bundle_files.append(dest)
-    except OSError:
-        rollback()
-        raise
+            with handle, source.open("rb") as original:
+                shutil.copyfileobj(original, handle)
 
-    _rewrite_bundle_paths(works, digest_to_name)
-    events = [event for w in works for event in w.sidecar_events]
-    payload = _build_payload(input_dir, works, events)
-    yaml_bytes = _dump_yaml(payload)
-
-    try:
+        _rewrite_bundle_paths(works, digest_to_name)
+        events = [event for w in works for event in w.sidecar_events]
+        payload = _build_payload(input_dir, works, events)
+        yaml_bytes = _dump_yaml(payload)
         _atomic_write(out, yaml_bytes)
+        out_written = True
         report = _build_report(out, bundle_dir, works, staged, skips)
     except Exception:
-        rollback()
+        for path in written_bundle_files:
+            path.unlink(missing_ok=True)
+        if out_written:
+            out.unlink(missing_ok=True)
         raise
     return report
 

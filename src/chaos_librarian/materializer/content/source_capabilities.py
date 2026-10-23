@@ -74,7 +74,7 @@ def collect_content_source_capabilities(
                     audio_recipes_available=audio_recipes_available,
                 ),
             ),
-            _import_file_capability(ffprobe_available=ffmpeg_available),
+            _import_file_capability(ffprobe_available=ffprobe_available),
         ],
     )
 

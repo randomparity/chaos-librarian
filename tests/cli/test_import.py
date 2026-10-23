@@ -177,3 +177,101 @@ def test_import_success_human_output(
     result = runner.invoke(app, ["import", str(media_dir), "--out", str(out)])
     assert result.exit_code == 0, result.output
     assert "import: wrote" in result.output
+
+
+@pytest.mark.parametrize(
+    ("files", "options", "imported", "skip_reason"),
+    [
+        (["Artist/Album/01 Song.flac"], [], 1, None),
+        (["Artist/Album/Disc 01/01 Song.flac", "Artist/Album/Disc 02/01 Song.flac"], [], 2, None),
+        (["Show/Season 01/S01E01 Pilot.mkv", "Show/Season 02/S02E01 Return.mkv"], [], 2, None),
+        ([f"Show/Season 01/S01E{i:02d} Episode.mkv" for i in range(1, 7)], [], 6, None),
+        (["A/A.mkv", "B/B.mkv"], ["--mode", "dedup"], 1, "mode:duplicate"),
+        (
+            ["A/A.mkv", "B/B.mkv"],
+            ["--mode", "sample", "--max-works", "1"],
+            1,
+            "cap:max_works_sample",
+        ),
+    ],
+)
+def test_import_topology_and_modes_emit_valid_scenarios(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    stub_probe: None,
+    files: list[str],
+    options: list[str],
+    imported: int,
+    skip_reason: str | None,
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    for name in files:
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"same original")
+    result = runner.invoke(
+        app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json", *options]
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["files_imported"] == imported
+    if skip_reason:
+        assert skip_reason in {item["reason"] for item in report["files_skipped"]}
+
+
+def test_import_duration_cap_filters_before_emitting_topology(
+    media_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    long_file = media_dir / "Long" / "Long.mkv"
+    long_file.parent.mkdir()
+    long_file.write_bytes(b"long")
+
+    def fake(path: Path) -> ProbedMedia:
+        return ProbedMedia(
+            container="mkv",
+            duration_seconds=10 if path == long_file else 1,
+            size_bytes=4,
+            streams=[],
+        )
+
+    monkeypatch.setattr(probe_input, "probe_file", fake)
+    result = runner.invoke(
+        app,
+        [
+            "import",
+            str(media_dir),
+            "--out",
+            str(tmp_path / "s.yaml"),
+            "--max-duration-s",
+            "2",
+            "--json",
+        ],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["files_imported"] == 1
+    assert report["files_skipped"] == [{"path": str(long_file), "reason": "cap:max_duration_s"}]
+
+
+def test_import_variant_cap_keeps_only_surviving_sidecars(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    root.mkdir()
+    (root / "A.mkv").write_bytes(b"a")
+    (root / "B.mkv").write_bytes(b"b")
+    (root / "B.en.srt").write_text("subtitle")
+    result = runner.invoke(
+        app,
+        ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--max-variants", "1", "--json"],
+    )
+    assert result.exit_code == 0, result.output
+    report = json.loads(result.output)
+    assert report["sidecars"]["subtitles"] == 0
+    assert {item["reason"] for item in report["files_skipped"]} == {
+        "cap:max_variants",
+        "orphaned_sidecar",
+    }

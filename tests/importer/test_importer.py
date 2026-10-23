@@ -14,6 +14,7 @@ import pytest
 
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.contract.validation import ValidationIssue, ValidationSeverity
+from chaos_librarian.importer import emit
 from chaos_librarian.importer.emit import (
     ImportReport,
     apply_work_caps,
@@ -355,3 +356,59 @@ def test_emit_rolls_back_on_validation_failure(
     assert not out.exists()
     bundle_dir = tmp_path / "out" / "media"
     assert not bundle_dir.exists() or not any(bundle_dir.iterdir())
+
+
+def test_probe_hashes_without_reading_entire_media(
+    tmp_path: Path, stub_probe: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "movie.mkv"
+    source.write_bytes(b"media")
+
+    def reject_read_bytes(path: Path) -> bytes:
+        raise AssertionError("real media must be hashed with bounded memory")
+
+    monkeypatch.setattr(Path, "read_bytes", reject_read_bytes)
+    probed, skips = probe_inputs([ScannedFile(source, "video")])
+    assert len(probed) == 1
+    assert skips == []
+
+
+@pytest.mark.parametrize("failure", ["validation", "copy", "publication"])
+def test_emit_rollback_preserves_existing_bundle_and_yaml(
+    tmp_path: Path, stub_probe: None, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    works, staged, skips, source = _prepare_works(tmp_path)
+    out = tmp_path / "out" / "scenario.yaml"
+    bundle = out.parent / "media"
+    bundle.mkdir(parents=True)
+    existing = bundle / staged[0][1]
+    existing.write_bytes(source.read_bytes())
+    if failure == "publication":
+        out.write_bytes(b"another scenario")
+    elif failure == "validation":
+
+        def fail_report(*args: object) -> None:
+            raise ValueError("forced validation error")
+
+        monkeypatch.setattr(emit, "_build_report", fail_report)
+    else:
+        second = source.with_name("second.mkv")
+        second.write_bytes(b"second")
+        staged.append((second, Path("second.mkv")))
+        original_copy = emit.shutil.copyfileobj
+
+        def partial_copy(src, dst, *args):
+            if src.name == str(second):
+                dst.write(b"partial")
+                raise OSError("forced disk error")
+            return original_copy(src, dst, *args)
+
+        monkeypatch.setattr(emit.shutil, "copyfileobj", partial_copy)
+    with pytest.raises((ValueError, OSError)):
+        emit_import_bundle(tmp_path / "input", out, works, staged, skips)
+    assert existing.read_bytes() == source.read_bytes()
+    assert sorted(p.name for p in bundle.iterdir()) == [existing.name]
+    if failure == "publication":
+        assert out.read_bytes() == b"another scenario"
+    else:
+        assert not out.exists()

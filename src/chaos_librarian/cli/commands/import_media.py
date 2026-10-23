@@ -25,7 +25,7 @@ from chaos_librarian.importer.emit import (
 )
 from chaos_librarian.importer.probe_input import probe_inputs
 from chaos_librarian.importer.scan import scan_directory
-from chaos_librarian.importer.topology import build_topology
+from chaos_librarian.importer.topology import attach_sidecars, build_topology
 from chaos_librarian.materializer.tooling.capabilities import detect_capabilities
 
 _MODES = ("full", "sample", "dedup")
@@ -60,15 +60,6 @@ def import_media(
         sidecars = [s for s in scanned if s.kind not in {"video", "audio"}]
         skips.extend(probe_skips)
 
-        works, topology_skips = build_topology(probed, sidecars, input_dir)
-        skips.extend(topology_skips)
-        apply_work_caps(
-            works,
-            skips,
-            mode=mode,
-            max_works=max_works,
-            max_variants=max_variants,
-        )
         accepted, all_skips = plan_staging(
             probed,
             skips,
@@ -76,6 +67,16 @@ def import_media(
             max_works=max_works,
             max_duration_s=max_duration_s,
         )
+        works, topology_skips = build_topology(accepted, [], input_dir)
+        all_skips.extend(topology_skips)
+        apply_work_caps(
+            works,
+            all_skips,
+            mode=mode,
+            max_works=max_works,
+            max_variants=max_variants,
+        )
+        attach_sidecars(works, sidecars, all_skips)
         if not works:
             emit_cli_error(
                 error_code=E_IMPORT_FAILED,

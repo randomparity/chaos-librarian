@@ -24,7 +24,7 @@ from chaos_librarian.importer.scan import (
     SkipRecord,
 )
 
-__all__ = ["ImportedWork", "build_topology", "sanitize"]
+__all__ = ["ImportedWork", "attach_sidecars", "build_topology", "sanitize"]
 
 _SEASON_RE = re.compile(r"season[ _-]?(\d{1,2})", re.IGNORECASE)
 _SXXEYY_RE = re.compile(r"[Ss](\d{1,2})[Ee](\d{1,2})")
@@ -139,7 +139,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
     # --- series episodes ----------------------------------------------------
     series_works: dict[str, ImportedWork] = {}
     seasons_by_series: dict[str, dict[int, list[dict[str, object]]]] = {}
-    episode_seen: set[tuple[str, int]] = set()
+    episode_seen: set[tuple[str, int, int]] = set()
     series_paths: set[Path] = set()
     season_handled: set[Path] = set()
     series_ids: dict[Path, str] = {}
@@ -165,10 +165,10 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
                 _slug(sanitize(grandparent.name))
             )
         work_id = series_ids[grandparent.resolve()]
-        if (work_id, episode_number) in episode_seen:
+        if (work_id, season_number, episode_number) in episode_seen:
             skips.append(SkipRecord(path=item.scanned.path, reason="topology:duplicate_episode"))
             continue
-        episode_seen.add((work_id, episode_number))
+        episode_seen.add((work_id, season_number, episode_number))
 
         asset_id = next_asset_id(item.sha256)
         stem_title = sanitize(_SXXEYY_RE.sub("", item.scanned.path.stem).strip(" -_"))
@@ -196,6 +196,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             },
         }
         episode: dict[str, object] = {
+            "id": f"{work_id}-s{season_number:02d}e{episode_number:02d}",
             "episode_number": episode_number,
             "title": stem_title,
             "variants": [variant],
@@ -210,7 +211,12 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
 
     for work_id, seasons in seasons_by_series.items():
         payload_seasons = [
-            {"season_number": number, "episodes": episodes}
+            {
+                "id": f"{work_id}-s{number:02d}",
+                "season_number": number,
+                "title": f"Season {number:02d}",
+                "episodes": episodes,
+            }
             for number, episodes in sorted(seasons.items())
         ]
         series_works[work_id].payload["seasons"] = payload_seasons
@@ -266,70 +272,73 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             imported_video_paths.add(item.scanned.path)
         works.append(work)
 
-    album_groups: dict[tuple[Path, Path], list[ProbedInput]] = {}
+    artist_works: dict[Path, ImportedWork] = {}
+    album_payloads: dict[Path, dict[str, object]] = {}
+    disc_payloads: dict[tuple[Path, int], dict[str, object]] = {}
     for item in audios:
         track_dir = item.scanned.path.parent
-        artist_dir = track_dir.parent
-        anchored = artist_dir.resolve() != root.resolve() and (
-            artist_dir.parent.resolve() != root.resolve()
-        )
-        if not anchored or not sanitize(artist_dir.name) or not sanitize(track_dir.name):
+        disc_match = re.fullmatch(r"disc[ _-]?(\d{1,2})", track_dir.name, re.IGNORECASE)
+        album_dir = track_dir.parent if disc_match else track_dir
+        artist_dir = album_dir.parent
+        if (
+            artist_dir == root
+            or root not in artist_dir.parents
+            or not sanitize(artist_dir.name)
+            or not sanitize(album_dir.name)
+        ):
             skips.append(SkipRecord(path=item.scanned.path, reason="topology:no_anchor"))
             continue
-        key = (artist_dir.resolve(), track_dir.resolve())
-        album_groups.setdefault(key, []).append(item)
-
-    for (artist_path, album_path), items in sorted(album_groups.items()):
-        artist_name = sanitize(artist_path.name)
-        album_title = sanitize(album_path.name)
-        work_id = allocator.unique_id(_slug(artist_name))
-        work = ImportedWork(
-            kind="artist",
-            id=work_id,
-            payload={
-                "id": work_id,
-                "name": artist_name,
-                "layout": "artist_album_disc",
-                "track_naming": "track_number_title",
-                "albums": [],
-            },
-        )
-        tracks: list[dict[str, object]] = []
-        for index, item in enumerate(sorted(items, key=lambda i: i.scanned.path)):
-            asset_id = next_asset_id(item.sha256)
-            track: dict[str, object] = {
-                "track_number": index + 1,
-                "title": sanitize(item.scanned.path.stem) or f"Track {index + 1}",
+        work = artist_works.get(artist_dir)
+        if work is None:
+            work_id = allocator.unique_id(_slug(artist_dir.name))
+            work = ImportedWork(
+                kind="artist",
+                id=work_id,
+                payload={
+                    "id": work_id,
+                    "name": sanitize(artist_dir.name),
+                    "layout": "artist_album_disc",
+                    "track_naming": "track_number_title",
+                    "albums": [],
+                },
+            )
+            artist_works[artist_dir] = work
+            works.append(work)
+        album: dict[str, object] | None = album_payloads.get(album_dir)
+        if album is None:
+            album_id = allocator.unique_id(f"{work.id}-{_slug(album_dir.name)}")
+            album = {"id": album_id, "title": sanitize(album_dir.name), "discs": []}
+            album_payloads[album_dir] = album
+            cast("list[dict[str, object]]", work.payload["albums"]).append(album)
+        disc_number = int(disc_match.group(1)) if disc_match else 1
+        disc: dict[str, object] | None = disc_payloads.get((album_dir, disc_number))
+        if disc is None:
+            disc = {"id": f"{album['id']}-d{disc_number}", "disc_number": disc_number, "tracks": []}
+            disc_payloads[(album_dir, disc_number)] = disc
+            cast("list[dict[str, object]]", album["discs"]).append(disc)
+        tracks = cast("list[dict[str, object]]", disc["tracks"])
+        track_number = len(tracks) + 1
+        track_id = f"{disc['id']}-t{track_number}"
+        asset_id = next_asset_id(item.sha256)
+        asset = make_asset(item, asset_id)
+        tracks.append(
+            {
+                "id": track_id,
+                "track_number": track_number,
+                "title": sanitize(item.scanned.path.stem) or f"Track {track_number}",
                 "variants": [
                     {
-                        "id": f"{work_id}t{index + 1}v",
+                        "id": f"{track_id}v",
                         "label": "default",
-                        "bundle": {
-                            "id": f"{asset_id}-b",
-                            "assets": [make_asset(item, asset_id)],
-                        },
+                        "bundle": {"id": f"{asset_id}-b", "assets": [asset]},
                     }
                 ],
             }
-            tracks.append(track)
-            assets = track["variants"][0]["bundle"]["assets"]
-            assert isinstance(assets, list)
-            assert len(assets) == 1
-            work.asset_payloads.append(assets[0])
-            work.asset_sources[asset_id] = item.scanned.path
-        albums = work.payload["albums"]
-        assert isinstance(albums, list)
-        typed_albums = cast("list[dict[str, object]]", albums)
-        typed_albums.append(
-            {
-                "title": album_title,
-                "release_year": 1970,
-                "discs": [{"disc_number": 1, "tracks": tracks}],
-            }
         )
-        works.append(work)
+        work.asset_payloads.append(asset)
+        work.asset_sources[asset_id] = item.scanned.path
 
-    _attach_sidecars(works, sidecars, skips)
+    attach_sidecars(works, sidecars, skips)
     del imported_video_paths
     return works, skips
 
@@ -338,7 +347,7 @@ def _read_text(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def _attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the poster per-directory rule; splitting would scatter the shared dedup/counter state.
+def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the poster per-directory rule; splitting would scatter the shared dedup/counter state.
     works: list[ImportedWork],
     sidecars: list[ScannedFile],
     skips: list[SkipRecord],

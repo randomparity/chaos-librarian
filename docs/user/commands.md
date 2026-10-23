@@ -66,9 +66,9 @@ The command scans `INPUT_DIR` for media files, probes video and audio with
 ffprobe, classifies works (`Season NN` subdirectories become series; other
 video directories become movies; artist/album trees become music), and copies
 accepted originals into a content-addressed `media/` bundle next to the new
-scenario YAML. Sidecars — subtitles (`.srt`/`.ass`/`.vtt`), NFO metadata, and
+scenario YAML. Sidecars — subtitles (`.srt`/`.ass`/`.ssa`), NFO metadata, and
 poster images — are attached to the work in their directory. `--mode sample`
-keeps one work per kind, `--mode dedup` drops byte-duplicates;
+caps files per container using `--max-works`, `--mode dedup` drops byte-duplicates;
 `--max-works`, `--max-variants`, and `--max-duration-s` bound the result.
 Skipped files carry machine-readable reasons in the JSON report. Requires a
 working ffprobe on `PATH`.
