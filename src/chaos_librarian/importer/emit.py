@@ -24,7 +24,7 @@ from ruamel.yaml import YAML
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
 from chaos_librarian.importer.probe_input import ProbedInput
 from chaos_librarian.importer.scan import SkipRecord
-from chaos_librarian.importer.topology import ImportedWork
+from chaos_librarian.importer.topology import ImportedWork, sanitize
 from chaos_librarian.validation.input import prepare_run_input_from_bytes
 from chaos_librarian.validation.pipeline import run_validation
 
@@ -295,7 +295,7 @@ def _build_payload(
     works: list[ImportedWork],
     events: list[dict[str, object]],
 ) -> dict[str, object]:
-    root_path = input_dir.name.replace("/", "-") or "imported"
+    root_path = sanitize(input_dir.name) or "imported"
     return {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": f"import-{input_dir.name}-{datetime.now(UTC):%Y%m%d%H%M}",

@@ -275,3 +275,29 @@ def test_import_variant_cap_keeps_only_surviving_sidecars(
         "cap:max_variants",
         "orphaned_sidecar",
     }
+
+
+def test_import_sanitizes_input_and_sidecar_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input\nname"
+    root.mkdir()
+    (root / "Film\nName.mkv").write_bytes(b"media")
+    (root / "Film\nName.en.srt").write_text("subtitle")
+    result = runner.invoke(app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json"])
+    assert result.exit_code == 0, result.output
+
+
+def test_import_disambiguates_slug_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    for name in ["A", "A!", "A-1"]:
+        movie = root / name / "Film.mkv"
+        movie.parent.mkdir(parents=True)
+        movie.write_bytes(b"media")
+    result = runner.invoke(app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["files_imported"] == 3

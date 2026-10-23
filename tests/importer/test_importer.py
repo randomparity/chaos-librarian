@@ -412,3 +412,22 @@ def test_emit_rollback_preserves_existing_bundle_and_yaml(
         assert out.read_bytes() == b"another scenario"
     else:
         assert not out.exists()
+
+
+def test_sidecar_matches_full_stem_and_preserves_line_endings(tmp_path: Path) -> None:
+    (tmp_path / "Film.mkv").write_bytes(b"a")
+    (tmp_path / "Film Two.mkv").write_bytes(b"b")
+    subtitle = tmp_path / "Film Two.en.srt"
+    subtitle.write_bytes(b"1\r\n00:00:00,000 --> 00:00:01,000\r\noriginal\r\n")
+    works, skips = build_topology(
+        [
+            _probed_video(tmp_path / "Film.mkv", "a" * 64),
+            _probed_video(tmp_path / "Film Two.mkv", "b" * 64),
+        ],
+        [ScannedFile(subtitle, "subtitle")],
+        tmp_path,
+    )
+    event = works[0].sidecar_events[0]
+    assert works[0].asset_sources[str(event["target"])] == tmp_path / "Film Two.mkv"
+    assert str(event["body"]).encode() == subtitle.read_bytes()
+    assert skips == []

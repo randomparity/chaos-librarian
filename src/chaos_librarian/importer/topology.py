@@ -91,12 +91,16 @@ class ImportedWork:
 class _IdAllocator:
     """Deterministic slug ids with ``-<n>`` disambiguators in sorted order."""
 
-    slugs: dict[str, int] = field(default_factory=dict)
+    slugs: set[str] = field(default_factory=set)
 
     def unique_id(self, slug: str) -> str:
-        count = self.slugs.get(slug, 0)
-        self.slugs[slug] = count + 1
-        return slug if count == 0 else f"{slug}-{count}"
+        candidate = slug
+        count = 0
+        while candidate in self.slugs:
+            count += 1
+            candidate = f"{slug}-{count}"
+        self.slugs.add(candidate)
+        return candidate
 
 
 def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention; splitting would scatter the shared allocator/registry state across helpers without reducing risk.
@@ -245,7 +249,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             id=work_id,
             payload={
                 "id": work_id,
-                "title": title,
+                "title": title if work_id == _slug(title) else f"{title} {work_id}",
                 "layout": "movie_folder" if not at_root else "movie_flat",
                 "variants": [],
             },
@@ -344,10 +348,10 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
 
 
 def _read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
+    return path.read_text(encoding="utf-8", newline="")
 
 
-def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the poster per-directory rule; splitting would scatter the shared dedup/counter state.
+def attach_sidecars(
     works: list[ImportedWork],
     sidecars: list[ScannedFile],
     skips: list[SkipRecord],
@@ -360,6 +364,8 @@ def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the p
     """
     entries: list[tuple[Path, str, str, ImportedWork]] = []
     for work in works:
+        if work.kind == "artist":
+            continue
         for asset_id, source_path in sorted(work.asset_sources.items()):
             entries.append((source_path.parent.resolve(), source_path.stem.lower(), asset_id, work))
 
@@ -388,7 +394,7 @@ def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the p
                     "at": "0s",
                     "action": "create_sidecar",
                     "target": asset_id,
-                    "to": f"{sidecar.path.stem}.{ext}",
+                    "to": f"{sanitize(sidecar.path.stem)}.{ext}",
                     "kind": "poster",
                     "media_type": "image",
                     "image_format": _POSTER_FORMAT_BY_SUFFIX[f".{ext}"],
@@ -401,14 +407,14 @@ def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the p
                 entry
                 for entry in entries
                 if entry[0] == parent
-                and (stem_lower == entry[1] or stem_lower.startswith(entry[1]))
+                and (stem_lower == entry[1] or stem_lower.startswith(entry[1] + "."))
             ),
             key=lambda entry: entry[1],
         )
         if not candidates:
             skips.append(SkipRecord(path=sidecar.path, reason="orphaned_sidecar"))
             continue
-        _, _, asset_id, work = candidates[0]
+        _, matched_stem, asset_id, work = candidates[0]
 
         if sidecar.kind == "subtitle":
             codec = SUBTITLE_EXTENSIONS_BY_SUFFIX[sidecar.path.suffix.lower()]
@@ -425,7 +431,7 @@ def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the p
                     "at": "0s",
                     "action": "create_sidecar",
                     "target": asset_id,
-                    "to": f"{sidecar.path.stem}.{language}.{codec}",
+                    "to": f"{sanitize(matched_stem)}.{language}.{codec}",
                     "kind": "subtitle",
                     "codec": codec,
                     "language": language,
@@ -445,29 +451,9 @@ def attach_sidecars(  # noqa: PLR0912 — one branch per sidecar kind plus the p
                     "at": "0s",
                     "action": "create_sidecar",
                     "target": asset_id,
-                    "to": f"{sidecar.path.stem}.nfo",
+                    "to": f"{sanitize(matched_stem)}.nfo",
                     "kind": "nfo",
                     "body": _read_text(sidecar.path),
-                },
-            )
-        elif sidecar.kind == "poster":
-            dedup_key = (asset_id, "poster", sidecar.path.stem.lower())
-            if dedup_key in attached:
-                skips.append(SkipRecord(path=sidecar.path, reason="sidecar_duplicate"))
-                continue
-            attached.add(dedup_key)
-            ext = sidecar.path.suffix.lower().lstrip(".")
-            _append_event(
-                work,
-                {
-                    "id": work.next_event_id(asset_id),
-                    "at": "0s",
-                    "action": "create_sidecar",
-                    "target": asset_id,
-                    "to": f"{sidecar.path.stem}.{ext}",
-                    "kind": "poster",
-                    "media_type": "image",
-                    "image_format": _POSTER_FORMAT_BY_SUFFIX[f".{ext}"],
                 },
             )
 
