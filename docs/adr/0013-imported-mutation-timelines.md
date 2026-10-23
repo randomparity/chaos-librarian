@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed — implementation awaits operator approval of the reviewed design.
+Accepted — operator approved the reviewed design on 2026-10-23.
 
 ## Context
 

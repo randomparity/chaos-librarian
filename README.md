@@ -62,6 +62,7 @@ The plan command writes a self-contained fixture directory with
 |------|---------|
 | Validate a scenario | `uv run chaos-librarian validate scenario.yaml --json` |
 | Import media with source IDs | `uv run chaos-librarian import media-library --out scenario.yaml --mapping-out sources.json --json` |
+| Import with replayable mutations | `uv run chaos-librarian import media-library --out scenario.yaml --add-chaos --chaos-seed 42 --chaos-events 12` |
 | Plan without media files | `uv run chaos-librarian plan scenario.yaml --out run-dir --json` |
 | Create real media | `uv run chaos-librarian materialize scenario.yaml --out run-dir --json` |
 | Run wall-clock churn | `uv run chaos-librarian run scenario.yaml --out run-dir --duration 90s --speed 10x --json` |
