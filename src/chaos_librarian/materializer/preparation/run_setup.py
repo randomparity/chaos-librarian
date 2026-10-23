@@ -290,6 +290,8 @@ def _assert_capable_for_hevc_video(scenario: Scenario, caps: Capabilities) -> No
 def _preflight_assets(scenario: Scenario) -> None:
     for context in iter_asset_contexts(scenario):
         asset = context.asset
+        if asset.import_source is not None:
+            continue
         preflight_asset(
             parent_kind=context.parent_kind,
             video=asset.video,

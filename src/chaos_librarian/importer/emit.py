@@ -296,7 +296,7 @@ def _rewrite_bundle_paths(works: list[ImportedWork], digest_to_name: dict[str, s
             assert import_source is not None
             placeholder = str(import_source["path"])
             sha256 = placeholder.removeprefix(_PLACEHOLDER_PREFIX)
-            import_source["path"] = digest_to_name[sha256]
+            import_source["path"] = f"{_BUNDLE_DIR_NAME}/{digest_to_name[sha256]}"
 
 
 def _build_payload(
