@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shlex
 import subprocess
 import sys
 import textwrap
@@ -54,15 +55,25 @@ def test_functional_script_help_documents_coverage_and_scan_evidence() -> None:
         assert expected in output
 
 
-def test_functional_script_requires_media_mutation_readiness(tmp_path: Path) -> None:
+@pytest.fixture
+def python_executable(tmp_path: Path) -> Path:
+    """Exercise interpreter paths that raw shebangs cannot represent."""
+    executable = tmp_path / "python interpreter's path"
+    executable.symlink_to(sys.executable)
+    return executable
+
+
+def test_functional_script_requires_media_mutation_readiness(
+    tmp_path: Path, python_executable: Path
+) -> None:
     """The reviewed run should fail instead of silently skipping media coverage."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_uv = fake_bin / "uv"
-    fake_uv.write_text(
+    fake_uv.with_suffix(".py").write_text(
         textwrap.dedent(
             f"""\
-            #!{sys.executable}
+            #!{python_executable}
             from __future__ import annotations
 
             import json
@@ -94,6 +105,12 @@ def test_functional_script_requires_media_mutation_readiness(tmp_path: Path) -> 
         ),
         encoding="utf-8",
     )
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(python_executable))} "
+        f'{shlex.quote(str(fake_uv.with_suffix(".py")))} "$@"\n',
+        encoding="utf-8",
+    )
     fake_uv.chmod(0o755)
 
     env = os.environ.copy()
@@ -115,16 +132,16 @@ def test_functional_script_requires_media_mutation_readiness(tmp_path: Path) -> 
 
 
 def test_wall_clock_failure_prints_child_output_without_library_timeout(
-    tmp_path: Path,
+    tmp_path: Path, python_executable: Path
 ) -> None:
     """A failed wall-clock child should surface its captured output promptly."""
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     fake_uv = fake_bin / "uv"
-    fake_uv.write_text(
+    fake_uv.with_suffix(".py").write_text(
         textwrap.dedent(
             f"""\
-            #!{sys.executable}
+            #!{python_executable}
             from __future__ import annotations
 
             import json
@@ -246,6 +263,12 @@ def test_wall_clock_failure_prints_child_output_without_library_timeout(
                 raise SystemExit(99)
             """
         ),
+        encoding="utf-8",
+    )
+    fake_uv.write_text(
+        "#!/bin/sh\n"
+        f"exec {shlex.quote(str(python_executable))} "
+        f'{shlex.quote(str(fake_uv.with_suffix(".py")))} "$@"\n',
         encoding="utf-8",
     )
     fake_uv.chmod(0o755)
