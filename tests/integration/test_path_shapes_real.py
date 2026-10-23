@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import os
@@ -32,6 +33,15 @@ def test_path_shapes_materialize_and_replay(tmp_path: Path, request: pytest.Fixt
     request.node.user_properties.extend([("PC_NAME_MAX", name_max), ("PC_PATH_MAX", path_max)])
     if 0 < name_max < 250 or 0 < path_max < len(os.fsencode(tmp_path)) + 700:
         pytest.skip("filesystem limits do not support the 250-byte/700-byte path corpus")
+    probe = tmp_path / "symlink-probe"
+    try:
+        probe.symlink_to(RECIPE)
+    except OSError as error:
+        if error.errno in {errno.ENOTSUP, errno.EOPNOTSUPP, errno.ENOSYS}:
+            pytest.skip(f"filesystem does not support symlinks: errno {error.errno}")
+        raise
+    finally:
+        probe.unlink(missing_ok=True)
     out = tmp_path / "source"
     result = runner.invoke(
         app, ["run", str(RECIPE), "--out", str(out), "--duration", "1s", "--speed", "1x", "--json"]
