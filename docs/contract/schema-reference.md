@@ -46,7 +46,7 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 32 |
+| scenario | 33 |
 | manifest | 10 |
 | journal | 1 |
 | replay bundle | 12 |

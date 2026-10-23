@@ -17,3 +17,4 @@ accepted; supersede rather than edit.
 | [0009](0009-podcast-hierarchy.md) | Podcast library hierarchy | Accepted |
 | [0010](0010-movie-edition-modeling.md) | Movie release/edition modeling | Accepted |
 | [0011](0011-music-artifacts-and-tag-corruption.md) | Advanced music artifacts and tag corruption | Accepted |
+| [0012](0012-import-file-reference-assets.md) | Import assets materialize by copying scenario-bundled originals | Accepted |

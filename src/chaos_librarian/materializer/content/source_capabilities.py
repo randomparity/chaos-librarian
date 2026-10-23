@@ -58,6 +58,7 @@ RESOLUTION_SEQUENCE_CAPABILITY_SOURCES: Final[tuple[str, ...]] = tuple(
 def collect_content_source_capabilities(
     ffmpeg_available: bool,
     *,
+    ffprobe_available: bool = True,
     hdr_available: bool = False,
     resolution_sequence_available: bool = False,
     audio_recipes_available: bool = False,
@@ -72,7 +73,8 @@ def collect_content_source_capabilities(
                     resolution_sequence_available=resolution_sequence_available,
                     audio_recipes_available=audio_recipes_available,
                 ),
-            )
+            ),
+            _import_file_capability(ffprobe_available=ffprobe_available),
         ],
     )
 
@@ -123,4 +125,22 @@ def _builtin_capability(
         required_tool="ffmpeg",
         reason=None if ffmpeg_available else "required tool unavailable: ffmpeg",
         sources=tuple(sorted(sources)),
+    )
+
+
+def _import_file_capability(*, ffprobe_available: bool) -> ContentSourceProviderCapability:
+    """Import-copy provider (issue #105 / ADR 0012).
+
+    Import assets materialize as byte copies of scenario-bundled originals;
+    the only tool involved at materialization time is ffprobe (the copy is
+    re-probed like every other asset).
+    """
+    return ContentSourceProviderCapability(
+        name="import-file",
+        available=ffprobe_available,
+        requires_network=False,
+        requires_cache=False,
+        required_tool="ffprobe",
+        reason=None if ffprobe_available else "required tool unavailable: ffprobe",
+        sources=("video:file_ref", "audio:file_ref"),
     )

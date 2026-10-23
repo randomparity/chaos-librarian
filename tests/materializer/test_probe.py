@@ -223,3 +223,16 @@ def test_probe_file_parses_embedded_subtitle_streams(
     assert subtitle.title == "English SDH"
     assert subtitle.default is True
     assert subtitle.forced is False
+
+
+def test_import_probe_excludes_reference_demuxers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    calls: list[list[str]] = []
+    _patch_run(monkeypatch, _GOOD_PROBE, calls=calls)
+    probe_file(tmp_path / "import.mkv", self_contained_only=True)
+    argv = calls[0]
+    formats = argv[argv.index("-format_whitelist") + 1].split(",")
+    assert {"matroska", "mov", "mpegts", "flac", "ogg"} <= set(formats)
+    assert {"hls", "concat", "dash"}.isdisjoint(formats)
+    assert argv[argv.index("-protocol_whitelist") + 1] == "file"

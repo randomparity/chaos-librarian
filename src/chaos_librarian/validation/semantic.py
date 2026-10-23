@@ -29,6 +29,7 @@ from chaos_librarian.validation.rules.hierarchy.rules import (
 from chaos_librarian.validation.rules.media.extract_track_unknown import (
     rule_extract_track_unknown,
 )
+from chaos_librarian.validation.rules.media.import_source import rule_import_source
 from chaos_librarian.validation.rules.media.materialize_media_matrix import (
     rule_materialize_media_matrix,
 )
@@ -94,6 +95,7 @@ _RULES: list[Rule] = [
     rule_remux_container_safe,
     rule_materialize_media_matrix,
     rule_media_action_compatible_with_parent,
+    rule_import_source,
     rule_sidecar_language_consistent,
     rule_sidecar_target,
     rule_extract_track_unknown,

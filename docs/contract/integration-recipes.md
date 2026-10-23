@@ -129,7 +129,7 @@ container such as `flac`, `mp3`, or `m4a`, no `video` key, and at least one
 supported audio stream.
 
 ```yaml
-schema_version: 32
+schema_version: 33
 scenario_id: audio-only-track
 seed: 10603
 duration_scale: short

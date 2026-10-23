@@ -22,6 +22,10 @@ from chaos_librarian.materializer.errors import ProbeParseError
 from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
+# Import inputs must not select playlist/manifest demuxers that open other resources.
+_IMPORT_DEMUXERS: Final = (
+    "matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,avi,mpegts,mpeg,asf,flac,mp3,wav,ogg"
+)
 
 
 def _coerce_str_keyed_dict(value: object) -> dict[str, object] | None:
@@ -240,7 +244,7 @@ def _build_probed_media(
         ) from exc
 
 
-def probe_file(path: Path) -> ProbedMedia:
+def probe_file(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
     """Run ``ffprobe`` against ``path`` and return the parsed ``ProbedMedia``.
 
     Raises:
@@ -260,6 +264,13 @@ def probe_file(path: Path) -> ProbedMedia:
         "json",
         str(path),
     ]
+    if self_contained_only:
+        argv[-1:-1] = [
+            "-format_whitelist",
+            _IMPORT_DEMUXERS,
+            "-protocol_whitelist",
+            "file",
+        ]
     result = run_recorded_tool(
         argv,
         tool="ffprobe",

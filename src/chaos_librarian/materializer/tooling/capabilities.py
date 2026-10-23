@@ -204,6 +204,7 @@ def detect_capabilities() -> Capabilities:
         platform=f"{platform.system().lower()}-{platform.machine().lower()}",
         content_sources=collect_content_source_capabilities(
             ffmpeg_available=ffmpeg_ok,
+            ffprobe_available=ffprobe_ok,
             hdr_available=hdr_video_available,
             resolution_sequence_available=resolution_switch_available,
             audio_recipes_available=audio_recipes_available,

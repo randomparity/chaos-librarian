@@ -1,0 +1,30 @@
+# expected: E_IMPORT_SOURCE_INVALID
+schema_version: 33
+scenario_id: bad
+seed: 1
+duration_scale: short
+library:
+  roots:
+    - id: r
+      path: r
+movies:
+  - id: w
+    title: t
+    layout: movie_flat
+    variants:
+      - id: v
+        label: l
+        bundle:
+          id: b
+          assets:
+            - id: imp1
+              role: main
+              container: mkv
+              duration_seconds: 1
+              import_source:
+                path: media/../../x.mkv
+
+series: []
+artists: []
+timeline:
+

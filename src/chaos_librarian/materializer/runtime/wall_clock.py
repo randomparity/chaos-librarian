@@ -246,6 +246,7 @@ def run_wall_clock_scenario(
             artifacts=baseline_artifacts,
             caps=prepared.caps,
             stamp_manifest=True,
+            scenario_dir=scenario_path.resolve().parent,
         )
     )
     _publish_baseline(

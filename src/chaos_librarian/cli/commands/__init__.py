@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from chaos_librarian.cli.commands import validate
 from chaos_librarian.cli.commands import generate
+from chaos_librarian.cli.commands import import_media
 from chaos_librarian.cli.commands import plan
 from chaos_librarian.cli.commands import materialize
 from chaos_librarian.cli.commands import run

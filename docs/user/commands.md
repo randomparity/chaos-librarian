@@ -54,6 +54,25 @@ canonical order; with `--lane L`, all items use lane `L`. Output is deterministi
 for a given `(profile, seed, count, lane)`. On any failure the batch removes the
 files it wrote so the command can be re-run.
 
+## `import INPUT_DIR --out OUT [--mode MODE] [--max-works N] [--max-variants N] [--max-duration-s S] [--json]`
+
+Turn an existing media library into a scenario bundle:
+
+```bash
+uv run chaos-librarian import ~/media/movies   --out imported/scenario.yaml   --json
+```
+
+The command scans `INPUT_DIR` for media files, probes video and audio with
+ffprobe, classifies works (`Season NN` subdirectories become series; other
+video directories become movies; artist/album trees become music), and copies
+accepted originals into a content-addressed `media/` bundle next to the new
+scenario YAML. Sidecars — subtitles (`.srt`/`.ass`/`.ssa`), NFO metadata, and
+poster images — are attached to the work in their directory. `--mode sample`
+caps files per container using `--max-works`, `--mode dedup` drops byte-duplicates;
+`--max-works`, `--max-variants`, and `--max-duration-s` bound the result.
+Skipped files carry machine-readable reasons in the JSON report. Requires a
+working ffprobe on `PATH`.
+
 ## `plan SCENARIO --out RUN_DIR [--steps N] [--json]`
 
 Create an oracle fixture without media files:

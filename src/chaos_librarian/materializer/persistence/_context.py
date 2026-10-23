@@ -68,3 +68,7 @@ class RunContext:
     started_at: datetime
     caps: Capabilities
     plan_artifacts: PlanArtifacts
+    # Import-bundle root (ADR 0012): the directory containing the scenario
+    # file, for import assets that copy originals out of the bundle. None
+    # when the run has no on-disk scenario file (bundle replay).
+    scenario_dir: Path | None = None
