@@ -27,6 +27,7 @@ from chaos_librarian.generation.lanes import (
     CELL_LAG_EFFECT_PREFIX,
     CELL_SIDE_NFO_OR_POSTER,
     CELL_SIDE_SUBTITLE,
+    CORE_PATH_CELLS,
     action_cell,
     derive_required_profiles,
 )
@@ -465,7 +466,11 @@ def _emit_smoke_required_events(planner: TimelinePlanner) -> None:
 def _emit_core_fs_required_events(planner: TimelinePlanner) -> None:
     assets = planner.assets
     _move_asset(planner, assets[0])
-    _rename_file(planner, assets[1])
+    _rename_file(
+        planner,
+        assets[1],
+        destination=f"{planner.root_path}/映画/-café-{assets[1].asset_id}.{assets[1].container}",
+    )
     _delete_file(planner, assets[2])
     _add_file(planner, assets[2])
     _archive_file(planner, assets[3])
@@ -590,14 +595,17 @@ def _move_asset(planner: TimelinePlanner, asset: PlannedAsset) -> None:
     )
 
 
-def _rename_file(planner: TimelinePlanner, asset: PlannedAsset) -> EventReference:
+def _rename_file(
+    planner: TimelinePlanner, asset: PlannedAsset, *, destination: str | None = None
+) -> EventReference:
     event_id = planner.event_id("rename")
     at = planner.at()
     event = scenario_contract.RenameFileEvent(
         id=event_id,
         at=at,
         target=asset.asset_id,
-        to=(
+        to=destination
+        or (
             f"{planner.root_path}/renamed/"
             f"{asset.asset_id}-{planner.next_index():04d}.{asset.container}"
         ),
@@ -1164,6 +1172,7 @@ LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
         timeline_events=32,
         required_cells=frozenset(
             {
+                *CORE_PATH_CELLS,
                 action_cell(TimelineActionName.MOVE_ASSET),
                 action_cell(TimelineActionName.RENAME_FILE),
                 action_cell(TimelineActionName.DELETE_FILE),

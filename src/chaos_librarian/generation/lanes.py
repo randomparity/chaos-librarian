@@ -10,8 +10,10 @@ profile labels from the contract's profile-gating policy.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from typing import Final, cast
 
 from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
@@ -31,6 +33,42 @@ CELL_ACTION_PREFIX: Final = "action:"
 CELL_SIDE_SUBTITLE: Final = "sidecar:subtitle"
 CELL_SIDE_NFO_OR_POSTER: Final = "sidecar:nfo-or-poster"
 CELL_LAG_EFFECT_PREFIX: Final = "network-lag:"
+CORE_PATH_CELLS: Final = frozenset(
+    {"path:unicode-basename", "path:unicode-parent", "path:leading-dash"}
+)
+_LONG_COMPONENT_BYTES = 240
+_DEEP_PATH_BYTES = 512
+_ASCII_C0_LIMIT = 32
+_ASCII_DELETE = 127
+
+
+def path_shape_cells(path: str) -> frozenset[str]:
+    """Classify explicit locator spellings, independently of media properties."""
+    parts = PurePosixPath(path).parts
+    if not parts:
+        return frozenset()
+    basename = parts[-1]
+    predicates = {
+        "path:unicode-basename": not basename.isascii(),
+        "path:unicode-parent": any(not part.isascii() for part in parts[:-1]),
+        "path:leading-dash": basename.startswith("-"),
+        "path:whitespace": any(character.isspace() for character in path),
+        "path:metacharacters": any(character in ";&$[]*?()!`\"'" for character in path),
+        "path:control": any(
+            ord(character) < _ASCII_C0_LIMIT or ord(character) == _ASCII_DELETE
+            for character in path
+        ),
+        "path:long-component": any(
+            len(part.encode("utf-8")) >= _LONG_COMPONENT_BYTES for part in parts
+        ),
+        "path:deep": len(path.encode("utf-8")) > _DEEP_PATH_BYTES,
+    }
+    cells = {cell for cell, present in predicates.items() if present}
+    if not basename.isascii():
+        for form in ("NFC", "NFD"):
+            if unicodedata.is_normalized(form, basename):
+                cells.add(f"path:{form.lower()}")
+    return frozenset(cells)
 
 
 def action_cell(action: TimelineActionName) -> str:
@@ -109,6 +147,11 @@ def coverage_for_payload(payload: Mapping[str, object]) -> CoverageReport:
         action = _timeline_action(event.get("action"))
         if action is not None:
             cells.add(action_cell(action))
+        destination = event.get("to")
+        if action in {TimelineActionName.RENAME_FILE, TimelineActionName.MOVE_ASSET} and isinstance(
+            destination, str
+        ):
+            cells.update(path_shape_cells(destination))
         kind = _sidecar_kind(event.get("kind"))
         if action is TimelineActionName.CREATE_SIDECAR and kind is not None:
             if kind is SidecarKind.SUBTITLE:

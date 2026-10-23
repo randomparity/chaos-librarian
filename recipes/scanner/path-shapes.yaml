@@ -1,0 +1,179 @@
+# Recipe: Path shapes (UTF-8 POSIX)
+# Category: scanner
+# Tests: equal media bytes at unusual names; one supported in-root symlink.
+# Expected consumer response: policy-neutral; consumers choose link follow/skip behavior.
+# Requires: ffmpeg/ffprobe >=7, UTF-8 POSIX filesystem; see docs/contract/path-shapes.md.
+schema_version: 33
+scenario_id: recipe-scanner-path-shapes
+seed: 232
+duration_scale: short
+library:
+  roots:
+  - id: movies
+    path: 映画
+movies:
+- id: movie
+  title: Étalon
+  layout: movie_flat
+  variants:
+  - id: variant_original
+    label: original
+    bundle:
+      id: bundle_original
+      assets:
+      - id: asset_original
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: &video
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_unicode
+    label: unicode
+    bundle:
+      id: bundle_unicode
+      assets:
+      - id: asset_unicode
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_nfc
+    label: nfc
+    bundle:
+      id: bundle_nfc
+      assets:
+      - id: asset_nfc
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_nfd
+    label: nfd
+    bundle:
+      id: bundle_nfd
+      assets:
+      - id: asset_nfd
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_long
+    label: long
+    bundle:
+      id: bundle_long
+      assets:
+      - id: asset_long
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_deep
+    label: deep
+    bundle:
+      id: bundle_deep
+      assets:
+      - id: asset_deep
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_dash
+    label: dash
+    bundle:
+      id: bundle_dash
+      assets:
+      - id: asset_dash
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_meta
+    label: meta
+    bundle:
+      id: bundle_meta
+      assets:
+      - id: asset_meta
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_control
+    label: control
+    bundle:
+      id: bundle_control
+      assets:
+      - id: asset_control
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        same_content_as: asset_original
+  - id: variant_link
+    label: link
+    bundle:
+      id: bundle_link
+      assets:
+      - id: asset_link
+        role: main
+        container: mkv
+        duration_seconds: 0.25
+        video: *video
+        symlink:
+          to_asset: asset_original
+series: []
+artists: []
+timeline:
+- id: rename_unicode
+  at: 1ns
+  action: rename_file
+  target: asset_unicode
+  to: 映画/日本語/雪-é.mkv
+- id: rename_nfc
+  at: 2ns
+  action: rename_file
+  target: asset_nfc
+  to: 映画/nfc/café.mkv
+- id: rename_nfd
+  at: 3ns
+  action: rename_file
+  target: asset_nfd
+  to: 映画/nfd/café.mkv
+- id: rename_long
+  at: 4ns
+  action: rename_file
+  target: asset_long
+  to: 映画/long/xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.mkv
+- id: rename_deep
+  at: 5ns
+  action: rename_file
+  target: asset_deep
+  to: 映画/deep/level-00-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-01-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-02-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-03-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-04-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-05-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-06-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/level-07-dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd/film.mkv
+- id: rename_dash
+  at: 6ns
+  action: rename_file
+  target: asset_dash
+  to: 映画/-option.mkv
+- id: rename_meta
+  at: 7ns
+  action: rename_file
+  target: asset_meta
+  to: 映画/a  b;[$]&'quote.mkv
+- id: rename_control
+  at: 8ns
+  action: rename_file
+  target: asset_control
+  to: "映画/line\nbreak\tname.mkv"
+- id: rename_link
+  at: 9ns
+  action: rename_file
+  target: asset_link
+  to: 映画/-参照-link.mkv

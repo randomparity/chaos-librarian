@@ -279,7 +279,7 @@ timeline:
   at: 2ns
   action: rename_file
   target: asset_002
-  to: movies-hd/renamed/asset_002-0002.mp4
+  to: movies-hd/映画/-café-asset_002.mp4
 - id: fuzz_0003_delete
   at: 3ns
   action: delete_file

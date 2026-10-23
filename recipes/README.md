@@ -100,3 +100,6 @@ Moving assets into archives and across roots.
 | `archive-on-event.yaml` | An active asset is archived (default location). | converges | none |
 | `archive-explicit-root.yaml` | An asset is archived into a named archive root. | converges | none |
 | `relocate-then-archive.yaml` | An asset moves across roots, then is archived. | converges | none |
+
+The [path-shape scanner corpus](../docs/contract/path-shapes.md) covers Unicode,
+long/deep names, controls and an in-root link with identical media bytes.
