@@ -89,7 +89,7 @@ def scan_directory(root: Path) -> tuple[list[ScannedFile], list[SkipRecord]]:
         relative = path.relative_to(root)
         if any(part.startswith(".") for part in relative.parts[:-1]):
             continue  # hidden directory: not entered
-        kind = classify(path)
+        kind = classify(path) if path.is_file() else None
         if kind is None:
             skipped.append(SkipRecord(path=path, reason="unrecognized"))
             continue

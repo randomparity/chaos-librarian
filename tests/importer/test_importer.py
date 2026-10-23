@@ -7,6 +7,7 @@ with a stubbed prober so a missing ffprobe cannot mask logic regressions.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import cast
 
@@ -431,3 +432,11 @@ def test_sidecar_matches_full_stem_and_preserves_line_endings(tmp_path: Path) ->
     assert works[0].asset_sources[str(event["target"])] == tmp_path / "Film Two.mkv"
     assert str(event["body"]).encode() == subtitle.read_bytes()
     assert skips == []
+
+
+def test_scan_rejects_special_files_without_opening_them(tmp_path: Path) -> None:
+    fifo = tmp_path / "Movie.nfo"
+    os.mkfifo(fifo)
+    scanned, skips = scan_directory(tmp_path)
+    assert scanned == []
+    assert skips == [SkipRecord(fifo, "unrecognized")]

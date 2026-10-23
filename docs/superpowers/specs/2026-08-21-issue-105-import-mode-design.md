@@ -257,6 +257,9 @@ file (`import_source.path`) that the materializer reads and copies into the
 library. This *widens* the existing input surface — today scenario paths only
 name library outputs, never process-read inputs.
 
+**Importer input boundary.** Selected library entries must resolve to regular files before
+classification; special files are reported as unrecognized without opening them.
+
 **Actor model.** The untrusted party is whoever authors a scenario YAML (the
 files circulate as test fixtures between people/machines). The local operator
 running `chaos-librarian` is trusted; the process runs with the operator's

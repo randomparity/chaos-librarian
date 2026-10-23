@@ -57,6 +57,11 @@ def _slug(name: str) -> str:
     return sanitize(name).lower().replace(" ", "-")
 
 
+def _display_name(name: str, allocated_id: str, *, prefix: str = "") -> str:
+    title = sanitize(name)
+    return title if allocated_id == f"{prefix}{_slug(name)}" else f"{title} {allocated_id}"
+
+
 def _language_for(sidecar: ScannedFile) -> str:
     match = _LANGUAGE_RE.search(sidecar.path.stem.lower())
     if match and match.group(1) not in _CODEC_WORDS:
@@ -175,7 +180,10 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         episode_seen.add((work_id, season_number, episode_number))
 
         asset_id = next_asset_id(item.sha256)
-        stem_title = sanitize(_SXXEYY_RE.sub("", item.scanned.path.stem).strip(" -_"))
+        stem_title = (
+            sanitize(_SXXEYY_RE.sub("", item.scanned.path.stem).strip(" -_"))
+            or f"Episode {episode_number:02d}"
+        )
         work = series_works.get(work_id)
         if work is None:
             work = ImportedWork(
@@ -183,7 +191,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
                 id=work_id,
                 payload={
                     "id": work_id,
-                    "title": sanitize(grandparent.name),
+                    "title": _display_name(grandparent.name, work_id),
                     "layout": "season_folders",
                     "episode_naming": "sxxexx_title",
                     "seasons": [],
@@ -249,7 +257,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             id=work_id,
             payload={
                 "id": work_id,
-                "title": title if work_id == _slug(title) else f"{title} {work_id}",
+                "title": _display_name(title, work_id),
                 "layout": "movie_folder" if not at_root else "movie_flat",
                 "variants": [],
             },
@@ -300,7 +308,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
                 id=work_id,
                 payload={
                     "id": work_id,
-                    "name": sanitize(artist_dir.name),
+                    "name": _display_name(artist_dir.name, work_id),
                     "layout": "artist_album_disc",
                     "track_naming": "track_number_title",
                     "albums": [],
@@ -311,7 +319,11 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         album: dict[str, object] | None = album_payloads.get(album_dir)
         if album is None:
             album_id = allocator.unique_id(f"{work.id}-{_slug(album_dir.name)}")
-            album = {"id": album_id, "title": sanitize(album_dir.name), "discs": []}
+            album = {
+                "id": album_id,
+                "title": _display_name(album_dir.name, album_id, prefix=f"{work.id}-"),
+                "discs": [],
+            }
             album_payloads[album_dir] = album
             cast("list[dict[str, object]]", work.payload["albums"]).append(album)
         disc_number = int(disc_match.group(1)) if disc_match else 1

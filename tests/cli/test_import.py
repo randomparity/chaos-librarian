@@ -301,3 +301,29 @@ def test_import_disambiguates_slug_names(
     result = runner.invoke(app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["files_imported"] == 3
+
+
+@pytest.mark.parametrize(
+    "files",
+    [
+        ["Show/Season 01/S01E01.mkv"],
+        ["A/Show/Season 01/S01E01 Pilot.mkv", "B/Show/Season 01/S01E01 Pilot.mkv"],
+        ["A/Artist/Album/01 Song.flac", "B/Artist/Album/01 Song.flac"],
+        ["Artist/Album!/01 Song.flac", "Artist/Album/01 Song.flac"],
+    ],
+)
+def test_import_preserves_distinct_hierarchies_with_normalized_names(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None, files: list[str]
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    for name in files:
+        media = root / name
+        media.parent.mkdir(parents=True, exist_ok=True)
+        media.write_bytes(b"media")
+    out = tmp_path / "s.yaml"
+    result = runner.invoke(app, ["import", str(root), "--out", str(out), "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["files_imported"] == len(files)
+    result = runner.invoke(app, ["plan", str(out), "--out", str(tmp_path / "preview")])
+    assert result.exit_code == 0, result.output
