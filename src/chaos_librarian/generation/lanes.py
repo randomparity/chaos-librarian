@@ -48,28 +48,26 @@ def path_shape_cells(path: str) -> frozenset[str]:
     if not parts:
         return frozenset()
     basename = parts[-1]
-    cells: set[str] = set()
+    predicates = {
+        "path:unicode-basename": not basename.isascii(),
+        "path:unicode-parent": any(not part.isascii() for part in parts[:-1]),
+        "path:leading-dash": basename.startswith("-"),
+        "path:whitespace": any(character.isspace() for character in path),
+        "path:metacharacters": any(character in ";&$[]*?()!`\"'" for character in path),
+        "path:control": any(
+            ord(character) < _ASCII_C0_LIMIT or ord(character) == _ASCII_DELETE
+            for character in path
+        ),
+        "path:long-component": any(
+            len(part.encode("utf-8")) >= _LONG_COMPONENT_BYTES for part in parts
+        ),
+        "path:deep": len(path.encode("utf-8")) > _DEEP_PATH_BYTES,
+    }
+    cells = {cell for cell, present in predicates.items() if present}
     if not basename.isascii():
-        cells.add("path:unicode-basename")
         for form in ("NFC", "NFD"):
             if unicodedata.is_normalized(form, basename):
                 cells.add(f"path:{form.lower()}")
-    if any(not part.isascii() for part in parts[:-1]):
-        cells.add("path:unicode-parent")
-    if basename.startswith("-"):
-        cells.add("path:leading-dash")
-    if any(character.isspace() for character in path):
-        cells.add("path:whitespace")
-    if any(character in ";&$[]*?()!`\"'" for character in path):
-        cells.add("path:metacharacters")
-    if any(
-        ord(character) < _ASCII_C0_LIMIT or ord(character) == _ASCII_DELETE for character in path
-    ):
-        cells.add("path:control")
-    if any(len(part.encode("utf-8")) >= _LONG_COMPONENT_BYTES for part in parts):
-        cells.add("path:long-component")
-    if len(path.encode("utf-8")) > _DEEP_PATH_BYTES:
-        cells.add("path:deep")
     return frozenset(cells)
 
 
