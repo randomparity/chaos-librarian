@@ -451,3 +451,51 @@ def test_emit_rejects_source_changes_after_hashing(tmp_path: Path, stub_probe: N
         emit_import_bundle(tmp_path / "input", out, works, staged, skips)
     assert not out.exists()
     assert not list((out.parent / "media").iterdir())
+
+
+@pytest.mark.parametrize("existing_bundle", [False, True])
+@pytest.mark.parametrize("failure", ["io", "race"])
+def test_mapping_publication_failure_rolls_back_only_owned_outputs(
+    tmp_path: Path,
+    stub_probe: None,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_bundle: bool,
+    failure: str,
+) -> None:
+    works, staged, skips, source = _prepare_works(tmp_path)
+    out = tmp_path / "out" / "scenario.yaml"
+    bundle = out.parent / "media"
+    bundle.mkdir(parents=True)
+    existing = bundle / staged[0][1]
+    if existing_bundle:
+        existing.write_bytes(source.read_bytes())
+    mapping = tmp_path / "mapping.json"
+    original_write = emit._atomic_write
+
+    def fail_mapping(path: Path, data: bytes) -> None:
+        if path == mapping:
+            if failure == "race":
+                mapping.write_bytes(b"other writer")
+                return original_write(path, data)
+            raise OSError("mapping disk error")
+        return original_write(path, data)
+
+    monkeypatch.setattr(emit, "_atomic_write", fail_mapping)
+    with pytest.raises(OSError, match="File exists" if failure == "race" else "mapping disk error"):
+        emit_import_bundle(tmp_path / "input", out, works, staged, skips, mapping_out=mapping)
+    assert not out.exists()
+    assert sorted(bundle.iterdir()) == ([existing] if existing_bundle else [])
+    if failure == "race":
+        assert mapping.read_bytes() == b"other writer"
+    else:
+        assert not mapping.exists()
+    assert source.read_bytes() == b"media-bytes"
+
+
+def test_emitter_rejects_mapping_collision_before_staging(tmp_path: Path, stub_probe: None) -> None:
+    works, staged, skips, _source = _prepare_works(tmp_path)
+    out = tmp_path / "out" / "scenario.yaml"
+    out.parent.mkdir()
+    with pytest.raises(ValueError, match="mapping"):
+        emit_import_bundle(tmp_path / "input", out, works, staged, skips, mapping_out=out)
+    assert not (out.parent / "media").exists()

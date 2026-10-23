@@ -8,6 +8,7 @@ is stubbed).
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -20,6 +21,8 @@ from chaos_librarian.contract.capabilities import Capabilities, ReadyFor, ToolSt
 from chaos_librarian.contract.content_sources import ContentSourceCapabilities
 from chaos_librarian.contract.manifest import ProbedMedia, ProbedStream, StreamKind
 from chaos_librarian.importer import probe_input
+from chaos_librarian.topology import iter_asset_contexts
+from chaos_librarian.validation.input import prepare_run_input_from_bytes
 
 runner = CliRunner()
 
@@ -165,6 +168,18 @@ def test_import_success_json_report(
     assert payload["works"]["movies"] == 1
     assert out.exists()
     assert (out.parent / "media").is_dir()
+    assert set(payload) == {
+        "scenario_path",
+        "bundle_dir",
+        "files_scanned",
+        "files_imported",
+        "files_skipped",
+        "works",
+        "sidecars",
+        "bundle_bytes",
+        "warnings",
+    }
+    assert sorted(p.name for p in out.parent.iterdir()) == ["media", "scenario.yaml"]
 
 
 def test_import_success_human_output(
@@ -188,6 +203,9 @@ def test_import_success_human_output(
         (["Show/Season 01/S01E01 Pilot.mkv", "Show/Season 02/S02E01 Return.mkv"], [], 2, None),
         ([f"Show/Season 01/S01E{i:02d} Episode.mkv" for i in range(1, 7)], [], 6, None),
         (["A/A.mkv", "B/B.mkv"], ["--mode", "dedup"], 1, "mode:duplicate"),
+        (["A/A.mkv", "B/B.mkv"], ["--max-works", "1"], 1, "cap:max_works"),
+        (["A/A.mkv", "A/B.mkv"], ["--max-variants", "1"], 1, "cap:max_variants"),
+        (["A/A.mkv"], ["--max-duration-s", "2"], 1, None),
         (
             ["A/A.mkv", "B/B.mkv"],
             ["--mode", "sample", "--max-works", "1"],
@@ -212,13 +230,33 @@ def test_import_topology_and_modes_emit_valid_scenarios(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"same original")
     result = runner.invoke(
-        app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json", *options]
+        app,
+        [
+            "import",
+            str(root),
+            "--out",
+            str(tmp_path / "s.yaml"),
+            "--json",
+            *options,
+            "--mapping-out",
+            str(tmp_path / "mapping.json"),
+        ],
     )
     assert result.exit_code == 0, result.output
     report = json.loads(result.output)
     assert report["files_imported"] == imported
     if skip_reason:
         assert skip_reason in {item["reason"] for item in report["files_skipped"]}
+    mapping = json.loads((tmp_path / "mapping.json").read_text())
+    scenario = prepare_run_input_from_bytes(
+        raw_bytes=(tmp_path / "s.yaml").read_bytes(), source_label="<test>"
+    ).scenario
+    assert scenario is not None
+    assert set(mapping.values()) == {c.asset.id for c in iter_asset_contexts(scenario)}
+    assert len(mapping) == imported
+    assert set(mapping) == set(files) - {
+        Path(item["path"]).relative_to(root).as_posix() for item in report["files_skipped"]
+    }
 
 
 def test_import_duration_cap_filters_before_emitting_topology(
@@ -248,6 +286,8 @@ def test_import_duration_cap_filters_before_emitting_topology(
             str(tmp_path / "s.yaml"),
             "--max-duration-s",
             "2",
+            "--mapping-out",
+            str(tmp_path / "mapping.json"),
             "--json",
         ],
     )
@@ -255,6 +295,7 @@ def test_import_duration_cap_filters_before_emitting_topology(
     report = json.loads(result.output)
     assert report["files_imported"] == 1
     assert report["files_skipped"] == [{"path": str(long_file), "reason": "cap:max_duration_s"}]
+    assert set(json.loads((tmp_path / "mapping.json").read_text())) == {"My Film/My Film.mkv"}
 
 
 def test_import_variant_cap_keeps_only_surviving_sidecars(
@@ -343,3 +384,94 @@ def test_import_ids_do_not_collide_with_root_or_derived_ids(
         media.write_bytes(b"media")
     result = runner.invoke(app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json"])
     assert result.exit_code == 0, result.output
+
+
+def test_import_mapping_preserves_relative_names_and_sorted_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    names = ["Z/Film.mkv", 'A/Film "é"\n.mkv']
+    for name in names:
+        source = root / name
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_bytes(b"same content")
+    outputs = []
+    for number in range(2):
+        mapping = tmp_path / f"mapping-{number}.json"
+        result = runner.invoke(
+            app,
+            [
+                "import",
+                str(root),
+                "--out",
+                str(tmp_path / f"s-{number}.yaml"),
+                "--mapping-out",
+                str(mapping),
+            ],
+        )
+        assert result.exit_code == 0, result.output
+        payload = json.loads(mapping.read_text())
+        assert set(payload) == set(names)
+        assert len(set(payload.values())) == 2
+        outputs.append(mapping.read_bytes())
+        assert outputs[-1] == (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode()
+    assert outputs[0] == outputs[1]
+
+
+@pytest.mark.parametrize(
+    "destination",
+    [
+        "existing",
+        "dangling",
+        "scenario",
+        "input",
+        "media",
+        "input-alias",
+        "media-alias",
+        "missing-parent",
+        "file-parent",
+    ],
+)
+def test_import_mapping_rejects_unsafe_destinations_before_probe(
+    media_dir: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, destination: str
+) -> None:
+    out = tmp_path / "scenario.yaml"
+    bundle = tmp_path / "media"
+    bundle.mkdir()
+    target = tmp_path / "mapping.json"
+    if destination == "existing":
+        target.write_bytes(b"preserved")
+    elif destination == "dangling":
+        target.symlink_to(tmp_path / "missing")
+    elif destination == "scenario":
+        target = out
+    elif destination in {"input", "media", "input-alias", "media-alias"}:
+        parent = media_dir if destination.startswith("input") else bundle
+        if destination.endswith("alias"):
+            alias = tmp_path / "alias"
+            alias.symlink_to(parent, target_is_directory=True)
+            parent = alias
+        target = parent / "mapping.json"
+    elif destination == "missing-parent":
+        target = tmp_path / "missing" / "mapping.json"
+    else:
+        parent = tmp_path / "file"
+        parent.write_bytes(b"preserved")
+        target = parent / "mapping.json"
+
+    def unexpected_probe() -> None:
+        pytest.fail("invalid mapping path must fail before capability detection")
+
+    monkeypatch.setattr(import_media, "detect_capabilities", unexpected_probe)
+    result = runner.invoke(
+        app, ["import", str(media_dir), "--out", str(out), "--mapping-out", str(target)]
+    )
+    assert result.exit_code == 2, result.output
+    assert "--mapping-out" in re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    assert not out.exists()
+    assert not list(bundle.iterdir())
+    if destination == "existing":
+        assert target.read_bytes() == b"preserved"
+    elif destination == "dangling":
+        assert target.is_symlink()

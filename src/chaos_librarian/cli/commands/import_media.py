@@ -22,6 +22,7 @@ from chaos_librarian.importer.emit import (
     compute_staging,
     emit_import_bundle,
     plan_staging,
+    validate_mapping_out,
 )
 from chaos_librarian.importer.probe_input import probe_inputs
 from chaos_librarian.importer.scan import scan_directory
@@ -39,11 +40,16 @@ def import_media(
     max_works: Annotated[int | None, typer.Option("--max-works")] = None,
     max_variants: Annotated[int, typer.Option("--max-variants")] = 4,
     max_duration_s: Annotated[float | None, typer.Option("--max-duration-s")] = None,
+    mapping_out: Annotated[Path | None, typer.Option("--mapping-out")] = None,
     json_output: Annotated[bool, typer.Option("--json")] = False,
 ) -> None:
     """Scan an existing media library and emit a scenario bundle."""
     if mode not in _MODES:
         raise typer.BadParameter(f"--mode must be one of {', '.join(_MODES)}")
+    try:
+        validate_mapping_out(input_dir, out, mapping_out)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     caps = detect_capabilities()
     if not caps.ffprobe.meets_minimum:
@@ -86,7 +92,9 @@ def import_media(
             raise typer.Exit(code=1)
 
         staged, _referenced = compute_staging(accepted, works)
-        report = emit_import_bundle(input_dir, out, works, staged, all_skips)
+        report = emit_import_bundle(
+            input_dir, out, works, staged, all_skips, mapping_out=mapping_out
+        )
     except typer.Exit:
         raise
     except Exception as exc:
