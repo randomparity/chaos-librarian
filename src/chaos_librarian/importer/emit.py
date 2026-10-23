@@ -22,9 +22,12 @@ from typing import cast
 from ruamel.yaml import YAML
 
 from chaos_librarian.contract import SCENARIO_SCHEMA_VERSION
+from chaos_librarian.contract.scenario import Scenario
 from chaos_librarian.importer.probe_input import ProbedInput
 from chaos_librarian.importer.scan import SkipRecord
 from chaos_librarian.importer.topology import ImportedWork, sanitize
+from chaos_librarian.path_rendering import render_asset_path
+from chaos_librarian.topology import iter_asset_contexts, renderable_asset_context
 from chaos_librarian.validation.input import prepare_run_input_from_bytes
 from chaos_librarian.validation.pipeline import run_validation
 
@@ -300,7 +303,7 @@ def _build_payload(
     events: list[dict[str, object]],
 ) -> dict[str, object]:
     root_path = sanitize(input_dir.name) or "imported"
-    return {
+    payload: dict[str, object] = {
         "schema_version": SCENARIO_SCHEMA_VERSION,
         "scenario_id": f"import-{input_dir.name}-{datetime.now(UTC):%Y%m%d%H%M}",
         "seed": 0,
@@ -311,6 +314,17 @@ def _build_payload(
         "artists": [w.payload for w in works if w.kind == "artist"],
         "timeline": sorted(events, key=lambda e: str(e["id"])),
     }
+
+    scenario = Scenario.model_validate(payload)
+    parents = {
+        context.asset.id: Path(
+            render_asset_path(renderable_asset_context(context, root_path))
+        ).parent
+        for context in iter_asset_contexts(scenario)
+    }
+    for event in events:
+        event["to"] = (parents[str(event["target"])] / str(event["to"])).as_posix()
+    return payload
 
 
 def _dump_yaml(payload: dict[str, object]) -> bytes:

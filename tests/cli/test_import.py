@@ -329,3 +329,17 @@ def test_import_preserves_distinct_hierarchies_with_normalized_names(
     assert json.loads(result.output)["files_imported"] == len(files)
     result = runner.invoke(app, ["plan", str(out), "--out", str(tmp_path / "preview")])
     assert result.exit_code == 0, result.output
+
+
+@pytest.mark.parametrize("names", [["Main"], ["A", "Av1"]])
+def test_import_ids_do_not_collide_with_root_or_derived_ids(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stub_probe: None, names: list[str]
+) -> None:
+    _stub_capabilities_ok(monkeypatch)
+    root = tmp_path / "input"
+    for name in names:
+        media = root / name / "Film.mkv"
+        media.parent.mkdir(parents=True)
+        media.write_bytes(b"media")
+    result = runner.invoke(app, ["import", str(root), "--out", str(tmp_path / "s.yaml"), "--json"])
+    assert result.exit_code == 0, result.output

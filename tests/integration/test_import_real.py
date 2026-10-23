@@ -238,3 +238,39 @@ timeline: []
     )
     assert result.returncode == 5, result.stdout + result.stderr
     assert json.loads(result.stderr)["error_code"] == "E_MATERIALIZE_PROBE_PARSE_FAILED"
+
+
+def test_import_sidecars_stay_beside_their_own_media(media_input: Path, tmp_path: Path) -> None:
+    other = media_input / "Other Movie"
+    other.mkdir()
+    shutil.copyfile(media_input / "Sample Movie" / "Sample Movie.mp4", other / "Sample Movie.mp4")
+    shutil.copyfile(media_input / "Sample Movie" / "poster.jpg", other / "poster.jpg")
+    (other / "Sample Movie.en.srt").write_text("different subtitle")
+    (other / "Sample Movie.nfo").write_text("<movie>different NFO</movie>")
+    scenario = tmp_path / "scenario.yaml"
+    out = tmp_path / "run"
+    for args in [
+        ["import", str(media_input), "--out", str(scenario)],
+        ["materialize", str(scenario), "--out", str(out)],
+    ]:
+        result = subprocess.run(
+            ["uv", "run", "chaos-librarian", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+            cwd=Path(__file__).parents[2],
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    videos = list((out / "library").rglob("*.mp4"))
+    assert len(videos) == 2
+    subtitle_bodies = set()
+    nfo_bodies = set()
+    for video in videos:
+        (subtitle,) = video.parent.glob("*.en.srt")
+        (nfo,) = video.parent.glob("*.nfo")
+        assert (video.parent / "poster.jpg").is_file()
+        subtitle_bodies.add(subtitle.read_text())
+        nfo_bodies.add(nfo.read_text())
+    assert len(subtitle_bodies) == 2
+    assert len(nfo_bodies) == 2

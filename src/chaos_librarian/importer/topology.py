@@ -74,25 +74,6 @@ def _container_of(path: Path) -> str:
 
 
 @dataclass
-class ImportedWork:
-    """One emitted movie/series/artist with its assets and sidecar events."""
-
-    kind: str  # "movie" | "series" | "artist"
-    id: str
-    payload: dict[str, object]
-    asset_payloads: list[dict[str, object]] = field(default_factory=list)
-    sidecar_events: list[dict[str, object]] = field(default_factory=list)
-    # asset id -> original scanned path; sidecar attachment looks this up.
-    asset_sources: dict[str, Path] = field(default_factory=dict)
-    event_counters: dict[str, int] = field(default_factory=dict)
-
-    def next_event_id(self, asset_id: str) -> str:
-        n = self.event_counters.get(asset_id, 0) + 1
-        self.event_counters[asset_id] = n
-        return f"sidecar-{asset_id}-{n}"
-
-
-@dataclass
 class _IdAllocator:
     """Deterministic slug ids with ``-<n>`` disambiguators in sorted order."""
 
@@ -108,6 +89,26 @@ class _IdAllocator:
         return candidate
 
 
+@dataclass
+class ImportedWork:
+    """One emitted movie/series/artist with its assets and sidecar events."""
+
+    kind: str  # "movie" | "series" | "artist"
+    id: str
+    payload: dict[str, object]
+    asset_payloads: list[dict[str, object]] = field(default_factory=list)
+    sidecar_events: list[dict[str, object]] = field(default_factory=list)
+    # asset id -> original scanned path; sidecar attachment looks this up.
+    asset_sources: dict[str, Path] = field(default_factory=dict)
+    event_counters: dict[str, int] = field(default_factory=dict)
+    ids: _IdAllocator = field(default_factory=_IdAllocator, repr=False)
+
+    def next_event_id(self, asset_id: str) -> str:
+        n = self.event_counters.get(asset_id, 0) + 1
+        self.event_counters[asset_id] = n
+        return self.ids.unique_id(f"sidecar-{asset_id}-{n}")
+
+
 def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention; splitting would scatter the shared allocator/registry state across helpers without reducing risk.
     probed: list[ProbedInput],
     sidecars: list[ScannedFile],
@@ -121,18 +122,14 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
     """
     skips: list[SkipRecord] = []
     works: list[ImportedWork] = []
-    allocator = _IdAllocator()
-    digest_occurrences: dict[str, int] = {}
+    allocator = _IdAllocator(slugs={"main"})
     imported_video_paths: set[Path] = set()
 
     videos = [item for item in probed if item.scanned.kind == "video"]
     audios = [item for item in probed if item.scanned.kind == "audio"]
 
     def next_asset_id(digest: str) -> str:
-        occurrence = digest_occurrences.get(digest, 0)
-        digest_occurrences[digest] = occurrence + 1
-        base = f"imp-{digest[:12]}"
-        return base if occurrence == 0 else f"{base}-{occurrence}"
+        return allocator.unique_id(f"imp-{digest[:12]}")
 
     def make_asset(item: ProbedInput, asset_id: str) -> dict[str, object]:
         # emit.py rewrites __BUNDLE__#<sha256> to the staged bundle-relative
@@ -188,6 +185,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         if work is None:
             work = ImportedWork(
                 kind="series",
+                ids=allocator,
                 id=work_id,
                 payload={
                     "id": work_id,
@@ -200,15 +198,15 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             series_works[work_id] = work
             seasons_by_series[work_id] = {}
         variant: dict[str, object] = {
-            "id": f"{work_id}-s{season_number:02d}e{episode_number:02d}v",
+            "id": allocator.unique_id(f"{work_id}-s{season_number:02d}e{episode_number:02d}v"),
             "label": "default",
             "bundle": {
-                "id": f"{asset_id}-b",
+                "id": allocator.unique_id(f"{asset_id}-b"),
                 "assets": [make_asset(item, asset_id)],
             },
         }
         episode: dict[str, object] = {
-            "id": f"{work_id}-s{season_number:02d}e{episode_number:02d}",
+            "id": allocator.unique_id(f"{work_id}-s{season_number:02d}e{episode_number:02d}"),
             "episode_number": episode_number,
             "title": stem_title,
             "variants": [variant],
@@ -224,7 +222,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
     for work_id, seasons in seasons_by_series.items():
         payload_seasons = [
             {
-                "id": f"{work_id}-s{number:02d}",
+                "id": allocator.unique_id(f"{work_id}-s{number:02d}"),
                 "season_number": number,
                 "title": f"Season {number:02d}",
                 "episodes": episodes,
@@ -254,6 +252,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         work_id = allocator.unique_id(_slug(title))
         work = ImportedWork(
             kind="movie",
+            ids=allocator,
             id=work_id,
             payload={
                 "id": work_id,
@@ -268,10 +267,10 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         for index, item in enumerate(ordered):
             asset_id = next_asset_id(item.sha256)
             variant: dict[str, object] = {
-                "id": f"{work_id}v{index + 1}",
+                "id": allocator.unique_id(f"{work_id}v{index + 1}"),
                 "label": f"v{index + 1}",
                 "bundle": {
-                    "id": f"{asset_id}-b",
+                    "id": allocator.unique_id(f"{asset_id}-b"),
                     "assets": [make_asset(item, asset_id)],
                 },
             }
@@ -305,6 +304,7 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
             work_id = allocator.unique_id(_slug(artist_dir.name))
             work = ImportedWork(
                 kind="artist",
+                ids=allocator,
                 id=work_id,
                 payload={
                     "id": work_id,
@@ -329,12 +329,16 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
         disc_number = int(disc_match.group(1)) if disc_match else 1
         disc: dict[str, object] | None = disc_payloads.get((album_dir, disc_number))
         if disc is None:
-            disc = {"id": f"{album['id']}-d{disc_number}", "disc_number": disc_number, "tracks": []}
+            disc = {
+                "id": allocator.unique_id(f"{album['id']}-d{disc_number}"),
+                "disc_number": disc_number,
+                "tracks": [],
+            }
             disc_payloads[(album_dir, disc_number)] = disc
             cast("list[dict[str, object]]", album["discs"]).append(disc)
         tracks = cast("list[dict[str, object]]", disc["tracks"])
         track_number = len(tracks) + 1
-        track_id = f"{disc['id']}-t{track_number}"
+        track_id = allocator.unique_id(f"{disc['id']}-t{track_number}")
         asset_id = next_asset_id(item.sha256)
         asset = make_asset(item, asset_id)
         tracks.append(
@@ -344,9 +348,9 @@ def build_topology(  # noqa: PLR0912, PLR0915 — one branch per spec convention
                 "title": sanitize(item.scanned.path.stem) or f"Track {track_number}",
                 "variants": [
                     {
-                        "id": f"{track_id}v",
+                        "id": allocator.unique_id(f"{track_id}v"),
                         "label": "default",
-                        "bundle": {"id": f"{asset_id}-b", "assets": [asset]},
+                        "bundle": {"id": allocator.unique_id(f"{asset_id}-b"), "assets": [asset]},
                     }
                 ],
             }
