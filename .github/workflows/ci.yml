@@ -115,10 +115,13 @@ jobs:
               )
           PY
 
-      - name: Run real-tool integration tests
+      - name: Run real-tool integration and smoke tests
         run: |
           mkdir -p test-results
           uv run pytest tests/integration/*_real.py \
+            tests/materializer/test_embedded_metadata_real.py \
+            tests/materializer/test_muxing_profiles_real.py \
+            tests/visualize/test_payload.py::test_materialize_run_dir_passes_cross_check \
             -q \
             --no-cov \
             -ra \
