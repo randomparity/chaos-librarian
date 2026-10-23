@@ -18,3 +18,4 @@ accepted; supersede rather than edit.
 | [0010](0010-movie-edition-modeling.md) | Movie release/edition modeling | Accepted |
 | [0011](0011-music-artifacts-and-tag-corruption.md) | Advanced music artifacts and tag corruption | Accepted |
 | [0012](0012-import-file-reference-assets.md) | Import assets materialize by copying scenario-bundled originals | Accepted |
+| [0013](0013-imported-mutation-timelines.md) | Imported timelines use byte-preserving filesystem actions | Accepted |
