@@ -322,8 +322,17 @@ def _build_payload(
         ).parent
         for context in iter_asset_contexts(scenario)
     }
+    used_paths: set[Path] = set()
     for event in events:
-        event["to"] = (parents[str(event["target"])] / str(event["to"])).as_posix()
+        parent = parents[str(event["target"])]
+        filename = str(event["to"])
+        destination = parent / filename
+        disambiguator = 0
+        while destination in used_paths:
+            disambiguator += 1
+            destination = parent / f"{disambiguator}-{filename}"
+        used_paths.add(destination)
+        event["to"] = destination.as_posix()
     return payload
 
 

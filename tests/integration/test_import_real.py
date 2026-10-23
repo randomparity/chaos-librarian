@@ -274,3 +274,34 @@ def test_import_sidecars_stay_beside_their_own_media(media_input: Path, tmp_path
         nfo_bodies.add(nfo.read_text())
     assert len(subtitle_bodies) == 2
     assert len(nfo_bodies) == 2
+
+
+def test_import_preserves_sidecars_with_colliding_sanitized_stems(
+    media_input: Path, tmp_path: Path
+) -> None:
+    root = tmp_path / "collisions"
+    movie = root / "Movie"
+    movie.mkdir(parents=True)
+    for stem, body in [("Cut!", "first"), ("Cut?", "second")]:
+        shutil.copyfile(media_input / "Sample Movie" / "Sample Movie.mp4", movie / f"{stem}.mp4")
+        (movie / f"{stem}.nfo").write_text(body)
+        (movie / f"{stem}.en.srt").write_text(body)
+    scenario = tmp_path / "scenario.yaml"
+    out = tmp_path / "run"
+    for args in [
+        ["import", str(root), "--out", str(scenario)],
+        ["materialize", str(scenario), "--out", str(out)],
+    ]:
+        result = subprocess.run(
+            ["uv", "run", "chaos-librarian", *args],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+            cwd=Path(__file__).parents[2],
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+    for suffix in ["*.nfo", "*.en.srt"]:
+        sidecars = list((out / "library").rglob(suffix))
+        assert len(sidecars) == 2
+        assert {path.read_text() for path in sidecars} == {"first", "second"}
