@@ -15,6 +15,7 @@ from pathlib import Path
 
 import pytest
 
+from chaos_librarian.materializer.errors import ProbeParseError
 from chaos_librarian.materializer.tooling.probe import probe_file
 
 
@@ -115,6 +116,7 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
     assert imp.returncode == 0, imp.stderr + imp.stdout
     report = json.loads(imp.stdout)
     assert report["files_imported"] == 2
+    assert report["files_scanned"] == 5
     # Sidecars are attached (and copied) but reported separately from media.
     assert report["sidecars"] == {"subtitles": 1, "nfo": 1, "posters": 1}
     assert report["works"] == {"movies": 1, "series": 0, "artists": 1}
@@ -155,3 +157,84 @@ def test_import_end_to_end_with_real_tools(media_input: Path, tmp_path: Path) ->
     assert nfos[0].read_bytes() == (media_input / "Sample Movie" / "Sample Movie.nfo").read_bytes()
     posters = list(library.rglob("poster.jpg"))
     assert len(posters) == 1
+
+
+def test_import_probe_rejects_secondary_resource_reads(tmp_path: Path) -> None:
+    _require("ffmpeg")
+    _require("ffprobe")
+    segment = tmp_path / "outside.ts"
+    subprocess.run(
+        [
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "color=c=red:size=64x64:rate=10",
+            "-t",
+            "1",
+            "-c:v",
+            "mpeg2video",
+            str(segment),
+        ],
+        check=True,
+        timeout=60,
+    )
+    root = tmp_path / "input"
+    root.mkdir()
+    playlist = root / "Playlist.m3u8"
+    playlist.write_text(
+        "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n"
+        f"#EXT-X-MEDIA-SEQUENCE:0\n#EXTINF:1.0,\n{segment}\n#EXT-X-ENDLIST\n"
+    )
+    assert probe_file(playlist).streams
+    with pytest.raises(ProbeParseError):
+        probe_file(playlist, self_contained_only=True)
+
+    scenario = tmp_path / "unsafe.yaml"
+    scenario.write_text("""schema_version: 33
+scenario_id: imported-playlist
+seed: 0
+duration_scale: normal
+library:
+  roots: [{id: main, path: imported}]
+movies:
+  - id: movie
+    title: Movie
+    layout: movie_flat
+    variants:
+      - id: variant
+        label: default
+        bundle:
+          id: bundle
+          assets:
+            - id: asset
+              role: main
+              container: m3u8
+              duration_seconds: 1
+              import_source: {path: input/Playlist.m3u8}
+series: []
+artists: []
+timeline: []
+""")
+    result = subprocess.run(
+        [
+            "uv",
+            "run",
+            "chaos-librarian",
+            "materialize",
+            str(scenario),
+            "--out",
+            str(tmp_path / "run"),
+            "--json",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+        cwd=Path(__file__).parents[2],
+    )
+    assert result.returncode == 5, result.stdout + result.stderr
+    assert json.loads(result.stderr)["error_code"] == "E_MATERIALIZE_PROBE_PARSE_FAILED"

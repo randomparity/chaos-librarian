@@ -262,6 +262,10 @@ def emit_import_bundle(
             written_bundle_files.append(dest)
             with handle, source.open("rb") as original:
                 shutil.copyfileobj(original, handle)
+            with dest.open("rb") as copied:
+                digest = hashlib.file_digest(copied, "sha256").hexdigest()
+            if digest != dest_name.stem:
+                raise ValueError(f"import source changed while staging: {source}; retry import")
 
         _rewrite_bundle_paths(works, digest_to_name)
         events = [event for w in works for event in w.sidecar_events]
@@ -356,7 +360,7 @@ def _build_report(
     return ImportReport(
         scenario_path=str(out),
         bundle_dir=str(bundle_dir),
-        files_scanned=len(skips) + imported_assets,
+        files_scanned=len(skips) + imported_assets + sum(sidecars.values()),
         files_imported=imported_assets,
         files_skipped=[{"path": str(s.path), "reason": s.reason} for s in skips],
         works={

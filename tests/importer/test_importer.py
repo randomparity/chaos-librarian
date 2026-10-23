@@ -65,7 +65,8 @@ def test_scan_skips_hidden_dirs(tmp_path: Path) -> None:
 def stub_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stub probe_file with canned ProbedMedia for any input."""
 
-    def _fake(path: Path) -> ProbedMedia:
+    def _fake(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
+        assert self_contained_only
         return ProbedMedia(
             container=path.suffix.lstrip(".").lower(),
             duration_seconds=1.0,
@@ -440,3 +441,13 @@ def test_scan_rejects_special_files_without_opening_them(tmp_path: Path) -> None
     scanned, skips = scan_directory(tmp_path)
     assert scanned == []
     assert skips == [SkipRecord(fifo, "unrecognized")]
+
+
+def test_emit_rejects_source_changes_after_hashing(tmp_path: Path, stub_probe: None) -> None:
+    works, staged, skips, source = _prepare_works(tmp_path)
+    source.write_bytes(b"changed after probing")
+    out = tmp_path / "out" / "scenario.yaml"
+    with pytest.raises(ValueError, match="source changed"):
+        emit_import_bundle(tmp_path / "input", out, works, staged, skips)
+    assert not out.exists()
+    assert not list((out.parent / "media").iterdir())

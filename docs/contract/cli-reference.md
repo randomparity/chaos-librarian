@@ -51,8 +51,8 @@ bundle: it scans the input directory, probes video/audio files with ffprobe,
 classifies works (series episodes under `Season NN` directories, movies,
 music), attaches subtitle/NFO/poster sidecars, and copies accepted media into
 a content-addressed `media/` bundle beside a new scenario YAML. `--mode`
-accepts `full` (default), `sample` (first work per kind), or `dedup`
-(deduplicate by content hash). `--max-works`, `--max-variants`, and
+accepts `full` (default), `sample` (files per container capped by `--max-works`), or `dedup`
+(deduplicate by content hash). `--mode sample` alone adds no cap. `--max-works`, `--max-variants`, and
 `--max-duration-s` cap what gets imported; trimmed items are recorded as
 skips with reasons. Exit codes: `0` success, `1` operational failure
 (`E_IMPORT_FAILED`, including an empty import or missing ffprobe output),

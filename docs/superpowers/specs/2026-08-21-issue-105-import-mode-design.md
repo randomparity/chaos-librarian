@@ -260,6 +260,10 @@ name library outputs, never process-read inputs.
 **Importer input boundary.** Selected library entries must resolve to regular files before
 classification; special files are reported as unrecognized without opening them.
 
+**Probe controls.** Import probing and copied-import probing allow only self-contained
+media demuxers and the local-file protocol; playlist/manifest demuxers are excluded.
+The normal synthesis probe remains available for non-import fixtures.
+
 **Actor model.** The untrusted party is whoever authors a scenario YAML (the
 files circulate as test fixtures between people/machines). The local operator
 running `chaos-librarian` is trusted; the process runs with the operator's

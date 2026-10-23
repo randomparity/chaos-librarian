@@ -96,7 +96,7 @@ def test_copy_import_asset_copies_bytes_and_records_evidence(
     )
     monkeypatch.setattr(
         "chaos_librarian.materializer.content.synthesis.probe_file",
-        lambda _path: probed,
+        lambda _path, *, self_contained_only: probed if self_contained_only else None,
     )
 
     result = materialize_assets_phase_a(

@@ -361,7 +361,7 @@ def _copy_import_asset(
     duration_ns = time.monotonic_ns() - started
     with output_path.open("rb") as fh:
         content_hash = "sha256:" + hashlib.file_digest(fh, "sha256").hexdigest()
-    probed = probe_file(output_path)
+    probed = probe_file(output_path, self_contained_only=True)
     invocation = ToolInvocation(
         tool="import_copy",
         version="n/a",

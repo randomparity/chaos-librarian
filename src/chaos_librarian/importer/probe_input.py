@@ -31,7 +31,7 @@ def probe_inputs(files: list[ScannedFile]) -> tuple[list[ProbedInput], list[Skip
     skipped: list[SkipRecord] = []
     for scanned in files:
         try:
-            media = probe_file(scanned.path)
+            media = probe_file(scanned.path, self_contained_only=True)
             with scanned.path.open("rb") as source:
                 digest = hashlib.file_digest(source, "sha256").hexdigest()
         except Exception as exc:

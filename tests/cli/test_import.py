@@ -34,7 +34,8 @@ def media_dir(tmp_path: Path) -> Path:
 
 @pytest.fixture
 def stub_probe(monkeypatch: pytest.MonkeyPatch) -> None:
-    def fake(path: Path) -> ProbedMedia:
+    def fake(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
+        assert self_contained_only
         return ProbedMedia(
             container="mkv",
             duration_seconds=1.0,
@@ -228,7 +229,8 @@ def test_import_duration_cap_filters_before_emitting_topology(
     long_file.parent.mkdir()
     long_file.write_bytes(b"long")
 
-    def fake(path: Path) -> ProbedMedia:
+    def fake(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
+        assert self_contained_only
         return ProbedMedia(
             container="mkv",
             duration_seconds=10 if path == long_file else 1,
