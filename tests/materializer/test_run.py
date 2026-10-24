@@ -577,25 +577,23 @@ def test_orchestrator_refuses_semantically_invalid_scenario(
     assert not out.exists()
 
 
-def test_orchestrator_rejects_embedded_subtitle_mode(
+def test_orchestrator_rejects_embedded_subtitles_without_explicit_flags(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Finding 2 — Sprint 5 supports sidecar-only; embedded lands in
-    Sprint 7. Falling through silently would produce media missing the
-    requested subtitles."""
+    """Embedded tracks require explicit dispositions before any run allocation."""
     _patch_success(monkeypatch)
     scenario = tmp_path / "embedded.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_EMBEDDED_SUBS)
     out = tmp_path / "run"
     with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    issue = next(
-        issue
+    paths = {
+        issue.path
         for issue in exc.value.validation_report.issues
         if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
-    )
-    assert issue.path is not None
-    assert issue.path.endswith(".subtitles[0].mode")
+    }
+    assert any(path and path.endswith(".subtitles[0].default") for path in paths)
+    assert any(path and path.endswith(".subtitles[0].forced") for path in paths)
     assert not out.exists()
 
 
