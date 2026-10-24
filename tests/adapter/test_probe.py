@@ -157,3 +157,18 @@ def test_compare_probed_media_reports_real_audio_video_language_mismatch() -> No
     differences = compare_probed_media(expected, observed)
 
     assert ("streams.0.language", "eng", "spa") in differences
+
+
+def test_format_tags_compare_absence_empty_and_ignore_unreported() -> None:
+    expected = _media().model_copy(update={"format_tags": {"title": "", "year": "9999"}})
+    observed = _media().model_copy(update={"format_tags": {"year": "2026"}})
+    assert compare_probed_media(expected, observed) == [
+        ("format_tags.title", "", None),
+        ("format_tags.year", "9999", "2026"),
+    ]
+    assert compare_probed_media(expected, _media()) == []
+    assert compare_probed_media(_media(), expected) == []
+    changed_tool = expected.model_copy(
+        update={"format_tags": {"title": "", "year": "9999", "encoder": "unrelated tool"}}
+    )
+    assert compare_probed_media(expected, changed_tool) == []

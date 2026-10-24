@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 34
+schema_version: 35
 scenario_id: invalid-webm-h264
 seed: 141
 duration_scale: short

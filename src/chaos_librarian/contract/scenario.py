@@ -7,6 +7,7 @@ Timeline events are a discriminated union on ``action``.
 from __future__ import annotations
 
 import enum
+import re
 from datetime import date, datetime
 from typing import Annotated, Final, Literal
 
@@ -897,17 +898,29 @@ class RemuxContainerEvent(_TimelineEventBase):
     to_container: str
 
 
+_METADATA_MAX_FIELDS: Final = 16
+_METADATA_MAX_BYTES: Final = 4096
+_C0_LIMIT: Final = 32
+
+
 class EditMetadataEvent(_TimelineEventBase):
     action: Literal[TimelineActionName.EDIT_METADATA] = TimelineActionName.EDIT_METADATA
     target: str
-    # Opaque key=value pairs; materializer maps each to ffmpeg -metadata.
-    # Empty dict rejected here.
     fields: dict[str, str]
 
     @model_validator(mode="after")
-    def _check_fields_non_empty(self) -> EditMetadataEvent:
+    def _check_fields(self) -> EditMetadataEvent:
         if not self.fields:
             raise ValueError("edit_metadata.fields must be a non-empty mapping")
+        if len(self.fields) > _METADATA_MAX_FIELDS:
+            raise ValueError("edit_metadata.fields supports at most 16 entries")
+        for key, value in self.fields.items():
+            if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key) is None:
+                raise ValueError("edit_metadata keys require 1-64 ASCII letters, digits, _ or -")
+            if len(value.encode("utf-8")) > _METADATA_MAX_BYTES:
+                raise ValueError("edit_metadata values must not exceed 4096 UTF-8 bytes")
+            if any(ord(char) < _C0_LIMIT and char not in "\t\n" for char in value):
+                raise ValueError("edit_metadata values forbid C0 controls except TAB and LF")
         return self
 
 
@@ -1282,7 +1295,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[34]
+    schema_version: Literal[35]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

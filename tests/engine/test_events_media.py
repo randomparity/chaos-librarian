@@ -26,7 +26,7 @@ def _scenario(
     profiles: list[str] | None = None,
 ) -> Scenario:
     payload: dict[str, object] = {
-        "schema_version": 34,
+        "schema_version": 35,
         "scenario_id": "media",
         "seed": 1,
         "duration_scale": "short",

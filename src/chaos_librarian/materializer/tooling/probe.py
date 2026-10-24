@@ -22,6 +22,7 @@ from chaos_librarian.materializer.errors import ProbeParseError
 from chaos_librarian.materializer.tooling._subprocess import run_recorded_tool
 
 _PROBE_TIMEOUT_S: Final[float] = 15.0
+_FORMAT_TAG_MAX_BYTES: Final = 4096
 # Import inputs must not select playlist/manifest demuxers that open other resources.
 _IMPORT_DEMUXERS: Final = (
     "matroska,webm,mov,mp4,m4a,3gp,3g2,mj2,avi,mpegts,mpeg,asf,flac,mp3,wav,ogg"
@@ -225,6 +226,23 @@ def _parse_chapters(chapters_raw: object) -> list[ProbedChapter]:
     return parsed
 
 
+def _format_tags(fmt: dict[str, object]) -> dict[str, str]:
+    raw = _coerce_str_keyed_dict(fmt.get("tags", {}))
+    if raw is None:
+        raise ValueError("format tags must be an object")
+    result: dict[str, str] = {}
+    for raw_key, value in raw.items():
+        key = raw_key.casefold()
+        if key not in {"title", "year"}:
+            continue
+        if key in result or not isinstance(value, str):
+            raise ValueError("format title/year must be unique strings")
+        if len(value.encode("utf-8")) > _FORMAT_TAG_MAX_BYTES:
+            raise ValueError("format title/year exceeds 4096 UTF-8 bytes")
+        result[key] = value
+    return result
+
+
 def _build_probed_media(
     fmt: dict[str, object],
     streams: list[ProbedStream],
@@ -238,6 +256,7 @@ def _build_probed_media(
             size_bytes=int(_opt_str(fmt, "size") or 0),
             streams=streams,
             chapters=chapters,
+            format_tags=_format_tags(fmt),
         )
     except (ValueError, TypeError) as exc:
         raise ProbeParseError(

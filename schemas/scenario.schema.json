@@ -3253,7 +3253,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 34,
+      "const": 35,
       "title": "Schema Version",
       "type": "integer"
     },

@@ -67,7 +67,7 @@ def _write_track_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 34
+        f"""schema_version: 35
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -150,7 +150,7 @@ def _write_podcast_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 34
+        f"""schema_version: 35
 scenario_id: podcast-validation-smoke
 seed: 1
 duration_scale: short
@@ -285,7 +285,7 @@ def _write_movie_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 34
+        f"""schema_version: 35
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -403,7 +403,7 @@ def _write_resolution_switch_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 34
+        f"""schema_version: 35
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -838,7 +838,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 34
+        """schema_version: 35
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short

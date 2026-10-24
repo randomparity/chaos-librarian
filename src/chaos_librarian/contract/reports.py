@@ -98,7 +98,7 @@ class AssetReport(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[10]
+    schema_version: Literal[11]
     asset_id: str
     parent_kind: ParentKind
     parent_id: str

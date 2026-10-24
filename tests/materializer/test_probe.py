@@ -245,3 +245,39 @@ def test_probe_retains_audio_dispositions(monkeypatch: pytest.MonkeyPatch, tmp_p
     stream = probe_file(tmp_path / "flags.mkv").streams[1]
     assert stream.default is True
     assert stream.forced is False
+
+
+@pytest.mark.parametrize(
+    ("tags", "expected"),
+    [
+        ({}, {}),
+        ({"TITLE": "", "YEAR": "9999", "encoder": "ignored"}, {"title": "", "year": "9999"}),
+        ({"title": "雪" * 1365 + "x"}, {"title": "雪" * 1365 + "x"}),
+    ],
+)
+def test_probe_format_tags_preserve_present_empty_and_utf8(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tags: dict[str, str],
+    expected: dict[str, str],
+) -> None:
+    payload = json.loads(_GOOD_PROBE)
+    payload["format"]["tags"] = tags
+    _patch_run(monkeypatch, json.dumps(payload))
+    assert probe_file(tmp_path / "tagged.mkv").format_tags == expected
+
+
+@pytest.mark.parametrize(
+    "tags",
+    [None, [], {"title": None}, {"title": 42}, {"title": "a", "TITLE": "b"}, {"year": "雪" * 1366}],
+)
+def test_probe_rejects_untrustworthy_format_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    tags: object,
+) -> None:
+    payload = json.loads(_GOOD_PROBE)
+    payload["format"]["tags"] = tags
+    _patch_run(monkeypatch, json.dumps(payload))
+    with pytest.raises(ProbeParseError, match="failed to map"):
+        probe_file(tmp_path / "tagged.mkv")

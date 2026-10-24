@@ -72,6 +72,7 @@ class ProbedMedia(BaseModel):
     size_bytes: int
     streams: list[ProbedStream]
     chapters: list[ProbedChapter] = Field(default_factory=list)
+    format_tags: dict[str, str] | None = None
 
 
 class ManifestMovie(BaseModel):
@@ -220,7 +221,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[11]
+    schema_version: Literal[12]
     movies: list[ManifestMovie]
     series: list[ManifestSeries]
     seasons: list[ManifestSeason]
