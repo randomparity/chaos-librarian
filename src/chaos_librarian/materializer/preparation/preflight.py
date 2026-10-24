@@ -56,6 +56,7 @@ from chaos_librarian.media_matrix import (
     RESOLUTION_SWITCH_VIDEO_RESOLUTION,
     RESOLUTION_SWITCH_VIDEO_SOURCE,
     SUPPORTED_AUDIO_ONLY_CODECS_BY_CONTAINER,
+    track_disposition_errors,
 )
 from chaos_librarian.topology import iter_asset_contexts
 
@@ -90,10 +91,7 @@ def iter_assets(scenario: Scenario) -> Iterator[Asset]:
 def preflight_asset(
     *,
     parent_kind: ParentKind,
-    video: VideoTrack | None,
-    audios: Sequence[AudioTrack],
-    subtitles: Sequence[SubtitleTrack],
-    container: str,
+    asset: Asset,
 ) -> None:
     """Reject unsupported media shapes before run-dir allocation.
 
@@ -106,6 +104,11 @@ def preflight_asset(
     ``codec=ass`` would fall through and the materialize "success" would
     silently drop the requested subtitles.
     """
+    video, audios, subtitles, container = asset.video, asset.audio, asset.subtitles, asset.container
+    errors = track_disposition_errors(asset.model_dump(mode="json"))
+    if errors:
+        field, message = errors[0]
+        raise UnsupportedMaterializationError(message, field=field, payload={})
     if parent_kind in _AUDIO_ONLY_PARENT_KINDS:
         _preflight_audio_only_asset(
             parent_kind=parent_kind,
@@ -318,7 +321,7 @@ def _preflight_audio_inputs(audios: Sequence[AudioTrack]) -> list[FFmpegInput]:
 def _preflight_subtitles(subtitles: Sequence[SubtitleTrack]) -> None:
     """Reject declared subtitle recipes outside the materializer matrix."""
     for index, sub in enumerate(subtitles):
-        if sub.mode is not SubtitleMode.SIDECAR:
+        if sub.mode not in {SubtitleMode.SIDECAR, SubtitleMode.EMBEDDED}:
             raise UnsupportedMaterializationError(
                 f"subtitle mode {sub.mode!r} not supported",
                 field=f"subtitle[{index}].mode",

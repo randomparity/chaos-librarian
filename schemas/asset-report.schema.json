@@ -763,7 +763,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 9,
+      "const": 10,
       "title": "Schema Version",
       "type": "integer"
     },

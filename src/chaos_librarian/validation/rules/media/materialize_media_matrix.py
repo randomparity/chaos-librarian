@@ -30,6 +30,8 @@ from chaos_librarian.media_matrix import (
     SUPPORTED_VIDEO_CODECS_BY_CONTAINER,
     SUPPORTED_VIDEO_CONTAINERS,
     SUPPORTED_VIDEO_SOURCES,
+    has_track_dispositions,
+    track_disposition_errors,
 )
 from chaos_librarian.validation.codes import E_MATERIALIZE_UNSUPPORTED
 from chaos_librarian.validation.rules.core.raw_helpers import (
@@ -100,7 +102,14 @@ def rule_materialize_media_matrix(
             # apply.
             continue
         _check_asset_context(context, reporter)
+        for field, message in track_disposition_errors(context.asset):
+            suffix = tuple(int(part) if part.isdecimal() else part for part in field.split("."))
+            reporter.error(
+                code=E_MATERIALIZE_UNSUPPORTED, message=message, loc=(*context.asset_loc, *suffix)
+            )
+
     _check_import_asset_timeline_events(raw, reporter)
+    _check_disposition_timeline_events(raw, reporter)
 
 
 _TRACKED_MEDIA_ACTIONS: Final[frozenset[str]] = frozenset(
@@ -676,7 +685,7 @@ def _check_subtitle_mode(
     reporter: Reporter,
 ) -> None:
     mode = _enum(SubtitleMode, subtitle.get("mode"))
-    if mode is None or mode is SubtitleMode.SIDECAR:
+    if mode is None or mode in {SubtitleMode.SIDECAR, SubtitleMode.EMBEDDED}:
         return
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
@@ -830,3 +839,16 @@ def _check_mode_expected_string_field(
         message=message,
         loc=loc,
     )
+
+
+def _check_disposition_timeline_events(raw: Mapping[str, object], reporter: Reporter) -> None:
+    feature_ids = {
+        c.asset.get("id") for c in iter_asset_contexts(raw) if has_track_dispositions(c.asset)
+    }
+    for index, event in _iter_timeline_events(raw):
+        if event.get("target") in feature_ids and event.get("action") in _TRACKED_MEDIA_ACTIONS:
+            reporter.error(
+                code=E_MATERIALIZE_UNSUPPORTED,
+                message="track disposition assets do not support track-changing timeline actions",
+                loc=("timeline", index, "action"),
+            )

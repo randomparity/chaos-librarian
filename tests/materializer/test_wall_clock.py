@@ -67,7 +67,7 @@ _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 _FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 33
+schema_version: 34
 scenario_id: resolution-switch-wall-clock-capability-test
 seed: 133
 duration_scale: short
@@ -115,7 +115,7 @@ def test_existing_out_dir_raises_write_error(tmp_path: Path) -> None:
 
 
 _MKV_MUXING_PROFILE_SCENARIO = """\
-schema_version: 33
+schema_version: 34
 scenario_id: wall-clock-muxing-profile-capability-test
 seed: 138
 duration_scale: short
@@ -153,7 +153,7 @@ timeline: []
 """
 
 _WEBM_PROFILE_SCENARIO = """\
-schema_version: 33
+schema_version: 34
 scenario_id: wall-clock-webm-capability-test
 seed: 138
 duration_scale: short
@@ -505,7 +505,7 @@ def _write_scenario(
     path = tmp_path / f"{scenario_id}.yaml"
     payload = dedent(
         f"""
-            schema_version: 33
+            schema_version: 34
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short
@@ -561,7 +561,7 @@ def _write_malformed_scenario(
     path.write_text(
         dedent(
             f"""
-            schema_version: 33
+            schema_version: 34
             scenario_id: {scenario_id}
             seed: 7
             duration_scale: short

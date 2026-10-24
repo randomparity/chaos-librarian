@@ -67,7 +67,7 @@ def _write_track_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 33
+        f"""schema_version: 34
 scenario_id: track-{container}-validation-smoke
 seed: 1
 duration_scale: short
@@ -150,7 +150,7 @@ def _write_podcast_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 33
+        f"""schema_version: 34
 scenario_id: podcast-validation-smoke
 seed: 1
 duration_scale: short
@@ -285,7 +285,7 @@ def _write_movie_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 33
+        f"""schema_version: 34
 scenario_id: movie-validation-smoke
 seed: 1
 duration_scale: short
@@ -403,7 +403,7 @@ def _write_resolution_switch_scenario(
         else ""
     )
     path.write_text(
-        f"""schema_version: 33
+        f"""schema_version: 34
 scenario_id: resolution-switch-validation-smoke
 seed: 1
 duration_scale: short
@@ -541,9 +541,13 @@ def test_resolution_switch_video_rejects_unsupported_combinations(
         hdr_mode=case.hdr_mode,
     )
 
-    issue_path = _first_materialize_issue_path(scenario)
-
-    assert issue_path.endswith(case.field_suffix)
+    report = run_validation(prepare_run_input(scenario))
+    assert any(
+        issue.code == codes.E_MATERIALIZE_UNSUPPORTED
+        and issue.path is not None
+        and issue.path.endswith(case.field_suffix)
+        for issue in report.issues
+    )
 
 
 def test_unsupported_video_resolution_names_field(tmp_path: Path) -> None:
@@ -834,7 +838,7 @@ def test_movie_audio_codec_flac_is_unsupported(tmp_path: Path) -> None:
 def test_hevc_sd_mkv_aac_validates_clean(tmp_path: Path) -> None:
     scenario = tmp_path / "hevc.yaml"
     scenario.write_text(
-        """schema_version: 33
+        """schema_version: 34
 scenario_id: hevc-validation-smoke
 seed: 1
 duration_scale: short
@@ -954,7 +958,7 @@ def test_subtitle_recipe_matrix_rejects_unsupported_combinations(
     assert issue.path.endswith(field_suffix)
 
 
-def test_subtitle_recipe_matrix_rejects_embedded_mode(tmp_path: Path) -> None:
+def test_subtitle_recipe_matrix_rejects_embedded_without_explicit_flags(tmp_path: Path) -> None:
     scenario = tmp_path / "subtitle-embedded.yaml"
     _write_movie_scenario(scenario, subtitles=True, subtitle_mode="embedded")
 
@@ -963,7 +967,7 @@ def test_subtitle_recipe_matrix_rejects_embedded_mode(tmp_path: Path) -> None:
     assert report.ok is False
     issue = next(issue for issue in report.issues if issue.code == codes.E_MATERIALIZE_UNSUPPORTED)
     assert issue.path is not None
-    assert issue.path.endswith(".subtitles[0].mode")
+    assert issue.path.endswith(".audio[0].default")
 
 
 def test_interlaced_video_field_order_validates_clean(tmp_path: Path) -> None:

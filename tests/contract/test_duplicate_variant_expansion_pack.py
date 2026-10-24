@@ -61,10 +61,7 @@ def test_duplicate_variant_expansion_pack_defines_expected_cases() -> None:
     for context in iter_asset_contexts(scenario):
         preflight_asset(
             parent_kind=context.parent_kind,
-            video=context.asset.video,
-            audios=context.asset.audio,
-            subtitles=context.asset.subtitles,
-            container=context.asset.container,
+            asset=context.asset,
         )
 
 

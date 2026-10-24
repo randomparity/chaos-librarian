@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping
 from typing import Final
 
 SUPPORTED_VIDEO_CODECS_BY_CONTAINER: Final[dict[str, frozenset[str]]] = {
@@ -69,3 +71,126 @@ RESOLUTION_SWITCH_VIDEO_SEQUENCE: Final = "sd_to_hd"
 IMPORT_VIDEO_CONTAINERS: Final[frozenset[str]] = frozenset(
     {"mkv", "mp4", "webm", "avi", "mov", "ts", "m4v", "wmv", "mpg", "mpeg"}
 )
+
+
+DISPOSITION_MAX_TRACKS: Final = 8
+DISPOSITION_MAX_LANGUAGE_BYTES: Final = 64
+DISPOSITION_MAX_DURATION: Final = 30
+DISPOSITION_MAX_BYTES: Final = 64 * 1024 * 1024
+DISPOSITION_MAX_OUTPUT_BYTES: Final = 1024 * 1024
+
+
+def has_track_dispositions(asset: Mapping[str, object]) -> bool:
+    """Whether an asset requires the bounded embedded/disposition path."""
+    return any(
+        track.get("mode") == "embedded"
+        or any(track.get(flag) is not None for flag in ("default", "forced"))
+        for kind in ("audio", "subtitles")
+        for track in _track_mappings(asset.get(kind))
+    )
+
+
+def _track_mappings(value: object) -> list[Mapping[str, object]]:
+    if not isinstance(value, list | tuple):
+        return []
+    return [{str(k): v for k, v in track.items()} for track in value if isinstance(track, dict)]
+
+
+def track_disposition_errors(asset: Mapping[str, object]) -> list[tuple[str, str]]:
+    """Shared raw/typed/direct synthesis matrix; shape validation owns missing types."""
+    if not has_track_dispositions(asset):
+        return []
+    errors: list[tuple[str, str]] = []
+    video_raw = asset.get("video")
+    video = {str(k): v for k, v in video_raw.items()} if isinstance(video_raw, dict) else None
+    if asset.get("container") != "mkv" or video is None:
+        errors.append(("container", "track dispositions require MKV video"))
+    else:
+        for name, expected in (("codec", "h264"), ("resolution", "sd")):
+            if video.get(name) != expected:
+                errors.append((f"video.{name}", f"track dispositions require {name}={expected}"))
+        for name in (
+            "vfr_cadence",
+            "field_order",
+            "color_space",
+            "color_range",
+            "hdr_mode",
+            "resolution_sequence",
+        ):
+            if video.get(name) is not None:
+                errors.append((f"video.{name}", f"track dispositions do not support {name}"))
+    duration = asset.get("duration_seconds")
+    if (
+        not isinstance(duration, int | float)
+        or not math.isfinite(duration)
+        or not 0 < duration <= DISPOSITION_MAX_DURATION
+    ):
+        errors.append(
+            ("duration_seconds", "track dispositions require finite duration in (0, 30] seconds")
+        )
+    for name in (
+        "matroska_muxing_profile",
+        "embedded_chapters",
+        "embedded_cover_art",
+        "mp4_moov_placement",
+        "same_content_as",
+        "hardlinked_to",
+        "symlink",
+        "import_source",
+    ):
+        if asset.get(name) is not None:
+            errors.append((name, f"track dispositions do not support {name}"))
+    errors.extend(_disposition_track_errors(asset))
+    return errors
+
+
+def _disposition_track_errors(asset: Mapping[str, object]) -> list[tuple[str, str]]:
+    errors: list[tuple[str, str]] = []
+    for kind in ("audio", "subtitles"):
+        tracks = _track_mappings(asset.get(kind))
+        embedded = [t for t in tracks if kind == "audio" or t.get("mode") == "embedded"]
+        if len(embedded) > DISPOSITION_MAX_TRACKS:
+            errors.append((kind, "track dispositions allow at most 8 tracks per kind"))
+        for index, track in enumerate(tracks):
+            errors.extend(_track_disposition_errors(kind, index, track))
+    return errors
+
+
+def _track_disposition_errors(
+    kind: str, index: int, track: Mapping[str, object]
+) -> list[tuple[str, str]]:
+    prefix = f"{kind}.{index}"
+    if kind == "subtitles" and track.get("mode") != "embedded":
+        return [
+            (f"{prefix}.{flag}", "only embedded subtitles support dispositions")
+            for flag in ("default", "forced")
+            if track.get(flag) is not None
+        ]
+    errors: list[tuple[str, str]] = [
+        (
+            f"{prefix}.{flag}",
+            f"explicit {flag} boolean required on every audio/embedded subtitle track",
+        )
+        for flag in ("default", "forced")
+        if not isinstance(track.get(flag), bool)
+    ]
+    language = track.get("language")
+    if isinstance(language, str) and len(language.encode("utf-8")) > DISPOSITION_MAX_LANGUAGE_BYTES:
+        errors.append((f"{prefix}.language", "track disposition language must fit 64 UTF-8 bytes"))
+    if kind == "audio":
+        if track.get("sample_format") is not None:
+            errors.append(
+                (f"{prefix}.sample_format", "track dispositions do not support sample_format")
+            )
+        return errors
+    for name, expected in (
+        ("codec", "srt"),
+        ("source", "generated_srt"),
+        ("encoding", "utf8"),
+        ("timing_profile", "normal"),
+    ):
+        if track.get(name, expected) != expected:
+            errors.append(
+                (f"{prefix}.{name}", f"embedded disposition subtitles require {name}={expected}")
+            )
+    return errors

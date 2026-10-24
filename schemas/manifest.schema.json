@@ -1041,7 +1041,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 10,
+      "const": 11,
       "title": "Schema Version",
       "type": "integer"
     },

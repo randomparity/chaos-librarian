@@ -444,13 +444,7 @@ def test_seed_manifest_materialize_gates_pass_preflight() -> None:
 
         preflight_timeline(scenario)
         for context in iter_asset_contexts(scenario):
-            preflight_asset(
-                parent_kind=context.parent_kind,
-                video=context.asset.video,
-                audios=context.asset.audio,
-                subtitles=context.asset.subtitles,
-                container=context.asset.container,
-            )
+            preflight_asset(parent_kind=context.parent_kind, asset=context.asset)
 
 
 def test_sidecar_subtitle_lane_embeds_before_extracting() -> None:

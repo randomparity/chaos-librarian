@@ -34,7 +34,7 @@ Scanner-only minimal asset:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
@@ -184,7 +184,7 @@ Movie topology:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",

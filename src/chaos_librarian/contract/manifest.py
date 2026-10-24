@@ -58,8 +58,8 @@ class ProbedStream(BaseModel):
     title: str | None = None  # stream metadata
     role: str | None = None  # audio-only stream metadata
     attached_pic: bool | None = None  # video-only
-    default: bool | None = None  # subtitle-only
-    forced: bool | None = None  # subtitle-only
+    default: bool | None = None  # audio/subtitle
+    forced: bool | None = None  # audio/subtitle
 
 
 class ProbedMedia(BaseModel):
@@ -220,7 +220,7 @@ class ManifestSidecar(BaseModel):
 class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[10]
+    schema_version: Literal[11]
     movies: list[ManifestMovie]
     series: list[ManifestSeries]
     seasons: list[ManifestSeason]
