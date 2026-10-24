@@ -102,7 +102,7 @@ class TestAssetReport:
 
     def _report(self, current: AssetSnapshot | None) -> AssetReport:
         return AssetReport(
-            schema_version=10,
+            schema_version=11,
             asset_id="asset_hd_main",
             parent_kind=ParentKind.MOVIE,
             parent_id="movie_blazar",
@@ -133,7 +133,7 @@ class TestAssetReport:
 
     def test_rejects_extra_field(self) -> None:
         payload = {
-            "schema_version": 10,
+            "schema_version": 11,
             "asset_id": "asset_hd_main",
             "parent_kind": "movie",
             "parent_id": "movie_blazar",
@@ -157,7 +157,7 @@ class TestAssetReport:
 
     def test_schema_version_constant_is_nine(self) -> None:
         """The exported constant pins the Literal annotation."""
-        assert ASSET_REPORT_SCHEMA_VERSION == 10
+        assert ASSET_REPORT_SCHEMA_VERSION == 11
 
 
 class TestOtherReports:
@@ -329,7 +329,7 @@ def test_asset_snapshot_round_trips_corruption_metadata() -> None:
 
 
 def test_asset_report_schema_version_is_eight() -> None:
-    assert ASSET_REPORT_SCHEMA_VERSION == 10
+    assert ASSET_REPORT_SCHEMA_VERSION == 11
 
 
 def test_domain_report_constants_start_at_one() -> None:
@@ -342,7 +342,7 @@ def test_domain_report_constants_start_at_one() -> None:
     assert DISC_REPORT_SCHEMA_VERSION == 1
     assert TRACK_REPORT_SCHEMA_VERSION == 1
     assert VARIANT_REPORT_SCHEMA_VERSION == 2
-    assert ASSET_REPORT_SCHEMA_VERSION == 10
+    assert ASSET_REPORT_SCHEMA_VERSION == 11
     assert BUNDLE_REPORT_SCHEMA_VERSION == 1
 
 
@@ -363,7 +363,7 @@ def test_variant_report_uses_parent_kind_and_parent_id() -> None:
 def test_asset_report_v9_carries_topology_fields() -> None:
     snapshot = AssetSnapshot(location_path=None, version_id="version_0001", version_index=0)
     report = AssetReport(
-        schema_version=10,
+        schema_version=11,
         asset_id="asset_episode",
         parent_kind=ParentKind.EPISODE,
         parent_id="episode_01",
@@ -406,7 +406,7 @@ def test_path_history_entry_round_trip() -> None:
 
 def test_asset_report_path_history_defaults_to_empty_list() -> None:
     payload = {
-        "schema_version": 10,
+        "schema_version": 11,
         "asset_id": "asset_hd_main",
         **_asset_report_topology_payload(),
         "initial": {
@@ -427,7 +427,7 @@ def test_asset_report_path_history_defaults_to_empty_list() -> None:
 
 def test_asset_report_v9_round_trip_with_path_history() -> None:
     payload = {
-        "schema_version": 10,
+        "schema_version": 11,
         "asset_id": "asset_hd_main",
         **_asset_report_topology_payload(),
         "initial": {
@@ -486,7 +486,7 @@ def test_asset_report_v9_default_version_history_empty():
         version_index=0,
     )
     report = AssetReport(
-        schema_version=10,
+        schema_version=11,
         asset_id="asset_main",
         parent_kind=ParentKind.TRACK,
         parent_id="track_main",
@@ -504,4 +504,4 @@ def test_asset_report_v9_default_version_history_empty():
         current=snapshot,
     )
     assert report.version_history == []
-    assert report.schema_version == 10
+    assert report.schema_version == 11

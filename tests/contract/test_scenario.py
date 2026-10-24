@@ -283,7 +283,7 @@ def test_movie_only_scenario_v23_payload() -> None:
 
     scenario = Scenario.model_validate(payload)
 
-    assert scenario.schema_version == 34
+    assert scenario.schema_version == 35
     assert scenario.movies[0].layout is MovieLayout.MOVIE_FLAT
     assert scenario.series == ()
     assert scenario.artists == ()
@@ -1154,7 +1154,7 @@ def test_video_track_rejects_unknown_resolution_sequence() -> None:
 
 
 def test_scenario_schema_version_is_thirty_one() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 34
+    assert SCENARIO_SCHEMA_VERSION == 35
 
 
 def test_scenario_accepts_profile_labels() -> None:
@@ -2282,3 +2282,41 @@ def test_asset_rejects_symlink_with_own_subtitles() -> None:
     )
     with pytest.raises(ValidationError, match="subtitles"):
         Scenario.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"title": "雪" * 1366},
+        {"title": "x\x00y"},
+        {"title": "\x1b"},
+        {"title": "\r"},
+        {"": "x"},
+        {"a=b": "x"},
+        {"k" * 65: "x"},
+        {f"key{i}": "value" for i in range(17)},
+    ],
+)
+def test_edit_metadata_bounds_untrusted_fields(fields: dict[str, str]) -> None:
+    with pytest.raises(ValidationError):
+        EditMetadataEvent.model_validate(
+            {
+                "id": "meta",
+                "at": "1s",
+                "target": "a0",
+                "fields": fields,
+            }
+        )
+
+
+@pytest.mark.parametrize("value", ["", "雪" * 1365 + "x", "雪\tline\nnext"])
+def test_edit_metadata_accepts_bounded_pathological_values(value: str) -> None:
+    event = EditMetadataEvent.model_validate(
+        {
+            "id": "meta",
+            "at": "1s",
+            "target": "a0",
+            "fields": {"title": value},
+        }
+    )
+    assert event.fields == {"title": value}

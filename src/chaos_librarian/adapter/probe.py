@@ -20,6 +20,12 @@ def compare_probed_media(
         differences.append(
             ("duration_seconds", expected.duration_seconds, observed.duration_seconds)
         )
+    if expected.format_tags is not None and observed.format_tags is not None:
+        for key in ("title", "year"):
+            expected_value = expected.format_tags.get(key)
+            observed_value = observed.format_tags.get(key)
+            if expected_value != observed_value:
+                differences.append((f"format_tags.{key}", expected_value, observed_value))
     if len(expected.streams) != len(observed.streams):
         differences.append(("streams.length", len(expected.streams), len(observed.streams)))
     for index, (expected_stream, observed_stream) in enumerate(

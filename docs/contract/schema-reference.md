@@ -46,15 +46,15 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 34 |
-| manifest | 11 |
+| scenario | 35 |
+| manifest | 12 |
 | journal | 1 |
-| replay bundle | 13 |
+| replay bundle | 14 |
 | validation | 1 |
 | materialization | 17 |
 | run sentinel | 2 |
 | capabilities | 7 |
-| asset report | 10 |
+| asset report | 11 |
 | variant report | 2 |
 | bundle report | 1 |
 | movie report | 1 |
@@ -65,7 +65,7 @@ Current checked-in contract versions:
 | album report | 1 |
 | disc report | 1 |
 | track report | 1 |
-| observed state | 5 |
+| observed state | 6 |
 | divergence | 1 |
 
 Scenario v31 adds an optional movie `edition` on variants (`theatrical` /
@@ -172,3 +172,43 @@ v11, asset-report v10 and observed-state v5 retain audio as well as subtitle
 flags in `ProbedStream`; replay-bundle v13 carries the matching intent/evidence
 semantics. Missing probe flags remain null. These are versioned contracts;
 consumers must support the new versions before ingesting these artifacts.
+
+## Retained format metadata (#246)
+
+Scenario v35 bounds `edit_metadata.fields`: 1–16 entries; keys use 1–64 ASCII
+letters, digits, `_` or `-`; values are at most 4096 UTF-8 bytes and reject C0
+controls except TAB/LF. Empty values request tag deletion. Existing keys and
+containers remain available within these input limits. Replay-bundle v14 embeds
+scenario v35. Update authored scenario headers; old versions are rejected.
+
+Manifest v12, asset-report v11 and observed-state v6 add optional
+`ProbedMedia.format_tags`. Omitted/null means unreported evidence; `{}` means
+none of the supported tags was observed. The built-in probe extracts only
+case-insensitive `title` and `year` into lowercase keys, preserving string
+values exactly. An absent key differs from a present empty string. Duplicate
+case variants, nonstring supported values and values above 4096 UTF-8 bytes
+fail probing instead of being coerced or truncated. Other tags are ignored.
+Consumers supplying the map should use lowercase keys. The adapter compares
+`format_tags.title` and `format_tags.year` only when both sides supply a map;
+encoder tags and unreported evidence do not generate differences. Journal
+`state_delta.fields` remains the request, never proof of the retained value.
+
+### Bounded retained-output matrix
+
+The feature corpus in `tests/integration/test_misleading_metadata_real.py` uses
+seed 246, short one-second SD H.264/AAC MKV files with at most two audio tracks.
+Tests enforce <=30 seconds and <=64 MiB, probe within 15 seconds/1 MiB output,
+and inspect actual tags, NFO XML and stream labels. Existing media-tool calls
+retain their 60-second timeout. The seven cases cover filename/title and
+NFO/title disagreements, year `9999`, a 4096-byte Unicode title, Unicode with
+TAB/LF, deletion of existing title/year, missing tags and conflicting eng/fra
+stream labels. Ordinary title/year fixtures provide the healthy control.
+
+A representative title/year/NFO case also runs and replays with comparison
+checks. Empty edit values produce absent tags in this matrix, not retained
+empty strings. Probe success makes no decodability claim. Generic metadata
+edits outside this matrix retain existing behavior, without a pathological
+retention guarantee. No metadata case uses explicit track dispositions: those
+remain incompatible with `edit_metadata` under #245. Language disagreement
+uses a separate asset; synthesized audio has no claimed spoken language.
+#248 owns seeded scheduling, aggregate corpus and combined coverage budgets.

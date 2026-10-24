@@ -757,6 +757,21 @@
           "title": "Duration Seconds",
           "type": "number"
         },
+        "format_tags": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Format Tags"
+        },
         "size_bytes": {
           "title": "Size Bytes",
           "type": "integer"
@@ -1041,7 +1056,7 @@
       "type": "array"
     },
     "schema_version": {
-      "const": 11,
+      "const": 12,
       "title": "Schema Version",
       "type": "integer"
     },

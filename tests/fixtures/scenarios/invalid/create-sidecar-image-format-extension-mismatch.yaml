@@ -1,5 +1,5 @@
 # expected: E_MATERIALIZE_UNSUPPORTED
-schema_version: 34
+schema_version: 35
 scenario_id: create-sidecar-image-format-extension-mismatch
 seed: 42
 duration_scale: short
