@@ -24,7 +24,7 @@ def test_existing_topology_roundtrips_unchanged_at_v32(fixture: str) -> None:
     scenario = Scenario.model_validate(raw)
     dump = scenario.model_dump(mode="json", by_alias=True)
 
-    assert dump["schema_version"] == 35
+    assert dump["schema_version"] == 36
     # Idempotent round-trip: re-validating the dump must reproduce it exactly,
     # proving no movie/TV/podcast field gained a non-default value at v32.
     redump = Scenario.model_validate(dump).model_dump(mode="json", by_alias=True)

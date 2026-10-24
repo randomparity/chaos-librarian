@@ -129,7 +129,7 @@ container such as `flac`, `mp3`, or `m4a`, no `video` key, and at least one
 supported audio stream.
 
 ```yaml
-schema_version: 35
+schema_version: 36
 scenario_id: audio-only-track
 seed: 10603
 duration_scale: short
@@ -325,3 +325,56 @@ in this tier. `fuzz-smoke` may run only in a separate selectable job.
 Performance profile labels are accepted by the scenario contract. Extended and
 stress jobs must keep capability skips visible in test output and must fail
 during setup when the runner lacks the selected profile's required free disk.
+
+### Bounded structural damage
+
+Scenario v36 adds these selectors to existing malformed-media actions:
+
+```yaml
+# MP4: erase the moov box type; expected to fail probing.
+- id: damage_index
+  at: 1s
+  action: corrupt_container_header
+  target: asset_main
+  region: mp4_moov
+# On a separate MKV asset, region: mkv_cues erases the Cues element ID.
+# On a separate MP3 asset:
+- id: truncate_frames
+  at: 1s
+  action: truncate_file
+  target: asset_audio
+  boundary: mp3_after_16_frames
+```
+
+Opt into `profiles: [malformed-media]`. A structural `region` excludes non-null
+`bytes`; `boundary` excludes non-null `keep_bytes`. Existing leading-byte and
+absolute truncation forms remain available. These are independent recipes, not
+composable damage stages on one asset.
+
+| Selector | Supported generated input | Observed feature proof |
+| --- | --- | --- |
+| `mp4_moov` | H.264 MP4, `sd`, moov at start or end | Four moov type bytes zeroed; failed probe |
+| `mkv_cues` | H.264 MKV, `sd`, ordinary muxing | Four Cues ID bytes zeroed; probe and linear decode succeed |
+| `mp3_after_16_frames` | One mono/stereo MP3 track, 44100 Hz | Prefix through 16 complete audio frames; shorter decoded audio |
+
+Inputs must have finite duration in (0,30] seconds; outputs are limited to 64 MiB.
+Video permits at most one mono/stereo AAC track. Imports, aliases/links on the
+target asset, subtitles, embedded chapters/cover art, advanced video/muxing
+profiles and explicit track dispositions are unsupported. The target may have
+placement/path/mtime actions, but no second byte mutation. A too-short MP3,
+missing moov/Cues, malformed structural lengths, or exhausted parser/tool limits
+fails explicitly. Normal static unsupported cells fail before run creation;
+byte-dependent resolution failures preserve the target bytes and fail the run.
+
+The parser visits at most 4096 boxes/Segment children. Unknown-size MKV Segment
+is allowed; unknown-size children are rejected. Tool captures are capped at
+1 MiB, synthesis at 60 seconds and probes at 15 seconds. No container parser
+searches payloads for marker strings.
+
+Use `run`, then `replay ... --against ...`, for same-toolchain replay evidence.
+The feature tests pair healthy controls with actual changed bytes, independent
+format inspection, probe results and decoding for the readable cells. MP3 Xing
+metadata can still advertise the original duration after truncation: use frame
+counts or decoded samples to establish the shorter prefix. `still_probeable`
+alone is never a decodability assertion, and neither outcome prescribes consumer
+repair or recovery policy. Tool-version changes need not produce identical bytes.

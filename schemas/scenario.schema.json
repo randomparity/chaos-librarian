@@ -569,15 +569,38 @@
           "type": "string"
         },
         "bytes": {
+          "anyOf": [
+            {
+              "maximum": 4096,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": 64,
-          "maximum": 4096,
-          "minimum": 1,
-          "title": "Bytes",
-          "type": "integer"
+          "title": "Bytes"
         },
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "region": {
+          "anyOf": [
+            {
+              "enum": [
+                "mp4_moov",
+                "mkv_cues"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Region"
         },
         "target": {
           "title": "Target",
@@ -2856,14 +2879,35 @@
           "title": "At",
           "type": "string"
         },
+        "boundary": {
+          "anyOf": [
+            {
+              "const": "mp3_after_16_frames",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Boundary"
+        },
         "id": {
           "title": "Id",
           "type": "string"
         },
         "keep_bytes": {
-          "minimum": 1,
-          "title": "Keep Bytes",
-          "type": "integer"
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Keep Bytes"
         },
         "target": {
           "title": "Target",
@@ -2873,8 +2917,7 @@
       "required": [
         "id",
         "at",
-        "target",
-        "keep_bytes"
+        "target"
       ],
       "title": "TruncateFileEvent",
       "type": "object"
@@ -3253,7 +3296,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 35,
+      "const": 36,
       "title": "Schema Version",
       "type": "integer"
     },

@@ -46,10 +46,10 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 35 |
+| scenario | 36 |
 | manifest | 12 |
 | journal | 1 |
-| replay bundle | 14 |
+| replay bundle | 15 |
 | validation | 1 |
 | materialization | 17 |
 | run sentinel | 2 |
@@ -212,3 +212,11 @@ retention guarantee. No metadata case uses explicit track dispositions: those
 remain incompatible with `edit_metadata` under #245. Language disagreement
 uses a separate asset; synthesized audio has no claimed spoken language.
 #248 owns seeded scheduling, aggregate corpus and combined coverage budgets.
+
+Scenario v36 adds optional structural `region` selectors (`mp4_moov`, `mkv_cues`)
+to `corrupt_container_header`, mutually exclusive with non-null `bytes`, and
+`boundary: mp3_after_16_frames` to `truncate_file`, exclusive with `keep_bytes`.
+Omitting a header region and byte count still overwrites 64 leading bytes.
+Replay-bundle v15 embeds scenario v36. Current scenario/replay versions are
+required; regenerate authored inputs before replaying with this version.
+The bounded matrix and limits are in [integration recipes](integration-recipes.md#bounded-structural-damage).

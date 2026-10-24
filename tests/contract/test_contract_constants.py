@@ -42,9 +42,9 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_current_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 35
+    assert SCENARIO_SCHEMA_VERSION == 36
     assert MANIFEST_SCHEMA_VERSION == 12
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 14
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 15
     assert ASSET_REPORT_SCHEMA_VERSION == 11
     assert VARIANT_REPORT_SCHEMA_VERSION == 2
     assert OBSERVED_STATE_SCHEMA_VERSION == 6

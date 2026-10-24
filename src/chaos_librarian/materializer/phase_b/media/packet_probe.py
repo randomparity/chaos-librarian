@@ -25,7 +25,9 @@ class PacketProbeError(ValueError):
         self.tool_invocation_index = tool_invocation_index
 
 
-def _run_ffprobe_packets(argv: list[str], *, ffprobe_version: str) -> RecordedToolResult:
+def _run_ffprobe_packets(
+    argv: list[str], *, ffprobe_version: str, max_output_bytes: int | None = None
+) -> RecordedToolResult:
     """Run ffprobe packet query; split out for unit-test monkeypatching."""
     return run_recorded_tool(
         argv,
@@ -34,6 +36,7 @@ def _run_ffprobe_packets(argv: list[str], *, ffprobe_version: str) -> RecordedTo
         timeout_s=_PROBE_TIMEOUT_S,
         stdout_mode="pipe",
         text=True,
+        max_output_bytes=max_output_bytes,
     )
 
 
@@ -45,6 +48,8 @@ def resolve_packet_byte_range(
     packet_count: int,
     ffprobe_version: str = "",
     invocations: list[ToolInvocation] | None = None,
+    max_output_bytes: int | None = None,
+    contiguous: bool = False,
 ) -> tuple[int, int]:
     """Return ``(byte_start, byte_count)`` for a stream packet range."""
     selector = _stream_selector(stream)
@@ -61,7 +66,11 @@ def resolve_packet_byte_range(
         "json",
         str(path),
     ]
-    result = _run_ffprobe_packets(argv, ffprobe_version=ffprobe_version)
+    result = _run_ffprobe_packets(
+        argv,
+        ffprobe_version=ffprobe_version,
+        **({"max_output_bytes": max_output_bytes} if max_output_bytes is not None else {}),
+    )
     invocation_index = _append_invocation(invocations, invocation=result.invocation)
     try:
         if result.invocation.exit_code != 0:
@@ -74,6 +83,12 @@ def resolve_packet_byte_range(
                 f"{packet_start}:{packet_end} > {len(packets)}"
             )
         selected = _usable_packet_range(packets[packet_start:packet_end], stream=stream, path=path)
+        if contiguous:
+            next_pos = selected[0][0]
+            for pos, size in selected:
+                if pos != next_pos or size <= 0:
+                    raise ValueError("MP3 packets must have positive contiguous byte spans")
+                next_pos = pos + size
         first_pos = selected[0][0]
         last_pos, last_size = selected[-1]
         return first_pos, (last_pos + last_size) - first_pos

@@ -25,6 +25,12 @@ from chaos_librarian.materializer.phase_b.corruption.bytes import (
     truncate_bytes,
     zero_range,
 )
+from chaos_librarian.materializer.phase_b.corruption.structure import (
+    STRUCTURAL_TOOL_OUTPUT_BYTES,
+    mp3_prefix_end,
+    read_structural_bytes,
+    resolve_header_region,
+)
 from chaos_librarian.materializer.phase_b.media.packet_probe import resolve_packet_byte_range
 from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
 from chaos_librarian.materializer.tooling.ffmpeg import run_ffmpeg
@@ -96,10 +102,18 @@ _Handler = Callable[[CorruptionPhaseBContext, JournalEntry, int], CorruptionActi
 
 def _probe_corrupted_output(
     output_path: Path,
+    *,
+    structural: bool = False,
 ) -> tuple[CorruptionProbeOutcome, str | None, ProbedMedia | None]:
     try:
-        probed = probe_file(output_path)
+        probed = (
+            probe_file(output_path, max_output_bytes=STRUCTURAL_TOOL_OUTPUT_BYTES)
+            if structural
+            else probe_file(output_path)
+        )
     except ProbeParseError as exc:
+        if structural and exc.payload.get("failure_kind") is not None:
+            raise
         return CorruptionProbeOutcome.FAILED_EXPECTED, _probe_error_tail(exc), None
     return CorruptionProbeOutcome.STILL_PROBEABLE, None, probed
 
@@ -162,16 +176,23 @@ def _apply_corrupt_container_header(
 ) -> CorruptionAction:
     delta = entry.state_delta
     paths = _paths_from_delta(ctx, delta)
-    byte_start = _state_delta_int(delta, "byte_start")
-    byte_count = _state_delta_int(delta, "byte_count")
+    region = delta.get("region")
     seed_material = _state_delta_str(delta, "seed_material")
-    input_bytes = paths.input_path.read_bytes()
-    output_bytes = overwrite_range(
-        input_bytes,
-        byte_start=byte_start,
-        byte_count=byte_count,
-        seed_material=seed_material,
-    )
+    if region is not None:
+        region = _state_delta_str(delta, "region")
+        input_bytes = read_structural_bytes(paths.input_path)
+        byte_start, byte_count = resolve_header_region(input_bytes, region)
+        output_bytes = zero_range(input_bytes, byte_start=byte_start, byte_count=byte_count)
+    else:
+        byte_start = _state_delta_int(delta, "byte_start")
+        byte_count = _state_delta_int(delta, "byte_count")
+        input_bytes = paths.input_path.read_bytes()
+        output_bytes = overwrite_range(
+            input_bytes,
+            byte_start=byte_start,
+            byte_count=byte_count,
+            seed_material=seed_material,
+        )
     finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
     return _corruption_action(
         entry=entry,
@@ -182,6 +203,7 @@ def _apply_corrupt_container_header(
         byte_start=byte_start,
         byte_count=byte_count,
         seed_material=seed_material,
+        metadata={"region": region} if region is not None else {},
     )
 
 
@@ -192,8 +214,25 @@ def _apply_truncate_file(
 ) -> CorruptionAction:
     delta = entry.state_delta
     paths = _paths_from_delta(ctx, delta)
-    keep_bytes = _state_delta_int(delta, "keep_bytes")
-    input_bytes = paths.input_path.read_bytes()
+    boundary = delta.get("boundary")
+    if boundary is not None:
+        if boundary != "mp3_after_16_frames":
+            raise ValueError(f"unsupported structural boundary: {boundary!r}")
+        input_bytes = read_structural_bytes(paths.input_path)
+        byte_start, byte_count = resolve_packet_byte_range(
+            paths.input_path,
+            stream="audio",
+            packet_start=0,
+            packet_count=16,
+            ffprobe_version=ctx.ffprobe_version,
+            invocations=ctx.invocations,
+            max_output_bytes=STRUCTURAL_TOOL_OUTPUT_BYTES,
+            contiguous=True,
+        )
+        keep_bytes = mp3_prefix_end(input_bytes, byte_start, byte_count)
+    else:
+        keep_bytes = _state_delta_int(delta, "keep_bytes")
+        input_bytes = paths.input_path.read_bytes()
     output_bytes = truncate_bytes(input_bytes, keep_bytes=keep_bytes)
     finalized = _write_bytes_and_finalize(ctx, entry, paths, input_bytes, output_bytes)
     return _corruption_action(
@@ -205,6 +244,7 @@ def _apply_truncate_file(
         byte_start=keep_bytes,
         byte_count=len(input_bytes) - keep_bytes,
         seed_material=_state_delta_str(delta, "seed_material"),
+        metadata={"boundary": "mp3_after_16_frames"} if boundary is not None else {},
     )
 
 
@@ -361,7 +401,11 @@ def _finalize_temp_output(
     else:
         output_hash = hash_bytes(output_bytes)
         output_size_bytes = len(output_bytes)
-    probe_outcome, probe_error_tail, probed = _probe_corrupted_output(paths.output_path)
+    probe_outcome, probe_error_tail, probed = _probe_corrupted_output(
+        paths.output_path,
+        structural=entry.state_delta.get("region") is not None
+        or entry.state_delta.get("boundary") is not None,
+    )
     ctx.post_phase_b_versions[_output_version_id(entry)] = (output_hash, probed)
     return _FinalizedCorruption(
         paths=paths,

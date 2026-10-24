@@ -72,3 +72,14 @@ chaos-librarian compare run/ observed-state.json --json
 
 The compare command validates the fixture first, then validates the external
 observed-state input against `observed-state.schema.json`.
+
+Structural corruption selectors retain their requested `region` or `boundary`
+in journal deltas, manifest corruption metadata and version-history summaries.
+Unresolved byte offsets/counts are null in plan evidence. For structural
+truncation, journal `keep_bytes` is null and manifest metadata contains only
+`boundary`; it does not claim an encoded offset before synthesis.
+`materialization.json` corruption actions record resolved `byte_start` and
+`byte_count`, input/output sizes and hashes, selector metadata and the observed
+probe outcome. MP3 `byte_start` is the retained prefix length and `byte_count`
+is the removed suffix length. Invalid-media probe exit is `failed_expected`;
+tool timeout, launch failure or output-limit failure fails the action instead.

@@ -320,7 +320,7 @@ def test_emit_writes_bundle_and_validates(tmp_path: Path, stub_probe: None) -> N
 
     assert out.exists()
     yaml_text = out.read_text()
-    assert "schema_version: 35" in yaml_text
+    assert "schema_version: 36" in yaml_text
     assert "import_source" in yaml_text
     bundle_file = next((tmp_path / "out" / "media").glob("*.mkv"))
     assert bundle_file.read_bytes() == source.read_bytes()

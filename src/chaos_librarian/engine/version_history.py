@@ -48,12 +48,14 @@ _PRESERVED_DELTA_KEYS: Final[dict[TimelineActionName, tuple[str, ...]]] = {
         "corruptor",
         "byte_start",
         "byte_count",
+        "region",
         "seed_material",
     ),
     TimelineActionName.TRUNCATE_FILE: (
         "profile",
         "corruptor",
         "keep_bytes",
+        "boundary",
         "seed_material",
     ),
     TimelineActionName.CORRUPT_PACKET_RANGE: (

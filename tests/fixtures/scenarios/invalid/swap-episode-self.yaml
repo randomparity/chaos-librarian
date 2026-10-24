@@ -1,5 +1,5 @@
 # expected: E_HIERARCHY_INVALID
-schema_version: 35
+schema_version: 36
 scenario_id: swap-episode-self
 seed: 11904
 duration_scale: short
