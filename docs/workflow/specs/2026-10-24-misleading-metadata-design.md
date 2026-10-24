@@ -64,7 +64,8 @@ Metadata cases run through the existing equipped integration glob.
 - Added boundary: selected ffprobe tags enter public oracle evidence. Narrow
   extraction, string validation and byte bounds prevent invented/truncated data.
 - Widened boundary: authored metadata values passed to the existing argv-only
-  ffmpeg boundary; key/value/count checks reject NUL and option-shaped keys.
+  ffmpeg boundary; key/value/count checks reject NUL and ambiguous key=value
+  operands. Leading hyphens are safe inside the metadata operand.
 - Actors: local authors control input; installed media tools are trusted to
   execute. Existing path containment, timeouts and atomic temporary outputs
   remain owners; tests prove failure leaves no successful published run.
