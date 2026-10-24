@@ -73,6 +73,17 @@ IMPORT_VIDEO_CONTAINERS: Final[frozenset[str]] = frozenset(
 )
 
 
+DISPOSITION_UNSUPPORTED_ACTIONS: Final = frozenset(
+    {
+        "reencode_video",
+        "reencode_audio",
+        "remux_container",
+        "embed_subtitle",
+        "extract_subtitle",
+        "edit_metadata",
+        "write_invalid_duration_metadata",
+    }
+)
 DISPOSITION_MAX_TRACKS: Final = 8
 DISPOSITION_MAX_LANGUAGE_BYTES: Final = 64
 DISPOSITION_MAX_DURATION: Final = 30

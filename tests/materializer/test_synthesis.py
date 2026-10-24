@@ -428,6 +428,7 @@ def test_materialize_one_asset_records_mp4_moov_placement(
         mp4_moov_placement: Mp4MoovPlacement | None,
         chapters_input: object | None = None,
         cover_art_input: object | None = None,
+        **_kwargs: object,
     ) -> list[str]:
         del video, video_input, audios, audio_inputs, chapters_input, cover_art_input
         captured["mp4_moov_placement"] = mp4_moov_placement
@@ -507,6 +508,7 @@ def test_materialize_one_asset_threads_embedded_metadata_inputs(
         mp4_moov_placement: Mp4MoovPlacement | None,
         chapters_input: FFmpegInput | None,
         cover_art_input: FFmpegInput | None,
+        **_kwargs: object,
     ) -> list[str]:
         del video, video_input, audios, audio_inputs, mp4_moov_placement
         assert chapters_input is not None

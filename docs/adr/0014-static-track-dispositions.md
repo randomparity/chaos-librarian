@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed for #245, 2026-10-24.
+Accepted for #245, 2026-10-24.
 
 ## Context
 

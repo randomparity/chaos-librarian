@@ -62,7 +62,8 @@ honor it), mux profiles, embedded chapters/cover art, mp4 placement, imported or
 content-linked feature assets, and non-null vfr/field/color/HDR/resolution-sequence
 video options. Flags on audio-only, MP4 or WebM assets are unsupported.
 Reject phase-B reencode_video, reencode_audio, remux_container, embed_subtitle and
-extract_subtitle targeting a feature asset before phase A; these paths have no
+extract_subtitle, edit_metadata and write_invalid_duration_metadata targeting a
+feature asset before phase A; these paths have no
 approved preservation contract. Other existing timeline behavior is unchanged.
 These are slice matrix limits under the delegated scope, not new epic exclusions.
 

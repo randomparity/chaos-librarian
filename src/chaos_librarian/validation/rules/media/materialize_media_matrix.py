@@ -15,6 +15,7 @@ from chaos_librarian.contract.scenario import (
 )
 from chaos_librarian.media_matrix import (
     AUDIO_SAMPLE_FORMATS_BY_CODEC,
+    DISPOSITION_UNSUPPORTED_ACTIONS,
     HEVC_VIDEO_CODECS,
     MP3_SAMPLE_RATES,
     RESOLUTION_SWITCH_VIDEO_CODEC,
@@ -689,7 +690,7 @@ def _check_subtitle_mode(
         return
     reporter.error(
         code=E_MATERIALIZE_UNSUPPORTED,
-        message="static materialization supports only sidecar subtitle tracks",
+        message="static materialization supports sidecar and bounded embedded subtitle tracks",
         loc=(*loc, "mode"),
     )
 
@@ -846,7 +847,10 @@ def _check_disposition_timeline_events(raw: Mapping[str, object], reporter: Repo
         c.asset.get("id") for c in iter_asset_contexts(raw) if has_track_dispositions(c.asset)
     }
     for index, event in _iter_timeline_events(raw):
-        if event.get("target") in feature_ids and event.get("action") in _TRACKED_MEDIA_ACTIONS:
+        if (
+            event.get("target") in feature_ids
+            and event.get("action") in DISPOSITION_UNSUPPORTED_ACTIONS
+        ):
             reporter.error(
                 code=E_MATERIALIZE_UNSUPPORTED,
                 message="track disposition assets do not support track-changing timeline actions",

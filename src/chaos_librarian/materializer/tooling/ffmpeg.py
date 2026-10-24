@@ -21,6 +21,8 @@ from chaos_librarian.contract.scenario import (
     AudioTrack,
     AudioTrackRole,
     Mp4MoovPlacement,
+    SubtitleMode,
+    SubtitleTrack,
     VideoColorRange,
     VideoColorSpace,
     VideoFieldOrder,
@@ -33,6 +35,7 @@ from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.media_matrix import (
     AUDIO_ENCODER_BY_CODEC,
     AUDIO_SAMPLE_FORMATS_BY_CODEC,
+    DISPOSITION_MAX_BYTES,
     HEVC_VIDEO_CODECS,
     MP3_SAMPLE_RATES,
     SUPPORTED_AUDIO_CODECS,
@@ -44,6 +47,7 @@ from chaos_librarian.media_matrix import (
     SUPPORTED_VIDEO_CODECS_BY_CONTAINER,
     SUPPORTED_VIDEO_CONTAINERS,
     VIDEO_ENCODER_BY_CODEC,
+    track_disposition_errors,
 )
 
 _BITEXACT_OUTPUT_FLAGS: Final[tuple[str, ...]] = (
@@ -339,7 +343,18 @@ def _audio_metadata_args(audios: Sequence[AudioTrack]) -> list[str]:
         args.extend([selector, f"title={title}"])
         args.extend([selector, f"handler_name={title}"])
         args.extend([selector, f"role={audio.role.value}"])
-        if audio.role is AudioTrackRole.COMMENTARY:
+        if audio.default is not None or audio.forced is not None:
+            flags = [
+                name
+                for name, enabled in (
+                    ("default", audio.default),
+                    ("forced", audio.forced),
+                    ("comment", audio.role is AudioTrackRole.COMMENTARY),
+                )
+                if enabled
+            ]
+            args.extend([f"-disposition:a:{index}", "+".join(flags) or "0"])
+        elif audio.role is AudioTrackRole.COMMENTARY:
             args.extend([f"-disposition:a:{index}", "comment"])
     return args
 
@@ -397,6 +412,9 @@ def _build_video_command(
     mp4_moov_placement: Mp4MoovPlacement | None,
     chapters_input: FFmpegInput | None,
     cover_art_input: FFmpegInput | None,
+    subtitles: Sequence[SubtitleTrack],
+    subtitle_inputs: Sequence[FFmpegInput],
+    duration_seconds: float | None,
 ) -> list[str]:
     _require(container, SUPPORTED_VIDEO_CONTAINERS, "container")
     _validate_video(container=container, video=video)
@@ -420,7 +438,13 @@ def _build_video_command(
     if cover_art_input is not None:
         cover_index = next_input_index
         argv.extend(_input_args(cover_art_input, field="embedded_cover_art"))
+        next_input_index += 1
+    for subtitle_input in subtitle_inputs:
+        argv.extend(_input_args(subtitle_input, field="subtitles"))
     argv.extend(_map_args(audio_inputs, first_audio_input_index=1))
+    for index, _subtitle in enumerate(subtitles):
+        argv.extend(["-map", f"{next_input_index + index}:s:0"])
+    argv.extend(_subtitle_output_args(subtitles))
     if cover_index is not None:
         argv.extend(["-map", f"{cover_index}:v:0"])
     argv.extend(_video_encoder_args(video))
@@ -430,16 +454,18 @@ def _build_video_command(
     if audios:
         argv.extend(["-c:a", "aac"])
         argv.extend(_audio_channel_layout_args(audios))
+        argv.extend(_audio_metadata_args(audios))
     argv.extend(_BITEXACT_OUTPUT_FLAGS)
     if chapter_index is not None:
         argv.extend(["-map_metadata", str(chapter_index), "-map_chapters", str(chapter_index)])
-    if audios:
-        argv.extend(_audio_metadata_args(audios))
     if cover_index is not None:
         argv.extend(["-c:v:1", "png", "-disposition:v:1", "attached_pic"])
     if mp4_moov_placement is Mp4MoovPlacement.MOOV_AT_START:
         argv.extend(["-movflags", "+faststart"])
-    if cover_index is None:
+    feature = bool(subtitles) or any(a.default is not None or a.forced is not None for a in audios)
+    if feature:
+        argv.extend(["-t", str(duration_seconds), "-fs", str(DISPOSITION_MAX_BYTES)])
+    elif cover_index is None:
         argv.append("-shortest")
     argv.append(str(output_path))
     return argv
@@ -477,6 +503,9 @@ def build_command(
     mp4_moov_placement: Mp4MoovPlacement | None = None,
     chapters_input: FFmpegInput | None = None,
     cover_art_input: FFmpegInput | None = None,
+    subtitles: Sequence[SubtitleTrack] = (),
+    subtitle_inputs: Sequence[FFmpegInput] = (),
+    duration_seconds: float | None = None,
 ) -> list[str]:
     """Build the ffmpeg argv for one asset.
 
@@ -489,6 +518,23 @@ def build_command(
             supported matrix, or an FFmpegInput is missing its input.
     """
     container = _resolve_container(output_path)
+    errors = track_disposition_errors(
+        {
+            "container": container,
+            "duration_seconds": duration_seconds,
+            "video": video.model_dump(mode="json") if video else None,
+            "audio": [a.model_dump(mode="json") for a in audios],
+            "subtitles": [s.model_dump(mode="json") for s in subtitles],
+        }
+    )
+    if errors:
+        field, message = errors[0]
+        raise UnsupportedMaterializationError(message, field=field, payload={})
+    subtitles = tuple(s for s in subtitles if s.mode is SubtitleMode.EMBEDDED)
+    if len(subtitles) != len(subtitle_inputs):
+        raise UnsupportedMaterializationError(
+            "embedded subtitle inputs must match declared tracks", field="subtitles", payload={}
+        )
     if mp4_moov_placement is not None and container != "mp4":
         raise UnsupportedMaterializationError(
             "mp4_moov_placement is only supported for mp4 assets",
@@ -536,6 +582,9 @@ def build_command(
         mp4_moov_placement=mp4_moov_placement,
         chapters_input=chapters_input,
         cover_art_input=cover_art_input,
+        subtitles=subtitles,
+        subtitle_inputs=subtitle_inputs,
+        duration_seconds=duration_seconds,
     )
 
 
@@ -544,6 +593,7 @@ def run_ffmpeg(
     *,
     ffmpeg_version: str,
     timeout_s: float = 60.0,
+    max_output_bytes: int | None = None,
 ) -> tuple[ToolInvocation, str]:
     """Invoke ffmpeg. Returns ``(invocation, stderr_tail)`` regardless of exit code.
 
@@ -556,5 +606,25 @@ def run_ffmpeg(
         timeout_s=timeout_s,
         stdout_mode="devnull",
         text=False,
+        max_output_bytes=max_output_bytes,
     )
     return result.invocation, result.stderr_tail
+
+
+def _subtitle_output_args(subtitles: Sequence[SubtitleTrack]) -> list[str]:
+    args: list[str] = ["-c:s", "srt"] if subtitles else []
+    for index, track in enumerate(subtitles):
+        flags = [
+            name
+            for name, enabled in (("default", track.default), ("forced", track.forced))
+            if enabled
+        ]
+        args.extend(
+            [
+                f"-metadata:s:s:{index}",
+                f"language={track.language}",
+                f"-disposition:s:{index}",
+                "+".join(flags) or "0",
+            ]
+        )
+    return args
