@@ -39,3 +39,24 @@ def test_structural_truncation_round_trip() -> None:
 def test_truncate_requires_one_selector(extra: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
         TruncateFileEvent.model_validate({"id": "e", "at": "1s", "target": "a", **extra})
+
+
+@pytest.mark.parametrize(
+    ("model", "selectors"),
+    [
+        (CorruptContainerHeaderEvent, ("bytes", "region")),
+        (TruncateFileEvent, ("keep_bytes", "boundary")),
+    ],
+)
+def test_exported_schema_exposes_exactly_one_non_null_selector(model, selectors) -> None:
+    raw, structural = selectors
+    schema = model.model_json_schema()
+    alternatives = schema["oneOf"]
+    assert len(alternatives) == 2
+    assert alternatives[0]["properties"] == {raw: {"type": "integer"}, structural: {"type": "null"}}
+    assert alternatives[1]["properties"] == {raw: {"type": "null"}, structural: {"type": "string"}}
+    assert alternatives[1]["required"] == [structural]
+    if model is TruncateFileEvent:
+        assert alternatives[0]["required"] == [raw]
+    else:
+        assert "required" not in alternatives[0]

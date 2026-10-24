@@ -99,3 +99,7 @@ def test_mp3_structural_matrix(rate: int, channels: str, expected: bool) -> None
         collector,
     )
     assert bool(collector.issues) is expected
+
+
+def test_huge_integer_duration_reports_issue_instead_of_overflowing() -> None:
+    assert _errors({**_asset(), "duration_seconds": 10**400})

@@ -5,7 +5,7 @@
 # Expected consumer response: converges — index the album by its CUE track
 #   offsets; re-read the sheet after the update.
 # Requires: none
-schema_version: 35
+schema_version: 36
 scenario_id: recipe-sidecar-cue-sheet
 seed: 1407
 duration_scale: short

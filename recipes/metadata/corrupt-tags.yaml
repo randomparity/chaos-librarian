@@ -5,7 +5,7 @@
 # Expected consumer response: tag reads error or diverge; the scanner must not
 #   trust artist/title/genre fields from a corrupted tag region.
 # Requires: malformed-media
-schema_version: 35
+schema_version: 36
 scenario_id: recipe-metadata-corrupt-tags
 seed: 1318
 duration_scale: short

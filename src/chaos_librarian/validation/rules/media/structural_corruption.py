@@ -1,6 +1,5 @@
 """Preflight the deliberately small generated structural-corruption matrix."""
 
-import math
 from collections.abc import Mapping
 from typing import Final
 
@@ -65,11 +64,7 @@ def _asset_errors(asset: Mapping[str, object], container: str) -> list[str]:
     if asset.get("container") != container:
         errors.append(f"structural selector requires container={container}")
     duration = asset.get("duration_seconds")
-    if (
-        not isinstance(duration, int | float)
-        or not math.isfinite(duration)
-        or not 0 < duration <= _MAX_DURATION
-    ):
+    if not isinstance(duration, int | float) or not 0 < duration <= _MAX_DURATION:
         errors.append("structural corruption requires finite duration in (0, 30] seconds")
     for field in (
         "import_source",

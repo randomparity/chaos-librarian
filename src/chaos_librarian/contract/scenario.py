@@ -957,6 +957,19 @@ class UpdateSidecarEvent(_TimelineEventBase):
 
 
 class CorruptContainerHeaderEvent(_TimelineEventBase):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "oneOf": [
+                {"properties": {"bytes": {"type": "integer"}, "region": {"type": "null"}}},
+                {
+                    "required": ["region"],
+                    "properties": {"bytes": {"type": "null"}, "region": {"type": "string"}},
+                },
+            ]
+        },
+    )
     action: Literal[TimelineActionName.CORRUPT_CONTAINER_HEADER] = (
         TimelineActionName.CORRUPT_CONTAINER_HEADER
     )
@@ -983,6 +996,22 @@ class CorruptContainerHeaderEvent(_TimelineEventBase):
 
 
 class TruncateFileEvent(_TimelineEventBase):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "properties": {"keep_bytes": {"type": "integer"}, "boundary": {"type": "null"}},
+                    "required": ["keep_bytes"],
+                },
+                {
+                    "required": ["boundary"],
+                    "properties": {"keep_bytes": {"type": "null"}, "boundary": {"type": "string"}},
+                },
+            ]
+        },
+    )
     action: Literal[TimelineActionName.TRUNCATE_FILE] = TimelineActionName.TRUNCATE_FILE
     target: str
     keep_bytes: int | None = Field(default=None, ge=1)

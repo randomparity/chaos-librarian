@@ -5,7 +5,7 @@
 # Expected consumer response: converges — index the cover art regardless of
 #   image format; the path extension matches the synthesized bytes.
 # Requires: none
-schema_version: 35
+schema_version: 36
 scenario_id: recipe-sidecar-album-art-webp
 seed: 1409
 duration_scale: short

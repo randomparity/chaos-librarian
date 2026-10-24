@@ -557,6 +557,31 @@
     },
     "CorruptContainerHeaderEvent": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "bytes": {
+              "type": "integer"
+            },
+            "region": {
+              "type": "null"
+            }
+          }
+        },
+        {
+          "properties": {
+            "bytes": {
+              "type": "null"
+            },
+            "region": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "region"
+          ]
+        }
+      ],
       "properties": {
         "action": {
           "const": "corrupt_container_header",
@@ -2868,6 +2893,34 @@
     },
     "TruncateFileEvent": {
       "additionalProperties": false,
+      "oneOf": [
+        {
+          "properties": {
+            "boundary": {
+              "type": "null"
+            },
+            "keep_bytes": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "keep_bytes"
+          ]
+        },
+        {
+          "properties": {
+            "boundary": {
+              "type": "string"
+            },
+            "keep_bytes": {
+              "type": "null"
+            }
+          },
+          "required": [
+            "boundary"
+          ]
+        }
+      ],
       "properties": {
         "action": {
           "const": "truncate_file",
