@@ -8,6 +8,7 @@ import pytest
 
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
+    Asset,
     AudioChannelLayout,
     AudioSource,
     AudioTrack,
@@ -43,10 +44,17 @@ def _video() -> VideoTrack:
 def test_track_audio_only_cells_pass_preflight(container: str, codec: str) -> None:
     preflight_asset(
         parent_kind=ParentKind.TRACK,
-        video=None,
-        audios=[_audio(codec)],
-        subtitles=[],
-        container=container,
+        asset=Asset.model_validate(
+            {
+                "id": "preflight",
+                "role": "main",
+                "duration_seconds": 1,
+                "video": None,
+                "audio": [_audio(codec)],
+                "subtitles": [],
+                "container": container,
+            }
+        ),
     )
 
 
@@ -57,10 +65,17 @@ def test_track_audio_only_cells_pass_preflight(container: str, codec: str) -> No
 def test_podcast_episode_audio_only_cells_pass_preflight(container: str, codec: str) -> None:
     preflight_asset(
         parent_kind=ParentKind.PODCAST_EPISODE,
-        video=None,
-        audios=[_audio(codec)],
-        subtitles=[],
-        container=container,
+        asset=Asset.model_validate(
+            {
+                "id": "preflight",
+                "role": "main",
+                "duration_seconds": 1,
+                "video": None,
+                "audio": [_audio(codec)],
+                "subtitles": [],
+                "container": container,
+            }
+        ),
     )
 
 
@@ -98,10 +113,17 @@ def test_track_with_video_rejected_by_preflight() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.TRACK,
-            video=_video(),
-            audios=[_audio("flac")],
-            subtitles=[],
-            container="flac",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": _video(),
+                    "audio": [_audio("flac")],
+                    "subtitles": [],
+                    "container": "flac",
+                }
+            ),
         )
 
     assert exc_info.value.field == "video"
@@ -111,10 +133,17 @@ def test_podcast_episode_with_video_rejected_by_preflight() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.PODCAST_EPISODE,
-            video=_video(),
-            audios=[_audio("mp3")],
-            subtitles=[],
-            container="mp3",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": _video(),
+                    "audio": [_audio("mp3")],
+                    "subtitles": [],
+                    "container": "mp3",
+                }
+            ),
         )
 
     assert exc_info.value.field == "video"
@@ -130,10 +159,17 @@ def test_track_with_subtitle_rejected_by_preflight() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.TRACK,
-            video=None,
-            audios=[_audio("flac")],
-            subtitles=[subtitle],
-            container="flac",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": None,
+                    "audio": [_audio("flac")],
+                    "subtitles": [subtitle],
+                    "container": "flac",
+                }
+            ),
         )
 
     assert exc_info.value.field == "subtitles"
@@ -143,10 +179,17 @@ def test_track_without_audio_rejected_by_preflight() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.TRACK,
-            video=None,
-            audios=[],
-            subtitles=[],
-            container="flac",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": None,
+                    "audio": [],
+                    "subtitles": [],
+                    "container": "flac",
+                }
+            ),
         )
 
     assert exc_info.value.field == "audio"
@@ -156,10 +199,17 @@ def test_track_with_multiple_audio_streams_rejected_by_preflight() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.TRACK,
-            video=None,
-            audios=[_audio("flac"), _audio("flac")],
-            subtitles=[],
-            container="flac",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": None,
+                    "audio": [_audio("flac"), _audio("flac")],
+                    "subtitles": [],
+                    "container": "flac",
+                }
+            ),
         )
 
     assert exc_info.value.field == "audio"
@@ -173,10 +223,17 @@ def test_track_unsupported_audio_only_cell_rejected(container: str, codec: str, 
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=ParentKind.TRACK,
-            video=None,
-            audios=[_audio(codec)],
-            subtitles=[],
-            container=container,
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": None,
+                    "audio": [_audio(codec)],
+                    "subtitles": [],
+                    "container": container,
+                }
+            ),
         )
 
     assert exc_info.value.field == field
@@ -187,10 +244,17 @@ def test_video_parent_without_video_rejected(parent_kind: ParentKind) -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc_info:
         preflight_asset(
             parent_kind=parent_kind,
-            video=None,
-            audios=[_audio("aac")],
-            subtitles=[],
-            container="mkv",
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": None,
+                    "audio": [_audio("aac")],
+                    "subtitles": [],
+                    "container": "mkv",
+                }
+            ),
         )
 
     assert exc_info.value.field == "video"

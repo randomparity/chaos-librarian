@@ -41,7 +41,7 @@ from tests.materializer.audio_recipe_helpers import AUDIO_NOISE_SCENARIO
 FIXTURE_DIR = Path(__file__).resolve().parents[1] / "fixtures" / "scenarios"
 INVALID_FIXTURE_DIR = FIXTURE_DIR / "invalid"
 
-_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 33
+_MKV_MUXING_PROFILE_SCENARIO = """schema_version: 34
 scenario_id: muxing-profile-capability-test
 seed: 138
 duration_scale: short
@@ -78,7 +78,7 @@ artists: []
 timeline: []
 """
 
-_WEBM_PROFILE_SCENARIO = """schema_version: 33
+_WEBM_PROFILE_SCENARIO = """schema_version: 34
 scenario_id: webm-capability-test
 seed: 138
 duration_scale: short
@@ -293,7 +293,7 @@ def test_materialize_delete_then_add_file_restores_bytes_and_run_id(
     _patch_success(monkeypatch)
     scenario_path = tmp_path / "add-file.yaml"
     scenario_path.write_text(
-        "schema_version: 33\n"
+        "schema_version: 34\n"
         "scenario_id: add-file-rejected\n"
         "seed: 11\n"
         "duration_scale: short\n"
@@ -577,25 +577,23 @@ def test_orchestrator_refuses_semantically_invalid_scenario(
     assert not out.exists()
 
 
-def test_orchestrator_rejects_embedded_subtitle_mode(
+def test_orchestrator_rejects_embedded_subtitles_without_explicit_flags(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """WHY: Finding 2 — Sprint 5 supports sidecar-only; embedded lands in
-    Sprint 7. Falling through silently would produce media missing the
-    requested subtitles."""
+    """Embedded tracks require explicit dispositions before any run allocation."""
     _patch_success(monkeypatch)
     scenario = tmp_path / "embedded.yaml"
     scenario.write_text(_STATIC_SCENARIO_WITH_EMBEDDED_SUBS)
     out = tmp_path / "run"
     with pytest.raises(ScenarioValidationError) as exc:
         materialize_scenario(scenario, out)
-    issue = next(
-        issue
+    paths = {
+        issue.path
         for issue in exc.value.validation_report.issues
         if issue.code == codes.E_MATERIALIZE_UNSUPPORTED
-    )
-    assert issue.path is not None
-    assert issue.path.endswith(".subtitles[0].mode")
+    }
+    assert any(path and path.endswith(".subtitles[0].default") for path in paths)
+    assert any(path and path.endswith(".subtitles[0].forced") for path in paths)
     assert not out.exists()
 
 
@@ -666,7 +664,7 @@ def test_orchestrator_probes_each_asset_exactly_once(
 
 
 _STATIC_SCENARIO = """\
-schema_version: 33
+schema_version: 34
 scenario_id: static-test
 seed: 1
 duration_scale: short
@@ -708,7 +706,7 @@ timeline: []
 """
 
 _RESOLUTION_SWITCH_SCENARIO = """\
-schema_version: 33
+schema_version: 34
 scenario_id: resolution-switch-capability-test
 seed: 133
 duration_scale: short

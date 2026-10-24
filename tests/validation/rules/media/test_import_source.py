@@ -29,7 +29,7 @@ from chaos_librarian.validation.scenario_io import LineIndex
 
 def _movie_with_import_asset(asset: dict[str, object]) -> dict[str, object]:
     return {
-        "schema_version": 33,
+        "schema_version": 34,
         "scenario_id": "t",
         "seed": 1,
         "duration_scale": "short",

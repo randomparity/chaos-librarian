@@ -60,7 +60,7 @@ def _podcast_scenario(
         episodes = [_episode_payload("episode_1", "2026-05-01T00:00:00Z", "pilot")]
     return Scenario.model_validate(
         {
-            "schema_version": 33,
+            "schema_version": 34,
             "scenario_id": "podcast-engine",
             "seed": 1,
             "duration_scale": "short",

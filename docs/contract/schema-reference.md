@@ -46,15 +46,15 @@ Current checked-in contract versions:
 
 | artifact | schema_version |
 | --- | ---: |
-| scenario | 33 |
-| manifest | 10 |
+| scenario | 34 |
+| manifest | 11 |
 | journal | 1 |
-| replay bundle | 12 |
+| replay bundle | 13 |
 | validation | 1 |
 | materialization | 17 |
 | run sentinel | 2 |
 | capabilities | 7 |
-| asset report | 9 |
+| asset report | 10 |
 | variant report | 2 |
 | bundle report | 1 |
 | movie report | 1 |
@@ -65,7 +65,7 @@ Current checked-in contract versions:
 | album report | 1 |
 | disc report | 1 |
 | track report | 1 |
-| observed state | 4 |
+| observed state | 5 |
 | divergence | 1 |
 
 Scenario v31 adds an optional movie `edition` on variants (`theatrical` /
@@ -166,3 +166,9 @@ encoder required for HEVC/H.265 synthesis. Materialization v8 adds
 `network_lag_actions[]` audit evidence. Replay-bundle v6, materialization v7,
 and capabilities v2 add content-source provider capability and replay-evidence
 surfaces for future file-backed and TTS-backed providers.
+
+Scenario v34 adds nullable `default` and `forced` audio/subtitle intent. Manifest
+v11, asset-report v10 and observed-state v5 retain audio as well as subtitle
+flags in `ProbedStream`; replay-bundle v13 carries the matching intent/evidence
+semantics. Missing probe flags remain null. These are versioned contracts;
+consumers must support the new versions before ingesting these artifacts.

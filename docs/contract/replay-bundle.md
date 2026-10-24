@@ -38,3 +38,9 @@ prepared_input)` then re-runs `plan`, re-resolves the timeline, and returns a
 fresh `PlanArtifacts` that compares byte-for-byte with the original fixture
 when written through `write_fixture`. The public `chaos-librarian replay` CLI
 command owns that preparation step and adds divergence reporting (exit 6).
+
+Track disposition intent is retained in the embedded scenario; actual audio and
+subtitle flags are probed into manifest/report evidence. `run` bundles can be
+replayed through the existing `replay` command, which re-encodes and rechecks the
+requested flags. This does not promise byte-identical encodes across tool versions.
+Static `materialize` bundle replay remains unsupported by the CLI.

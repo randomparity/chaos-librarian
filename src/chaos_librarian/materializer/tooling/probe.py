@@ -155,6 +155,8 @@ def _stream_from_json(stream_json: dict[str, object]) -> ProbedStream | None:
             language=_language_tag(stream_json),
             title=_tag_value(stream_json, "title") or _tag_value(stream_json, "handler_name"),
             role=_tag_value(stream_json, "role"),
+            default=_disposition_bool(stream_json, "default"),
+            forced=_disposition_bool(stream_json, "forced"),
         )
     if codec_type == "subtitle":
         return ProbedStream(
@@ -244,7 +246,9 @@ def _build_probed_media(
         ) from exc
 
 
-def probe_file(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
+def probe_file(
+    path: Path, *, self_contained_only: bool = False, max_output_bytes: int | None = None
+) -> ProbedMedia:
     """Run ``ffprobe`` against ``path`` and return the parsed ``ProbedMedia``.
 
     Raises:
@@ -278,6 +282,7 @@ def probe_file(path: Path, *, self_contained_only: bool = False) -> ProbedMedia:
         timeout_s=_PROBE_TIMEOUT_S,
         stdout_mode="pipe",
         text=True,
+        max_output_bytes=max_output_bytes,
     )
     if result.failure_kind == "timeout":
         raise ProbeParseError(

@@ -10,6 +10,7 @@ from chaos_librarian.contract.content_sources import (
 )
 from chaos_librarian.contract.domain import ParentKind
 from chaos_librarian.contract.scenario import (
+    Asset,
     AudioChannelLayout,
     AudioNoiseColor,
     AudioSampleFormat,
@@ -411,20 +412,34 @@ def test_preflight_asset_does_not_build_content_source_evidence(
 
     preflight_asset(
         parent_kind=ParentKind.MOVIE,
-        video=_video(),
-        audios=[_audio()],
-        subtitles=[],
-        container="mkv",
+        asset=Asset.model_validate(
+            {
+                "id": "preflight",
+                "role": "main",
+                "duration_seconds": 1,
+                "video": _video(),
+                "audio": [_audio()],
+                "subtitles": [],
+                "container": "mkv",
+            }
+        ),
     )
 
 
 def test_preflight_asset_accepts_resolution_switch_video() -> None:
     preflight_asset(
         parent_kind=ParentKind.MOVIE,
-        video=_video(resolution_sequence=VideoResolutionSequence.SD_TO_HD),
-        audios=[],
-        subtitles=[],
-        container="ts",
+        asset=Asset.model_validate(
+            {
+                "id": "preflight",
+                "role": "main",
+                "duration_seconds": 1,
+                "video": _video(resolution_sequence=VideoResolutionSequence.SD_TO_HD),
+                "audio": [],
+                "subtitles": [],
+                "container": "ts",
+            }
+        ),
     )
 
 
@@ -432,16 +447,23 @@ def test_preflight_resolution_switch_rejects_vfr_cadence() -> None:
     with pytest.raises(UnsupportedMaterializationError) as exc:
         preflight_asset(
             parent_kind=ParentKind.MOVIE,
-            video=VideoTrack(
-                source=VideoSource.COLOR_BARS,
-                codec="h264",
-                resolution="sd",
-                vfr_cadence=VideoVfrCadence.TWENTY_FOUR_TO_THIRTY,
-                resolution_sequence=VideoResolutionSequence.SD_TO_HD,
+            asset=Asset.model_validate(
+                {
+                    "id": "preflight",
+                    "role": "main",
+                    "duration_seconds": 1,
+                    "video": VideoTrack(
+                        source=VideoSource.COLOR_BARS,
+                        codec="h264",
+                        resolution="sd",
+                        vfr_cadence=VideoVfrCadence.TWENTY_FOUR_TO_THIRTY,
+                        resolution_sequence=VideoResolutionSequence.SD_TO_HD,
+                    ),
+                    "audio": [],
+                    "subtitles": [],
+                    "container": "ts",
+                }
             ),
-            audios=[],
-            subtitles=[],
-            container="ts",
         )
 
     assert exc.value.field == "video.vfr_cadence"

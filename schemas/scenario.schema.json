@@ -407,6 +407,30 @@
           "title": "Codec",
           "type": "string"
         },
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
+        "forced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced"
+        },
         "language": {
           "title": "Language",
           "type": "string"
@@ -2503,9 +2527,33 @@
         "codec": {
           "$ref": "#/$defs/SubtitleCodec"
         },
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Default"
+        },
         "encoding": {
           "$ref": "#/$defs/SubtitleEncoding",
           "default": "utf8"
+        },
+        "forced": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Forced"
         },
         "language": {
           "title": "Language",
@@ -3205,7 +3253,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 33,
+      "const": 34,
       "title": "Schema Version",
       "type": "integer"
     },

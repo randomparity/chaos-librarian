@@ -2,13 +2,13 @@
 
 A scenario is YAML that describes a synthetic media library, deterministic
 inputs, and optional timeline mutations. The current scenario contract uses
-`schema_version: 33`.
+`schema_version: 34`.
 
 ## Top-Level Shape
 
 Required keys:
 
-- `schema_version: 33`
+- `schema_version: 34`
 - `scenario_id`
 - `seed`
 - `duration_scale`
@@ -90,7 +90,7 @@ Subtitle source values:
 This is a compact form of `tests/fixtures/scenarios/static-library.yaml`:
 
 ```yaml
-schema_version: 33
+schema_version: 34
 scenario_id: static-library
 seed: 1
 duration_scale: short
@@ -256,3 +256,56 @@ profiles:
 `release_lock` references its `acquire_lock` event id via `for`, and
 `remount_path` references its `unmount_path` event id via `for`; the close event
 must not precede its open in declaration order or in logical time.
+
+## Ambiguous audio and embedded subtitle dispositions
+
+For a bounded MKV video fixture, set `default` and `forced` on each audio and
+embedded subtitle track. Multiple true defaults and no defaults are preserved;
+`default: true` plus `forced: true` is supported on both stream kinds. Commentary
+tracks retain their separate commentary disposition.
+
+Opt-in applies to the whole asset: both booleans must be explicit on **every**
+audio and embedded subtitle track. Partial/mixed declarations are rejected,
+because setting one FFmpeg disposition can change auto-defaults on other streams.
+Omitted/null flags remain unspecified in the author contract; existing assets
+with no flags and no embedded subtitles keep their original muxing behavior.
+Sidecars cannot carry flags, even false ones.
+
+The supported matrix is H.264 SD MKV video, AAC audio, and generated UTF-8 SRT
+embedded subtitles with normal timing. Use at most eight audio and eight embedded
+subtitle tracks, a finite duration greater than zero and at most 30 seconds,
+and language labels of at most 64 UTF-8 bytes. Repeated languages are allowed;
+stream mapping follows declaration order. Existing unflagged sidecars may coexist.
+Advanced video options, audio sample-format overrides, embedded chapters/cover art,
+muxing profiles, content links/imports, and track-changing timeline actions
+(reencode, remux, embed/extract subtitle, edit_metadata and
+write_invalid_duration_metadata) are unsupported for these assets.
+
+For example, repeat this track declaration twice in an asset's `audio` list to
+create two default audio tracks:
+
+```yaml
+codec: aac
+channels: stereo
+language: eng
+default: true
+forced: false
+```
+
+Repeat this declaration in `subtitles` for two default+forced embedded tracks:
+
+```yaml
+source: generated_srt
+codec: srt
+language: eng
+mode: embedded
+default: true
+forced: true
+```
+
+The feature uses existing `capabilities`/FFmpeg readiness and the ordinary
+`materialize` or `run` commands. Real verification uses ffprobe stream metadata;
+probe success alone does not establish decoding. Encoding has a 60-second timeout,
+64 MiB output stop threshold (with mux-packet slack) and 1 MiB combined captured
+output budget. Probe capture is also limited to 1 MiB. Reaching a limit or losing
+a requested flag fails the run rather than producing a successful oracle.

@@ -28,7 +28,7 @@ from chaos_librarian.materializer.tooling.probe import ProbedMedia, ProbedStream
 from chaos_librarian.validation import run_validation
 from chaos_librarian.validation.input import prepare_run_input_from_bytes
 
-SCENARIO_YAML = """schema_version: 33
+SCENARIO_YAML = """schema_version: 34
 scenario_id: import-copy-test
 seed: 1
 duration_scale: short

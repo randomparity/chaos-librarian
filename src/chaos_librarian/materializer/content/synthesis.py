@@ -24,7 +24,7 @@ from chaos_librarian.contract.content_sources import (
 )
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
-from chaos_librarian.contract.scenario import Asset, Scenario
+from chaos_librarian.contract.scenario import Asset, Scenario, SubtitleMode
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content.manifest_build import augment_manifest
@@ -71,11 +71,15 @@ from chaos_librarian.materializer.tooling.probe import probe_file
 from chaos_librarian.materializer.tooling.recipes import FFmpegInput
 from chaos_librarian.materializer.tooling.subtitles import subtitle_payload_bytes
 from chaos_librarian.media_matrix import (
+    DISPOSITION_MAX_BYTES,
+    DISPOSITION_MAX_OUTPUT_BYTES,
     IMPORT_VIDEO_CONTAINERS,
     RESOLUTION_SWITCH_VIDEO_CODEC,
     RESOLUTION_SWITCH_VIDEO_CONTAINER,
     RESOLUTION_SWITCH_VIDEO_RESOLUTION,
     RESOLUTION_SWITCH_VIDEO_SOURCE,
+    has_track_dispositions,
+    track_disposition_errors,
 )
 from chaos_librarian.path_rendering import render_asset_path, render_declared_sidecar_path
 from chaos_librarian.topology import iter_asset_contexts, renderable_asset_context
@@ -594,6 +598,12 @@ def materialize_one_asset(
     ``ManifestSidecar.content_hash``. Returning content-source evidence
     lets materialize/run/replay persist the Phase-A source-resolution audit.
     """
+    raw_asset = asset.model_dump(mode="json")
+    feature = has_track_dispositions(raw_asset)
+    errors = track_disposition_errors(raw_asset)
+    if errors:
+        field, message = errors[0]
+        raise UnsupportedMaterializationError(message, asset_id=asset.id, field=field, payload={})
     library_dir = out_dir / "library"
     output_path = library_dir / rendered_relative_path
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -634,7 +644,15 @@ def materialize_one_asset(
         skip_languages=skip_languages,
     )
     try:
-        probed = probe_file(output_path)
+        if feature:
+            if output_path.stat().st_size >= DISPOSITION_MAX_BYTES:
+                raise ProbeParseError(
+                    "track disposition output reached 64 MiB limit", payload={"asset_id": asset.id}
+                )
+            probed = probe_file(output_path, max_output_bytes=DISPOSITION_MAX_OUTPUT_BYTES)
+            _verify_dispositions(asset, probed)
+        else:
+            probed = probe_file(output_path)
     except ProbeParseError as exc:
         exc.content_sources = content_sources
         raise
@@ -670,6 +688,8 @@ def _run_media_invocation(
     embedded_inputs: _EmbeddedMetadataInputs,
 ) -> _MediaInvocationResult:
     content_sources = resolved_inputs.content_sources + embedded_inputs.content_sources
+    feature = has_track_dispositions(asset.model_dump(mode="json"))
+    subtitle_inputs = _embedded_subtitle_inputs(asset, temp_path, seed)
     profile = asset.matroska_muxing_profile
     ffmpeg_output_path = output_path if profile is None else temp_path / f"media.{asset.container}"
     argv = build_command(
@@ -681,10 +701,14 @@ def _run_media_invocation(
         mp4_moov_placement=asset.mp4_moov_placement,
         chapters_input=embedded_inputs.chapters_input,
         cover_art_input=embedded_inputs.cover_art_input,
+        subtitles=asset.subtitles,
+        subtitle_inputs=subtitle_inputs,
+        duration_seconds=asset.duration_seconds,
     )
     invocation, stderr_tail = run_ffmpeg(
         argv,
         ffmpeg_version=caps.ffmpeg.version or "unknown",
+        **({"max_output_bytes": DISPOSITION_MAX_OUTPUT_BYTES} if feature else {}),
     )
     if invocation.exit_code != 0:
         raise _tool_failed(
@@ -1172,9 +1196,8 @@ def write_sidecars(
 ) -> dict[tuple[str, str], str]:
     """Write each declared subtitle sidecar and return its sha256 hash.
 
-    Preflight already rejected non-sidecar modes, so every subtitle here
-    is sidecar; hash the bytes so ``augment_manifest`` can populate
-    ``ManifestSidecar.content_hash``.
+    Embedded declarations are encoded with the media and are filtered here.
+    Hash sidecar bytes so ``augment_manifest`` can populate their content hashes.
 
     ``skip_languages`` is the set of languages a timeline ``create_sidecar``
     will write in phase B; declared sidecars for those languages are
@@ -1190,7 +1213,7 @@ def write_sidecars(
     """
     sidecar_hashes: dict[tuple[str, str], str] = {}
     for sub in asset.subtitles:
-        if sub.language in skip_languages:
+        if sub.mode is not SubtitleMode.SIDECAR or sub.language in skip_languages:
             continue
         sidecar_path = library_dir / render_declared_sidecar_path(
             rendered_relative_path,
@@ -1210,3 +1233,46 @@ def write_sidecars(
         sidecar_path.write_bytes(body)
         sidecar_hashes[(asset.id, sub.language)] = "sha256:" + hashlib.sha256(body).hexdigest()
     return sidecar_hashes
+
+
+def _embedded_subtitle_inputs(asset: Asset, temp_path: Path, seed: int) -> tuple[FFmpegInput, ...]:
+    inputs = []
+    for index, sub in enumerate(asset.subtitles):
+        if sub.mode is not SubtitleMode.EMBEDDED:
+            continue
+        path = temp_path / f"subtitle-{index}.srt"
+        path.write_bytes(
+            subtitle_payload_bytes(
+                codec=sub.codec,
+                source=sub.source,
+                encoding=sub.encoding,
+                timing_profile=sub.timing_profile,
+                language=sub.language,
+                duration_s=asset.duration_seconds,
+                seed=seed,
+            )
+        )
+        inputs.append(FFmpegInput(file_path=path))
+    return tuple(inputs)
+
+
+def _verify_dispositions(asset: Asset, probed: ProbedMedia) -> None:
+    for kind, tracks in (
+        ("audio", asset.audio),
+        ("subtitle", tuple(s for s in asset.subtitles if s.mode is SubtitleMode.EMBEDDED)),
+    ):
+        streams = [s for s in probed.streams if s.kind.value == kind]
+        if len(streams) != len(tracks):
+            raise ProbeParseError(
+                f"{asset.id}: expected {len(tracks)} {kind} streams, got {len(streams)}",
+                payload={"asset_id": asset.id},
+            )
+        for index, (track, stream) in enumerate(zip(tracks, streams, strict=True)):
+            for flag in ("default", "forced"):
+                expected, actual = getattr(track, flag), getattr(stream, flag)
+                if actual is not expected:
+                    raise ProbeParseError(
+                        f"{asset.id}: {kind}[{index}].{flag} requested {expected}, "
+                        f"observed {actual}",
+                        payload={"asset_id": asset.id, "field": flag},
+                    )

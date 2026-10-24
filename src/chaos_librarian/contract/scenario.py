@@ -433,6 +433,8 @@ class VideoTrack(BaseModel):
 
 
 class AudioTrack(BaseModel):
+    default: bool | None = None
+    forced: bool | None = None
     model_config = ConfigDict(extra="forbid", frozen=True)
     source: AudioSource = AudioSource.SINE
     codec: str
@@ -453,6 +455,8 @@ class AudioTrack(BaseModel):
 
 
 class SubtitleTrack(BaseModel):
+    default: bool | None = None
+    forced: bool | None = None
     model_config = ConfigDict(extra="forbid", frozen=True)
     source: SubtitleSource = SubtitleSource.GENERATED_SRT
     codec: SubtitleCodec
@@ -1278,7 +1282,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[33]
+    schema_version: Literal[34]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

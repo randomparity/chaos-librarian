@@ -42,12 +42,12 @@ def test_namespace_uuid_is_v5() -> None:
 
 
 def test_current_contract_schema_versions() -> None:
-    assert SCENARIO_SCHEMA_VERSION == 33
-    assert MANIFEST_SCHEMA_VERSION == 10
-    assert REPLAY_BUNDLE_SCHEMA_VERSION == 12
-    assert ASSET_REPORT_SCHEMA_VERSION == 9
+    assert SCENARIO_SCHEMA_VERSION == 34
+    assert MANIFEST_SCHEMA_VERSION == 11
+    assert REPLAY_BUNDLE_SCHEMA_VERSION == 13
+    assert ASSET_REPORT_SCHEMA_VERSION == 10
     assert VARIANT_REPORT_SCHEMA_VERSION == 2
-    assert OBSERVED_STATE_SCHEMA_VERSION == 4
+    assert OBSERVED_STATE_SCHEMA_VERSION == 5
 
 
 def test_domain_report_schema_versions_start_at_one() -> None:
@@ -113,7 +113,7 @@ def test_all_schema_versions_are_positive_integers() -> None:
 
 
 def test_adapter_schema_versions() -> None:
-    assert OBSERVED_STATE_SCHEMA_VERSION == 4
+    assert OBSERVED_STATE_SCHEMA_VERSION == 5
     assert DIVERGENCE_SCHEMA_VERSION == 1
 
 

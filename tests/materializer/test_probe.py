@@ -236,3 +236,12 @@ def test_import_probe_excludes_reference_demuxers(
     assert {"matroska", "mov", "mpegts", "flac", "ogg"} <= set(formats)
     assert {"hls", "concat", "dash"}.isdisjoint(formats)
     assert argv[argv.index("-protocol_whitelist") + 1] == "file"
+
+
+def test_probe_retains_audio_dispositions(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    payload = json.loads(_GOOD_PROBE)
+    payload["streams"][1]["disposition"] = {"default": 1, "forced": 0}
+    _patch_run(monkeypatch, json.dumps(payload))
+    stream = probe_file(tmp_path / "flags.mkv").streams[1]
+    assert stream.default is True
+    assert stream.forced is False

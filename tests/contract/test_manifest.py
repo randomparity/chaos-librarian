@@ -284,7 +284,7 @@ def test_manifest_sidecar_content_hash_optional():
 
 
 def test_manifest_schema_version_is_ten():
-    assert MANIFEST_SCHEMA_VERSION == 10
+    assert MANIFEST_SCHEMA_VERSION == 11
 
 
 def test_manifest_sidecar_poster_no_language():
@@ -338,7 +338,7 @@ def test_manifest_sidecar_kind_remains_free_form():
 
 def test_manifest_v10_schema_version():
     manifest = Manifest(
-        schema_version=10,
+        schema_version=11,
         movies=[],
         series=[],
         seasons=[],
@@ -354,7 +354,7 @@ def test_manifest_v10_schema_version():
         locations=[],
         sidecars=[],
     )
-    assert manifest.schema_version == 10
+    assert manifest.schema_version == 11
 
 
 def test_manifest_version_round_trips_corruption_metadata() -> None:

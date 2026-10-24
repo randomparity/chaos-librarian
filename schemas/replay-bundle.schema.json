@@ -414,7 +414,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 12,
+          "const": 13,
           "title": "Schema Version",
           "type": "integer"
         },
@@ -542,7 +542,7 @@
           "type": "string"
         },
         "schema_version": {
-          "const": 12,
+          "const": 13,
           "title": "Schema Version",
           "type": "integer"
         }

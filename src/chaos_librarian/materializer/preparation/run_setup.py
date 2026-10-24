@@ -294,8 +294,5 @@ def _preflight_assets(scenario: Scenario) -> None:
             continue
         preflight_asset(
             parent_kind=context.parent_kind,
-            video=asset.video,
-            audios=asset.audio,
-            subtitles=asset.subtitles,
-            container=asset.container,
+            asset=asset,
         )

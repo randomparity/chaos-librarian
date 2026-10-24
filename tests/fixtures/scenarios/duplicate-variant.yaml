@@ -1,4 +1,4 @@
-schema_version: 33
+schema_version: 34
 scenario_id: duplicate-variant
 seed: 23
 duration_scale: short

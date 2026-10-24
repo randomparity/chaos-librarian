@@ -9,7 +9,7 @@ Chaos Librarian policy expectations.
 
 Required fields:
 
-- `schema_version`: `4`
+- `schema_version`: `5`
 - `consumer`: `{name, version?}`
 - `run_id`: the fixture run id being compared
 - `observed_at`: when the consumer snapshot was exported
@@ -34,7 +34,7 @@ Scanner-only minimal asset:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
@@ -184,7 +184,7 @@ Movie topology:
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "consumer": {"name": "scanner"},
   "run_id": "7c44eb62-7046-4b8f-a168-eaf3a58e0145",
   "observed_at": "2026-05-22T12:00:00Z",
@@ -250,3 +250,9 @@ the `sidecar_ref` must exist under that asset's nested `sidecars`.
 schema violations, duplicate refs, invalid paths, dangling or contradictory
 topology refs, missing per-action path fields, invalid global event identity
 evidence, and invalid grouped lifecycle links.
+
+Audio and subtitle `probed.streams` may carry `default` and `forced` booleans.
+Export retained stream flags independently; do not infer them from stream order,
+a selected playback track or scenario intent. Null means the observation is
+unavailable. The generic comparator reports differences for both stream kinds,
+including null versus a known false value; it does not choose a playback track.

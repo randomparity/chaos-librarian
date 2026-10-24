@@ -302,7 +302,7 @@ class ObservedEvent(BaseModel):
 class ObservedState(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schema_version: Literal[4]
+    schema_version: Literal[5]
     consumer: ObservedConsumer
     run_id: uuid.UUID
     observed_at: datetime
