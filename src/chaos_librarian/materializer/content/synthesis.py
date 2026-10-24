@@ -734,16 +734,15 @@ def _run_media_invocation(
     )
     if structural_corruption:
         argv[-1:-1] = ["-fs", str(MAX_STRUCTURAL_BYTES), "-t", str(asset.duration_seconds)]
+    output_limit: dict[str, int] = {}
+    if structural_corruption:
+        output_limit["max_output_bytes"] = STRUCTURAL_TOOL_OUTPUT_BYTES
+    elif feature:
+        output_limit["max_output_bytes"] = DISPOSITION_MAX_OUTPUT_BYTES
     invocation, stderr_tail = run_ffmpeg(
         argv,
         ffmpeg_version=caps.ffmpeg.version or "unknown",
-        **(
-            {"max_output_bytes": STRUCTURAL_TOOL_OUTPUT_BYTES}
-            if structural_corruption
-            else {"max_output_bytes": DISPOSITION_MAX_OUTPUT_BYTES}
-            if feature
-            else {}
-        ),
+        **output_limit,
     )
     if invocation.exit_code != 0:
         raise _tool_failed(
