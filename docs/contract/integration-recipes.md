@@ -412,9 +412,11 @@ asset has one byte mutation. The existing regression budget stays at 22 assets,
 Require ffmpeg/ffprobe >=7 and MKVToolNix >=80 for the combined real-tool corpus.
 Use `capabilities --json` and the existing equipped-CI capability gate. Existing
 synthesis/probe limits apply: 60 seconds synthesis, 15 seconds structural probes,
-1 MiB bounded structural captures, 4096 scanned elements and 64 MiB per output
-(up to 1152 MiB for eighteen assets). Inspect actual report invocation counts and
-output sizes; the fixed corpus uses at most 100 recorded tool invocations per run.
+1 MiB bounded structural captures and 4096 scanned elements. The enforced 64 MiB
+output ceiling applies to structural/disposition assets; ordinary metadata/control
+synthesis and metadata rewrites do not enforce that ceiling. The integration test
+checks observed output sizes against 64 MiB and at most 100 recorded tool invocations
+per run; these observations are not an enforced aggregate disk-allocation ceiling.
 Metadata has at most sixteen fields and 4096 UTF-8 bytes/value; this corpus edits
 two fields at most. Feature recipe sections above define unsupported combinations.
 

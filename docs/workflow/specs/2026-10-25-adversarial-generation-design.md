@@ -70,7 +70,7 @@ gate applies. Consumer docs name the corpus, command, budget and capability need
   additional existing recipes and authored parameters consumed by existing tools.
 - Actor model: local operators control seed and selected lane; no remote tenant.
 - Controls: model/semantic validation and materializer preflight before allocation;
-  existing containment and atomic publication; existing 64 MiB output bound,
+  existing containment and atomic publication; existing 64 MiB structural/disposition output bound,
   60-second synthesis, 15-second bounded probe and 1 MiB capture for structural
   recipes; track maximum eight per kind and duration at most two seconds here.
 - Out of scope: hostile tool binaries and arbitrary imported media, absent from
