@@ -1,0 +1,602 @@
+schema_version: 37
+scenario_id: fuzz-regression-adversarial-media-seed-248
+seed: 248
+duration_scale: short
+profiles:
+- fuzz-regression
+- malformed-media
+generation:
+  generator: chaos-librarian
+  profile: fuzz-regression
+  lane: adversarial-media
+  profile_version: 3
+  seed: 248
+  budgets:
+    movies: 12
+    series: 1
+    seasons: 2
+    episodes: 2
+    artists: 1
+    albums: 1
+    discs: 2
+    tracks: 2
+    variants: 22
+    bundles: 22
+    assets: 22
+    sidecars: 54
+    timeline_events: 80
+library:
+  roots:
+  - id: movies-hd
+    path: movies
+  - id: music
+    path: music
+movies:
+- id: adversarial_movie
+  title: Filename 248
+  layout: movie_flat
+  variants:
+  - id: variant_flags_multiple
+    label: flags_multiple
+    bundle:
+      id: bundle_flags_multiple
+      assets:
+      - id: flags_multiple
+        role: main
+        container: mkv
+        duration_seconds: 0.2
+        audio:
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: commentary
+          default: true
+          forced: false
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: true
+          forced: false
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        subtitles:
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: true
+          forced: false
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: true
+          forced: false
+  - id: variant_flags_none
+    label: flags_none
+    bundle:
+      id: bundle_flags_none
+      assets:
+      - id: flags_none
+        role: main
+        container: mkv
+        duration_seconds: 0.2
+        audio:
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: commentary
+          default: false
+          forced: false
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: false
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        subtitles:
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: false
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: false
+  - id: variant_flags_default_forced
+    label: flags_default_forced
+    bundle:
+      id: bundle_flags_default_forced
+      assets:
+      - id: flags_default_forced
+        role: main
+        container: mkv
+        duration_seconds: 0.2
+        audio:
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: commentary
+          default: true
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: true
+          forced: true
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        subtitles:
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: true
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: true
+          forced: true
+  - id: variant_flags_forced_only
+    label: flags_forced_only
+    bundle:
+      id: bundle_flags_forced_only
+      assets:
+      - id: flags_forced_only
+        role: main
+        container: mkv
+        duration_seconds: 0.2
+        audio:
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: commentary
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        - codec: aac
+          channels: stereo
+          language: eng
+          role: main
+          default: false
+          forced: true
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        subtitles:
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+        - codec: srt
+          language: eng
+          mode: embedded
+          default: false
+          forced: true
+  - id: variant_metadata_title
+    label: metadata_title
+    bundle:
+      id: bundle_metadata_title
+      assets:
+      - id: metadata_title
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_year
+    label: metadata_year
+    bundle:
+      id: bundle_metadata_year
+      assets:
+      - id: metadata_year
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_long
+    label: metadata_long
+    bundle:
+      id: bundle_metadata_long
+      assets:
+      - id: metadata_long
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_control
+    label: metadata_control
+    bundle:
+      id: bundle_metadata_control
+      assets:
+      - id: metadata_control
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_delete
+    label: metadata_delete
+    bundle:
+      id: bundle_metadata_delete
+      assets:
+      - id: metadata_delete
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_missing
+    label: metadata_missing
+    bundle:
+      id: bundle_metadata_missing
+      assets:
+      - id: metadata_missing
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_metadata_languages
+    label: metadata_languages
+    bundle:
+      id: bundle_metadata_languages
+      assets:
+      - id: metadata_languages
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - codec: aac
+          channels: stereo
+          language: eng
+        - codec: aac
+          channels: stereo
+          language: fra
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_damage_mp4_start
+    label: damage_mp4_start
+    bundle:
+      id: bundle_damage_mp4_start
+      assets:
+      - id: damage_mp4_start
+        role: main
+        container: mp4
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        mp4_moov_placement: moov_at_start
+  - id: variant_damage_mp4_end
+    label: damage_mp4_end
+    bundle:
+      id: bundle_damage_mp4_end
+      assets:
+      - id: damage_mp4_end
+        role: main
+        container: mp4
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        mp4_moov_placement: moov_at_end
+  - id: variant_damage_mkv
+    label: damage_mkv
+    bundle:
+      id: bundle_damage_mkv
+      assets:
+      - id: damage_mkv
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+  - id: variant_control_mp4
+    label: control_mp4
+    bundle:
+      id: bundle_control_mp4
+      assets:
+      - id: control_mp4
+        role: main
+        container: mp4
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+        mp4_moov_placement: moov_at_end
+  - id: variant_control_mkv
+    label: control_mkv
+    bundle:
+      id: bundle_control_mkv
+      assets:
+      - id: control_mkv
+        role: main
+        container: mkv
+        duration_seconds: 2
+        audio:
+        - source: sine
+          codec: aac
+          channels: stereo
+          language: eng
+          sample_rate: 44100
+        video:
+          source: color_bars
+          codec: h264
+          resolution: sd
+series: []
+artists:
+- id: adversarial_artist
+  name: Synthetic controls
+  layout: artist_album_flat
+  track_naming: track_number_title
+  albums:
+  - id: adversarial_album
+    title: Structural MP3
+    discs:
+    - id: adversarial_disc
+      disc_number: 1
+      tracks:
+      - id: track_damage_mp3
+        track_number: 1
+        title: damage_mp3
+        variants:
+        - id: variant_damage_mp3
+          label: damage_mp3
+          bundle:
+            id: bundle_damage_mp3
+            assets:
+            - id: damage_mp3
+              role: primary_audio
+              container: mp3
+              duration_seconds: 2
+              audio:
+              - source: sine
+                codec: mp3
+                channels: stereo
+                language: eng
+                sample_rate: 44100
+      - id: track_control_mp3
+        track_number: 2
+        title: control_mp3
+        variants:
+        - id: variant_control_mp3
+          label: control_mp3
+          bundle:
+            id: bundle_control_mp3
+            assets:
+            - id: control_mp3
+              role: primary_audio
+              container: mp3
+              duration_seconds: 2
+              audio:
+              - source: sine
+                codec: mp3
+                channels: stereo
+                language: eng
+                sample_rate: 44100
+timeline:
+- action: edit_metadata
+  target: metadata_title
+  fields:
+    title: Embedded title
+  id: adversarial_01
+  at: 1ns
+- action: create_sidecar
+  target: metadata_title
+  kind: nfo
+  to: movies/Disagreement.nfo
+  body: <movie><title>Sidecar title</title></movie>
+  id: adversarial_02
+  at: 2ns
+- action: edit_metadata
+  target: metadata_year
+  fields:
+    year: '9999'
+  id: adversarial_03
+  at: 3ns
+- action: edit_metadata
+  target: metadata_long
+  fields:
+    title: 
+      雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪雪x
+  id: adversarial_04
+  at: 4ns
+- action: edit_metadata
+  target: metadata_control
+  fields:
+    title: "雪 café\tline\nnext"
+  id: adversarial_05
+  at: 5ns
+- action: edit_metadata
+  target: metadata_delete
+  fields:
+    title: Title to delete
+    year: '2026'
+  id: adversarial_06
+  at: 6ns
+- action: edit_metadata
+  target: metadata_delete
+  fields:
+    title: ''
+    year: ''
+  id: adversarial_07
+  at: 7ns
+- action: corrupt_container_header
+  target: damage_mp4_start
+  region: mp4_moov
+  id: adversarial_08
+  at: 8ns
+- action: corrupt_container_header
+  target: damage_mp4_end
+  region: mp4_moov
+  id: adversarial_09
+  at: 9ns
+- action: corrupt_container_header
+  target: damage_mkv
+  region: mkv_cues
+  id: adversarial_10
+  at: 10ns
+- action: truncate_file
+  target: damage_mp3
+  boundary: mp3_after_16_frames
+  id: adversarial_11
+  at: 11ns

@@ -33,3 +33,6 @@ fuzz_regression:
   - lane: music-topology
     seed: 464
     gates: [validate, plan, replay, materialize]
+  - lane: adversarial-media
+    seed: 248
+    gates: [validate, plan, replay, materialize, run]

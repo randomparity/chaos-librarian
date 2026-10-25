@@ -62,7 +62,7 @@ _FAKE_PROVIDER = "fake-content-source"
 _FAKE_RECIPE_DIGEST = "sha256:" + "f" * 64
 
 _RESOLUTION_SWITCH_SCENARIO = b"""\
-schema_version: 36
+schema_version: 37
 scenario_id: run-replay-resolution-switch-capability-test
 seed: 133
 duration_scale: short
@@ -95,7 +95,7 @@ timeline: []
 """
 
 _MKV_MUXING_PROFILE_SCENARIO = b"""\
-schema_version: 36
+schema_version: 37
 scenario_id: run-replay-muxing-profile-capability-test
 seed: 138
 duration_scale: short
@@ -133,7 +133,7 @@ timeline: []
 """
 
 _WEBM_PROFILE_SCENARIO = b"""\
-schema_version: 36
+schema_version: 37
 scenario_id: run-replay-webm-capability-test
 seed: 138
 duration_scale: short
@@ -175,7 +175,7 @@ def _scenario_bytes(
 ) -> bytes:
     profiles_yaml = "\n".join(f"  - {profile}" for profile in profiles)
     return f"""\
-schema_version: 36
+schema_version: 37
 scenario_id: {scenario_id}
 seed: 7
 duration_scale: short
@@ -214,7 +214,7 @@ timeline:
 
 
 _SCENARIO = b"""\
-schema_version: 36
+schema_version: 37
 scenario_id: run-replay-corruption-test
 seed: 7
 duration_scale: short
@@ -256,7 +256,7 @@ timeline:
     bytes: 64
 """
 _HDR_SCENARIO = b"""\
-schema_version: 36
+schema_version: 37
 scenario_id: run-replay-hdr-capability-test
 seed: 7
 duration_scale: short

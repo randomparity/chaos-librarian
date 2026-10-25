@@ -19,6 +19,7 @@ from typing import Final, cast
 from chaos_librarian.contract.profile_policy import REQUIRED_PROFILES_BY_ACTION
 from chaos_librarian.contract.profiles import FuzzProfileName, ProfileName
 from chaos_librarian.contract.scenario import NetworkLagEffect, SidecarKind, TimelineActionName
+from chaos_librarian.generation.adversarial import coverage_cells
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,4 +162,4 @@ def coverage_for_payload(payload: Mapping[str, object]) -> CoverageReport:
         effect = _network_lag_effect(event.get("effect"))
         if action is TimelineActionName.NETWORK_LAG_START and effect is not None:
             cells.add(f"{CELL_LAG_EFFECT_PREFIX}{effect.value}")
-    return CoverageReport(cells=frozenset(cells))
+    return CoverageReport(cells=frozenset(cells) | coverage_cells(payload))

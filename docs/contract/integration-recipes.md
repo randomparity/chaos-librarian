@@ -129,7 +129,7 @@ container such as `flac`, `mp3`, or `m4a`, no `video` key, and at least one
 supported audio stream.
 
 ```yaml
-schema_version: 36
+schema_version: 37
 scenario_id: audio-only-track
 seed: 10603
 duration_scale: short
@@ -378,3 +378,61 @@ metadata can still advertise the original duration after truncation: use frame
 counts or decoded samples to establish the shorter prefix. `still_probeable`
 alone is never a decodability assertion, and neither outcome prescribes consumer
 repair or recovery policy. Tool-version changes need not produce identical bytes.
+
+
+### Explicit generated adversarial consumer corpus (scenario v37)
+
+Issue #248 combines the supported #245–#247 recipes through existing generation.
+Use `generate --profile fuzz-regression --lane adversarial-media --seed 248 --out
+adversarial.yaml` (keep the invocation on one shell line). The lane requires an
+explicit `--lane`; the normal ten-lane regression cycle and smoke lane are unchanged.
+The generation profile remains version 3. Scenario version 37 adds the allowed
+lane enum; migrate scenario version 36 inputs to 37. Replay-bundle shape is unchanged.
+
+The curated input is `tests/fixtures/scenarios/fuzz-adversarial-seed-248.yaml`.
+It is byte-for-byte the seed-248 generated YAML, not a promise of identical encoded
+media across tool versions. `tests/fixtures/fuzz-seeds.yaml` records its gates.
+One seed and one generated scenario cover these fifteen recipe cells:
+
+| Family | Cases |
+| --- | --- |
+| Flags | Two audio and two embedded UTF-8 SRT tracks with multiple defaults; no defaults; default+forced; eight of each with forced-only. First audio retains commentary. |
+| Metadata | Filename/NFO/embedded-title disagreement; year 9999; exactly 4096 UTF-8 bytes of Unicode title; Unicode TAB/LF; removal of existing title/year; missing tags; eng/fra audio-label conflict. |
+| Structural | MP4 moov damage at start and end; MKV Cues damage; MP3 truncation after sixteen complete frames. |
+
+Budget: eighteen assets/variants under one movie and two music tracks, eleven
+events (seven metadata/sidecar and four structural), one NFO, no random filler.
+Four flag assets last 0.2 seconds; fourteen others last 2 seconds (28.8 seconds
+aggregate authored duration). Video is SD H.264/AAC; MP3 is stereo 44100 Hz;
+maximum eight audio and eight subtitle tracks per asset. Three distinct healthy
+MP4/MKV/MP3 controls accompany damage. No flag asset is rewritten; each damaged
+asset has one byte mutation. The existing regression budget stays at 22 assets,
+22 variants and 80 events; no additional scheduler or codec matrix is implied.
+
+Require ffmpeg/ffprobe >=7 and MKVToolNix >=80 for the combined real-tool corpus.
+Use `capabilities --json` and the existing equipped-CI capability gate. Existing
+synthesis/probe limits apply: 60 seconds synthesis, 15 seconds structural probes,
+1 MiB bounded structural captures and 4096 scanned elements. The enforced 64 MiB
+output ceiling applies to structural/disposition assets; ordinary metadata/control
+synthesis and metadata rewrites do not enforce that ceiling. The integration test
+checks observed output sizes against 64 MiB and at most 100 recorded tool invocations
+per run; these observations are not an enforced aggregate disk-allocation ceiling.
+Metadata has at most sixteen fields and 4096 UTF-8 bytes/value; this corpus edits
+two fields at most. Feature recipe sections above define unsupported combinations.
+
+`validate`, `materialize`, `run` and `replay --against` use their existing entry
+points. `run` has a wall-clock budget, so choose time for all eleven events and
+check `replay.json` has `applied_events: 11`; a short budget intentionally produces
+a prefix. The equipped integration test controls the monotonic clock boundary to
+avoid host-speed truncation while executing real media tools, and separately
+executes materialize plus run/replay. It inspects actual flags, tags, languages,
+failed MP4 probes, readable MKV and sixteen-frame MP3 output. Feature #247 owns
+independent byte-target/decode proof. Do not infer decode success from probe alone.
+
+Requested fields/regions/boundaries remain in the scenario and journal; observed
+tags/flags and corruption hashes, byte spans and probe outcomes remain in the
+manifest/materialization report. Empty metadata means deletion; observed absent
+tags are `{}`, while `null` means unreported. Expected failed MP4 probes are neutral
+intentional-corruption evidence and do not fail a successful materialization.
+Equipped CI discovers `tests/integration/*_real.py` and rejects skipped tests;
+no separate runner is needed. Downstream selection and recovery remain consumer policy.

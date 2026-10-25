@@ -3,7 +3,7 @@
 # Tests: equal media bytes at unusual names; one supported in-root symlink.
 # Expected consumer response: policy-neutral; consumers choose link follow/skip behavior.
 # Requires: ffmpeg/ffprobe >=7, UTF-8 POSIX filesystem; see docs/contract/path-shapes.md.
-schema_version: 36
+schema_version: 37
 scenario_id: recipe-scanner-path-shapes
 seed: 232
 duration_scale: short

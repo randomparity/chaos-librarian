@@ -366,7 +366,7 @@ error reporting and validated against `scenario.schema.json`.
 Example shape:
 
 ```yaml
-schema_version: 36
+schema_version: 37
 scenario_id: hierarchy-shape
 seed: 42
 duration_scale: short
