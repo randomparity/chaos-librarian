@@ -19,3 +19,6 @@ accepted; supersede rather than edit.
 | [0011](0011-music-artifacts-and-tag-corruption.md) | Advanced music artifacts and tag corruption | Accepted |
 | [0012](0012-import-file-reference-assets.md) | Import assets materialize by copying scenario-bundled originals | Accepted |
 | [0013](0013-imported-mutation-timelines.md) | Imported timelines use byte-preserving filesystem actions | Accepted |
+| [0014](0014-static-track-dispositions.md) | Static bounded track dispositions | Accepted |
+| [0015](0015-format-tag-evidence.md) | Supported format-tag evidence | Accepted |
+| [0017](0017-explicit-adversarial-generation.md) | Explicit adversarial generation lane | Accepted |
