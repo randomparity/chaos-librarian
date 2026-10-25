@@ -12,7 +12,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Final, cast
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 from chaos_librarian.contract import scenario as scenario_contract
 from chaos_librarian.contract.profiles import FuzzLaneName, FuzzProfileName, ProfileName
@@ -23,6 +23,7 @@ from chaos_librarian.contract.scenario import (
     TimelineEvent,
 )
 from chaos_librarian.determinism.rng import RngStream
+from chaos_librarian.generation import adversarial
 from chaos_librarian.generation.lanes import (
     CELL_LAG_EFFECT_PREFIX,
     CELL_SIDE_NFO_OR_POSTER,
@@ -107,6 +108,8 @@ def plan_payload_parts(
     list[dict[str, object]],
     list[dict[str, object]],
 ]:
+    if config.lane is FuzzLaneName.ADVERSARIAL_MEDIA:
+        return adversarial.payload_parts(seed)
     assets = _planned_assets(config=config)
     library = _library_for_lane(config.lane)
     root_id, root_path = _event_root_for_lane(config.lane)
@@ -1117,6 +1120,11 @@ def _has_live_sidecars(planner: TimelinePlanner) -> bool:
     return any(planner.sidecars_by_asset.values())
 
 
+def _emit_adversarial_required_events(planner: TimelinePlanner) -> None:
+    for payload in adversarial.events():
+        planner.append_event(TypeAdapter(TimelineEvent).validate_python(payload))
+
+
 def _lane_config(
     *,
     profile: FuzzProfileName,
@@ -1149,6 +1157,23 @@ def _lane_config(
 
 
 LANE_CONFIGS: Final[dict[tuple[FuzzProfileName, FuzzLaneName], LaneConfig]] = {
+    (FuzzProfileName.FUZZ_REGRESSION, FuzzLaneName.ADVERSARIAL_MEDIA): _lane_config(
+        profile=FuzzProfileName.FUZZ_REGRESSION,
+        lane=FuzzLaneName.ADVERSARIAL_MEDIA,
+        movies=1,
+        artists=1,
+        timeline_events=11,
+        required_cells=frozenset(
+            {
+                *adversarial.REQUIRED_CELLS,
+                action_cell(TimelineActionName.EDIT_METADATA),
+                action_cell(TimelineActionName.CREATE_SIDECAR),
+                action_cell(TimelineActionName.CORRUPT_CONTAINER_HEADER),
+                action_cell(TimelineActionName.TRUNCATE_FILE),
+            }
+        ),
+        required_events=_emit_adversarial_required_events,
+    ),
     (FuzzProfileName.FUZZ_SMOKE, FuzzLaneName.SMOKE): _lane_config(
         profile=FuzzProfileName.FUZZ_SMOKE,
         lane=FuzzLaneName.SMOKE,

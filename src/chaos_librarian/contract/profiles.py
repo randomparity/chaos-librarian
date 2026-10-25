@@ -38,6 +38,7 @@ class FuzzLaneName(enum.StrEnum):
     NETWORK_FS_CHAOS = "network-fs-chaos"
     TV_TOPOLOGY = "tv-topology"
     MUSIC_TOPOLOGY = "music-topology"
+    ADVERSARIAL_MEDIA = "adversarial-media"
 
 
 FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
@@ -54,6 +55,7 @@ FUZZ_LANES_BY_PROFILE: Final[dict[FuzzProfileName, frozenset[FuzzLaneName]]] = {
             FuzzLaneName.NETWORK_FS_CHAOS,
             FuzzLaneName.TV_TOPOLOGY,
             FuzzLaneName.MUSIC_TOPOLOGY,
+            FuzzLaneName.ADVERSARIAL_MEDIA,
         }
     ),
 }

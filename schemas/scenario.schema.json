@@ -1186,7 +1186,8 @@
         "network-lag",
         "network-fs-chaos",
         "tv-topology",
-        "music-topology"
+        "music-topology",
+        "adversarial-media"
       ],
       "title": "FuzzLaneName",
       "type": "string"
@@ -3349,7 +3350,7 @@
       "type": "string"
     },
     "schema_version": {
-      "const": 36,
+      "const": 37,
       "title": "Schema Version",
       "type": "integer"
     },

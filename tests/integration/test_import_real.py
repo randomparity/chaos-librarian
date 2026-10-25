@@ -220,7 +220,7 @@ def test_import_probe_rejects_secondary_resource_reads(tmp_path: Path) -> None:
         probe_file(playlist, self_contained_only=True)
 
     scenario = tmp_path / "unsafe.yaml"
-    scenario.write_text("""schema_version: 36
+    scenario.write_text("""schema_version: 37
 scenario_id: imported-playlist
 seed: 0
 duration_scale: normal
