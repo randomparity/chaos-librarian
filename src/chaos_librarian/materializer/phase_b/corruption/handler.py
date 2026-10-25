@@ -26,13 +26,15 @@ from chaos_librarian.materializer.phase_b.corruption.bytes import (
     zero_range,
 )
 from chaos_librarian.materializer.phase_b.corruption.structure import (
-    STRUCTURAL_TOOL_OUTPUT_BYTES,
     mp3_prefix_end,
     read_structural_bytes,
     resolve_header_region,
 )
 from chaos_librarian.materializer.phase_b.media.packet_probe import resolve_packet_byte_range
-from chaos_librarian.materializer.tooling.constants import STDERR_TAIL_BYTES
+from chaos_librarian.materializer.tooling.constants import (
+    STDERR_TAIL_BYTES,
+    STRUCTURAL_TOOL_OUTPUT_BYTES,
+)
 from chaos_librarian.materializer.tooling.ffmpeg import run_ffmpeg
 from chaos_librarian.materializer.tooling.probe import probe_file
 

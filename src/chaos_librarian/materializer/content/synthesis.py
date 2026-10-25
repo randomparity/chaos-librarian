@@ -61,12 +61,12 @@ from chaos_librarian.materializer.errors import (
     ToolFailedError,
     UnsupportedMaterializationError,
 )
-from chaos_librarian.materializer.phase_b.corruption.structure import (
+from chaos_librarian.materializer.preparation.preflight import iter_assets
+from chaos_librarian.materializer.sidecar_planning import timeline_sidecar_languages
+from chaos_librarian.materializer.tooling.constants import (
     MAX_STRUCTURAL_BYTES,
     STRUCTURAL_TOOL_OUTPUT_BYTES,
 )
-from chaos_librarian.materializer.preparation.preflight import iter_assets
-from chaos_librarian.materializer.sidecar_planning import timeline_sidecar_languages
 from chaos_librarian.materializer.tooling.ffmpeg import (
     build_command,
     build_resolution_switch_concat_command,

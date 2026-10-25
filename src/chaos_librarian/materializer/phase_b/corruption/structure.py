@@ -3,9 +3,9 @@
 from pathlib import Path
 from typing import Final
 
-MAX_STRUCTURAL_BYTES: Final = 64 * 1024 * 1024
+from chaos_librarian.materializer.tooling.constants import MAX_STRUCTURAL_BYTES
+
 MAX_STRUCTURAL_ELEMENTS: Final = 4096
-STRUCTURAL_TOOL_OUTPUT_BYTES: Final = 1024 * 1024
 _MP4_HEADER_BYTES: Final = 8
 _MP4_EXTENDED_HEADER_BYTES: Final = 16
 _EBML_HEADER_ID: Final = 0x1A45DFA3
