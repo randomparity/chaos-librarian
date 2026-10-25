@@ -9,7 +9,7 @@ from __future__ import annotations
 import enum
 import re
 from datetime import date, datetime
-from typing import Annotated, Final, Literal
+from typing import Annotated, Final, Literal, Self, cast
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -957,19 +957,71 @@ class UpdateSidecarEvent(_TimelineEventBase):
 
 
 class CorruptContainerHeaderEvent(_TimelineEventBase):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "oneOf": [
+                {"properties": {"bytes": {"type": "integer"}, "region": {"type": "null"}}},
+                {
+                    "required": ["region"],
+                    "properties": {"bytes": {"type": "null"}, "region": {"type": "string"}},
+                },
+            ]
+        },
+    )
     action: Literal[TimelineActionName.CORRUPT_CONTAINER_HEADER] = (
         TimelineActionName.CORRUPT_CONTAINER_HEADER
     )
     target: str
-    # Number of leading header bytes to overwrite; default clobbers the first
-    # 64 bytes, upper bound caps how much of the header region is affected.
-    bytes: int = Field(default=64, ge=1, le=4096)
+    bytes: int | None = Field(default=64, ge=1, le=4096)
+    region: Literal["mp4_moov", "mkv_cues"] | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _structural_default(cls, data: object) -> object:
+        if isinstance(data, dict):
+            payload = cast(dict[object, object], data)
+            if payload.get("region") is not None and "bytes" not in payload:
+                return {**payload, "bytes": None}
+        return data
+
+    @model_validator(mode="after")
+    def _selector(self) -> Self:
+        if self.region is not None and self.bytes is not None:
+            raise ValueError("region and bytes are mutually exclusive")
+        if self.region is None and self.bytes is None:
+            raise ValueError("bytes is required without a region")
+        return self
 
 
 class TruncateFileEvent(_TimelineEventBase):
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        json_schema_extra={
+            "oneOf": [
+                {
+                    "properties": {"keep_bytes": {"type": "integer"}, "boundary": {"type": "null"}},
+                    "required": ["keep_bytes"],
+                },
+                {
+                    "required": ["boundary"],
+                    "properties": {"keep_bytes": {"type": "null"}, "boundary": {"type": "string"}},
+                },
+            ]
+        },
+    )
     action: Literal[TimelineActionName.TRUNCATE_FILE] = TimelineActionName.TRUNCATE_FILE
     target: str
-    keep_bytes: int = Field(ge=1)
+    keep_bytes: int | None = Field(default=None, ge=1)
+    boundary: Literal["mp3_after_16_frames"] | None = None
+
+    @model_validator(mode="after")
+    def _selector(self) -> Self:
+        if (self.keep_bytes is None) == (self.boundary is None):
+            raise ValueError("provide exactly one of keep_bytes or boundary")
+        return self
 
 
 class CorruptPacketRangeEvent(_TimelineEventBase):
@@ -1295,7 +1347,7 @@ class Scenario(BaseModel):
     # See subtree-immutability note above the ``LibraryRoot`` declaration.
     model_config = ConfigDict(extra="forbid", populate_by_name=True, frozen=True)
 
-    schema_version: Literal[35]
+    schema_version: Literal[36]
     scenario_id: str
     seed: int | Literal["random"]
     duration_scale: DurationScale

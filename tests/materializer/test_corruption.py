@@ -28,6 +28,7 @@ from chaos_librarian.materializer.phase_b.corruption.handler import (
 )
 from chaos_librarian.materializer.phase_b.media import packet_probe
 from chaos_librarian.materializer.tooling._subprocess import RecordedToolResult
+from tests.materializer.test_structural_corruption import box
 
 
 def _entry(*, byte_count: int = 8) -> AtomicJournalEntry:
@@ -627,3 +628,71 @@ def test_corrupt_tags_malformed_frame_writes_id3_magic(tmp_path, monkeypatch) ->
     assert corrupted[:3] == b"ID3"
     assert len(corrupted) == 16
     assert action.metadata == {"flavor": "malformed_frame"}
+
+
+def test_structural_header_changes_only_resolved_box_type(tmp_path, monkeypatch) -> None:
+    original = box(b"ftyp") + box(b"mdat", b"moov-decoy") + box(b"moov", b"index")
+    path = tmp_path / "movies-hd" / "asset.mkv"
+    path.parent.mkdir()
+    path.write_bytes(original)
+    monkeypatch.setattr(corruption_module, "probe_file", lambda _p, **_kw: _probed())
+    entry = _entry().model_copy(
+        update={
+            "state_delta": {
+                **_entry().state_delta,
+                "region": "mp4_moov",
+                "byte_start": None,
+                "byte_count": None,
+            }
+        }
+    )
+    result = apply_corruption_action(
+        CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=1), entry
+    )
+    start = len(original) - len(box(b"moov", b"index")) + 4
+    assert path.read_bytes() == original[:start] + bytes(4) + original[start + 4 :]
+    assert (result.byte_start, result.byte_count) == (start, 4)
+    assert result.metadata == {"region": "mp4_moov"}
+
+
+@pytest.mark.parametrize("failure", ["timeout", "launch", "output_limit"])
+def test_structural_probe_infrastructure_failure_is_not_expected_damage(
+    tmp_path, monkeypatch, failure
+) -> None:
+    path = tmp_path / "movies-hd" / "asset.mkv"
+    path.parent.mkdir()
+    path.write_bytes(box(b"ftyp") + box(b"moov"))
+
+    def fail_probe(_path, **_kw):
+        raise ProbeParseError("probe unavailable", payload={"failure_kind": failure})
+
+    monkeypatch.setattr(corruption_module, "probe_file", fail_probe)
+    entry = _entry().model_copy(
+        update={
+            "state_delta": {
+                **_entry().state_delta,
+                "region": "mp4_moov",
+                "byte_start": None,
+                "byte_count": None,
+            }
+        }
+    )
+    with pytest.raises(CorruptionActionError, match="probe unavailable"):
+        apply_corruption_action(
+            CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=1), entry
+        )
+
+
+def test_structural_resolution_failure_preserves_source(tmp_path) -> None:
+    path = tmp_path / "movies-hd" / "asset.mkv"
+    path.parent.mkdir()
+    original = b"not-an-mp4"
+    path.write_bytes(original)
+    entry = _entry().model_copy(
+        update={"state_delta": {**_entry().state_delta, "region": "mp4_moov"}}
+    )
+    with pytest.raises(CorruptionActionError):
+        apply_corruption_action(
+            CorruptionPhaseBContext(library_root=tmp_path, resolved_seed=1), entry
+        )
+    assert path.read_bytes() == original

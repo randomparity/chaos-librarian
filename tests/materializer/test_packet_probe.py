@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -179,3 +180,48 @@ def test_packet_probe_records_launch_failures(monkeypatch) -> None:
 
     assert len(invocations) == 1
     assert invocations[0].exit_code == 1
+
+
+@pytest.mark.parametrize(
+    "packets",
+    [
+        [{"pos": "10", "size": "5"}, {"pos": "16", "size": "5"}],
+        [{"pos": "10", "size": "5"}, {"pos": "9", "size": "5"}],
+        [{"pos": "10", "size": "0"}, {"pos": "10", "size": "5"}],
+    ],
+)
+def test_contiguous_packet_selection_rejects_gaps_reordering_and_empty(
+    packets, monkeypatch
+) -> None:
+
+    monkeypatch.setattr(
+        packet_probe,
+        "_run_ffprobe_packets",
+        lambda *_a, **_k: _completed(json.dumps({"packets": packets})),
+    )
+    with pytest.raises(ValueError, match="contiguous"):
+        resolve_packet_byte_range(
+            Path("a.mp3"),
+            stream="audio",
+            packet_start=0,
+            packet_count=2,
+            contiguous=True,
+            max_output_bytes=1048576,
+        )
+
+
+def test_structural_packet_query_bounds_captured_output(monkeypatch) -> None:
+    def run(argv, **kwargs):
+        assert kwargs["max_output_bytes"] == 1048576
+        assert kwargs["timeout_s"] == 15.0
+        return _completed('{"packets":[{"pos":"0","size":"5"}]}', argv=argv)
+
+    monkeypatch.setattr(packet_probe, "run_recorded_tool", run)
+    assert resolve_packet_byte_range(
+        Path("a.mp3"),
+        stream="audio",
+        packet_start=0,
+        packet_count=1,
+        max_output_bytes=1048576,
+        contiguous=True,
+    ) == (0, 5)

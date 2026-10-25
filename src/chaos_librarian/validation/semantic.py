@@ -33,6 +33,7 @@ from chaos_librarian.validation.rules.media.import_source import rule_import_sou
 from chaos_librarian.validation.rules.media.materialize_media_matrix import (
     rule_materialize_media_matrix,
 )
+from chaos_librarian.validation.rules.media.structural_corruption import rule_structural_corruption
 from chaos_librarian.validation.rules.network.network_fs_chaos import (
     rule_network_fs_chaos_pairing,
     rule_network_fs_chaos_target,
@@ -94,6 +95,7 @@ _RULES: list[Rule] = [
     rule_asset_id_container_safe,
     rule_remux_container_safe,
     rule_materialize_media_matrix,
+    rule_structural_corruption,
     rule_media_action_compatible_with_parent,
     rule_import_source,
     rule_sidecar_language_consistent,

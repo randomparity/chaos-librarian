@@ -55,14 +55,15 @@ def _handle_corrupt_container_header(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = _checked_event(resolved, CorruptContainerHeaderEvent)
-    corruptor = "container_header_v1"
+    corruptor = "container_header_v1" if event.region is None else "structural_header_v1"
     seed_material = _seed_material(corruptor, ctx, event.id, event.target)
     record = CorruptionRecord(
         profile=ProfileName.MALFORMED_MEDIA,
         event_id=event.id,
         corruptor=corruptor,
-        byte_start=0,
+        byte_start=0 if event.region is None else None,
         byte_count=event.bytes,
+        metadata={"region": event.region} if event.region is not None else {},
         seed_material=seed_material,
     )
     prior_version_id, new_version_id = _bind_corruption_version(
@@ -84,8 +85,9 @@ def _handle_corrupt_container_header(
                 "output_path": location.path,
                 "profile": ProfileName.MALFORMED_MEDIA.value,
                 "corruptor": corruptor,
-                "byte_start": 0,
+                "byte_start": 0 if event.region is None else None,
                 "byte_count": event.bytes,
+                **({"region": event.region} if event.region is not None else {}),
                 "seed_material": seed_material,
             },
         ),
@@ -99,14 +101,18 @@ def _handle_truncate_file(
     ctx: EngineEventContext,
 ) -> tuple[JournalEntry, ...]:
     event = _checked_event(resolved, TruncateFileEvent)
-    corruptor = "truncate_file_v1"
+    corruptor = "truncate_file_v1" if event.boundary is None else "structural_truncate_v1"
     seed_material = _seed_material(corruptor, ctx, event.id, event.target)
     record = CorruptionRecord(
         profile=ProfileName.MALFORMED_MEDIA,
         event_id=event.id,
         corruptor=corruptor,
         seed_material=seed_material,
-        metadata={"keep_bytes": event.keep_bytes},
+        metadata=(
+            {"keep_bytes": event.keep_bytes}
+            if event.keep_bytes is not None
+            else {"boundary": event.boundary or ""}
+        ),
     )
     prior_version_id, new_version_id = _bind_corruption_version(
         state, ids, target=event.target, record=record
@@ -128,6 +134,7 @@ def _handle_truncate_file(
                 "profile": ProfileName.MALFORMED_MEDIA.value,
                 "corruptor": corruptor,
                 "keep_bytes": event.keep_bytes,
+                **({"boundary": event.boundary} if event.boundary is not None else {}),
                 "seed_material": seed_material,
             },
         ),

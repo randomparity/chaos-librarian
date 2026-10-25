@@ -306,17 +306,25 @@ def probe_file(
     if result.failure_kind == "timeout":
         raise ProbeParseError(
             f"ffprobe timeout on {path}",
-            payload={"path": str(path), "timeout_s": _PROBE_TIMEOUT_S},
+            payload={"path": str(path), "timeout_s": _PROBE_TIMEOUT_S, "failure_kind": "timeout"},
         )
     if result.failure_kind == "launch":
         raise ProbeParseError(
             f"ffprobe launch failed on {path}",
-            payload={"path": str(path), "stderr": result.stderr_tail},
+            payload={
+                "path": str(path),
+                "stderr": result.stderr_tail,
+                "failure_kind": result.failure_kind,
+            },
         )
     if result.invocation.exit_code != 0:
         raise ProbeParseError(
             f"ffprobe exit {result.invocation.exit_code} on {path}",
-            payload={"path": str(path), "stderr": result.stderr_tail},
+            payload={
+                "path": str(path),
+                "stderr": result.stderr_tail,
+                "failure_kind": result.failure_kind,
+            },
         )
     try:
         raw = json.loads(result.stdout_text())

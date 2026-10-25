@@ -24,7 +24,13 @@ from chaos_librarian.contract.content_sources import (
 )
 from chaos_librarian.contract.manifest import Manifest, ProbedMedia
 from chaos_librarian.contract.materialization import MaterializedAsset, ToolInvocation
-from chaos_librarian.contract.scenario import Asset, Scenario, SubtitleMode
+from chaos_librarian.contract.scenario import (
+    Asset,
+    CorruptContainerHeaderEvent,
+    Scenario,
+    SubtitleMode,
+    TruncateFileEvent,
+)
 from chaos_librarian.engine.plan import PlanArtifacts
 from chaos_librarian.errors import ChaosLibrarianValueError
 from chaos_librarian.materializer.content.manifest_build import augment_manifest
@@ -57,6 +63,10 @@ from chaos_librarian.materializer.errors import (
 )
 from chaos_librarian.materializer.preparation.preflight import iter_assets
 from chaos_librarian.materializer.sidecar_planning import timeline_sidecar_languages
+from chaos_librarian.materializer.tooling.constants import (
+    MAX_STRUCTURAL_BYTES,
+    STRUCTURAL_TOOL_OUTPUT_BYTES,
+)
 from chaos_librarian.materializer.tooling.ffmpeg import (
     build_command,
     build_resolution_switch_concat_command,
@@ -161,6 +171,12 @@ def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
     phase_a = PhaseAResult() if inputs.phase_a_accumulator is None else inputs.phase_a_accumulator
     primary_root_path = inputs.scenario.library.roots[0].path
     skip_by_asset = timeline_sidecar_languages(inputs.scenario)
+    structural_targets = {
+        event.target
+        for event in inputs.scenario.timeline
+        if (isinstance(event, CorruptContainerHeaderEvent) and event.region is not None)
+        or (isinstance(event, TruncateFileEvent) and event.boundary is not None)
+    }
     rel_path_by_asset: dict[str, str] = {}
     for context in iter_asset_contexts(inputs.scenario):
         asset = context.asset
@@ -216,6 +232,7 @@ def materialize_assets_phase_a(inputs: PhaseAInputs) -> PhaseAResult:
                 invocation_index,
                 rendered_relative_path=rendered_relative_path,
                 skip_languages=skip_languages,
+                **({"structural_corruption": True} if asset.id in structural_targets else {}),
             )
         phase_a.invocations.extend(asset_result.prelude_invocations)
         materialized_asset = asset_result.materialized_asset.model_copy(
@@ -585,6 +602,7 @@ def materialize_one_asset(
     *,
     rendered_relative_path: str,
     skip_languages: frozenset[str] = frozenset(),
+    structural_corruption: bool = False,
 ) -> MaterializeAssetResult:
     """Synthesize one asset, returning everything ``augment_manifest`` needs.
 
@@ -633,6 +651,7 @@ def materialize_one_asset(
             temp_path=Path(temp_dir),
             resolved_inputs=resolved_inputs,
             embedded_inputs=embedded_inputs,
+            structural_corruption=structural_corruption,
         )
     invocation = media_result.invocation
     content_sources = media_result.content_sources
@@ -651,6 +670,13 @@ def materialize_one_asset(
                 )
             probed = probe_file(output_path, max_output_bytes=DISPOSITION_MAX_OUTPUT_BYTES)
             _verify_dispositions(asset, probed)
+        elif structural_corruption:
+            if output_path.stat().st_size >= MAX_STRUCTURAL_BYTES:
+                raise ProbeParseError(
+                    "structural corruption output reached 64 MiB limit",
+                    payload={"asset_id": asset.id},
+                )
+            probed = probe_file(output_path, max_output_bytes=STRUCTURAL_TOOL_OUTPUT_BYTES)
         else:
             probed = probe_file(output_path)
     except ProbeParseError as exc:
@@ -686,6 +712,7 @@ def _run_media_invocation(
     temp_path: Path,
     resolved_inputs: _ResolvedMediaInputs,
     embedded_inputs: _EmbeddedMetadataInputs,
+    structural_corruption: bool = False,
 ) -> _MediaInvocationResult:
     content_sources = resolved_inputs.content_sources + embedded_inputs.content_sources
     feature = has_track_dispositions(asset.model_dump(mode="json"))
@@ -705,10 +732,17 @@ def _run_media_invocation(
         subtitle_inputs=subtitle_inputs,
         duration_seconds=asset.duration_seconds,
     )
+    if structural_corruption:
+        argv[-1:-1] = ["-fs", str(MAX_STRUCTURAL_BYTES), "-t", str(asset.duration_seconds)]
+    output_limit: dict[str, int] = {}
+    if structural_corruption:
+        output_limit["max_output_bytes"] = STRUCTURAL_TOOL_OUTPUT_BYTES
+    elif feature:
+        output_limit["max_output_bytes"] = DISPOSITION_MAX_OUTPUT_BYTES
     invocation, stderr_tail = run_ffmpeg(
         argv,
         ffmpeg_version=caps.ffmpeg.version or "unknown",
-        **({"max_output_bytes": DISPOSITION_MAX_OUTPUT_BYTES} if feature else {}),
+        **output_limit,
     )
     if invocation.exit_code != 0:
         raise _tool_failed(
