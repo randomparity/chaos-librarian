@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    # uv_build is declared only as a [build-system] range, never locked, so
+    # Dependabot has no previous version for it and discards the whole group.
+    # Its bound moves by hand together with the uv-lock pre-commit rev.
+    ignore:
+      - dependency-name: "uv-build"
+    groups:
+      uv-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions-all:
+        patterns:
+          - "*"
