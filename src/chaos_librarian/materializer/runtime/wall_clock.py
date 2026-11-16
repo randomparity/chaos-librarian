@@ -6,7 +6,7 @@ import dataclasses
 import errno
 import time
 import uuid
-from collections.abc import Iterator, Mapping
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -829,7 +829,7 @@ def _wall_clock_filesystem_effect(
     event_id: str,
     action: TimelineActionName,
     asset_id: str | None,
-) -> Iterator[None]:
+) -> Generator[None]:
     try:
         yield
     except FilesystemActionError:

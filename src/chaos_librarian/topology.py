@@ -129,7 +129,8 @@ class AssetContext:
 
 
 class _Identified(Protocol):
-    id: str
+    @property
+    def id(self) -> str: ...
 
 
 _TargetGetter = Callable[[AssetContext], _Identified]

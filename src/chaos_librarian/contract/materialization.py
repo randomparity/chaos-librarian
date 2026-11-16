@@ -205,7 +205,7 @@ class CorruptionAction(BaseModel):
 
     event_id: str
     action: TimelineActionName = Field(
-        json_schema_extra={"enum": CORRUPTION_TIMELINE_ACTION_VALUES}
+        json_schema_extra={"enum": list(CORRUPTION_TIMELINE_ACTION_VALUES)}
     )
     target_asset_id: str
     input_path: str

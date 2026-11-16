@@ -90,7 +90,7 @@ class TestRecorderSnapshotIsImmutable:
         rec.record_rng(stream="a", value="1")
         snapshot = rec.entries()
         with pytest.raises(AttributeError):
-            snapshot.append("anything")  # ty: ignore[unresolved-attribute]
+            snapshot.append("anything")  # ty: ignore[missing-attribute]
 
     def test_snapshot_does_not_reflect_later_records(self) -> None:
         rec = TraceRecorder()
