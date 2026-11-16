@@ -159,6 +159,7 @@ def test_materialize_bundle_has_created_at_and_toolchain() -> None:
         content_sources=[],
     )
     loaded = TypeAdapter(ReplayBundle).validate_json(b.model_dump_json())
+    assert isinstance(loaded, MaterializeReplayBundle)
     assert loaded.created_at == b.created_at
     assert loaded.toolchain == b.toolchain
 
