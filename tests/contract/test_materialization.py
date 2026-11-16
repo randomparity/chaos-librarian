@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from pydantic import BaseModel, ValidationError
+from pydantic import ValidationError
 
 from chaos_librarian.contract import MATERIALIZATION_SCHEMA_VERSION
 from chaos_librarian.contract import materialization as materialization_contract
@@ -25,6 +25,7 @@ from chaos_librarian.contract.materialization import (
     MaterializationReport,
     MaterializedAsset,
     MediaAction,
+    OracleHashAction,
     Outcome,
     ToolchainInfo,
     ToolInvocation,
@@ -68,16 +69,6 @@ def _timeline_action(member_name: str) -> TimelineActionName:
     action = getattr(TimelineActionName, member_name, None)
     assert isinstance(action, TimelineActionName)
     return action
-
-
-WRONG_ORACLE_HASH_ACTION = _timeline_action("WRONG_ORACLE_HASH")
-
-
-def _oracle_hash_action_model() -> type[BaseModel]:
-    model = getattr(materialization_contract, "OracleHashAction", None)
-    assert isinstance(model, type)
-    assert issubclass(model, BaseModel)
-    return model
 
 
 def test_minimal_success_report_round_trips():
@@ -564,10 +555,9 @@ def test_packet_range_corruption_action_round_trip() -> None:
 
 
 def test_oracle_hash_action_round_trip() -> None:
-    action_model = _oracle_hash_action_model()
-    action = action_model(
+    action = OracleHashAction(
         event_id="wrong_hash_001",
-        action=WRONG_ORACLE_HASH_ACTION,
+        action=TimelineActionName.WRONG_ORACLE_HASH,
         target_asset_id="asset_main",
         input_path="movies-hd/asset_main.mkv",
         output_path="movies-hd/asset_main.mkv",
@@ -579,16 +569,15 @@ def test_oracle_hash_action_round_trip() -> None:
         duration_ns=10,
     )
 
-    loaded = action_model.model_validate_json(action.model_dump_json())
+    loaded = OracleHashAction.model_validate_json(action.model_dump_json())
 
     assert loaded == action
 
 
 def test_materialization_report_carries_oracle_hash_actions() -> None:
-    action_model = _oracle_hash_action_model()
-    action = action_model(
+    action = OracleHashAction(
         event_id="wrong_hash_001",
-        action=WRONG_ORACLE_HASH_ACTION,
+        action=TimelineActionName.WRONG_ORACLE_HASH,
         target_asset_id="asset_main",
         input_path="movies-hd/asset_main.mkv",
         output_path="movies-hd/asset_main.mkv",

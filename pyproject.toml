@@ -82,5 +82,5 @@ quote-style = "double"
 exclude = ["docs/**/*.md"]   # historical plan docs stay as written
 
 [tool.ty.rules]
-unresolved-import = "error"
+import-not-found = "error"
 possibly-unresolved-reference = "error"

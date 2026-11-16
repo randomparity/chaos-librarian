@@ -948,32 +948,32 @@ def _write_updated_sidecar(
     duration_s: float,
 ) -> int | None:
     if sidecar.kind is SidecarKind.SUBTITLE:
-        subtitle = cast("LiveSubtitleSidecar", sidecar)
         _write_updated_subtitle_sidecar(
             ctx=ctx,
             entry=entry,
-            sidecar=subtitle,
+            sidecar=sidecar,
             sidecar_id=sidecar_id,
             temp_output=temp_output,
             duration_s=duration_s,
         )
         return None
     if sidecar.kind is SidecarKind.NFO:
-        text = cast("LiveTextSidecar", sidecar)
         temp_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output.write_bytes(regenerate_nfo_sidecar_bytes(sidecar_id=sidecar_id, body=text.body))
+        temp_output.write_bytes(
+            regenerate_nfo_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
+        )
         return None
     if sidecar.kind is SidecarKind.CUE:
-        text = cast("LiveTextSidecar", sidecar)
         temp_output.parent.mkdir(parents=True, exist_ok=True)
-        temp_output.write_bytes(regenerate_cue_sidecar_bytes(sidecar_id=sidecar_id, body=text.body))
+        temp_output.write_bytes(
+            regenerate_cue_sidecar_bytes(sidecar_id=sidecar_id, body=sidecar.body)
+        )
         return None
     if sidecar.kind is SidecarKind.POSTER:
-        poster = cast("LivePosterSidecar", sidecar)
         return _write_updated_poster_sidecar(
             ctx=ctx,
             entry=entry,
-            sidecar=poster,
+            sidecar=sidecar,
             sidecar_id=sidecar_id,
             temp_output=temp_output,
         )
