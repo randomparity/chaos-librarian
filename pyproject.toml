@@ -68,7 +68,7 @@ select = [
 ]
 ignore = [
     "PLR0913",      # too many args — Pydantic models exceed this naturally
-    "PLR0917",      # too many positional args — Typer options and pytest parametrizations need them
+    "PLR0917",      # too many positional args — Typer options, pytest parametrizations, same as PLR0913
 ]
 
 [tool.ruff.lint.per-file-ignores]
