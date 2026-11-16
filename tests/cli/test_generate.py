@@ -8,8 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from click.testing import Result
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
 from chaos_librarian.cli.app import app
 from chaos_librarian.cli.commands import generate as generate_cmd
