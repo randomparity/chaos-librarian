@@ -152,7 +152,8 @@ class TestRunInputScenarioCache:
         path.write_bytes(self._VALID_BYTES)
         run_input = prepare_run_input(path)
         with pytest.raises(ValidationError):
-            run_input.scenario.scenario_id = "tampered"  # ty: ignore[invalid-assignment]  # frozen-mutation test
+            # Deliberate write to a frozen field; the test asserts it raises.
+            run_input.scenario.scenario_id = "tampered"  # ty: ignore[invalid-assignment]
 
     def test_cached_scenario_subtree_is_deeply_immutable(
         self,
@@ -174,7 +175,8 @@ class TestRunInputScenarioCache:
 
         # 1. Nested attribute reassignment on a sub-model.
         with pytest.raises(ValidationError):
-            run_input.scenario.library.roots[0].path = "tampered"  # ty: ignore[invalid-assignment]  # frozen-mutation test
+            # Deliberate write to a frozen field; the test asserts it raises.
+            run_input.scenario.library.roots[0].path = "tampered"  # ty: ignore[invalid-assignment]
         # 2. Collection fields are tuples — immutable by Python contract.
         # ``isinstance(..., tuple)`` is the structural assertion; the
         # follow-up ``hasattr`` check confirms list mutators are absent.
